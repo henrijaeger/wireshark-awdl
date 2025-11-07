@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "stats_tree_dialog.h"
 
@@ -58,6 +59,8 @@ StatsTreeDialog::StatsTreeDialog(QWidget &parent, CaptureFile &cf, const char *c
     st_cfg_ = stats_tree_get_cfg_by_abbr(cfg_abbr);
     memset(&cfg_pr_, 0, sizeof(struct _tree_cfg_pres));
 
+    addTreeCollapseAllActions();
+
     if (!st_cfg_) {
         QMessageBox::critical(this, tr("Configuration not found"),
                              tr("Unable to find configuration for %1.").arg(cfg_abbr));
@@ -94,24 +97,24 @@ void StatsTreeDialog::setupNode(stat_node* node)
     } else {
         st_dlg->statsTreeWidget()->addTopLevelItem(ti);
     }
-    st_dlg->statsTreeWidget()->resizeColumnToContents(item_col_);
 }
 
 void StatsTreeDialog::fillTree()
 {
     if (!st_cfg_ || file_closed_) return;
 
-    QString display_name = gchar_free_to_qstring(stats_tree_get_displayname(st_cfg_->name));
-
-    // The GTK+ UI appends "Stats Tree" to the window title. If we do the same
+    // The GTK+ UI appended "Stats Tree" to the window title. If we do the same
     // here we should expand the name completely, e.g. to "Statistics Tree".
-    setWindowSubtitle(display_name);
+    setWindowSubtitle(st_cfg_->title);
 
     st_cfg_->pr = &cfg_pr_;
     cfg_pr_.st_dlg = this;
 
+    bool first_time = true;
+
     if (st_) {
         stats_tree_free(st_);
+        first_time = false;
     }
     QString display_filter = displayFilter();
     st_ = stats_tree_new(st_cfg_, NULL, display_filter.toUtf8().constData());
@@ -119,9 +122,9 @@ void StatsTreeDialog::fillTree()
     // Add number of columns for this stats_tree
     QStringList header_labels;
     for (int count = 0; count<st_->num_columns; count++) {
-        header_labels.push_back(stats_tree_get_column_name(count));
+        header_labels.push_back(stats_tree_get_column_name(st_cfg_, count));
     }
-    statsTreeWidget()->setColumnCount(header_labels.count());
+    statsTreeWidget()->setColumnCount(static_cast<int>(header_labels.count()));
     statsTreeWidget()->setHeaderLabels(header_labels);
     statsTreeWidget()->setSortingEnabled(false);
 
@@ -139,10 +142,16 @@ void StatsTreeDialog::fillTree()
     cap_file_.retapPackets();
     drawTreeItems(st_);
 
-    statsTreeWidget()->setSortingEnabled(true);
     removeTapListeners();
-
     st_cfg_->pr = NULL;
+
+    if (first_time) {
+        // Keep the same sort order on retapping (which might be
+        // user-selected to be different from the default.)
+        statsTreeWidget()->sortItems(stats_tree_get_default_sort_col(st_), stats_tree_is_default_sort_DESC(st_) ? Qt::DescendingOrder : Qt::AscendingOrder);
+    }
+    statsTreeWidget()->setSortingEnabled(true);
+    statsTreeWidget()->resizeColumnToContents(item_col_);
 }
 
 void StatsTreeDialog::resetTap(void *st_ptr)
@@ -160,12 +169,11 @@ void StatsTreeDialog::drawTreeItems(void *st_ptr)
     if (!st || !st->cfg || !st->cfg->pr || !st->cfg->pr->st_dlg) return;
     TapParameterDialog *st_dlg = st->cfg->pr->st_dlg;
     QTreeWidgetItemIterator iter(st_dlg->statsTreeWidget());
-    int node_count = 0;
 
     while (*iter) {
         stat_node *node = VariantPointer<stat_node>::asPtr((*iter)->data(item_col_, Qt::UserRole));
         if (node) {
-            gchar **valstrs = stats_tree_get_values_from_node(node);
+            char **valstrs = stats_tree_get_values_from_node(node);
             for (int count = 0; count<st->num_columns; count++) {
                 (*iter)->setText(count,valstrs[count]);
                 g_free(valstrs[count]);
@@ -174,7 +182,6 @@ void StatsTreeDialog::drawTreeItems(void *st_ptr)
                                  (!(node->st_flags&ST_FLG_DEF_NOEXPAND)));
             g_free(valstrs);
         }
-        node_count++;
         ++iter;
     }
 
@@ -193,6 +200,9 @@ QByteArray StatsTreeDialog::getTreeAsString(st_format_type format)
 }
 
 extern "C" {
+
+void register_tap_listener_qt_stats_tree_stat(void);
+
 void
 register_tap_listener_qt_stats_tree_stat(void)
 {
@@ -200,17 +210,5 @@ register_tap_listener_qt_stats_tree_stat(void)
                 StatsTreeDialog::setupNode,
                 NULL, NULL);
 }
-}
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+}

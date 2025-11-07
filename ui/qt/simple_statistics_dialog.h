@@ -1,10 +1,11 @@
-/* simple_statistics_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __SIMPLE_STATISTICS_DIALOG_H__
 #define __SIMPLE_STATISTICS_DIALOG_H__
@@ -51,19 +52,6 @@ private slots:
  * @param key is tap string
  * @param value stat_tap_table_ui* representing dissetor stat table
  */
-gboolean register_simple_stat_tables(const void *key, void *value, void*);
+bool register_simple_stat_tables(const void *key, void *value, void*);
 
 #endif // __SIMPLE_STATISTICS_DIALOG_H__
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

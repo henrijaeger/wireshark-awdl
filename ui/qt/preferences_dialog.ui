@@ -50,6 +50,7 @@
       <widget class="CapturePreferencesFrame" name="captureFrame"/>
       <widget class="UatFrame" name="expertFrame"/>
       <widget class="UatFrame" name="filterExpressonsFrame"/>
+      <widget class="RsaKeysFrame" name="rsaKeysFrame"/>
       <widget class="QFrame" name="advancedFrame">
        <layout class="QVBoxLayout" name="verticalLayout_2">
         <item>
@@ -63,6 +64,16 @@
           </item>
           <item>
            <widget class="QLineEdit" name="advancedSearchLineEdit"/>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="showChangedValuesCheckBox">
+            <property name="toolTip">
+             <string>Checking this will show only changed preferences.</string>
+            </property>
+            <property name="text">
+             <string>Show changed values</string>
+            </property>
+           </widget>
           </item>
           <item>
            <spacer name="horizontalSpacer">
@@ -87,6 +98,12 @@
           <property name="uniformRowHeights">
            <bool>true</bool>
           </property>
+          <property name="selectionMode">
+           <enum>QAbstractItemView::ContiguousSelection</enum>
+          </property>
+          <property name="selectionBehavior">
+           <enum>QAbstractItemView::SelectRows</enum>
+          </property>
          </widget>
         </item>
        </layout>
@@ -100,7 +117,7 @@
       <enum>Qt::Horizontal</enum>
      </property>
      <property name="standardButtons">
-      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Help|QDialogButtonBox::Ok</set>
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Help|QDialogButtonBox::Ok|QDialogButtonBox::Apply</set>
      </property>
     </widget>
    </item>
@@ -149,40 +166,12 @@
    <header>widgets/pref_module_view.h</header>
    <container>1</container>
   </customwidget>
+  <customwidget>
+   <class>RsaKeysFrame</class>
+   <extends>QFrame</extends>
+   <header>rsa_keys_frame.h</header>
+   <container>1</container>
+  </customwidget>
  </customwidgets>
  <resources/>
- <connections>
-  <connection>
-   <sender>buttonBox</sender>
-   <signal>accepted()</signal>
-   <receiver>PreferencesDialog</receiver>
-   <slot>accept()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>248</x>
-     <y>254</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>157</x>
-     <y>274</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>buttonBox</sender>
-   <signal>rejected()</signal>
-   <receiver>PreferencesDialog</receiver>
-   <slot>reject()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>316</x>
-     <y>260</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>286</x>
-     <y>274</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
 </ui>

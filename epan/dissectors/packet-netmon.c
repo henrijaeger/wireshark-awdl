@@ -9,7 +9,7 @@
  *
  * Network Event Tracing event taken from:
  *
- * http://msdn.microsoft.com/en-us/library/aa363759(VS.85).aspx
+ * https://docs.microsoft.com/en-us/windows/win32/api/evntcons/ns-evntcons-event_header
  */
 
 #include "config.h"
@@ -17,6 +17,8 @@
 #include <epan/packet.h>
 #include <epan/to_str.h>
 #include <epan/expert.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 #include <wiretap/wtap.h>
 #include "packet-netmon.h"
 
@@ -71,286 +73,286 @@ static const range_string filter_types[] = {
 static dissector_table_t provider_id_table;
 
 /* Initialize the protocol and registered fields */
-static int proto_netmon_header = -1;
-static int proto_netmon_event = -1;
-static int proto_netmon_filter = -1;
-static int proto_netmon_network_info = -1;
-static int proto_netmon_system_trace = -1;
-static int proto_netmon_system_config = -1;
-static int proto_netmon_process = -1;
+static int proto_netmon_header;
+static int proto_netmon_event;
+static int proto_netmon_filter;
+static int proto_netmon_network_info;
+static int proto_netmon_system_trace;
+static int proto_netmon_system_config;
+static int proto_netmon_process;
 
-static int hf_netmon_header_title_comment = -1;
-static int hf_netmon_header_description_comment = -1;
+static int hf_netmon_header_title_comment;
+static int hf_netmon_header_description_comment;
 
-static int hf_netmon_event_size = -1;
-static int hf_netmon_event_header_type = -1;
-static int hf_netmon_event_flags = -1;
-static int hf_netmon_event_flags_extended_info = -1;
-static int hf_netmon_event_flags_private_session = -1;
-static int hf_netmon_event_flags_string_only = -1;
-static int hf_netmon_event_flags_trace_message = -1;
-static int hf_netmon_event_flags_no_cputime = -1;
-static int hf_netmon_event_flags_32bit_header = -1;
-static int hf_netmon_event_flags_64bit_header = -1;
-static int hf_netmon_event_flags_classic_header = -1;
-static int hf_netmon_event_event_property = -1;
-static int hf_netmon_event_event_property_xml = -1;
-static int hf_netmon_event_event_property_forwarded_xml = -1;
-static int hf_netmon_event_event_property_legacy_eventlog = -1;
-static int hf_netmon_event_thread_id = -1;
-static int hf_netmon_event_process_id = -1;
-static int hf_netmon_event_timestamp = -1;
-static int hf_netmon_event_provider_id = -1;
-static int hf_netmon_event_event_desc_id = -1;
-static int hf_netmon_event_event_desc_version = -1;
-static int hf_netmon_event_event_desc_channel = -1;
-static int hf_netmon_event_event_desc_level = -1;
-static int hf_netmon_event_event_desc_opcode = -1;
-static int hf_netmon_event_event_desc_task = -1;
-static int hf_netmon_event_event_desc_keyword = -1;
-static int hf_netmon_event_kernel_time = -1;
-static int hf_netmon_event_user_time = -1;
-static int hf_netmon_event_processor_time = -1;
-static int hf_netmon_event_activity_id = -1;
-static int hf_netmon_event_processor_number = -1;
-static int hf_netmon_event_alignment = -1;
-static int hf_netmon_event_logger_id = -1;
-static int hf_netmon_event_extended_data_count = -1;
-static int hf_netmon_event_user_data_length = -1;
-static int hf_netmon_event_reassembled = -1;
-static int hf_netmon_event_extended_data_reserved = -1;
-static int hf_netmon_event_extended_data_type = -1;
-static int hf_netmon_event_extended_data_linkage = -1;
-static int hf_netmon_event_extended_data_reserved2 = -1;
-static int hf_netmon_event_extended_data_size = -1;
-static int hf_netmon_event_extended_data = -1;
-static int hf_netmon_event_user_data = -1;
+static int hf_netmon_event_size;
+static int hf_netmon_event_header_type;
+static int hf_netmon_event_flags;
+static int hf_netmon_event_flags_extended_info;
+static int hf_netmon_event_flags_private_session;
+static int hf_netmon_event_flags_string_only;
+static int hf_netmon_event_flags_trace_message;
+static int hf_netmon_event_flags_no_cputime;
+static int hf_netmon_event_flags_32bit_header;
+static int hf_netmon_event_flags_64bit_header;
+static int hf_netmon_event_flags_classic_header;
+static int hf_netmon_event_event_property;
+static int hf_netmon_event_event_property_xml;
+static int hf_netmon_event_event_property_forwarded_xml;
+static int hf_netmon_event_event_property_legacy_eventlog;
+static int hf_netmon_event_thread_id;
+static int hf_netmon_event_process_id;
+static int hf_netmon_event_timestamp;
+static int hf_netmon_event_provider_id;
+static int hf_netmon_event_event_desc_id;
+static int hf_netmon_event_event_desc_version;
+static int hf_netmon_event_event_desc_channel;
+static int hf_netmon_event_event_desc_level;
+static int hf_netmon_event_event_desc_opcode;
+static int hf_netmon_event_event_desc_task;
+static int hf_netmon_event_event_desc_keyword;
+static int hf_netmon_event_kernel_time;
+static int hf_netmon_event_user_time;
+static int hf_netmon_event_processor_time;
+static int hf_netmon_event_activity_id;
+static int hf_netmon_event_processor_number;
+static int hf_netmon_event_alignment;
+static int hf_netmon_event_logger_id;
+static int hf_netmon_event_extended_data_count;
+static int hf_netmon_event_user_data_length;
+static int hf_netmon_event_reassembled;
+static int hf_netmon_event_extended_data_reserved;
+static int hf_netmon_event_extended_data_type;
+static int hf_netmon_event_extended_data_linkage;
+static int hf_netmon_event_extended_data_reserved2;
+static int hf_netmon_event_extended_data_size;
+static int hf_netmon_event_extended_data;
+static int hf_netmon_event_user_data;
 
-static int hf_netmon_filter_version = -1;
-static int hf_netmon_filter_type = -1;
-static int hf_netmon_filter_app_major_version = -1;
-static int hf_netmon_filter_app_minor_version = -1;
-static int hf_netmon_filter_app_name = -1;
-static int hf_netmon_filter_filter = -1;
+static int hf_netmon_filter_version;
+static int hf_netmon_filter_type;
+static int hf_netmon_filter_app_major_version;
+static int hf_netmon_filter_app_minor_version;
+static int hf_netmon_filter_app_name;
+static int hf_netmon_filter_filter;
 
-static int hf_netmon_network_info_version = -1;
-static int hf_netmon_network_info_adapter_count = -1;
-static int hf_netmon_network_info_computer_name = -1;
-static int hf_netmon_network_info_friendly_name = -1;
-static int hf_netmon_network_info_description = -1;
-static int hf_netmon_network_info_miniport_guid = -1;
-static int hf_netmon_network_info_media_type = -1;
-static int hf_netmon_network_info_mtu = -1;
-static int hf_netmon_network_info_link_speed = -1;
-static int hf_netmon_network_info_mac_address = -1;
-static int hf_netmon_network_info_ipv4_count = -1;
-static int hf_netmon_network_info_ipv6_count = -1;
-static int hf_netmon_network_info_gateway_count = -1;
-static int hf_netmon_network_info_dhcp_server_count = -1;
-static int hf_netmon_network_info_dns_ipv4_count = -1;
-static int hf_netmon_network_info_dns_ipv6_count = -1;
-static int hf_netmon_network_info_ipv4 = -1;
-static int hf_netmon_network_info_subnet = -1;
-static int hf_netmon_network_info_ipv6 = -1;
-static int hf_netmon_network_info_gateway = -1;
-static int hf_netmon_network_info_dhcp_server = -1;
-static int hf_netmon_network_info_dns_ipv4 = -1;
-static int hf_netmon_network_info_dns_ipv6 = -1;
+static int hf_netmon_network_info_version;
+static int hf_netmon_network_info_adapter_count;
+static int hf_netmon_network_info_computer_name;
+static int hf_netmon_network_info_friendly_name;
+static int hf_netmon_network_info_description;
+static int hf_netmon_network_info_miniport_guid;
+static int hf_netmon_network_info_media_type;
+static int hf_netmon_network_info_mtu;
+static int hf_netmon_network_info_link_speed;
+static int hf_netmon_network_info_mac_address;
+static int hf_netmon_network_info_ipv4_count;
+static int hf_netmon_network_info_ipv6_count;
+static int hf_netmon_network_info_gateway_count;
+static int hf_netmon_network_info_dhcp_server_count;
+static int hf_netmon_network_info_dns_ipv4_count;
+static int hf_netmon_network_info_dns_ipv6_count;
+static int hf_netmon_network_info_ipv4;
+static int hf_netmon_network_info_subnet;
+static int hf_netmon_network_info_ipv6;
+static int hf_netmon_network_info_gateway;
+static int hf_netmon_network_info_dhcp_server;
+static int hf_netmon_network_info_dns_ipv4;
+static int hf_netmon_network_info_dns_ipv6;
 
-static int hf_netmon_system_trace_buffer_size = -1;
-static int hf_netmon_system_trace_version = -1;
-static int hf_netmon_system_trace_provider_version = -1;
-static int hf_netmon_system_trace_num_processors = -1;
-static int hf_netmon_system_trace_end_time = -1;
-static int hf_netmon_system_trace_timer_resolution = -1;
-static int hf_netmon_system_trace_max_file_size = -1;
-static int hf_netmon_system_trace_log_file_mode = -1;
-static int hf_netmon_system_trace_buffers_written = -1;
-static int hf_netmon_system_trace_start_buffers = -1;
-static int hf_netmon_system_trace_pointers_size = -1;
-static int hf_netmon_system_trace_events_lost = -1;
-static int hf_netmon_system_trace_cpu_speed = -1;
-static int hf_netmon_system_trace_logger_name = -1;
-static int hf_netmon_system_trace_log_file_name_ptr = -1;
-static int hf_netmon_system_trace_time_zone_info = -1;
-static int hf_netmon_system_trace_boot_time = -1;
-static int hf_netmon_system_trace_perf_freq = -1;
-static int hf_netmon_system_trace_start_time = -1;
-static int hf_netmon_system_trace_reserved_flags = -1;
-static int hf_netmon_system_trace_buffers_lost = -1;
-static int hf_netmon_system_trace_session_name = -1;
-static int hf_netmon_system_trace_log_file_name = -1;
-static int hf_netmon_system_trace_group_mask1 = -1;
-static int hf_netmon_system_trace_group_mask2 = -1;
-static int hf_netmon_system_trace_group_mask3 = -1;
-static int hf_netmon_system_trace_group_mask4 = -1;
-static int hf_netmon_system_trace_group_mask5 = -1;
-static int hf_netmon_system_trace_group_mask6 = -1;
-static int hf_netmon_system_trace_group_mask7 = -1;
-static int hf_netmon_system_trace_group_mask8 = -1;
-static int hf_netmon_system_trace_kernel_event_version = -1;
+static int hf_netmon_system_trace_buffer_size;
+static int hf_netmon_system_trace_version;
+static int hf_netmon_system_trace_provider_version;
+static int hf_netmon_system_trace_num_processors;
+static int hf_netmon_system_trace_end_time;
+static int hf_netmon_system_trace_timer_resolution;
+static int hf_netmon_system_trace_max_file_size;
+static int hf_netmon_system_trace_log_file_mode;
+static int hf_netmon_system_trace_buffers_written;
+static int hf_netmon_system_trace_start_buffers;
+static int hf_netmon_system_trace_pointers_size;
+static int hf_netmon_system_trace_events_lost;
+static int hf_netmon_system_trace_cpu_speed;
+static int hf_netmon_system_trace_logger_name;
+static int hf_netmon_system_trace_log_file_name_ptr;
+static int hf_netmon_system_trace_time_zone_info;
+static int hf_netmon_system_trace_boot_time;
+static int hf_netmon_system_trace_perf_freq;
+static int hf_netmon_system_trace_start_time;
+static int hf_netmon_system_trace_reserved_flags;
+static int hf_netmon_system_trace_buffers_lost;
+static int hf_netmon_system_trace_session_name;
+static int hf_netmon_system_trace_log_file_name;
+static int hf_netmon_system_trace_group_mask1;
+static int hf_netmon_system_trace_group_mask2;
+static int hf_netmon_system_trace_group_mask3;
+static int hf_netmon_system_trace_group_mask4;
+static int hf_netmon_system_trace_group_mask5;
+static int hf_netmon_system_trace_group_mask6;
+static int hf_netmon_system_trace_group_mask7;
+static int hf_netmon_system_trace_group_mask8;
+static int hf_netmon_system_trace_kernel_event_version;
 
-static int hf_netmon_system_config_mhz = -1;
-static int hf_netmon_system_config_num_processors = -1;
-static int hf_netmon_system_config_mem_size = -1;
-static int hf_netmon_system_config_page_size = -1;
-static int hf_netmon_system_config_allocation_granularity = -1;
-static int hf_netmon_system_config_computer_name = -1;
-static int hf_netmon_system_config_domain_name = -1;
-static int hf_netmon_system_config_hyper_threading_flag = -1;
-static int hf_netmon_system_config_disk_number = -1;
-static int hf_netmon_system_config_bytes_per_sector = -1;
-static int hf_netmon_system_config_sectors_per_track = -1;
-static int hf_netmon_system_config_tracks_per_cylinder = -1;
-static int hf_netmon_system_config_cylinders = -1;
-static int hf_netmon_system_config_scsi_port = -1;
-static int hf_netmon_system_config_scsi_path = -1;
-static int hf_netmon_system_config_scsi_target = -1;
-static int hf_netmon_system_config_scsi_lun = -1;
-static int hf_netmon_system_config_manufacturer = -1;
-static int hf_netmon_system_config_partition_count = -1;
-static int hf_netmon_system_config_write_cache_enabled = -1;
-static int hf_netmon_system_config_pad = -1;
-static int hf_netmon_system_config_boot_drive_letter = -1;
-static int hf_netmon_system_config_spare = -1;
-static int hf_netmon_system_config_start_offset = -1;
-static int hf_netmon_system_config_partition_size = -1;
-static int hf_netmon_system_config_size = -1;
-static int hf_netmon_system_config_drive_type = -1;
-static int hf_netmon_system_config_drive_letter = -1;
-static int hf_netmon_system_config_partition_number = -1;
-static int hf_netmon_system_config_sectors_per_cluster = -1;
-static int hf_netmon_system_config_num_free_clusters = -1;
-static int hf_netmon_system_config_total_num_clusters = -1;
-static int hf_netmon_system_config_file_system = -1;
-static int hf_netmon_system_config_volume_ext = -1;
-static int hf_netmon_system_config_physical_addr = -1;
-static int hf_netmon_system_config_physical_addr_len = -1;
-static int hf_netmon_system_config_ipv4_index = -1;
-static int hf_netmon_system_config_ipv6_index = -1;
-static int hf_netmon_system_config_nic_description = -1;
-static int hf_netmon_system_config_ipaddresses = -1;
-static int hf_netmon_system_config_dns_server_addresses = -1;
-static int hf_netmon_system_config_memory_size = -1;
-static int hf_netmon_system_config_x_resolution = -1;
-static int hf_netmon_system_config_y_resolution = -1;
-static int hf_netmon_system_config_bits_per_pixel = -1;
-static int hf_netmon_system_config_vrefresh = -1;
-static int hf_netmon_system_config_chip_type = -1;
-static int hf_netmon_system_config_dac_type = -1;
-static int hf_netmon_system_config_adapter_string = -1;
-static int hf_netmon_system_config_bios_string = -1;
-static int hf_netmon_system_config_device_id = -1;
-static int hf_netmon_system_config_state_flags = -1;
-static int hf_netmon_system_config_process_id = -1;
-static int hf_netmon_system_config_service_state = -1;
-static int hf_netmon_system_config_sub_process_tag = -1;
-static int hf_netmon_system_config_service_name = -1;
-static int hf_netmon_system_config_display_name = -1;
-static int hf_netmon_system_config_process_name = -1;
-static int hf_netmon_system_config_s1 = -1;
-static int hf_netmon_system_config_s2 = -1;
-static int hf_netmon_system_config_s3 = -1;
-static int hf_netmon_system_config_s4 = -1;
-static int hf_netmon_system_config_s5 = -1;
-static int hf_netmon_system_config_tcb_table_partitions = -1;
-static int hf_netmon_system_config_max_hash_table_size = -1;
-static int hf_netmon_system_config_max_user_port = -1;
-static int hf_netmon_system_config_tcp_timed_wait_delay = -1;
-static int hf_netmon_system_config_irq_affinity = -1;
-static int hf_netmon_system_config_irq_num = -1;
-static int hf_netmon_system_config_device_desc_len = -1;
-static int hf_netmon_system_config_device_desc = -1;
-static int hf_netmon_system_config_device_id_len = -1;
-static int hf_netmon_system_config_friendly_name_len = -1;
-static int hf_netmon_system_config_friendly_name = -1;
-static int hf_netmon_system_config_target_id = -1;
-static int hf_netmon_system_config_device_type = -1;
-static int hf_netmon_system_config_device_timing_mode = -1;
-static int hf_netmon_system_config_location_information_len = -1;
-static int hf_netmon_system_config_location_information = -1;
-static int hf_netmon_system_config_system_manufacturer = -1;
-static int hf_netmon_system_config_system_product_name = -1;
-static int hf_netmon_system_config_bios_date = -1;
-static int hf_netmon_system_config_bios_version = -1;
-static int hf_netmon_system_config_load_order_group = -1;
-static int hf_netmon_system_config_svc_host_group = -1;
-static int hf_netmon_system_config_irq_group = -1;
-static int hf_netmon_system_config_pdo_name = -1;
-static int hf_netmon_system_config_nic_name = -1;
-static int hf_netmon_system_config_index = -1;
-static int hf_netmon_system_config_physical_addr_str = -1;
-static int hf_netmon_system_config_ip_address = -1;
-static int hf_netmon_system_config_subnet_mask = -1;
-static int hf_netmon_system_config_dhcp_server = -1;
-static int hf_netmon_system_config_gateway = -1;
-static int hf_netmon_system_config_primary_wins_server = -1;
-static int hf_netmon_system_config_secondary_wins_server = -1;
-static int hf_netmon_system_config_dns_server1 = -1;
-static int hf_netmon_system_config_dns_server2 = -1;
-static int hf_netmon_system_config_dns_server3 = -1;
-static int hf_netmon_system_config_dns_server4 = -1;
-static int hf_netmon_system_config_data = -1;
-
-
-
-static int hf_netmon_process_unique_process_key = -1;
-static int hf_netmon_process_process_id = -1;
-static int hf_netmon_process_parent_id = -1;
-static int hf_netmon_process_session_id = -1;
-static int hf_netmon_process_exit_status = -1;
-static int hf_netmon_process_directory_table_base = -1;
-static int hf_netmon_process_unknown = -1;
-static int hf_netmon_process_user_sid_revision = -1;
-static int hf_netmon_process_user_sid_subauth_count = -1;
-static int hf_netmon_process_user_sid_id = -1;
-static int hf_netmon_process_user_sid_authority = -1;
-static int hf_netmon_process_image_file_name = -1;
-static int hf_netmon_process_command_line = -1;
-static int hf_netmon_process_page_directory_base = -1;
-static int hf_netmon_process_page_fault_count = -1;
-static int hf_netmon_process_handle_count = -1;
-static int hf_netmon_process_reserved = -1;
-static int hf_netmon_process_peak_virtual_size = -1;
-static int hf_netmon_process_peak_working_set_size = -1;
-static int hf_netmon_process_peak_page_file_usage = -1;
-static int hf_netmon_process_quota_peak_paged_pool_usage = -1;
-static int hf_netmon_process_quota_peak_non_paged_pool_usage = -1;
-static int hf_netmon_process_virtual_size = -1;
-static int hf_netmon_process_workingset_size = -1;
-static int hf_netmon_process_pagefile_usage = -1;
-static int hf_netmon_process_quota_paged_pool_usage = -1;
-static int hf_netmon_process_quota_non_paged_pool_usage = -1;
-static int hf_netmon_process_private_page_count = -1;
-static int hf_netmon_process_directory_table_base32 = -1;
+static int hf_netmon_system_config_mhz;
+static int hf_netmon_system_config_num_processors;
+static int hf_netmon_system_config_mem_size;
+static int hf_netmon_system_config_page_size;
+static int hf_netmon_system_config_allocation_granularity;
+static int hf_netmon_system_config_computer_name;
+static int hf_netmon_system_config_domain_name;
+static int hf_netmon_system_config_hyper_threading_flag;
+static int hf_netmon_system_config_disk_number;
+static int hf_netmon_system_config_bytes_per_sector;
+static int hf_netmon_system_config_sectors_per_track;
+static int hf_netmon_system_config_tracks_per_cylinder;
+static int hf_netmon_system_config_cylinders;
+static int hf_netmon_system_config_scsi_port;
+static int hf_netmon_system_config_scsi_path;
+static int hf_netmon_system_config_scsi_target;
+static int hf_netmon_system_config_scsi_lun;
+static int hf_netmon_system_config_manufacturer;
+static int hf_netmon_system_config_partition_count;
+static int hf_netmon_system_config_write_cache_enabled;
+static int hf_netmon_system_config_pad;
+static int hf_netmon_system_config_boot_drive_letter;
+static int hf_netmon_system_config_spare;
+static int hf_netmon_system_config_start_offset;
+static int hf_netmon_system_config_partition_size;
+static int hf_netmon_system_config_size;
+static int hf_netmon_system_config_drive_type;
+static int hf_netmon_system_config_drive_letter;
+static int hf_netmon_system_config_partition_number;
+static int hf_netmon_system_config_sectors_per_cluster;
+static int hf_netmon_system_config_num_free_clusters;
+static int hf_netmon_system_config_total_num_clusters;
+static int hf_netmon_system_config_file_system;
+static int hf_netmon_system_config_volume_ext;
+static int hf_netmon_system_config_physical_addr;
+static int hf_netmon_system_config_physical_addr_len;
+static int hf_netmon_system_config_ipv4_index;
+static int hf_netmon_system_config_ipv6_index;
+static int hf_netmon_system_config_nic_description;
+static int hf_netmon_system_config_ipaddresses;
+static int hf_netmon_system_config_dns_server_addresses;
+static int hf_netmon_system_config_memory_size;
+static int hf_netmon_system_config_x_resolution;
+static int hf_netmon_system_config_y_resolution;
+static int hf_netmon_system_config_bits_per_pixel;
+static int hf_netmon_system_config_vrefresh;
+static int hf_netmon_system_config_chip_type;
+static int hf_netmon_system_config_dac_type;
+static int hf_netmon_system_config_adapter_string;
+static int hf_netmon_system_config_bios_string;
+static int hf_netmon_system_config_device_id;
+static int hf_netmon_system_config_state_flags;
+static int hf_netmon_system_config_process_id;
+static int hf_netmon_system_config_service_state;
+static int hf_netmon_system_config_sub_process_tag;
+static int hf_netmon_system_config_service_name;
+static int hf_netmon_system_config_display_name;
+static int hf_netmon_system_config_process_name;
+static int hf_netmon_system_config_s1;
+static int hf_netmon_system_config_s2;
+static int hf_netmon_system_config_s3;
+static int hf_netmon_system_config_s4;
+static int hf_netmon_system_config_s5;
+static int hf_netmon_system_config_tcb_table_partitions;
+static int hf_netmon_system_config_max_hash_table_size;
+static int hf_netmon_system_config_max_user_port;
+static int hf_netmon_system_config_tcp_timed_wait_delay;
+static int hf_netmon_system_config_irq_affinity;
+static int hf_netmon_system_config_irq_num;
+static int hf_netmon_system_config_device_desc_len;
+static int hf_netmon_system_config_device_desc;
+static int hf_netmon_system_config_device_id_len;
+static int hf_netmon_system_config_friendly_name_len;
+static int hf_netmon_system_config_friendly_name;
+static int hf_netmon_system_config_target_id;
+static int hf_netmon_system_config_device_type;
+static int hf_netmon_system_config_device_timing_mode;
+static int hf_netmon_system_config_location_information_len;
+static int hf_netmon_system_config_location_information;
+static int hf_netmon_system_config_system_manufacturer;
+static int hf_netmon_system_config_system_product_name;
+static int hf_netmon_system_config_bios_date;
+static int hf_netmon_system_config_bios_version;
+static int hf_netmon_system_config_load_order_group;
+static int hf_netmon_system_config_svc_host_group;
+static int hf_netmon_system_config_irq_group;
+static int hf_netmon_system_config_pdo_name;
+static int hf_netmon_system_config_nic_name;
+static int hf_netmon_system_config_index;
+static int hf_netmon_system_config_physical_addr_str;
+static int hf_netmon_system_config_ip_address;
+static int hf_netmon_system_config_subnet_mask;
+static int hf_netmon_system_config_dhcp_server;
+static int hf_netmon_system_config_gateway;
+static int hf_netmon_system_config_primary_wins_server;
+static int hf_netmon_system_config_secondary_wins_server;
+static int hf_netmon_system_config_dns_server1;
+static int hf_netmon_system_config_dns_server2;
+static int hf_netmon_system_config_dns_server3;
+static int hf_netmon_system_config_dns_server4;
+static int hf_netmon_system_config_data;
 
 
-static gint ett_netmon_header = -1;
-static gint ett_netmon_event = -1;
-static gint ett_netmon_event_desc = -1;
-static gint ett_netmon_event_flags = -1;
-static gint ett_netmon_event_property = -1;
-static gint ett_netmon_event_extended_data = -1;
-static gint ett_netmon_filter = -1;
-static gint ett_netmon_network_info = -1;
-static gint ett_netmon_network_info_list = -1;
-static gint ett_netmon_network_info_adapter = -1;
-static gint ett_netmon_system_trace = -1;
-static gint ett_netmon_event_buffer_context = -1;
-static gint ett_netmon_process = -1;
-static gint ett_netmon_sid = -1;
-static gint ett_netmon_system_config = -1;
 
-static expert_field ei_netmon_process_user_sid = EI_INIT;
+static int hf_netmon_process_unique_process_key;
+static int hf_netmon_process_process_id;
+static int hf_netmon_process_parent_id;
+static int hf_netmon_process_session_id;
+static int hf_netmon_process_exit_status;
+static int hf_netmon_process_directory_table_base;
+static int hf_netmon_process_unknown;
+static int hf_netmon_process_user_sid_revision;
+static int hf_netmon_process_user_sid_subauth_count;
+static int hf_netmon_process_user_sid_id;
+static int hf_netmon_process_user_sid_authority;
+static int hf_netmon_process_image_file_name;
+static int hf_netmon_process_command_line;
+static int hf_netmon_process_page_directory_base;
+static int hf_netmon_process_page_fault_count;
+static int hf_netmon_process_handle_count;
+static int hf_netmon_process_reserved;
+static int hf_netmon_process_peak_virtual_size;
+static int hf_netmon_process_peak_working_set_size;
+static int hf_netmon_process_peak_page_file_usage;
+static int hf_netmon_process_quota_peak_paged_pool_usage;
+static int hf_netmon_process_quota_peak_non_paged_pool_usage;
+static int hf_netmon_process_virtual_size;
+static int hf_netmon_process_workingset_size;
+static int hf_netmon_process_pagefile_usage;
+static int hf_netmon_process_quota_paged_pool_usage;
+static int hf_netmon_process_quota_non_paged_pool_usage;
+static int hf_netmon_process_private_page_count;
+static int hf_netmon_process_directory_table_base32;
+
+
+static int ett_netmon_header;
+static int ett_netmon_event;
+static int ett_netmon_event_desc;
+static int ett_netmon_event_flags;
+static int ett_netmon_event_property;
+static int ett_netmon_event_extended_data;
+static int ett_netmon_filter;
+static int ett_netmon_network_info;
+static int ett_netmon_network_info_list;
+static int ett_netmon_network_info_adapter;
+static int ett_netmon_system_trace;
+static int ett_netmon_event_buffer_context;
+static int ett_netmon_process;
+static int ett_netmon_sid;
+static int ett_netmon_system_config;
+
+static expert_field ei_netmon_process_user_sid;
 
 static dissector_table_t wtap_encap_table;
 
 void
-netmon_etl_field(proto_tree *tree, tvbuff_t *tvb, int* offset, int hf, guint16 flags)
+netmon_etl_field(proto_tree *tree, tvbuff_t *tvb, int* offset, int hf, uint16_t flags)
 {
 	if (flags & EVENT_HEADER_FLAG_64_BIT_HEADER) {
 		/* XXX - This seems to be how values are displayed in Network Monitor */
-		guint64 value = tvb_get_letoh64(tvb, *offset) & 0xFFFFFFFF;
+		uint64_t value = tvb_get_letoh64(tvb, *offset) & 0xFFFFFFFF;
 		proto_tree_add_uint64(tree, hf, tvb, *offset, 8, value);
 		(*offset) += 8;
 	} else {
@@ -361,12 +363,12 @@ netmon_etl_field(proto_tree *tree, tvbuff_t *tvb, int* offset, int hf, guint16 f
 
 void
 netmon_sid_field(proto_tree *tree, tvbuff_t *tvb, int* offset, packet_info *pinfo,
-				int hf_revision, int hf_subauthority_count, int hf_sid_id, int hf_sid_authority, expert_field* invalid_sid, gboolean conformant _U_)
+				int hf_revision, int hf_subauthority_count, int hf_sid_id, int hf_sid_authority, expert_field* invalid_sid, bool conformant _U_)
 {
 	proto_item *ti, *sid_item;
 	proto_tree *sid_tree;
 	int start_offset = *offset;
-	guint32 i, revision, count;
+	uint32_t i, revision, count;
 
 	sid_tree = proto_tree_add_subtree(tree, tvb, *offset, 2, ett_netmon_sid, &sid_item, "SID");
 
@@ -402,35 +404,26 @@ dissect_netmon_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void*
 	proto_item *ti;
 	proto_tree *header_tree;
 	union wtap_pseudo_header temp_header;
-	gchar *comment;
-	GIConv cd;
+	char *comment;
 
 	ti = proto_tree_add_item(tree, proto_netmon_header, tvb, 0, 0, ENC_NA);
 	header_tree = proto_item_add_subtree(ti, ett_netmon_header);
 
 	if (pinfo->pseudo_header->netmon.title != NULL) {
-		/* Title comment is UTF-16 */
-
-		if ((cd = g_iconv_open("UTF-8", "UTF-16")) != (GIConv) -1)
-		{
-			comment = g_convert_with_iconv(pinfo->pseudo_header->netmon.title, pinfo->pseudo_header->netmon.titleLength, cd, NULL, NULL, NULL);
-			g_iconv_close(cd);
-
-			ti = proto_tree_add_string(header_tree, hf_netmon_header_title_comment, tvb, 0, 0, comment);
-			PROTO_ITEM_SET_GENERATED(ti);
-			g_free(comment);
-		}
-
+		ti = proto_tree_add_string(header_tree, hf_netmon_header_title_comment, tvb, 0, 0, pinfo->pseudo_header->netmon.title);
+		proto_item_set_generated(ti);
 	}
 
 	if (pinfo->pseudo_header->netmon.description != NULL) {
-		/* Description comment is only ASCII */
+		/* Description comment is only ASCII.  However, it's
+		 * RTF, not raw text.
+		 */
 
 		/* Ensure string termination */
-		comment = wmem_strndup(wmem_packet_scope(), pinfo->pseudo_header->netmon.description, pinfo->pseudo_header->netmon.descLength);
+		comment = wmem_strndup(pinfo->pool, pinfo->pseudo_header->netmon.description, pinfo->pseudo_header->netmon.descLength);
 
 		ti = proto_tree_add_string(header_tree, hf_netmon_header_description_comment, tvb, 0, 0, comment);
-		PROTO_ITEM_SET_GENERATED(ti);
+		proto_item_set_generated(ti);
 	}
 
 	/* Save the pseudo header data to a temp variable before it's copied to
@@ -452,8 +445,8 @@ dissect_netmon_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void*
 		break;
 	}
 
-	if (!dissector_try_uint_new(wtap_encap_table,
-		pinfo->pseudo_header->netmon.sub_encap, tvb, pinfo, tree, TRUE,
+	if (!dissector_try_uint_with_data(wtap_encap_table,
+		pinfo->pseudo_header->netmon.sub_encap, tvb, pinfo, tree, true,
 		(void *)pinfo->pseudo_header)) {
 		call_data_dissector(tvb, pinfo, tree);
 	}
@@ -467,12 +460,12 @@ dissect_netmon_event(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
 	proto_item *ti, *extended_data_item;
 	proto_tree *event_tree, *event_desc_tree, *extended_data_tree, *buffer_context_tree;
 	int offset = 0, extended_data_count_offset;
-	guint32 i, thread_id, process_id, extended_data_count, extended_data_size, user_data_size;
+	uint32_t i, thread_id, process_id, extended_data_count, extended_data_size, user_data_size;
 	nstime_t timestamp;
 	tvbuff_t *provider_id_tvb;
 	guid_key provider_guid;
 	struct netmon_provider_id_data provider_id_data;
-	static const int * event_flags[] = {
+	static int * const event_flags[] = {
 		&hf_netmon_event_flags_extended_info,
 		&hf_netmon_event_flags_private_session,
 		&hf_netmon_event_flags_string_only,
@@ -483,7 +476,7 @@ dissect_netmon_event(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
 		&hf_netmon_event_flags_classic_header,
 		NULL
 	};
-	static const int * event_property[] = {
+	static int * const event_property[] = {
 		&hf_netmon_event_event_property_xml,
 		&hf_netmon_event_event_property_forwarded_xml,
 		&hf_netmon_event_event_property_legacy_eventlog,
@@ -526,19 +519,19 @@ dissect_netmon_event(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
 	offset += 16;
 
 	col_add_fstr(pinfo->cinfo, COL_INFO, "Thread ID: %d, Process ID: %d, Provider ID: %s",
-										thread_id, process_id, guid_to_str(wmem_packet_scope(), &provider_guid.guid));
+										thread_id, process_id, guid_to_str(pinfo->pool, &provider_guid.guid));
 
 	event_desc_tree = proto_tree_add_subtree(event_tree, tvb, offset, 16, ett_netmon_event_desc, NULL, "Event Descriptor");
 	proto_tree_add_item_ret_uint(event_desc_tree, hf_netmon_event_event_desc_id, tvb, offset, 2, ENC_LITTLE_ENDIAN, &provider_id_data.event_id);
 	offset += 2;
-	provider_id_data.event_version = tvb_get_guint8(tvb, offset);
+	provider_id_data.event_version = tvb_get_uint8(tvb, offset);
 	proto_tree_add_item(event_desc_tree, hf_netmon_event_event_desc_version, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 	offset += 1;
 	proto_tree_add_item(event_desc_tree, hf_netmon_event_event_desc_channel, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 	offset += 1;
 	proto_tree_add_item(event_desc_tree, hf_netmon_event_event_desc_level, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 	offset += 1;
-	provider_id_data.opcode = tvb_get_guint8(tvb, offset);
+	provider_id_data.opcode = tvb_get_uint8(tvb, offset);
 	proto_tree_add_item(event_desc_tree, hf_netmon_event_event_desc_opcode, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 	offset += 1;
 	proto_tree_add_item(event_desc_tree, hf_netmon_event_event_desc_task, tvb, offset, 2, ENC_LITTLE_ENDIAN);
@@ -597,7 +590,7 @@ dissect_netmon_event(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
 	}
 
 	provider_id_tvb = tvb_new_subset_remaining(tvb, offset);
-	if (!dissector_try_guid_new(provider_id_table, &provider_guid, provider_id_tvb, pinfo, tree, TRUE, &provider_id_data))
+	if (!dissector_try_guid_with_data(provider_id_table, &provider_guid, provider_id_tvb, pinfo, tree, true, &provider_id_data))
 	{
 		proto_tree_add_item(event_tree, hf_netmon_event_user_data, tvb, offset, user_data_size, ENC_NA);
 		offset += user_data_size;
@@ -613,8 +606,8 @@ dissect_netmon_filter(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void*
 	proto_item *ti;
 	proto_tree *filter_tree;
 	int offset = 0;
-	guint length;
-	const guint8* filter;
+	unsigned length;
+	const uint8_t* filter;
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "NetMon Filter");
 	/* Clear out stuff in the info column */
@@ -636,7 +629,7 @@ dissect_netmon_filter(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void*
 	offset += length;
 	length = tvb_unicode_strsize(tvb, offset);
 	proto_tree_add_item_ret_string(filter_tree, hf_netmon_filter_filter, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16,
-									wmem_packet_scope(), &filter);
+									pinfo->pool, &filter);
 	col_add_fstr(pinfo->cinfo, COL_INFO, "Filter: %s", filter);
 
 	return tvb_captured_length(tvb);
@@ -649,8 +642,8 @@ dissect_netmon_network_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 	proto_item *ti, *list_item, *adapter_item;
 	proto_tree *network_info_tree, *list_tree, *adapter_tree;
 	int offset = 0, list_start_offset, adapter_start_offset;
-	guint adapter, adapter_count, length;
-	guint64 link_speed;
+	unsigned adapter, adapter_count, length;
+	uint64_t link_speed;
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "NetMon Network Info");
 	/* Clear out stuff in the info column */
@@ -675,7 +668,7 @@ dissect_netmon_network_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 		list_tree = proto_tree_add_subtree(network_info_tree, tvb, offset, 1, ett_netmon_network_info_list, &list_item, "NetworkInfo");
 		for (adapter = 1; adapter <= adapter_count; adapter++)
 		{
-			guint32 loop, ipv4_count, ipv6_count, gateway_count, dhcp_server_count, dns_ipv4_count, dns_ipv6_count;
+			uint32_t loop, ipv4_count, ipv6_count, gateway_count, dhcp_server_count, dns_ipv4_count, dns_ipv6_count;
 
 			adapter_start_offset = offset;
 			adapter_tree = proto_tree_add_subtree_format(list_tree, tvb, offset, 1, ett_netmon_network_info_adapter, &adapter_item, "Adapter #%d", adapter);
@@ -700,19 +693,19 @@ dissect_netmon_network_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 			}
 			else if (link_speed >= 1000 * 1000 * 1000)
 			{
-			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" G_GINT64_MODIFIER "u Gbps", link_speed/(1000*1000*1000));
+			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" PRIu64 " Gbps", link_speed/(1000*1000*1000));
 			}
 			else if (link_speed >= 1000 * 1000)
 			{
-			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" G_GINT64_MODIFIER "u Mbps", link_speed/(1000*1000));
+			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" PRIu64 " Mbps", link_speed/(1000*1000));
 			}
 			else if (link_speed >= 1000)
 			{
-			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" G_GINT64_MODIFIER "u Kbps", link_speed/1000);
+			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" PRIu64 " Kbps", link_speed/1000);
 			}
 			else
 			{
-			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" G_GINT64_MODIFIER "u bps", link_speed);
+			    proto_tree_add_uint64_format_value(adapter_tree, hf_netmon_network_info_link_speed, tvb, offset, 8, link_speed, "%" PRIu64 " bps", link_speed);
 			}
 			offset += 8;
 			proto_tree_add_item(adapter_tree, hf_netmon_network_info_mac_address, tvb, offset, 6, ENC_NA);
@@ -783,9 +776,9 @@ dissect_netmon_system_trace(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 	proto_tree *system_tree;
 	int offset = 0;
 	struct netmon_provider_id_data *provider_id_data = (struct netmon_provider_id_data*)data;
-	guint length;
+	unsigned length;
 	nstime_t timestamp;
-	guint64 raw_timestamp;
+	uint64_t raw_timestamp;
 
 	DISSECTOR_ASSERT(provider_id_data != NULL);
 
@@ -902,9 +895,9 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 	proto_tree *system_tree;
 	int offset = 0;
 	struct netmon_provider_id_data *provider_id_data = (struct netmon_provider_id_data*)data;
-	guint length;
-	guint32 field1, field2;
-	const guint8 *str_field1, *str_field2, *str_field3, *str_field4;
+	unsigned length;
+	uint32_t field1, field2;
+	const uint8_t *str_field1, *str_field2, *str_field3, *str_field4;
 
 	DISSECTOR_ASSERT(provider_id_data != NULL);
 
@@ -958,7 +951,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_scsi_lun, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_manufacturer, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_manufacturer, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_partition_count, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
@@ -966,7 +959,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 1;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_pad, tvb, offset, 1, ENC_NA);
 			offset += 1;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_boot_drive_letter, tvb, offset, 6, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_boot_drive_letter, tvb, offset, 6, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 6;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_spare, tvb, offset, 4, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 4;
@@ -984,7 +977,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_drive_type, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_drive_letter, tvb, offset, 8, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_drive_letter, tvb, offset, 8, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 8;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_pad, tvb, offset, 4, ENC_NA);
 			offset += 4;
@@ -1000,14 +993,14 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 8;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_total_num_clusters, tvb, offset, 8, ENC_LITTLE_ENDIAN);
 			offset += 8;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_file_system, tvb, offset, 32, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_file_system, tvb, offset, 32, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 32;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Drive: %s, FileSystem: %s", str_field1, str_field2);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_volume_ext, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
 			break;
 		case 13:
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_nic_name, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_nic_name, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_index, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
@@ -1018,7 +1011,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			proto_tree_add_item(system_tree, hf_netmon_system_config_size, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_ip_address, tvb, offset, 4, ENC_BIG_ENDIAN);
-			col_add_fstr(pinfo->cinfo, COL_INFO, "NIC: %s, Address: %s", str_field1, tvb_ip_to_str(tvb, offset));
+			col_add_fstr(pinfo->cinfo, COL_INFO, "NIC: %s, Address: %s", str_field1, tvb_ip_to_str(pinfo->pool, tvb, offset));
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_subnet_mask, tvb, offset, 4, ENC_BIG_ENDIAN);
 			offset += 4;
@@ -1052,13 +1045,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_vrefresh, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_chip_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_chip_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_dac_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_adapter_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_adapter_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field3);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field3);
 			offset += 512;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Chip: %s, Adapter: %s, Bios: %s", str_field1, str_field2, str_field3);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_device_id, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
@@ -1067,11 +1060,11 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			break;
 		case 15:
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 68;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_display_name, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_process_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_process_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 68;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Service: %s, Process: %s", str_field1, str_field2);
 			proto_tree_add_item_ret_uint(system_tree, hf_netmon_system_config_process_id, tvb, offset, 4, ENC_LITTLE_ENDIAN, &field1);
@@ -1113,13 +1106,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			/* XXX - can we trust sizes above? */
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_device_desc, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "ID: %s, Name: %s", str_field1, str_field2);
 			length = tvb_unicode_strsize(tvb, offset);
@@ -1170,7 +1163,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_scsi_lun, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_manufacturer, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_manufacturer, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_partition_count, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
@@ -1178,7 +1171,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 1;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_pad, tvb, offset, 1, ENC_NA);
 			offset += 1;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_boot_drive_letter, tvb, offset, 6, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_boot_drive_letter, tvb, offset, 6, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 6;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_spare, tvb, offset, 4, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 4;
@@ -1196,7 +1189,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_drive_type, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_drive_letter, tvb, offset, 8, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_drive_letter, tvb, offset, 8, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 8;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_pad, tvb, offset, 4, ENC_NA);
 			offset += 4;
@@ -1212,14 +1205,14 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 8;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_total_num_clusters, tvb, offset, 8, ENC_LITTLE_ENDIAN);
 			offset += 8;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_file_system, tvb, offset, 32, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_file_system, tvb, offset, 32, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 32;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Drive: %s, FileSystem: %s", str_field1, str_field2);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_volume_ext, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
 			break;
 		case 13:
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_nic_name, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_nic_name, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_index, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
@@ -1230,7 +1223,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			proto_tree_add_item(system_tree, hf_netmon_system_config_size, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_ip_address, tvb, offset, 4, ENC_BIG_ENDIAN);
-			col_add_fstr(pinfo->cinfo, COL_INFO, "NIC: %s, Address: %s", str_field1, tvb_ip_to_str(tvb, offset));
+			col_add_fstr(pinfo->cinfo, COL_INFO, "NIC: %s, Address: %s", str_field1, tvb_ip_to_str(pinfo->pool, tvb, offset));
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_subnet_mask, tvb, offset, 4, ENC_BIG_ENDIAN);
 			offset += 4;
@@ -1264,13 +1257,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_vrefresh, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_chip_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_chip_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_dac_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_adapter_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_adapter_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field3);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field3);
 			offset += 512;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Chip: %s, Adapter: %s, Bios: %s", str_field1, str_field2, str_field3);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_device_id, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
@@ -1279,11 +1272,11 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			break;
 		case 15:
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 68;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_display_name, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_process_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_process_name, tvb, offset, 68, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 68;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Service: %s, Process: %s", str_field1, str_field2);
 			proto_tree_add_item_ret_uint(system_tree, hf_netmon_system_config_process_id, tvb, offset, 4, ENC_LITTLE_ENDIAN, &field1);
@@ -1325,13 +1318,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			/* XXX - can we trust sizes above? */
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_device_desc, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "ID: %s, Name: %s", str_field1, str_field2);
 			length = tvb_unicode_strsize(tvb, offset);
@@ -1382,7 +1375,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_scsi_lun, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_manufacturer, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_manufacturer, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_partition_count, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
@@ -1390,7 +1383,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 1;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_pad, tvb, offset, 1, ENC_NA);
 			offset += 1;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_boot_drive_letter, tvb, offset, 6, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_boot_drive_letter, tvb, offset, 6, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 6;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_spare, tvb, offset, 4, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 4;
@@ -1408,7 +1401,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_drive_type, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_drive_letter, tvb, offset, 8, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_drive_letter, tvb, offset, 8, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 8;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_pad, tvb, offset, 4, ENC_NA);
 			offset += 4;
@@ -1424,7 +1417,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 8;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_total_num_clusters, tvb, offset, 8, ENC_LITTLE_ENDIAN);
 			offset += 8;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_file_system, tvb, offset, 32, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_file_system, tvb, offset, 32, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 32;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Drive: %s, FileSystem: %s", str_field1, str_field2);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_volume_ext, tvb, offset, 4, ENC_LITTLE_ENDIAN);
@@ -1445,7 +1438,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			proto_tree_add_item(system_tree, hf_netmon_system_config_nic_description, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_ipaddresses, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_ipaddresses, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "IP Addresses: %s", str_field1);
 			length = tvb_unicode_strsize(tvb, offset);
@@ -1463,13 +1456,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_vrefresh, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_chip_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_chip_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += 512;
 			proto_tree_add_item(system_tree, hf_netmon_system_config_dac_type, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_adapter_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_adapter_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += 512;
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field3);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_string, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field3);
 			offset += 512;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Chip: %s, Adapter: %s, Bios: %s", str_field1, str_field2, str_field3);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_device_id, tvb, offset, 512, ENC_LITTLE_ENDIAN|ENC_UTF_16);
@@ -1485,13 +1478,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			proto_tree_add_item(system_tree, hf_netmon_system_config_sub_process_tag, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_display_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_process_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_process_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Service: %s, Process: %s", str_field1, str_field2);
 			break;
@@ -1542,13 +1535,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			/* XXX - can we trust sizes above? */
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_device_desc, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "ID: %s, Name: %s", str_field1, str_field2);
 			break;
@@ -1562,22 +1555,22 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			proto_tree_add_item(system_tree, hf_netmon_system_config_location_information_len, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_location_information, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_location_information, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Location: %s", str_field1);
 			break;
 		case 25:
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_system_manufacturer, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_system_manufacturer, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_system_product_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_system_product_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_date, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field3);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_date, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field3);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_version, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field4);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_bios_version, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field4);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Manufacturer: %s, ProductName: %s, BiosDate: %s, BiosVersion: %s", str_field1, str_field2, str_field3, str_field4);
 			break;
@@ -1595,7 +1588,7 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			proto_tree_add_item(system_tree, hf_netmon_system_config_sub_process_tag, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			offset += 4;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_service_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Service: %s, (PID=%d)", str_field1, field1);
 			length = tvb_unicode_strsize(tvb, offset);
@@ -1637,13 +1630,13 @@ dissect_netmon_system_config(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			offset += 4;
 			/* XXX - can we trust sizes above? */
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field1);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_device_id, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field1);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
 			proto_tree_add_item(system_tree, hf_netmon_system_config_device_desc, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16);
 			offset += length;
 			length = tvb_unicode_strsize(tvb, offset);
-			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, wmem_packet_scope(), &str_field2);
+			proto_tree_add_item_ret_string(system_tree, hf_netmon_system_config_friendly_name, tvb, offset, length, ENC_LITTLE_ENDIAN|ENC_UTF_16, pinfo->pool, &str_field2);
 			offset += length;
 			col_add_fstr(pinfo->cinfo, COL_INFO, "ID: %s, Name: %s", str_field1, str_field2);
 			length = tvb_unicode_strsize(tvb, offset);
@@ -1664,8 +1657,8 @@ dissect_netmon_process(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
 	proto_tree *process_tree;
 	int offset = 0;
 	struct netmon_provider_id_data *provider_id_data = (struct netmon_provider_id_data*)data;
-	guint length;
-	const guint8 *filename;
+	unsigned length;
+	const uint8_t *filename;
 
 	DISSECTOR_ASSERT(provider_id_data != NULL);
 
@@ -1690,10 +1683,10 @@ dissect_netmon_process(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
 			offset += 4;
 			netmon_sid_field(process_tree, tvb, &offset, pinfo, hf_netmon_process_user_sid_revision,
 							hf_netmon_process_user_sid_subauth_count, hf_netmon_process_user_sid_id, hf_netmon_process_user_sid_authority,
-							&ei_netmon_process_user_sid, FALSE);
+							&ei_netmon_process_user_sid, false);
 			length = tvb_strsize(tvb, offset);
 			proto_tree_add_item_ret_string(process_tree, hf_netmon_process_image_file_name, tvb, offset, length, ENC_NA|ENC_ASCII,
-							wmem_packet_scope(), &filename);
+							pinfo->pool, &filename);
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Filename: %s", filename);
 			offset += length;
 			break;
@@ -1718,10 +1711,10 @@ dissect_netmon_process(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
 			offset += 4;
 			netmon_sid_field(process_tree, tvb, &offset, pinfo, hf_netmon_process_user_sid_revision,
 							hf_netmon_process_user_sid_subauth_count, hf_netmon_process_user_sid_id, hf_netmon_process_user_sid_authority,
-							&ei_netmon_process_user_sid, FALSE);
+							&ei_netmon_process_user_sid, false);
 			length = tvb_strsize(tvb, offset);
 			proto_tree_add_item_ret_string(process_tree, hf_netmon_process_image_file_name, tvb, offset, length, ENC_NA|ENC_ASCII,
-							wmem_packet_scope(), &filename);
+							pinfo->pool, &filename);
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Filename: %s", filename);
 			offset += length;
 			break;
@@ -1756,10 +1749,10 @@ dissect_netmon_process(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
 			}
 			netmon_sid_field(process_tree, tvb, &offset, pinfo, hf_netmon_process_user_sid_revision,
 							hf_netmon_process_user_sid_subauth_count, hf_netmon_process_user_sid_id, hf_netmon_process_user_sid_authority,
-							&ei_netmon_process_user_sid, FALSE);
+							&ei_netmon_process_user_sid, false);
 			length = tvb_strsize(tvb, offset);
 			proto_tree_add_item_ret_string(process_tree, hf_netmon_process_image_file_name, tvb, offset, length, ENC_NA|ENC_ASCII,
-							wmem_packet_scope(), &filename);
+							pinfo->pool, &filename);
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Filename: %s", filename);
 			offset += length;
 
@@ -1839,10 +1832,10 @@ dissect_netmon_process(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
 			}
 			netmon_sid_field(process_tree, tvb, &offset, pinfo, hf_netmon_process_user_sid_revision,
 							hf_netmon_process_user_sid_subauth_count, hf_netmon_process_user_sid_id, hf_netmon_process_user_sid_authority,
-							&ei_netmon_process_user_sid, FALSE);
+							&ei_netmon_process_user_sid, false);
 			length = tvb_strsize(tvb, offset);
 			proto_tree_add_item_ret_string(process_tree, hf_netmon_process_image_file_name, tvb, offset, length, ENC_NA|ENC_ASCII,
-							wmem_packet_scope(), &filename);
+							pinfo->pool, &filename);
 			col_add_fstr(pinfo->cinfo, COL_INFO, "Filename: %s", filename);
 			offset += length;
 
@@ -2065,11 +2058,11 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_filter_app_name,
 			{ "Application Name", "netmon_filter.app_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_filter_filter,
 			{ "Filter", "netmon_filter.filter",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 	};
 
@@ -2084,19 +2077,19 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_network_info_computer_name,
 			{ "Computer name", "netmon_network_info.computer_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_network_info_friendly_name,
 			{ "Friendly name", "netmon_network_info.friendly_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_network_info_description,
 			{ "Description", "netmon_network_info.description",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_network_info_miniport_guid,
 			{ "Miniport GUID", "netmon_network_info.miniport_guid",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_network_info_media_type,
 			{ "Media type", "netmon_network_info.media_type",
@@ -2255,11 +2248,11 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_trace_session_name,
 			{ "Session name", "netmon_system_trace.session_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_trace_log_file_name,
 			{ "Log file name", "netmon_system_trace.log_file_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_trace_group_mask1,
 			{ "Group Mask1", "netmon_system_trace.group_mask1",
@@ -2322,11 +2315,11 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_computer_name,
 			{ "Computer name", "netmon_system_config.computer_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_domain_name,
 			{ "Domain name", "netmon_system_config.domain_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_hyper_threading_flag,
 			{ "Hyper threading flag", "netmon_system_config.hyper_threading_flag",
@@ -2370,7 +2363,7 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_manufacturer,
 			{ "Manufacturer", "netmon_system_config.manufacturer",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_partition_count,
 			{ "Partition count", "netmon_system_config.partition_count",
@@ -2386,11 +2379,11 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_boot_drive_letter,
 			{ "Boot drive letter", "netmon_system_config.boot_drive_letter",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_spare,
 			{ "Spare", "netmon_system_config.spare",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_start_offset,
 			{ "Start offset", "netmon_system_config.start_offset",
@@ -2410,7 +2403,7 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_drive_letter,
 			{ "Drive letter", "netmon_system_config.drive_letter",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_partition_number,
 			{ "Partition number", "netmon_system_config.partition_number",
@@ -2430,7 +2423,7 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_file_system,
 			{ "File system", "netmon_system_config.file_system",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_volume_ext,
 			{ "Volume ext", "netmon_system_config.volume_ext",
@@ -2454,15 +2447,15 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_nic_description,
 			{ "File system", "netmon_system_config.file_system",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_ipaddresses,
 			{ "IP addresses", "netmon_system_config.ipaddresses",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_dns_server_addresses,
 			{ "DNS server addresses", "netmon_system_config.dns_server_addresses",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_memory_size,
 			{ "Memory size", "netmon_system_config.memory_size",
@@ -2486,23 +2479,23 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_chip_type,
 			{ "Chip type", "netmon_system_config.chip_type",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_dac_type,
 			{ "DAC type", "netmon_system_config.dac_type",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_adapter_string,
 			{ "Adapter string", "netmon_system_config.adapter_string",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_bios_string,
 			{ "BIOS string", "netmon_system_config.bios_string",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_device_id,
 			{ "Device ID", "netmon_system_config.device_id",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_state_flags,
 			{ "State flags", "netmon_system_config.state_flags",
@@ -2522,15 +2515,15 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_service_name,
 			{ "Service name", "netmon_system_config.service_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_display_name,
 			{ "Display name", "netmon_system_config.display_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_process_name,
 			{ "Process name", "netmon_system_config.process_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_s1,
 			{ "S1", "netmon_system_config.s1",
@@ -2553,7 +2546,7 @@ void proto_register_netmon(void)
 			FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_tcb_table_partitions,
-			{ "Tcb table paritions", "netmon_system_config.tcb_table_partitions",
+			{ "Tcb table partitions", "netmon_system_config.tcb_table_partitions",
 			FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_max_hash_table_size,
@@ -2582,11 +2575,11 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_device_desc,
 			{ "Device description", "netmon_system_config.device_desc",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_friendly_name,
 			{ "Friendly name", "netmon_system_config.friendly_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_device_id_len,
 			{ "Device ID length", "netmon_system_config.device_id_len",
@@ -2614,31 +2607,31 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_location_information,
 			{ "Location information", "netmon_system_config.location_information",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_system_manufacturer,
 			{ "System manufacturer", "netmon_system_config.system_manufacturer",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_system_product_name,
 			{ "System product name", "netmon_system_config.system_product_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_bios_date,
 			{ "BIOS date", "netmon_system_config.bios_date",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_bios_version,
 			{ "BIOS version", "netmon_system_config.bios_version",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_load_order_group,
 			{ "Load order group", "netmon_system_config.load_order_group",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_svc_host_group,
 			{ "svchost group", "netmon_system_config.svc_host_group",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_irq_group,
 			{ "IRQ group", "netmon_system_config.irq_group",
@@ -2646,11 +2639,11 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_pdo_name,
 			{ "PDO name", "netmon_system_config.pdo_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_nic_name,
 			{ "NIC name", "netmon_system_config.nic_name",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_index,
 			{ "Index", "netmon_system_config.index",
@@ -2658,7 +2651,7 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_system_config_physical_addr_str,
 			{ "Physical address", "netmon_system_config.physical_addr_str",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_system_config_ip_address,
 			{ "IP address", "netmon_system_config.ip_address",
@@ -2753,11 +2746,11 @@ void proto_register_netmon(void)
 		},
 		{ &hf_netmon_process_image_file_name,
 			{ "Image file name", "netmon_process.image_file_name",
-			FT_STRING, STR_ASCII, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_process_command_line,
 			{ "Commandline", "netmon_process.command_line",
-			FT_STRING, STR_UNICODE, NULL, 0x0, NULL, HFILL }
+			FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_netmon_process_page_directory_base,
 			{ "Page directory base", "netmon_process.page_directory_base",
@@ -2825,7 +2818,7 @@ void proto_register_netmon(void)
 		},
 	};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_netmon_header,
 		&ett_netmon_event,
 		&ett_netmon_event_desc,
@@ -2903,7 +2896,7 @@ void proto_reg_handoff_netmon(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

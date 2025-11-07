@@ -9,15 +9,26 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#include "config.h"
+/*
+ * Note: Adding a true_false_string here must be accompanied by an addition to
+ * both tfs.h and libwireshark*.symbols.
+ */
 
+#include "config.h"
 #include "tfs.h"
+
+/** Returns the string representing the true or false value. */
+const char *tfs_get_string(bool value, const true_false_string *tfs)
+{
+    if (!tfs)
+        return value ? "True" : "False";
+    return value ? tfs->true_string : tfs->false_string;
+}
 
 /*
  * A default set of true/false strings that dissectors can use for
  * FT_BOOLEAN header fields.
  */
-const true_false_string tfs_true_false = { "True", "False" };
 const true_false_string tfs_yes_no = { "Yes", "No" };
 const true_false_string tfs_no_yes = { "No", "Yes" };
 const true_false_string tfs_set_notset = { "Set", "Not set" };
@@ -28,11 +39,12 @@ const true_false_string tfs_error_ok = { "Error", "Ok" };
 const true_false_string tfs_success_fail = { "Success", "Fail" };
 const true_false_string tfs_fail_success = { "Fail", "Success" };
 const true_false_string tfs_on_off = { "On", "Off" };
+const true_false_string tfs_off_on = { "Off", "On" };
 const true_false_string tfs_ack_nack = { "Ack", "Nack" };
 const true_false_string tfs_odd_even = { "Odd", "Even" };
 const true_false_string tfs_allow_block = { "Allow", "Block" };
-const true_false_string tfs_restricted_allowed = { "Restricted", "Allowed" };
 const true_false_string tfs_restricted_not_restricted = { "Restricted", "Not restricted" };
+const true_false_string tfs_not_restricted_restricted = { "Not restricted", "Restricted" };
 const true_false_string tfs_accept_reject = { "Accept", "Reject" };
 const true_false_string tfs_more_nomore = { "More", "No more" };
 const true_false_string tfs_present_absent = { "Present", "Absent" };
@@ -44,6 +56,7 @@ const true_false_string tfs_command_response = { "Command", "Response" };
 const true_false_string tfs_response_command = { "Response", "Command" };
 const true_false_string tfs_capable_not_capable = { "Capable", "Not capable" };
 const true_false_string tfs_supported_not_supported = { "Supported", "Not supported" };
+const true_false_string tfs_not_supported_supported = { "Not Supported", "Supported" };
 const true_false_string tfs_used_notused = { "Used", "Not used" };
 const true_false_string tfs_high_low = { "High", "Low" };
 const true_false_string tfs_high_normal = { "High", "Normal" };
@@ -88,8 +101,31 @@ const true_false_string tfs_preferred_no_preference = { "Preferred", "No prefere
 const true_false_string tfs_encrypt_do_not_encrypt = { "Encrypt", "Do Not Encrypt" };
 const true_false_string tfs_down_up = { "Down", "Up" };
 const true_false_string tfs_up_down = { "Up", "Down" };
-const true_false_string tfs_downlink_uplink = { "Downlink", "Uplink" };
 const true_false_string tfs_uplink_downlink = { "Uplink", "Downlink" };
 const true_false_string tfs_s2c_c2s = { "Server to Client", "Client to Server" };
-const true_false_string tfs_c2s_s2c = { "Client to Server", "Server to Client" };
 const true_false_string tfs_open_closed = { "Open", "Closed" };
+const true_false_string tfs_external_internal = { "External", "Internal" };
+const true_false_string tfs_changed_not_changed = { "Changed", "Not Changed" };
+const true_false_string tfs_needed_not_needed = { "Needed", "Not Needed" };
+const true_false_string tfs_selected_not_selected = { "Selected", "Not Selected" };
+const true_false_string tfs_add_drop = { "Add", "Drop" };
+const true_false_string tfs_no_extension_extension = { "No Extension", "Extension" };
+const true_false_string tfs_user_provider = { "User", "Provider" };
+const true_false_string tfs_applicable_not_applicable = { "Applicable", "Not Applicable" };
+const true_false_string tfs_current_not_yet = { "Currently Applicable", "Not yet Applicable" };
+const true_false_string tfs_should_be_traced_should_not_be_traced = { "Should be traced", "Should not be traced" };
+const true_false_string tfs_activate_do_not_activate = { "Activate", "Do not activate" };
+const true_false_string tfs_data_pdu_control_pdu = { "Data PDU", "Control PDU" };
+
+/*
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
+ *
+ * Local variables:
+ * c-basic-offset: 4
+ * tab-width: 8
+ * indent-tabs-mode: nil
+ * End:
+ *
+ * vi: set shiftwidth=4 tabstop=8 expandtab:
+ * :indentSize=4:tabSize=8:noTabs=true:
+ */

@@ -33,12 +33,13 @@ WSLUA_CONSTRUCTOR NSTime_new(lua_State *L) {
     /* Creates a new NSTime object. */
 #define WSLUA_OPTARG_NSTime_new_SECONDS 1 /* Seconds. */
 #define WSLUA_OPTARG_NSTime_new_NSECONDS 2 /* Nano seconds. */
-    NSTime nstime = (NSTime)g_malloc(sizeof(nstime_t));
+    lua_Integer secs = luaL_optinteger(L,WSLUA_OPTARG_NSTime_new_SECONDS,0);
+    lua_Integer nsecs = luaL_optinteger(L,WSLUA_OPTARG_NSTime_new_NSECONDS,0);
 
+    NSTime nstime = g_new(nstime_t, 1);
     if (!nstime) return 0;
-
-    nstime->secs = (time_t) luaL_optinteger(L,WSLUA_OPTARG_NSTime_new_SECONDS,0);
-    nstime->nsecs = (int) luaL_optinteger(L,WSLUA_OPTARG_NSTime_new_NSECONDS,0);
+    nstime->secs = (time_t) secs;
+    nstime->nsecs = (int) nsecs;
 
     pushNSTime(L,nstime);
 
@@ -53,9 +54,7 @@ WSLUA_METAMETHOD NSTime__call(lua_State* L) { /* Creates a NSTime object. */
 }
 
 WSLUA_METHOD NSTime_tonumber(lua_State* L) {
-        /* Returns a Lua number of the `NSTime` representing seconds from epoch
-           @since 2.4.0
-         */
+        /* Returns a Lua number of the `NSTime` representing seconds from epoch. */
         NSTime nstime = checkNSTime(L,1);
         lua_pushnumber(L, (lua_Number)nstime_to_sec(nstime));
         WSLUA_RETURN(1); /* The Lua number. */
@@ -63,10 +62,10 @@ WSLUA_METHOD NSTime_tonumber(lua_State* L) {
 
 WSLUA_METAMETHOD NSTime__tostring(lua_State* L) {
     NSTime nstime = checkNSTime(L,1);
-    gchar *str;
+    char *str;
     long secs = (long)nstime->secs;
-    gint nsecs = nstime->nsecs;
-    gboolean negative_zero = FALSE;
+    int nsecs = nstime->nsecs;
+    bool negative_zero = false;
 
     /* Time is defined as sec + nsec/10^9, both parts can be negative.
      * Translate this into the more familiar sec.nsec notation instead. */
@@ -132,10 +131,10 @@ WSLUA_METAMETHOD NSTime__unm(lua_State* L) { /* Calculates the negative NSTime. 
 WSLUA_METAMETHOD NSTime__eq(lua_State* L) { /* Compares two NSTimes. */
     NSTime time1 = checkNSTime(L,1);
     NSTime time2 = checkNSTime(L,2);
-    gboolean result = FALSE;
+    bool result = false;
 
     if (nstime_cmp(time1, time2) == 0)
-        result = TRUE;
+        result = true;
 
     lua_pushboolean(L,result);
 
@@ -145,10 +144,10 @@ WSLUA_METAMETHOD NSTime__eq(lua_State* L) { /* Compares two NSTimes. */
 WSLUA_METAMETHOD NSTime__le(lua_State* L) { /* Compares two NSTimes. */
     NSTime time1 = checkNSTime(L,1);
     NSTime time2 = checkNSTime(L,2);
-    gboolean result = FALSE;
+    bool result = false;
 
     if (nstime_cmp(time1, time2) <= 0)
-        result = TRUE;
+        result = true;
 
     lua_pushboolean(L,result);
 
@@ -158,10 +157,10 @@ WSLUA_METAMETHOD NSTime__le(lua_State* L) { /* Compares two NSTimes. */
 WSLUA_METAMETHOD NSTime__lt(lua_State* L) { /* Compares two NSTimes. */
     NSTime time1 = checkNSTime(L,1);
     NSTime time2 = checkNSTime(L,2);
-    gboolean result = FALSE;
+    bool result = false;
 
     if (nstime_cmp(time1, time2) < 0)
-        result = TRUE;
+        result = true;
 
     lua_pushboolean(L,result);
 
@@ -170,12 +169,12 @@ WSLUA_METAMETHOD NSTime__lt(lua_State* L) { /* Compares two NSTimes. */
 
 
 /* WSLUA_ATTRIBUTE NSTime_secs RW The NSTime seconds. */
-WSLUA_ATTRIBUTE_NUMBER_GETTER(NSTime,secs);
-WSLUA_ATTRIBUTE_NUMBER_SETTER(NSTime,secs,time_t);
+WSLUA_ATTRIBUTE_INTEGER_GETTER(NSTime,secs);
+WSLUA_ATTRIBUTE_INTEGER_SETTER(NSTime,secs,time_t);
 
 /* WSLUA_ATTRIBUTE NSTime_nsecs RW The NSTime nano seconds. */
-WSLUA_ATTRIBUTE_NUMBER_GETTER(NSTime,nsecs);
-WSLUA_ATTRIBUTE_NUMBER_SETTER(NSTime,nsecs,int);
+WSLUA_ATTRIBUTE_INTEGER_GETTER(NSTime,nsecs);
+WSLUA_ATTRIBUTE_INTEGER_SETTER(NSTime,nsecs,int);
 
 /* Gets registered as metamethod automatically by WSLUA_REGISTER_CLASS/META */
 static int NSTime__gc(lua_State* L) {
@@ -216,14 +215,13 @@ WSLUA_META NSTime_meta[] = {
 };
 
 int NSTime_register(lua_State* L) {
-    WSLUA_REGISTER_CLASS(NSTime);
-    WSLUA_REGISTER_ATTRIBUTES(NSTime);
+    WSLUA_REGISTER_CLASS_WITH_ATTRS(NSTime);
     return 0;
 }
 
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

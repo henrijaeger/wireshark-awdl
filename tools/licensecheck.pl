@@ -159,7 +159,7 @@ Adam D. Barratt <adam@adam-barratt.org.uk>
 
 =cut
 
-# see http://stackoverflow.com/questions/6162484/why-does-modern-perl-avoid-utf-8-by-default/6163129#6163129
+# see https://stackoverflow.com/questions/6162484/why-does-modern-perl-avoid-utf-8-by-default/6163129#6163129
 use v5.14;
 use utf8;
 
@@ -195,6 +195,9 @@ my $default_ignore_regex = qr!
 \.shelf|_MTN|\.bzr(?:\.backup|tags)?)(?:$|/.*$)
 !x;
 
+# The original Debian version checks Markdown (.md and .markdown) files.
+# If we add those extensions back, we should add Asciidoctor (.adoc) as
+# well, and add SPDX IDs to all of those files.
 my $default_check_regex =
 		qr!
 		\.(                          # search for file suffix
@@ -224,7 +227,6 @@ my $default_check_regex =
 			 |dtd|xsl
 			 |mod
 			 |m
-			 |md|markdown
 			 |tex
 			 |mli?
 			 |(c|l)?hs
@@ -691,6 +693,10 @@ sub parselicense {
 			$license = "zlib/libpng $license";
 		}
 
+		if ($licensetext =~ /SPDX-License-Identifier:\s+BSD-3-Clause-UC/i) {
+			$license = 'BSD (4 clause (University of California-Specific))';
+		}
+
 		if ($licensetext =~ /SPDX-License-Identifier:\s+BSD-3-Clause/i) {
 			$license = 'BSD (3 clause)';
 		}
@@ -700,7 +706,7 @@ sub parselicense {
 		}
 
 		if ($licensetext =~ /SPDX-License-Identifier:\s+BSD-1-Clause/i) {
-			$license = 'BSD';
+			$license = 'BSD (1 clause)';
 		}
 
 		if ($licensetext =~ /SPDX-License-Identifier:\s+MIT/i) {
@@ -709,6 +715,10 @@ sub parselicense {
 
 		if ($licensetext =~ /SPDX-License-Identifier:\s+ISC/i) {
 			$license = 'ISC';
+		}
+
+		if ($licensetext =~ /SPDX-License-Identifier:\s+dtoa/i) {
+			$license = 'dtoa';
 		}
 
 		if ($licensetext =~ /(?:is|may be)\s(?:(?:distributed|used).*?terms|being\s+released).*?\b(L?GPL)\b/) {
@@ -738,8 +748,14 @@ sub parselicense {
 			$license = "ISC $license";
 		}
 
+                if ($licensetext =~ /Permission to use, copy, modify, and distribute this software for any purpose without fee is hereby granted, provided that this entire notice is included in all copies of any software which is or includes a copy or modification of this software and in all copies of the supporting documentation for such software./) {
+			$license = "dtoa $license";
+                }
+
 		if ($licensetext =~ /THIS SOFTWARE IS PROVIDED .*AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY/) {
-			if ($licensetext =~ /All advertising materials mentioning features or use of this software must display the following acknowledge?ment.*This product includes software developed by/i) {
+			if ($licensetext =~ /All advertising materials mentioning features or use of this software must display the following acknowledge?ment.*This product includes software developed by the University of California, Berkeley and its contributors/i) {
+					$license = "BSD (4 clause (University of California-Specific)) $license";
+			} elsif ($licensetext =~ /All advertising materials mentioning features or use of this software must display the following acknowledge?ment.*This product includes software developed by/i) {
 					$license = "BSD (4 clause) $license";
 			} elsif ($licensetext =~ /(The name(?:\(s\))? .*? may not|Neither the (names? .*?|authors?) nor the names of( (its|their|other|any))? contributors may) be used to endorse or promote products derived from this software/i) {
 					$license = "BSD (3 clause) $license";
@@ -781,7 +797,7 @@ sub parselicense {
 		}
 
 		if ($licensetext =~ /distributed under the terms of the FreeType project/i) {
-			$license = "FreeType $license"; # aka FTL see http://www.freetype.org/license.html
+			$license = "FreeType $license"; # aka FTL see https://www.freetype.org/license.html
 		}
 
 		if ($licensetext =~ /This source file is subject to version ([^ ]+) of the PHP license/) {
@@ -850,11 +866,9 @@ sub parselicense {
 		}
 
 		if ($licensetext =~ /SPDX-License-Identifier:\s+\(([a-zA-Z0-9-\.]+)\s+OR\s+([a-zA-Z0-9-\.]+)\)/i) {
-		  # print STDERR "OK ---$1---$2---";
-			# print "PIPPO " . parselicense("SPDX-License-Identifier: $1") . " E " . parselicense("SPDX-License-Identifier: $2");
-			if ($1 and $2) {
-				$license = parselicense("SPDX-License-Identifier: $1") . " " . parselicense("SPDX-License-Identifier: $2");
-			}
+			my $license1 = $1;
+			my $license2 = $2;
+			$license = parselicense("SPDX-License-Identifier: $license1") . ";" . parselicense("SPDX-License-Identifier: $license2");
 		}
 
 		$license = "UNKNOWN" if (!length($license));

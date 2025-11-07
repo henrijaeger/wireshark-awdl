@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <ui/qt/widgets/overlay_scroll_bar.h>
 
@@ -12,8 +13,14 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <QProxyStyle>
 #include <QResizeEvent>
 #include <QStyleOptionSlider>
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+#include <QApplication>
+#include <QStyleFactory>
+#endif
 
 // To do:
 // - We could graph something useful (e.g. delay times) in packet_map_img_.
@@ -32,7 +39,7 @@
 
 class OsbProxyStyle : public QProxyStyle
 {
-  public:
+public:
     // Disable transient behavior. Mainly for macOS but possibly applies to
     // other platforms. If we want to enable transience we'll have to
     // handle the following at a minimum:
@@ -48,9 +55,7 @@ class OsbProxyStyle : public QProxyStyle
     // wonky, however.
 
     virtual int styleHint(StyleHint hint, const QStyleOption *option = NULL, const QWidget *widget = NULL, QStyleHintReturn *returnData = NULL) const {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 3, 0)
         if (hint == SH_ScrollBar_Transient) return false;
-#endif
 
         return QProxyStyle::styleHint(hint, option, widget, returnData);
     }
@@ -65,21 +70,26 @@ OverlayScrollBar::OverlayScrollBar(Qt::Orientation orientation, QWidget *parent)
     packet_count_(-1),
     start_pos_(-1),
     end_pos_(-1),
-    selected_pos_(-1)
+    positions_(QList<int>())
 {
     style_ = new OsbProxyStyle();
     setStyle(style_);
 
     child_style_ = new OsbProxyStyle();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+    updateChildStyle();
+#else
+    child_sb_.setStyle(child_style_);
+#endif
     child_sb_.raise();
     child_sb_.installEventFilter(this);
-    child_sb_.setStyle(child_style_);
 
     // XXX Do we need to connect anything else?
-    connect(this, SIGNAL(rangeChanged(int,int)), this, SLOT(setChildRange(int,int)));
-    connect(this, SIGNAL(valueChanged(int)), &child_sb_, SLOT(setValue(int)));
+    connect(this, &OverlayScrollBar::rangeChanged, this, &OverlayScrollBar::setChildRange);
+    connect(this, &OverlayScrollBar::valueChanged, &child_sb_, &QScrollBar::setValue);
 
-    connect(&child_sb_, SIGNAL(valueChanged(int)), this, SLOT(setValue(int)));
+    connect(&child_sb_, &QScrollBar::valueChanged, this, &OverlayScrollBar::setValue);
+    connect(&child_sb_, &QScrollBar::actionTriggered, this, &OverlayScrollBar::actionTriggered);
 }
 
 OverlayScrollBar::~OverlayScrollBar()
@@ -94,20 +104,23 @@ QSize OverlayScrollBar::sizeHint() const
                  QScrollBar::sizeHint().height());
 }
 
-void OverlayScrollBar::setNearOverlayImage(QImage &overlay_image, int packet_count, int start_pos, int end_pos, int selected_pos)
+int OverlayScrollBar::sliderPosition()
+{
+    return child_sb_.sliderPosition();
+}
+
+void OverlayScrollBar::setNearOverlayImage(QImage& overlay_image, int packet_count, int start_pos, int end_pos, QList<int> positions, int rowHeight)
 {
     int old_width = packet_map_img_.width();
     packet_map_img_ = overlay_image;
     packet_count_ = packet_count;
     start_pos_ = start_pos;
     end_pos_ = end_pos;
-    selected_pos_ = selected_pos;
+    positions_ = positions;
+    row_height_ = rowHeight > devicePixelRatio() ? rowHeight : devicePixelRatio();
 
     if (old_width != packet_map_img_.width()) {
-        qreal dp_ratio = 1.0;
-    #if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
-        dp_ratio = devicePixelRatio();
-    #endif
+        qreal dp_ratio = devicePixelRatio();
 
         packet_map_width_ = packet_map_img_.width() / dp_ratio;
 
@@ -118,10 +131,7 @@ void OverlayScrollBar::setNearOverlayImage(QImage &overlay_image, int packet_cou
 
 void OverlayScrollBar::setMarkedPacketImage(QImage &mp_image)
 {
-    qreal dp_ratio = 1.0;
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
-    dp_ratio = devicePixelRatio();
-#endif
+    qreal dp_ratio = devicePixelRatio();
 
     marked_packet_img_ = mp_image;
     marked_packet_width_ = mp_image.width() / dp_ratio;
@@ -145,16 +155,16 @@ void OverlayScrollBar::resizeEvent(QResizeEvent *event)
 
     child_sb_.move(packet_map_width_, 0);
     child_sb_.resize(child_sb_.sizeHint().width(), height());
+#ifdef Q_OS_MAC
+    child_sb_.setPageStep(height());
+#endif
 }
 
 void OverlayScrollBar::paintEvent(QPaintEvent *event)
 {
-    qreal dp_ratio = 1.0;
+    qreal dp_ratio = devicePixelRatio();
     QSize pm_size(packet_map_width_, geometry().height());
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
-    dp_ratio = devicePixelRatio();
     pm_size *= dp_ratio;
-#endif
 
     QPainter painter(this);
 
@@ -172,12 +182,19 @@ void OverlayScrollBar::paintEvent(QPaintEvent *event)
         pm_painter.drawImage(near_dest, packet_map_img_.scaled(near_dest.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
 
         // Selected packet indicator
-        if (selected_pos_ >= 0 && selected_pos_ < packet_map_img_.height()) {
-            pm_painter.save();
-            int no_pos = near_dest.height() * selected_pos_ / packet_map_img_.height();
-            pm_painter.setBrush(palette().highlight().color());
-            pm_painter.drawRect(0, no_pos, pm_size.width(), dp_ratio);
-            pm_painter.restore();
+        if (positions_.count() > 0)
+        {
+            foreach (int selected_pos_, positions_)
+            {
+                int pmiHeight = packet_map_img_.height();
+                if (selected_pos_ >= 0 && selected_pos_ < pmiHeight) {
+                    pm_painter.save();
+                    int no_pos = near_dest.height() * selected_pos_ / pmiHeight;
+                    pm_painter.setBrush(palette().highlight().color());
+                    pm_painter.drawRect(0, no_pos, pm_size.width(), row_height_);
+                    pm_painter.restore();
+                }
+            }
         }
 
         // Borders
@@ -190,9 +207,7 @@ void OverlayScrollBar::paintEvent(QPaintEvent *event)
         pm_painter.restore();
 
         // Draw the map.
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
         packet_map.setDevicePixelRatio(dp_ratio);
-#endif
         painter.drawImage(0, 0, packet_map);
     }
 }
@@ -207,12 +222,9 @@ bool OverlayScrollBar::eventFilter(QObject *watched, QEvent *event)
 
         if (!marked_packet_img_.isNull()) {
             QRect groove_rect = grooveRect();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
-            qreal dp_ratio = 1.0;
-            dp_ratio = devicePixelRatio();
+            qreal dp_ratio = devicePixelRatio();
             groove_rect.setTopLeft(groove_rect.topLeft() * dp_ratio);
             groove_rect.setSize(groove_rect.size() * dp_ratio);
-#endif
 
             QImage marked_map(groove_rect.width(), groove_rect.height(), QImage::Format_ARGB32_Premultiplied);
             marked_map.fill(Qt::transparent);
@@ -223,13 +235,16 @@ bool OverlayScrollBar::eventFilter(QObject *watched, QEvent *event)
             QRect far_dest(0, 0, groove_rect.width(), groove_rect.height());
             mm_painter.drawImage(far_dest, marked_packet_img_.scaled(far_dest.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
 
-    #if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
             marked_map.setDevicePixelRatio(dp_ratio);
-    #endif
             QPainter painter(&child_sb_);
             painter.drawImage(groove_rect.left(), groove_rect.top(), marked_map);
         }
     }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+    else if (event->type() == QEvent::ApplicationPaletteChange) {
+        updateChildStyle();
+    }
+#endif
 
     return ret;
 }
@@ -241,22 +256,22 @@ void OverlayScrollBar::mouseReleaseEvent(QMouseEvent *event)
     if (pm_r.contains(event->pos()) && geometry().height() > 0 && packet_count_ > 0 && pageStep() > 0) {
         double map_ratio = double(end_pos_ - start_pos_) / geometry().height();
         int clicked_packet = (event->pos().y() * map_ratio) + start_pos_;
-        double packet_to_sb_value = double(maximum() - minimum()) / packet_count_;
+        /* The first packet is at minimum(). The last packet is at
+         * maximum() + pageStep(). (maximum() corresponds to the first
+         * packet shown when the scrollbar at at the maximum position.)
+         * https://doc.qt.io/qt-6/qscrollbar.html#details
+         */
+        double packet_to_sb_value = double(maximum() + pageStep() - minimum()) / packet_count_;
         int top_pad = pageStep() / 4; // Land near, but not at, the top.
 
-        setValue((clicked_packet * packet_to_sb_value) + top_pad);
+        setValue((clicked_packet * packet_to_sb_value) - top_pad);
     }
 }
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+void OverlayScrollBar::updateChildStyle()
+{
+    child_style_->setBaseStyle(QStyleFactory::create(qApp->style()->name()));
+    child_sb_.setStyle(child_style_);
+}
+#endif

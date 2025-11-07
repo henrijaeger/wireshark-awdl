@@ -18,12 +18,12 @@
 #include <ui/qt/utils/color_utils.h>
 #include <ui/qt/utils/qt_ui_utils.h>
 #include <ui/qt/utils/variant_pointer.h>
+#include <ui/qt/utils/wireshark_mime_data.h>
 
 #include <QMimeData>
-
-
-static const QString new_rule_name_ = QObject::tr("New coloring rule");
-static const QString color_rule_mime_type_ = "application/x-wireshark-coloring-rules";
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 ColoringRuleItem::ColoringRuleItem(bool disabled, QString name, QString filter, QColor foreground, QColor background, ColoringRuleItem* parent)
     : ModelHelperTreeItem<ColoringRuleItem>(parent),
@@ -60,9 +60,19 @@ ColoringRuleItem::ColoringRuleItem(const ColoringRuleItem& item)
 {
 }
 
+ColoringRuleItem& ColoringRuleItem::operator=(ColoringRuleItem& rhs)
+{
+    disabled_ = rhs.disabled_;
+    name_ = rhs.name_;
+    filter_ = rhs.filter_;
+    foreground_ = rhs.foreground_;
+    background_ = rhs.background_;
+    return *this;
+}
+
 // Callback for color_filters_clone.
 void
-color_filter_add_cb(color_filter_t *colorf, gpointer user_data)
+color_filter_add_cb(color_filter_t *colorf, void *user_data)
 {
     ColoringRulesModel *model = (ColoringRulesModel*)user_data;
 
@@ -113,13 +123,14 @@ void ColoringRulesModel::addColor(color_filter_t* colorf)
 {
     if (!colorf) return;
 
-    if(strstr(colorf->filter_name, CONVERSATION_COLOR_PREFIX) != NULL) {
+    if (strstr(colorf->filter_name, CONVERSATION_COLOR_PREFIX) != NULL) {
         conversation_colors_ = g_slist_append(conversation_colors_, colorf);
     } else {
         int count = root_->childCount();
 
         beginInsertRows(QModelIndex(), count, count);
         ColoringRuleItem* item = new ColoringRuleItem(colorf, root_);
+        color_filter_delete(colorf);
         root_->appendChild(item);
         endInsertRows();
     }
@@ -129,7 +140,7 @@ void ColoringRulesModel::addColor(bool disabled, QString filter, QColor foregrou
 {
     //add rule to top of the list
     beginInsertRows(QModelIndex(), 0, 0);
-    ColoringRuleItem* item = new ColoringRuleItem(disabled, new_rule_name_, filter, foreground, background, root_);
+    ColoringRuleItem* item = new ColoringRuleItem(disabled, tr("New coloring rule"), filter, foreground, background, root_);
     root_->prependChild(item);
     endInsertRows();
 }
@@ -138,7 +149,7 @@ void ColoringRulesModel::addColor(bool disabled, QString filter, QColor foregrou
 bool ColoringRulesModel::importColors(QString filename, QString& err)
 {
     bool success = true;
-    gchar* err_msg = NULL;
+    char* err_msg = NULL;
     if (!color_filters_import(filename.toUtf8().constData(), this, &err_msg, color_filter_add_cb)) {
         err = gchar_free_to_qstring(err_msg);
         success = false;
@@ -151,8 +162,8 @@ bool ColoringRulesModel::exportColors(QString filename, QString& err)
 {
     GSList *cfl = createColorFilterList();
     bool success = true;
-    gchar* err_msg = NULL;
-    if (!color_filters_export(filename.toUtf8().constData(), cfl, FALSE, &err_msg)) {
+    char* err_msg = NULL;
+    if (!color_filters_export(filename.toUtf8().constData(), cfl, false, &err_msg)) {
         err = gchar_free_to_qstring(err_msg);
         success = false;
     }
@@ -165,13 +176,13 @@ bool ColoringRulesModel::writeColors(QString& err)
 {
     GSList *cfl = createColorFilterList();
     bool success = true;
-    gchar* err_msg = NULL;
+    char* err_msg = NULL;
     if (!color_filters_apply(conversation_colors_, cfl, &err_msg)) {
         err = gchar_free_to_qstring(err_msg);
         success = false;
     }
     if (!color_filters_write(cfl, &err_msg)) {
-        err = QString(tr("Unable to save coloring rules: %1").arg(g_strerror(errno)));
+        err = tr("Unable to save coloring rules: %1").arg(g_strerror(errno));
         success = false;
         g_free(err_msg);
     }
@@ -183,15 +194,17 @@ bool ColoringRulesModel::writeColors(QString& err)
 bool ColoringRulesModel::insertRows(int row, int count, const QModelIndex& parent)
 {
     // sanity check insertion
-    if (row < 0 )
+    if (row < 0)
         return false;
 
     beginInsertRows(parent, row, row+(count-1));
 
     for (int i = row; i < row + count; i++)
     {
-        ColoringRuleItem* item = new ColoringRuleItem(true, new_rule_name_, "", defaultForeground_, defaultBackground_, root_);
+        ColoringRuleItem* item = new ColoringRuleItem(true, tr("New coloring rule"), "", defaultForeground_, defaultBackground_, root_);
         root_->insertChild(i, item);
+        /* Automatically enable the new coloring rule */
+        setData(index(i, colName, parent), Qt::Checked, Qt::CheckStateRole);
     }
 
     endInsertRows();
@@ -200,7 +213,7 @@ bool ColoringRulesModel::insertRows(int row, int count, const QModelIndex& paren
 
 bool ColoringRulesModel::removeRows(int row, int count, const QModelIndex& parent)
 {
-    if (row < 0 )
+    if (row < 0)
         return false;
 
     beginRemoveRows(parent, row, row+(count-1));
@@ -328,20 +341,28 @@ bool ColoringRulesModel::setData(const QModelIndex &dataIndex, const QVariant &v
         switch (dataIndex.column())
         {
         case colName:
-            rule->disabled_ = (value == Qt::Checked) ? false : true;
+            rule->disabled_ = (value.toInt() == Qt::Checked) ? false : true;
             break;
         default:
             return false;
         }
         break;
     case Qt::BackgroundRole:
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        if (!value.canConvert<QColor>())
+#else
         if (!value.canConvert(QVariant::Color))
+#endif
             return false;
 
         rule->background_ = QColor(value.toString());
         break;
     case Qt::ForegroundRole:
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+        if (!value.canConvert<QColor>())
+#else
         if (!value.canConvert(QVariant::Color))
+#endif
             return false;
 
         rule->foreground_ = QColor(value.toString());
@@ -358,16 +379,10 @@ bool ColoringRulesModel::setData(const QModelIndex &dataIndex, const QVariant &v
         return false;
     }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     QVector<int> roles;
     roles << role;
-#endif
 
-    emit dataChanged(topLeft, bottomRight
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-                         , roles
-#endif
-        );
+    emit dataChanged(topLeft, bottomRight, roles);
 
     return true;
 
@@ -392,15 +407,12 @@ QVariant ColoringRulesModel::headerData(int section, Qt::Orientation orientation
 
 Qt::DropActions ColoringRulesModel::supportedDropActions() const
 {
-    return Qt::MoveAction;
+    return Qt::MoveAction | Qt::CopyAction;
 }
 
 QStringList ColoringRulesModel::mimeTypes() const
 {
-    //Just use plain text to transport data
-    QStringList types;
-    types << color_rule_mime_type_;
-    return types;
+    return QStringList() << WiresharkMimeData::ColoringRulesMimeType;
 }
 
 QMimeData* ColoringRulesModel::mimeData(const QModelIndexList &indexes) const
@@ -410,21 +422,28 @@ QMimeData* ColoringRulesModel::mimeData(const QModelIndexList &indexes) const
         return NULL;
 
     QMimeData *mimeData = new QMimeData();
-    QByteArray encodedData;
 
-    QDataStream stream(&encodedData, QIODevice::WriteOnly);
-
-    foreach (const QModelIndex &index, indexes) {
-        //use first column as "filter"
-        if (index.column() == 0) {
-            //Retrieve "native" data to save lots of conversions in the process
-            ColoringRuleItem* item = root_->child(index.row());
-
-            stream << item->disabled_ << item->name_ << item->filter_ << item->foreground_ << item->background_;
+    QJsonArray data;
+    foreach (const QModelIndex & index, indexes)
+    {
+        if (index.column() == 0)
+        {
+            ColoringRuleItem * item = root_->child(index.row());
+            QJsonObject entry;
+            entry["disabled"] = item->disabled_;
+            entry["name"] = item->name_;
+            entry["filter"] = item->filter_;
+            entry["foreground"] = QVariant::fromValue(item->foreground_).toString();
+            entry["background"] = QVariant::fromValue(item->background_).toString();
+            data.append(entry);
         }
     }
 
-    mimeData->setData(color_rule_mime_type_, encodedData);
+    QJsonObject dataSet;
+    dataSet["coloringrules"] = data;
+    QByteArray encodedData = QJsonDocument(dataSet).toJson();
+
+    mimeData->setData(WiresharkMimeData::ColoringRulesMimeType, encodedData);
     return mimeData;
 }
 
@@ -436,10 +455,7 @@ bool ColoringRulesModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
     if (action == Qt::IgnoreAction)
         return true;
 
-    if (!data->hasFormat(color_rule_mime_type_))
-        return false;
-
-    if (column > 0)
+    if (!data->hasFormat(WiresharkMimeData::ColoringRulesMimeType) || column > 0)
         return false;
 
     int beginRow;
@@ -451,27 +467,35 @@ bool ColoringRulesModel::dropMimeData(const QMimeData *data, Qt::DropAction acti
     else
         beginRow = rowCount();
 
-    bool disabled;
-    QString name;
-    QString filter;
-    QColor foreground;
-    QColor background;
-    ColoringRuleItem* item;
     QList<QVariant> rules;
 
-    QByteArray encodedData = data->data(color_rule_mime_type_);
-    QDataStream stream(&encodedData, QIODevice::ReadOnly);
-    int rows = 0;
+    QJsonDocument encodedData = QJsonDocument::fromJson(data->data(WiresharkMimeData::ColoringRulesMimeType));
+    if (! encodedData.isObject() || ! encodedData.object().contains("coloringrules"))
+        return false;
 
-    while (!stream.atEnd()) {
-        stream >> disabled >> name >> filter >> foreground >> background;
+    QJsonArray dataArray = encodedData.object()["coloringrules"].toArray();
 
-        item = new ColoringRuleItem(disabled, name, filter, foreground, background, root_);
+    for (int datarow = 0; datarow < dataArray.count(); datarow++)
+    {
+        QJsonObject entry = dataArray.at(datarow).toObject();
+
+        if (! entry.contains("foreground") || ! entry.contains("background") || ! entry.contains("filter"))
+            continue;
+
+        QColor fgColor = entry["foreground"].toVariant().value<QColor>();
+        QColor bgColor = entry["background"].toVariant().value<QColor>();
+
+        ColoringRuleItem * item = new ColoringRuleItem(
+                entry["disabled"].toVariant().toBool(),
+                entry["name"].toString(),
+                entry["filter"].toString(),
+                fgColor,
+                bgColor,
+                root_);
         rules.append(VariantPointer<ColoringRuleItem>::asQVariant(item));
-        ++rows;
     }
 
-    insertRows(beginRow, rows, QModelIndex());
+    insertRows(beginRow, static_cast<int>(rules.count()), QModelIndex());
     for (int i = 0; i < rules.count(); i++) {
         QModelIndex idx = index(beginRow, 0, QModelIndex());
         setData(idx, rules[i], Qt::UserRole);
@@ -543,15 +567,3 @@ int ColoringRulesModel::columnCount(const QModelIndex&) const
 {
     return colColoringRulesMax;
 }
-
-/* * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -19,11 +19,12 @@
 
 #include "epan/prefs.h"
 #include "epan/ex-opt.h"
-#include "caputils/capture_ifinfo.h"
+#include "capture/capture_ifinfo.h"
 #include "ui/capture_ui_utils.h"
 #include "ui/capture_globals.h"
 #include "wiretap/wtap.h"
 #include "epan/to_str.h"
+#include "wsutil/strtoi.h"
 
 /*
  * In a list of interface information, in the form of a comma-separated
@@ -32,10 +33,10 @@
  * the property.
  */
 static char *
-capture_dev_get_if_property(const gchar *pref, const gchar *if_name)
+capture_dev_get_if_property(const char *pref, const char *if_name)
 {
-    gchar **if_tokens;
-    gchar *property = NULL;
+    char **if_tokens;
+    char *property = NULL;
     int i;
 
     if (if_name == NULL || strlen(if_name) < 1) {
@@ -54,7 +55,7 @@ capture_dev_get_if_property(const gchar *pref, const gchar *if_name)
      */
     if_tokens = g_strsplit(pref, ",", -1);
     for (i = 0; if_tokens[i] != NULL; i++) {
-        gchar *opening_parenp, *closing_parenp;
+        char *opening_parenp, *closing_parenp;
 
         /*
          * Separate this item into name and property.
@@ -90,31 +91,25 @@ capture_dev_get_if_property(const gchar *pref, const gchar *if_name)
  * Find a property that should be an integral value, and return the
  * value or, if it's not found or not a valid integral value, -1.
  */
-static gint
-capture_dev_get_if_int_property(const gchar *pref, const gchar *if_name)
+static int
+capture_dev_get_if_int_property(const char *pref, const char *if_name)
 {
-    gchar *property_string, *next;
-    long property;
+    char *property_string;
+    int property;
 
     property_string = capture_dev_get_if_property(pref, if_name);
     if (property_string == NULL) {
         /* No property found for this interface. */
         return -1;
     }
-    property = strtol(property_string, &next, 10);
-    if (next == property_string || *next != '\0' || property < 0) {
-        /* Syntax error */
-        g_free(property_string);
-        return -1;
-    }
-    if (property > G_MAXINT) {
-        /* Value doesn't fit in a gint */
+    if (!ws_strtoi(property_string, NULL, &property)) {
+        /* Syntax error or range error */
         g_free(property_string);
         return -1;
     }
 
     g_free(property_string);
-    return (gint)property;
+    return property;
 }
 
 /*
@@ -122,40 +117,48 @@ capture_dev_get_if_int_property(const gchar *pref, const gchar *if_name)
  * name, if any.
  */
 char *
-capture_dev_user_descr_find(const gchar *if_name)
+capture_dev_user_descr_find(const char *if_name)
 {
-    return capture_dev_get_if_property(prefs.capture_devices_descr, if_name);
+    char *descr = capture_dev_get_if_property(prefs.capture_devices_descr, if_name);
+    if (descr == NULL && g_strcmp0(if_name, "-") == 0) {
+        /*
+         * Strictly speaking, -X (extension) options are for modules, e.g. Lua
+         * and using one here stretches that definition. However, this doesn't
+         * waste a single-letter option on something that might be rarely used
+         * and is backward-compatible to 1.0.
+         */
+        descr = g_strdup(ex_opt_get_nth("stdin_descr", 0));
+    }
+    return descr;
 }
 
-gint
-capture_dev_user_linktype_find(const gchar *if_name)
+int
+capture_dev_user_linktype_find(const char *if_name)
 {
     return capture_dev_get_if_int_property(prefs.capture_devices_linktypes, if_name);
 }
 
-#ifdef CAN_SET_CAPTURE_BUFFER_SIZE
-gint
-capture_dev_user_buffersize_find(const gchar *if_name)
+int
+capture_dev_user_buffersize_find(const char *if_name)
 {
     return capture_dev_get_if_int_property(prefs.capture_devices_buffersize, if_name);
 }
-#endif
 
-gboolean
-capture_dev_user_snaplen_find(const gchar *if_name, gboolean *hassnap, int *snaplen)
+bool
+capture_dev_user_snaplen_find(const char *if_name, bool *hassnap, int *snaplen)
 {
-    gboolean found = FALSE;
-    gchar **if_tokens;
+    bool found = false;
+    char **if_tokens;
     int i;
 
     if (if_name == NULL || strlen(if_name) < 1) {
-        return FALSE;
+        return false;
     }
 
     if ((prefs.capture_devices_snaplen == NULL) ||
             (*prefs.capture_devices_snaplen == '\0')) {
         /* There are no snap lengths defined */
-        return FALSE;
+        return false;
     }
 
     /*
@@ -165,8 +168,9 @@ capture_dev_user_snaplen_find(const gchar *if_name, gboolean *hassnap, int *snap
      */
     if_tokens = g_strsplit(prefs.capture_devices_snaplen, ",", -1);
     for (i = 0; if_tokens[i] != NULL; i++) {
-        gchar *colonp, *next;
-        long value;
+        char *colonp;
+        const char *next;
+        int value;
 
         /*
          * This one's a bit ugly.
@@ -191,8 +195,8 @@ capture_dev_user_snaplen_find(const gchar *if_name, gboolean *hassnap, int *snap
             /* OK, this matches. */
             if (*(colonp + 1) == '0') {
                 /* {hassnap} is false, so just set the snaplen to WTAP_MAX_PACKET_SIZE_STANDARD. */
-                found = TRUE;
-                *hassnap = FALSE;
+                found = true;
+                *hassnap = false;
                 *snaplen = WTAP_MAX_PACKET_SIZE_STANDARD;
             } else if (*(colonp + 1) == '1') {
                 /* {hassnap} is true, so extract {snaplen} */
@@ -200,18 +204,14 @@ capture_dev_user_snaplen_find(const gchar *if_name, gboolean *hassnap, int *snap
                     /* Not followed by a parenthesis. Give up. */
                     break;
                 }
-                value = strtol(colonp + 3, &next, 10);
-                if (next == colonp + 3 || *next != ')' || value < 0) {
-                    /* Syntax error. Give up. */
+                if (!ws_strtoi(colonp + 3, &next, &value) ||
+                    next == colonp + 3 || *next != ')' || value < 0) {
+                    /* Syntax error or range error. Give up. */
                     break;
                 }
-                if (value > G_MAXINT) {
-                    /* Value doesn't fit in a gint. Give up. */
-                    break;
-                }
-                found = TRUE;
-                *hassnap = TRUE;
-                *snaplen = (gint)value;
+                found = true;
+                *hassnap = true;
+                *snaplen = value;
             } else {
                 /* Bad {hassnap}. Give up. */
                 break;
@@ -224,22 +224,22 @@ capture_dev_user_snaplen_find(const gchar *if_name, gboolean *hassnap, int *snap
     return found;
 }
 
-gboolean
-capture_dev_user_pmode_find(const gchar *if_name, gboolean *pmode)
+bool
+capture_dev_user_pmode_find(const char *if_name, bool *pmode)
 {
     int value;
 
     value = capture_dev_get_if_int_property(prefs.capture_devices_pmode, if_name);
     if (value == -1) {
         /* Not found or bad. */
-        return FALSE;
+        return false;
     }
     *pmode = (value != 0);
-    return TRUE;
+    return true;
 }
 
-gchar*
-capture_dev_user_cfilter_find(const gchar *if_name)
+char*
+capture_dev_user_cfilter_find(const char *if_name)
 {
     return capture_dev_get_if_property(prefs.capture_devices_filter, if_name);
 }
@@ -247,18 +247,18 @@ capture_dev_user_cfilter_find(const gchar *if_name)
 /*
  * Return as descriptive a name for an interface as we can get.
  * If the user has specified a comment, use that.  Otherwise,
- * if capture_interface_list() supplies a description, use that,
- * otherwise use the interface name.
+ * if the get_iface_list() method of capture_opts supplies a
+ * description, use that, otherwise use the interface name.
  *
  * The result must be g_free()'d when you're done with it.
  *
- * Note: given that this calls capture_interface_list(), which attempts to
- * open all adapters it finds in order to check whether they can be
- * captured on, this is an expensive routine to call, so don't call it
- * frequently.
+ * Note: given that this likely calls capture_interface_list(), which
+ * attempts to open all adapters it finds in order to check whether
+ * they can be captured on, this is an expensive routine to call, so
+ * don't call it frequently.
  */
 char *
-get_interface_descriptive_name(const char *if_name)
+get_interface_descriptive_name(const capture_options *capture_opts, const char *if_name)
 {
     char *descr;
     GList *if_list;
@@ -271,21 +271,12 @@ get_interface_descriptive_name(const char *if_name)
     if (descr == NULL) {
         /* No; try to construct a descriptive name. */
         if (strcmp(if_name, "-") == 0) {
-            /*
-             * Strictly speaking, -X (extension) options are for modules, e.g. Lua
-             * and using one here stretches that definition. However, this doesn't
-             * waste a single-letter option on something that might be rarely used
-             * and is backward-compatible to 1.0.
-             */
-            descr = g_strdup(ex_opt_get_nth("stdin_descr", 0));
-            if (!descr) {
-                descr = g_strdup("Standard input");
-            }
+            descr = g_strdup("Standard input");
         } else {
             /* No, we don't have a user-supplied description; did we get
                one from the OS or libpcap? */
-            descr = NULL;
-            if_list = capture_interface_list(&err, NULL, NULL);
+            /* XXX: Search in capture_opts->ifaces (or all_ifaces) first? */
+            if_list = capture_opts->get_iface_list(&err, NULL);
             if (if_list != NULL) {
                 if_entry = if_list;
                 do {
@@ -321,13 +312,13 @@ get_interface_descriptive_name(const char *if_name)
 }
 
 GList *
-build_capture_combo_list(GList *if_list, gboolean do_hide)
+build_capture_combo_list(GList *if_list, bool do_hide)
 {
     GList *combo_list;
     GList *if_entry;
     if_info_t *if_info;
     char *if_string;
-    gchar *descr;
+    char *descr;
 
     combo_list = NULL;
     if (if_list != NULL) {
@@ -345,14 +336,14 @@ build_capture_combo_list(GList *if_list, gboolean do_hide)
                 descr = capture_dev_user_descr_find(if_info->name);
                 if (descr != NULL) {
                     /* Yes, we have a user-supplied description; use it. */
-                    if_string = g_strdup_printf("%s: %s", descr, if_info->name);
+                    if_string = ws_strdup_printf("%s: %s", descr, if_info->name);
                     g_free(descr);
                 } else {
                     /* No, we don't have a user-supplied description; did we get
                        one from the OS or libpcap? */
                     if (if_info->vendor_description != NULL) {
                         /* Yes - use it. */
-                        if_string = g_strdup_printf("%s: %s",
+                        if_string = ws_strdup_printf("%s: %s",
                                 if_info->vendor_description,
                                 if_info->name);
                     } else {
@@ -371,7 +362,7 @@ build_capture_combo_list(GList *if_list, gboolean do_hide)
 }
 
 static void
-free_if_string(gpointer data, gpointer user_data _U_)
+free_if_string(void *data, void *user_data _U_)
 {
     g_free(data);
 }
@@ -401,6 +392,9 @@ get_if_name(const char *if_text)
      *
      * We also can't assume it begins with "\Device\", either, as, on
      * Windows OT, WinPcap doesn't put "\Device\" in front of the name.
+     *
+     * XXX - we don't support Windows OT any more; do we need to worry
+     * about this?
      *
      * As I remember, we can't assume that the interface description
      * doesn't contain a colon, either; I think some do.
@@ -468,26 +462,6 @@ get_if_name(const char *if_text)
     return if_name;
 }
 
-/*  Return interface_opts->descr (after setting it if it is not set)
- *  This is necessary because capture_opts.c can't set descr (at least
- *  not without adding significant dependencies there).
- */
-static const char *
-get_iface_description_for_interface(capture_options *capture_opts, guint i)
-{
-    interface_options *interface_opts;
-
-    if (i < capture_opts->ifaces->len) {
-        interface_opts = &g_array_index(capture_opts->ifaces, interface_options, i);
-        if (!interface_opts->descr && interface_opts->name) {
-            interface_opts->descr = get_interface_descriptive_name(interface_opts->name);
-        }
-        return (interface_opts->descr);
-    } else {
-        return (NULL);
-    }
-}
-
 /*
  * Set the active DLT for a device appropriately.
  */
@@ -495,7 +469,7 @@ void
 set_active_dlt(interface_t *device, int global_default_dlt)
 {
     GList    *list;
-    gboolean  found_active_dlt;
+    bool      found_active_dlt;
     link_row *link;
 
     /*
@@ -515,11 +489,11 @@ set_active_dlt(interface_t *device, int global_default_dlt)
      * If not, set it to -1, so we'll fall back on the first supported
      * link-layer header type.
      */
-    found_active_dlt = FALSE;
+    found_active_dlt = false;
     for (list = device->links; list != NULL; list = g_list_next(list)) {
         link = (link_row *)(list->data);
         if (link->dlt != -1 && link->dlt == device->active_dlt) {
-            found_active_dlt = TRUE;
+            found_active_dlt = true;
             break;
         }
     }
@@ -539,10 +513,10 @@ set_active_dlt(interface_t *device, int global_default_dlt)
 }
 
 GString *
-get_iface_list_string(capture_options *capture_opts, guint32 style)
+get_iface_list_string(capture_options *capture_opts, uint32_t style)
 {
     GString *iface_list_string = g_string_new("");
-    guint i;
+    unsigned i;
 
     /*
      * If we have a descriptive name for the interface, show that,
@@ -555,49 +529,66 @@ get_iface_list_string(capture_options *capture_opts, guint32 style)
 #ifdef _WIN32
     if (capture_opts->ifaces->len < 2) {
 #else
-        if (capture_opts->ifaces->len < 4) {
+    if (capture_opts->ifaces->len < 4) {
 #endif
-            for (i = 0; i < capture_opts->ifaces->len; i++) {
-                if (i > 0) {
-                    if (capture_opts->ifaces->len > 2) {
-                        g_string_append_printf(iface_list_string, ",");
-                    }
-                    g_string_append_printf(iface_list_string, " ");
-                    if (i == capture_opts->ifaces->len - 1) {
-                        g_string_append_printf(iface_list_string, "and ");
-                    }
+        for (i = 0; i < capture_opts->ifaces->len; i++) {
+            if (i > 0) {
+                if (capture_opts->ifaces->len > 2) {
+                    g_string_append_printf(iface_list_string, ",");
                 }
-                if (style & IFLIST_QUOTE_IF_DESCRIPTION)
-                    g_string_append_printf(iface_list_string, "'");
-                g_string_append_printf(iface_list_string, "%s", get_iface_description_for_interface(capture_opts, i));
-                if (style & IFLIST_QUOTE_IF_DESCRIPTION)
-                    g_string_append_printf(iface_list_string, "'");
-                if (style & IFLIST_SHOW_FILTER) {
-                    interface_options *interface_opts;
-
-                    interface_opts = &g_array_index(capture_opts->ifaces, interface_options, i);
-                    if (interface_opts->cfilter != NULL &&
-                            strlen(interface_opts->cfilter) > 0) {
-                        g_string_append_printf(iface_list_string, " (%s)", interface_opts->cfilter);
-                    }
+                g_string_append_printf(iface_list_string, " ");
+                if (i == capture_opts->ifaces->len - 1) {
+                    g_string_append_printf(iface_list_string, "and ");
                 }
             }
-        } else {
-            g_string_append_printf(iface_list_string, "%u interfaces", capture_opts->ifaces->len);
+
+            interface_options *interface_opts = &g_array_index(capture_opts->ifaces, interface_options, i);
+
+            if (style & IFLIST_QUOTE_IF_DESCRIPTION)
+                g_string_append_printf(iface_list_string, "'");
+            /* If we have a special user-supplied description (via the prefs
+             * or the documented "-X stdin_descr" option for stdin), make sure
+             * we're using it.
+             */
+            char *user_descr = capture_dev_user_descr_find(interface_opts->name);
+            if (user_descr != NULL) {
+                if (g_strcmp0(interface_opts->descr, user_descr) != 0) {
+                    g_free(interface_opts->descr);
+                    interface_opts->descr = user_descr;
+                    g_free(interface_opts->display_name);
+                    interface_opts->display_name = g_strdup(interface_opts->descr);
+                } else {
+                    g_free(user_descr);
+                }
+            }
+            if (interface_opts->display_name == NULL) {
+                /*
+                 * We don't have a display name; generate one.
+                 * fill_in_interface_opts_from_finfo and
+                 * capture_opts_add_iface_opt always fill in
+                 * the display name, so this shouldn't be necessary.
+                 */
+                if (interface_opts->descr == NULL) {
+                    if (interface_opts->name != NULL)
+                        interface_opts->descr = get_interface_descriptive_name(capture_opts, interface_opts->name);
+                    else
+                        interface_opts->descr = g_strdup("(Unknown)");
+                }
+                interface_opts->display_name = g_strdup(interface_opts->descr);
+            }
+            g_string_append_printf(iface_list_string, "%s", interface_opts->display_name);
+            if (style & IFLIST_QUOTE_IF_DESCRIPTION)
+                g_string_append_printf(iface_list_string, "'");
+            if (style & IFLIST_SHOW_FILTER) {
+                if (interface_opts->cfilter != NULL &&
+                        strlen(interface_opts->cfilter) > 0) {
+                    g_string_append_printf(iface_list_string, " (%s)", interface_opts->cfilter);
+                }
+            }
         }
-        return iface_list_string;
+    } else {
+        g_string_append_printf(iface_list_string, "%u interfaces", capture_opts->ifaces->len);
+    }
+    return iface_list_string;
 }
 #endif /* HAVE_LIBPCAP */
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -4,10 +4,19 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <ui/qt/utils/color_utils.h>
 #include <ui/qt/utils/tango_colors.h>
+
+#include <QApplication>
+#include <QPalette>
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+#include <QStyleHints>
+#include <epan/prefs.h>
+#endif
 
 // Colors we use in various parts of the UI.
 //
@@ -17,13 +26,13 @@
 // At some point we should probably make these configurable along with the
 // graph and sequence colors.
 
-const QColor ColorUtils::expert_color_comment    = QColor ( 0xb7, 0xf7, 0x74 );        /* Green */
-const QColor ColorUtils::expert_color_chat       = QColor ( 0x80, 0xb7, 0xf7 );        /* Light blue */
-const QColor ColorUtils::expert_color_note       = QColor ( 0xa0, 0xff, 0xff );        /* Bright turquoise */
-const QColor ColorUtils::expert_color_warn       = QColor ( 0xf7, 0xf2, 0x53 );        /* Yellow */
-const QColor ColorUtils::expert_color_error      = QColor ( 0xff, 0x5c, 0x5c );        /* Pale red */
-const QColor ColorUtils::expert_color_foreground = QColor ( 0x00, 0x00, 0x00 );        /* Black */
-const QColor ColorUtils::hidden_proto_item       = QColor ( 0x44, 0x44, 0x44 );        /* Gray */
+const QColor ColorUtils::expert_color_comment    = QColor (0xb7, 0xf7, 0x74);        /* Green */
+const QColor ColorUtils::expert_color_chat       = QColor (0x80, 0xb7, 0xf7);        /* Light blue */
+const QColor ColorUtils::expert_color_note       = QColor (0xa0, 0xff, 0xff);        /* Bright turquoise */
+const QColor ColorUtils::expert_color_warn       = QColor (0xf7, 0xf2, 0x53);        /* Yellow */
+const QColor ColorUtils::expert_color_error      = QColor (0xff, 0x5c, 0x5c);        /* Pale red */
+const QColor ColorUtils::expert_color_foreground = QColor (0x00, 0x00, 0x00);        /* Black */
+const QColor ColorUtils::hidden_proto_item       = QColor (0x44, 0x44, 0x44);        /* Gray */
 
 ColorUtils::ColorUtils(QObject *parent) :
     QObject(parent)
@@ -137,15 +146,89 @@ QRgb ColorUtils::sequenceColor(int item)
     return sequence_colors_[item % sequence_colors_.size()];
 }
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+bool ColorUtils::themeIsDark()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    switch (qApp->styleHints()->colorScheme()) {
+        case Qt::ColorScheme::Dark:
+            return true;
+        case Qt::ColorScheme::Light:
+            return false;
+        case Qt::ColorScheme::Unknown:
+            break;
+    }
+#endif
+    return qApp->palette().windowText().color().lightness() > qApp->palette().window().color().lightness();
+}
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+void ColorUtils::setScheme(int scheme)
+{
+    switch (scheme) {
+    case COLOR_SCHEME_LIGHT:
+        qApp->styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        break;
+    case COLOR_SCHEME_DARK:
+        qApp->styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+        break;
+    case COLOR_SCHEME_DEFAULT:
+    default:
+        qApp->styleHints()->setColorScheme(Qt::ColorScheme::Unknown);
+    }
+}
+#else
+void ColorUtils::setScheme(int)
+{
+}
+#endif
+
+QBrush ColorUtils::themeLinkBrush()
+{
+    return qApp->palette().link();
+}
+
+QString ColorUtils::themeLinkStyle()
+{
+    QString link_style;
+
+    if (themeIsDark()) {
+        link_style = QStringLiteral("<style>a:link { color: %1; }</style>")
+                .arg(themeLinkBrush().color().name());
+    }
+    return link_style;
+}
+
+const QColor ColorUtils::contrastingTextColor(const QColor color)
+{
+    bool background_is_light = color.lightness() > 127;
+    if ( (background_is_light && !ColorUtils::themeIsDark()) || (!background_is_light && ColorUtils::themeIsDark()) ) {
+        // usually black/darker color in light mode and white/lighter color in dark mode
+        return QApplication::palette().text().color();
+    }
+    // usually white/lighter color in light mode and black/darker color in dark mode
+    return QApplication::palette().base().color();
+}
+
+const QColor ColorUtils::hoverBackground()
+{
+    QPalette hover_palette = QApplication::palette();
+#if defined(Q_OS_MAC)
+    hover_palette.setCurrentColorGroup(QPalette::Active);
+    return hover_palette.highlight().color();
+#else
+    return ColorUtils::alphaBlend(hover_palette.window(), hover_palette.highlight(), 0.5);
+#endif
+}
+
+const QColor ColorUtils::warningBackground()
+{
+    if (themeIsDark()) {
+        return QColor(tango_butter_6);
+    }
+    return QColor(tango_butter_2);
+}
+
+const QColor ColorUtils::disabledForeground()
+{
+    return alphaBlend(QApplication::palette().windowText(), QApplication::palette().window(), 0.65);
+}

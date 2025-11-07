@@ -26,30 +26,31 @@ Protocol information comes from the book
 void proto_register_pcnfsd(void);
 void proto_reg_handoff_pcnfsd(void);
 
-static int proto_pcnfsd = -1;
-static int hf_pcnfsd_procedure_v1 = -1;
-static int hf_pcnfsd_procedure_v2 = -1;
-static int hf_pcnfsd_auth_client = -1;
-static int hf_pcnfsd_auth_ident_obscure = -1;
-static int hf_pcnfsd_auth_ident_clear = -1;
-static int hf_pcnfsd_auth_password_obscure = -1;
-static int hf_pcnfsd_auth_password_clear = -1;
-static int hf_pcnfsd_comment = -1;
-static int hf_pcnfsd_status = -1;
-static int hf_pcnfsd_uid = -1;
-static int hf_pcnfsd_gid = -1;
-static int hf_pcnfsd_gids_count = -1;
-static int hf_pcnfsd_homedir = -1;
-static int hf_pcnfsd_def_umask = -1;
-static int hf_pcnfsd_mapreq = -1;
-static int hf_pcnfsd_mapreq_status = -1;
-static int hf_pcnfsd_username = -1;
+static int proto_pcnfsd;
+static int hf_pcnfsd_procedure_v1;
+static int hf_pcnfsd_procedure_v2;
+static int hf_pcnfsd_auth_client;
+static int hf_pcnfsd_auth_ident_obscure;
+static int hf_pcnfsd_auth_ident_clear;
+static int hf_pcnfsd_auth_password;
+static int hf_pcnfsd_auth_password_obscure;
+static int hf_pcnfsd_auth_password_clear;
+static int hf_pcnfsd_comment;
+static int hf_pcnfsd_status;
+static int hf_pcnfsd_uid;
+static int hf_pcnfsd_gid;
+static int hf_pcnfsd_gids_count;
+static int hf_pcnfsd_homedir;
+static int hf_pcnfsd_def_umask;
+static int hf_pcnfsd_mapreq;
+static int hf_pcnfsd_mapreq_status;
+static int hf_pcnfsd_username;
 
 
-static gint ett_pcnfsd = -1;
-static gint ett_pcnfsd_auth_ident = -1;
-static gint ett_pcnfsd_auth_password = -1;
-static gint ett_pcnfsd_gids = -1;
+static int ett_pcnfsd;
+static int ett_pcnfsd_auth_ident;
+static int ett_pcnfsd_auth_password;
+static int ett_pcnfsd_gids;
 
 static int
 dissect_pcnfsd_username(tvbuff_t *tvb, int offset, proto_tree *tree)
@@ -142,12 +143,12 @@ dissect_pcnfsd2_mapid_reply(tvbuff_t *tvb, packet_info *pinfo,
 
 /* "NFS Illustrated 14.7.13 */
 static char *
-pcnfsd_decode_obscure(const char* data, int len)
+pcnfsd_decode_obscure(wmem_allocator_t *pool, const char* data, int len)
 {
     char *decoded_buf;
     char *decoded_data;
 
-    decoded_buf = (char *)wmem_alloc(wmem_packet_scope(), len);
+    decoded_buf = (char *)wmem_alloc(pool, len);
     decoded_data = decoded_buf;
     for ( ; len>0 ; len--, data++, decoded_data++) {
         *decoded_data = (*data ^ 0x5b) & 0x7f;
@@ -158,7 +159,7 @@ pcnfsd_decode_obscure(const char* data, int len)
 
 /* "NFS Illustrated" 14.7.13 */
 static int
-dissect_pcnfsd2_auth_call(tvbuff_t *tvb, packet_info *pinfo _U_,
+dissect_pcnfsd2_auth_call(tvbuff_t *tvb, packet_info *pinfo,
     proto_tree *tree, void* data _U_)
 {
     int         newoffset;
@@ -184,14 +185,14 @@ dissect_pcnfsd2_auth_call(tvbuff_t *tvb, packet_info *pinfo _U_,
     if (ident) {
         /* Only attempt to decode the ident if it has been specified */
         if (strcmp(ident, RPC_STRING_EMPTY) != 0)
-            ident_decoded = pcnfsd_decode_obscure(ident, (int)strlen(ident));
+            ident_decoded = pcnfsd_decode_obscure(pinfo->pool, ident, (int)strlen(ident));
         else
             ident_decoded = ident;
 
         if (ident_tree)
             proto_tree_add_string(ident_tree,
                 hf_pcnfsd_auth_ident_clear,
-                tvb, offset+4, (gint)strlen(ident_decoded), ident_decoded);
+                tvb, offset+4, (int)strlen(ident_decoded), ident_decoded);
     }
     if (ident_item) {
         proto_item_set_text(ident_item, "Authentication Ident: %s",
@@ -200,8 +201,9 @@ dissect_pcnfsd2_auth_call(tvbuff_t *tvb, packet_info *pinfo _U_,
 
     offset = newoffset;
 
-    password_tree = proto_tree_add_subtree(tree, tvb,
-                offset, -1, ett_pcnfsd_auth_password, NULL, "Authentication Password");
+    password_item = proto_tree_add_string_format(tree, hf_pcnfsd_auth_password,
+                                          tvb, 0, 0, "", "Authentication Password");
+    password_tree = proto_item_add_subtree(password_item, ett_pcnfsd_auth_password);
 
     newoffset = dissect_rpc_string(tvb, password_tree,
         hf_pcnfsd_auth_password_obscure, offset, &password);
@@ -212,12 +214,12 @@ dissect_pcnfsd2_auth_call(tvbuff_t *tvb, packet_info *pinfo _U_,
     if (password) {
         /* Only attempt to decode the password if it has been specified */
         if (strcmp(password, RPC_STRING_EMPTY))
-            pcnfsd_decode_obscure(password, (int)strlen(password));
+            pcnfsd_decode_obscure(pinfo->pool, password, (int)strlen(password));
 
         if (password_tree)
             proto_tree_add_string(password_tree,
                 hf_pcnfsd_auth_password_clear,
-                tvb, offset+4, (gint)strlen(password), password);
+                tvb, offset+4, (int)strlen(password), password);
     }
     if (password_item) {
         proto_item_set_text(password_item, "Authentication Password: %s",
@@ -353,6 +355,9 @@ proto_register_pcnfsd(void)
         { &hf_pcnfsd_auth_ident_clear, {
                 "Clear Ident", "pcnfsd.auth.ident.clear", FT_STRING, BASE_NONE,
                 NULL, 0, "Authentication Clear Ident", HFILL }},
+        { &hf_pcnfsd_auth_password, {
+                "Password", "pcnfsd.auth.password", FT_STRING, BASE_NONE,
+                NULL, 0, NULL, HFILL }},
         { &hf_pcnfsd_auth_password_obscure, {
                 "Obscure Password", "pcnfsd.auth.password.obscure", FT_STRING, BASE_NONE,
                 NULL, 0, "Authentication Obscure Password", HFILL }},
@@ -364,7 +369,7 @@ proto_register_pcnfsd(void)
                 NULL, 0, NULL, HFILL }},
         { &hf_pcnfsd_status, {
                 "Reply Status", "pcnfsd.status", FT_UINT32, BASE_DEC,
-                NULL, 0, "Status", HFILL }},
+                NULL, 0, NULL, HFILL }},
         { &hf_pcnfsd_uid, {
                 "User ID", "pcnfsd.uid", FT_UINT32, BASE_DEC,
                 NULL, 0, NULL, HFILL }},
@@ -391,15 +396,14 @@ proto_register_pcnfsd(void)
                 NULL, 0, "pcnfsd.username", HFILL }},
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_pcnfsd,
         &ett_pcnfsd_auth_ident,
         &ett_pcnfsd_auth_password,
         &ett_pcnfsd_gids
     };
 
-    proto_pcnfsd = proto_register_protocol("PC NFS",
-                                           "PCNFSD", "pcnfsd");
+    proto_pcnfsd = proto_register_protocol("PC NFS", "PCNFSD", "pcnfsd");
     proto_register_field_array(proto_pcnfsd, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
 }
@@ -413,7 +417,7 @@ proto_reg_handoff_pcnfsd(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

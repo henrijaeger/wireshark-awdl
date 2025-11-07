@@ -15,7 +15,7 @@
  *
  * prior to getting them accepted/included into the official Osmocom
  * GSMTAP definition, available from
- * http://cgit.osmocom.org/cgit/libosmocore/tree/include/osmocom/core/gsmtap.h
+ * http://cgit.osmocom.org/libosmocore/tree/include/osmocom/core/gsmtap.h
  *
  * The GSMTAP maintainer can be contacted via the
  * openbsc@lists.osmocom.org mailing list, or by private e-mail
@@ -40,6 +40,8 @@
 #define GSMTAP_TYPE_OSMOCORE_LOG	0x10	/* libosmocore logging */
 #define GSMTAP_TYPE_QC_DIAG		0x11	/* Qualcomm DIAG frame */
 #define GSMTAP_TYPE_LTE_NAS		0x12	/* LTE Non-Access Stratum */
+#define GSMTAP_TYPE_E1T1		0x13	/* E1/T1 line traces */
+#define GSMTAP_TYPE_GSM_RLP		0x14	/* GSM RLP as per 3GPP TS 24.022 */
 
 /* ====== DO NOT MAKE UNAPPROVED MODIFICATIONS HERE ===== */
 #define GSMTAP_BURST_UNKNOWN		0x00
@@ -78,6 +80,8 @@
 #define GSMTAP_CHANNEL_PDTCH		0x0d
 #define GSMTAP_CHANNEL_PTCCH		0x0e
 #define GSMTAP_CHANNEL_CBCH51		0x0f
+#define GSMTAP_CHANNEL_VOICE_F		0x10
+#define GSMTAP_CHANNEL_VOICE_H		0x11
 
 /* GPRS Coding Scheme CS1..4 */
 #define GSMTAP_GPRS_CS_BASE	0x20
@@ -87,6 +91,17 @@
 #define GSMTAP_GPRS_MCS(N)	(GSMTAP_GPRS_MCS_BASE + N)
 
 #define GSMTAP_CHANNEL_ACCH	0x80
+
+/* ====== DO NOT MAKE UNAPPROVED MODIFICATIONS HERE ===== */
+/* sub-types for GSMTAP_TYPE_SIM */
+#define GSMTAP_SIM_APDU		0x00 /* APDU data (complete APDU) */
+#define GSMTAP_SIM_ATR			0x01 /* card ATR data */
+#define GSMTAP_SIM_PPS_REQ		0x02 /* PPS request data */
+#define GSMTAP_SIM_PPS_RSP		0x03 /* PPS response data */
+#define GSMTAP_SIM_TPDU_HDR		0x04 /* TPDU command header */
+#define GSMTAP_SIM_TPDU_CMD		0x05 /* TPDU command body */
+#define GSMTAP_SIM_TPDU_RSP		0x06 /* TPDU response body */
+#define GSMTAP_SIM_TPDU_SW		0x07 /* TPDU response trailer */
 
 /* ====== DO NOT MAKE UNAPPROVED MODIFICATIONS HERE ===== */
 /* sub-types for TYPE_TETRA_AIR */
@@ -120,6 +135,20 @@
 #define GSMTAP_GMR1_TCH6			0x14
 #define GSMTAP_GMR1_TCH9			0x18
 
+/* ====== DO NOT MAKE UNAPPROVED MODIFICATIONS HERE ===== */
+/* sub-types for TYPE_E1T1 */
+#define GSMTAP_E1T1_LAPD			0x01	/* Q.921 LAPD */
+#define GSMTAP_E1T1_FR				0x02	/* Frame Relay */
+#define GSMTAP_E1T1_RAW				0x03	/* raw/transparent B-channel */
+#define GSMTAP_E1T1_TRAU16			0x04	/* 16k TRAU frames; sub-slot 0-3 */
+#define GSMTAP_E1T1_TRAU8			0x05	/* 8k TRAU frames; sub-slot 0-7 */
+#define GSMTAP_E1T1_V5EF			0x06	/* V5 Envelope Function */
+#define GSMTAP_E1T1_X75				0x07	/* X.75 B-channel data */
+#define GSMTAP_E1T1_V120			0x08	/* V.120 B-channel data */
+#define GSMTAP_E1T1_V110			0x09	/* V.110 B-channel data */
+#define GSMTAP_E1T1_H221			0x0a	/* H.221 B-channel data */
+#define GSMTAP_E1T1_PPP				0x0b	/* PPP */
+
 #define GSMTAP_ARFCN_F_PCS			0x8000
 #define GSMTAP_ARFCN_F_UPLINK			0x4000
 #define GSMTAP_ARFCN_MASK			0x3fff
@@ -129,28 +158,28 @@
 /* This is the header as it is used by gsmtap-generating software.
  * It is not used by the wireshark dissector and provided for reference only.
 struct gsmtap_hdr {
-	guint8 version;		// version, set to 0x01 currently
-	guint8 hdr_len;		// length in number of 32bit words
-	guint8 type;		// see GSMTAP_TYPE_*
-	guint8 timeslot;	// timeslot (0..7 on Um)
+	uint8_t version;		// version, set to 0x01 currently
+	uint8_t hdr_len;		// length in number of 32bit words
+	uint8_t type;		// see GSMTAP_TYPE_*
+	uint8_t timeslot;	// timeslot (0..7 on Um)
 
-	guint16 arfcn;		// ARFCN (frequency)
-	gint8 signal_dbm;	// signal level in dBm
-	gint8 snr_db;		// signal/noise ratio in dB
+	uint16_t arfcn;		// ARFCN (frequency)
+	int8_t signal_dbm;	// signal level in dBm
+	int8_t snr_db;		// signal/noise ratio in dB
 
-	guint32 frame_number;	// GSM Frame Number (FN)
+	uint32_t frame_number;	// GSM Frame Number (FN)
 
-	guint8 sub_type;	// Type of burst/channel, see above
-	guint8 antenna_nr;	// Antenna Number
-	guint8 sub_slot;	// sub-slot within timeslot
-	guint8 res;		// reserved for future use (RFU)
+	uint8_t sub_type;	// Type of burst/channel, see above
+	uint8_t antenna_nr;	// Antenna Number
+	uint8_t sub_slot;	// sub-slot within timeslot
+	uint8_t res;		// reserved for future use (RFU)
 }
  */
 
 #endif /* _PACKET_GSMTAP_H */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

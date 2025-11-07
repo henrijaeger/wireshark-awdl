@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Looks for registration routines in the source files
 # and assembles C code to call all the routines.
@@ -33,7 +33,7 @@ def gen_array(funcs, name):
 
 def scan_files(infiles, regs):
     for path in infiles:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf8') as f:
             source = f.read()
             for array, regex in regs:
                 matches = re.findall(regex, source)
@@ -57,23 +57,51 @@ def make_dissectors(outfile, infiles):
     output += """\
 #include "dissectors.h"
 
-const gulong dissector_reg_proto_count = {0};
-const gulong dissector_reg_handoff_count = {1};
+const unsigned long dissector_reg_proto_count = {0};
+const unsigned long dissector_reg_handoff_count = {1};
 
 """.format(len(protos), len(handoffs))
 
     output += gen_prototypes(protos)
     output += "\n"
-    output += gen_array(protos, "dissector_reg_t dissector_reg_proto")
+    output += gen_array(protos, "dissector_reg_t const dissector_reg_proto")
     output += "\n"
     output += gen_prototypes(handoffs)
     output += "\n"
-    output += gen_array(handoffs, "dissector_reg_t dissector_reg_handoff")
+    output += gen_array(handoffs, "dissector_reg_t const dissector_reg_handoff")
 
     with open(outfile, "w") as f:
         f.write(output)
 
     print("Found {0} registrations and {1} handoffs.".format(len(protos), len(handoffs)))
+
+def make_wtap_modules(outfile, infiles):
+    wtap_modules = []
+    wtap_modules_regex = r"void\s+(register_[\w]+)\s*\(\s*void\s*\)\s*{"
+
+    scan_files(infiles, [(wtap_modules, wtap_modules_regex)])
+
+    if len(wtap_modules) < 1:
+        sys.exit("No wiretap registrations found.")
+
+    wtap_modules.sort()
+
+    output = preamble
+    output += """\
+#include "wtap_modules.h"
+
+const unsigned wtap_module_count = {0};
+
+""".format(len(wtap_modules))
+
+    output += gen_prototypes(wtap_modules)
+    output += "\n"
+    output += gen_array(wtap_modules, "wtap_module_reg_t const wtap_module_reg")
+
+    with open(outfile, "w") as f:
+        f.write(output)
+
+    print("Found {0} registrations.".format(len(wtap_modules)))
 
 def make_taps(outfile, infiles):
     taps = []
@@ -90,13 +118,13 @@ def make_taps(outfile, infiles):
     output += """\
 #include "ui/taps.h"
 
-const gulong tap_reg_listener_count = {0};
+const unsigned long tap_reg_listener_count = {0};
 
 """.format(len(taps))
 
     output += gen_prototypes(taps)
     output += "\n"
-    output += gen_array(taps, "tap_reg_t tap_reg_listener")
+    output += gen_array(taps, "tap_reg_t const tap_reg_listener")
 
     with open(outfile, "w") as f:
         f.write(output)
@@ -115,12 +143,14 @@ if __name__ == "__main__":
     outfile = sys.argv[2]
     if sys.argv[3].startswith("@"):
         with open(sys.argv[3][1:]) as f:
-            infiles = [l.strip() for l in f.readlines()]
+            infiles = [line.strip() for line in f.readlines()]
     else:
         infiles = sys.argv[3:]
 
     if mode == "dissectors":
         make_dissectors(outfile, infiles)
+    elif mode == "wtap_modules":
+        make_wtap_modules(outfile, infiles)
     elif mode == "taps":
         make_taps(outfile, infiles)
     else:

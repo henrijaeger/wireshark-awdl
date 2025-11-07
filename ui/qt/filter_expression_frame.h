@@ -1,4 +1,4 @@
-/* filter_expression_frame.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -30,7 +30,6 @@ public:
 signals:
     void showPreferencesDialog(QString pane_name);
     void filterExpressionsChanged();
-    void pushFilterSyntaxStatus(const QString&);
 
 protected:
     virtual void showEvent(QShowEvent *event);
@@ -51,16 +50,3 @@ private slots:
 };
 
 #endif // FILTER_EXPRESSION_FRAME_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

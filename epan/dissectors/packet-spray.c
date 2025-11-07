@@ -11,22 +11,29 @@
 #include "config.h"
 
 #include "packet-rpc.h"
-#include "packet-spray.h"
 
 void proto_register_spray(void);
 void proto_reg_handoff_spray(void);
 
-static int proto_spray = -1;
-static int hf_spray_procedure_v1 = -1;
-static int hf_spray_sprayarr = -1;
-static int hf_spray_counter = -1;
-static int hf_spray_clock = -1;
-static int hf_spray_sec = -1;
-static int hf_spray_usec = -1;
+static int proto_spray;
+static int hf_spray_procedure_v1;
+static int hf_spray_sprayarr;
+static int hf_spray_counter;
+static int hf_spray_clock;
+static int hf_spray_sec;
+static int hf_spray_usec;
 
-static gint ett_spray = -1;
-static gint ett_spray_clock = -1;
+static int ett_spray;
+static int ett_spray_clock;
 
+#define PACKET_SPRAY_H
+
+#define SPRAYPROC_NULL	0
+#define SPRAYPROC_SPRAY	1
+#define SPRAYPROC_GET	2
+#define SPRAYPROC_CLEAR	3
+
+#define SPRAY_PROGRAM 100012
 
 static int
 dissect_get_reply(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
@@ -111,7 +118,7 @@ proto_register_spray(void)
 
 	};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_spray,
 		&ett_spray_clock,
 	};
@@ -130,7 +137,7 @@ proto_reg_handoff_spray(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

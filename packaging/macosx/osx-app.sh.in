@@ -3,11 +3,9 @@
 # USAGE
 # osx-app [-s] [-l /path/to/libraries]
 #
-# This script attempts to build an Wireshark.app bundle for macOS, resolving
+# This script attempts to build an application bundle for macOS, resolving
 # dynamic libraries, etc.
 # It strips the executable and libraries if '-s' is given.
-# The Info.plist file can be found in the base wireshark directory once
-# configure has been run.
 #
 # AUTHORS
 #		 Kees Cook <kees@outflux.net>
@@ -33,9 +31,13 @@
 # and "share" directories under the installation directory.
 #
 
+# XXX We could probably replace a lot of this with https://github.com/auriamg/macdylibbundler
+
+shopt -s extglob
+
 # Defaults
 strip=false
-exclude_prefixes="/System/|/Library/|/usr/lib/|/usr/X11/|/opt/X11/|@rpath|@executable_path"
+install_exclude_prefixes="/System/|/Library/|/usr/lib/|/usr/X11/|/opt/X11/|@executable_path"
 
 # Bundle always has the same name. Version information is stored in
 # the Info.plist file which is filled in by the configure script.
@@ -44,7 +46,7 @@ bundle="Wireshark.app"
 # Location for libraries (tools/macos-setup.sh defaults to whatever the
 # various support libraries use as their standard installation location,
 # which is /usr/local)
-if [ -z $LIBPREFIX ]; then
+if [ -z "$LIBPREFIX" ]; then
 	LIBPREFIX="/usr/local"
 fi
 
@@ -62,15 +64,17 @@ USAGE
 OPTIONS
 	-h,--help
 		Display this help message.
+	-b,--bundle
+		The application bundle name. Default is Wireshark.app.
 	-s
 		Strip the libraries and executables from debugging symbols.
 	-l,--libraries
-		Specify the path to the libraries Wireshark depends on
-		(typically /sw or /opt/local). By default it is
+		Specify the path to the libraries the application depends
+		on (typically /sw or /opt/local). By default it is
 		/usr/local.
 
 EXAMPLE
-	$0 -s -l /opt/local
+	$0 -b Stratoshark.app -s -l /opt/local
 "
 }
 
@@ -80,6 +84,9 @@ EXAMPLE
 while [ "$1" != "" ]
 do
 	case $1 in
+		-b|--bundle)
+			bundle="$2"
+			shift 1 ;;
 		-s)
 			strip=true ;;
 		-l|--libraries)
@@ -106,34 +113,93 @@ if [ ! -d "$bundle" ] ; then
 	exit 1
 fi
 
-qt_frameworks_dir=$( qmake -query QT_INSTALL_LIBS )
+qt_frameworks_dir=$( "@QT_QMAKE_EXECUTABLE@" -query QT_INSTALL_LIBS )
 if [ ! -d "$qt_frameworks_dir" ] ; then
 	echo "Can't find the Qt frameworks directory" >&2
 	exit 1
 fi
 
+sparkle_version="@SPARKLE_VERSION@"
+sparkle_frameworks_dir="@SPARKLE_LIBRARY@"
+
+#
+# Define the signing identities, or use self-signed ("-")
+# if the identity is not provided.
+if [ -n "$CODE_SIGN_IDENTITY" ] ; then
+	codesign_dev_app_identity="Developer ID Application: $CODE_SIGN_IDENTITY"
+	codesign_dev_install_identity="Developer ID Installer: $CODE_SIGN_IDENTITY"
+else
+	codesign_dev_app_identity="-"
+	codesign_dev_install_identity="-"
+fi
+
 #
 # Leave the Qt frameworks out of the special processing.
 #
-exclude_prefixes="$exclude_prefixes|$qt_frameworks_dir"
+install_exclude_prefixes="$install_exclude_prefixes|$qt_frameworks_dir"
+
+app_name=${bundle%%.app}
+app_lower=$(echo "$app_name" | tr '[:upper:]' '[:lower:]')
 
 # Package paths
 pkgexec="$bundle/Contents/MacOS"
-pkgres="$bundle/Contents/Resources"
+#pkgres="$bundle/Contents/Resources"
 pkglib="$bundle/Contents/Frameworks"
-pkgplugin="$bundle/Contents/PlugIns/wireshark/@VERSION_MAJOR@.@VERSION_MINOR@"
+pkgplugin="$bundle/Contents/PlugIns/$app_lower/@PLUGIN_PATH_ID@"
 
 # Set the 'macosx' directory, usually the current directory.
-resdir=`pwd`
+#resdir=$( pwd )
 
 #
 # Get a list of all binaries in the bundle.
 # Treat all plain files with read and execute permissions for all as
 # binaries.
 #
-bundle_binary_list=`find $pkgexec -type f -perm -0555 -print`
+secondary_binary_list=()
+while read -r binary ; do
+	secondary_binary_list+=("$binary")
+done < <( find "$pkgexec" \! -name "$app_name" -type f -perm -0555 -print | sort )
+plugin_library_list=()
+while read -r library ; do
+	plugin_library_list+=("$library")
+done < <( find "$pkgplugin" -name "*.so" -type f -perm -0555 -print | sort )
+bundle_binary_list=("$pkgexec/$app_name" "${secondary_binary_list[@]}" "${plugin_library_list[@]}")
 
-echo -e "\nFixing up $bundle...\n"
+echo -e "\\nFixing up $bundle..."
+
+# Start with a clean Frameworks slate.
+if [ -d "$pkglib" ] ; then
+	printf "Removing %s\n" "$pkglib"
+	rm -v -r -f "$pkglib"
+fi
+mkdir -v -m u=rwx,go=rx "$pkglib"
+
+echo -e "\\nPrepopulating our libraries"
+
+# Copy only <library>.<SOVERSION>.dylib.
+cp -v +([^.]).+([[:digit:]]).dylib "$pkglib"
+
+# Fetch a unique list of LC_RPATHs from our executables, which will be used
+# for our dependency search below.
+bundle_binary_rpaths=("/usr/local/lib")
+rpaths=()
+
+# macdeployqt handles our Qt dependencies. We handle our Sparkle and
+# internal dependencies.
+skip_pats="Qt|Sparkle|build/run"
+
+for binary in "${bundle_binary_list[@]}" "$pkglib"/*.dylib ; do
+	while read -r rpath ; do
+		bundle_binary_rpaths+=("$rpath")
+	done < <( otool -l "$binary" | grep -A2 LC_RPATH | awk '$1=="path" && $2 !~ /^@/ {print $2}' | grep -E -v "$skip_pats" )
+done
+
+while read -r rpath ; do
+	rpaths+=("$rpath")
+done < <( printf '%s\n' "${bundle_binary_rpaths[@]}" | sort -u)
+
+printf "\nSearching the following LC_RPATHs for dependencies:\n"
+printf '%s\n' "${rpaths[@]}"
 
 # Find out libs we need from Fink, MacPorts, or from a custom install
 # (i.e. $LIBPREFIX), then loop until no changes.
@@ -141,7 +207,7 @@ a=1
 nfiles=0
 endl=true
 while $endl; do
-	echo -e "Looking for dependencies. Round" $a
+	echo -e "\\nLooking for dependencies. Round $a"
 	#
 	# To find dependencies, we:
 	#
@@ -158,62 +224,95 @@ while $endl; do
 	#    remove lines of output that don't correspond to dependencies;
 	#
 	#    use cut to extract the library name from the output;
+
+	#    replace "\tlibbrotli" with "\t/usr/local/lib/libbrotli" so that
+	#    it isn't excluded from subsequent filtering.
+	#    libbrotli 1.09 and earlier doesn't have a path prefix in its
+	#    "install name" when built by tools/macos-setup.sh:
+	#    https://github.com/google/brotli/pull/976;
 	#
-	#    replace "libssh" with "/usr/local/lib/libssh" because
-	#    libssh, for some reason, has its "install name" set to
-	#    just libssh.4.dylib, rather than /usr/local/lib/libssh.4.dylib,
-	#    when built by tools/macos-setup.sh;
+	#    replace "@loader_path/libbrotli" with "/usr/local/lib/libbrotli" so that
+	#    it isn't excluded from subsequent filtering;
 	#
 	#    strip out system libraries, as we don't bundle them with
 	#    Wireshark;
 	#
 	#    eliminate duplicates.
 	#
-	libs="`\
-		otool -L $bundle_binary_list "$pkglib"/*.dylib 2>/dev/null \
-		| fgrep compatibility \
+	# We might want to let dyld do some of the work for us, e.g. by
+	# parsing the output of
+	#
+	#    `DYLD_PRINT_LIBRARIES=1 $bundle_binary`
+	#
+	# instead, or just use CMake's fixup_bundle:
+	# https://cmake.org/cmake/help/latest/module/BundleUtilities.html
+	libs=()
+	while read -r lib ; do
+		libs+=("$lib")
+	done < <(
+		otool -L "${bundle_binary_list[@]}" "$pkglib"/*.dylib 2>/dev/null \
+		| grep -F compatibility \
+		| grep -v @rpath \
 		| cut -d\( -f1 \
-		| sed '1,$s;^	libssh;	/usr/local/lib/libssh;' \
-		| egrep -v "$exclude_prefixes" \
+		| sed '1,$s;^	libbrotli;	/usr/local/lib/libbrotli;' \
+		| sed '1,$s;^	@loader_path/libbrotli;	/usr/local/lib/libbrotli;' \
+		| grep -E -v "$install_exclude_prefixes" \
 		| sort \
 		| uniq \
-		`"
-	cp -vn $libs "$pkglib"
-	let "a+=1"
-	nnfiles=`ls "$pkglib" | wc -l`
-	if [ $nnfiles = $nfiles ]; then
+		)
+	while read -r rpath_lib _ ; do
+		suffix=${rpath_lib/@rpath\/}
+		for rpath in "${rpaths[@]}" ; do
+			if [ -f "$rpath/$suffix" ] ; then
+				printf "Found @rpath/%s in %s\n" "$suffix" "$rpath"
+				libs+=("$rpath/$suffix")
+			fi
+		done
+	done < <( otool -L "${bundle_binary_list[@]}" "$pkglib"/*.dylib \
+		| grep @rpath \
+		| grep -E -v "$skip_pats" \
+		| sort -u \
+		)
+	install -m 644 -C -v "${libs[@]}" "$pkglib"
+	(( a++ ))
+	# shellcheck disable=SC2012
+	nnfiles=$( ls "$pkglib" | wc -l )
+	if (( nnfiles == nfiles )); then
 		endl=false
 	else
 		nfiles=$nnfiles
 	fi
 done
 
-chmod 755 "$pkglib"/*.dylib
-
 # Strip libraries and executables if requested
 #----------------------------------------------------------
 if [ "$strip" = "true" ]; then
-	echo -e "\nStripping debugging symbols...\n"
+	echo -e "\\nStripping debugging symbols...\\n"
 	strip -x "$pkglib"/*.dylib
-	strip -ur "$bundle_binary_list"
+	strip -ur "${bundle_binary_list[@]}"
 fi
 
-#
-# This may not work on Qt 5.5.0 or 5.5.1:
-# https://bugreports.qt.io/browse/QTBUG-47868
-#
-macdeployqt "$bundle" -no-strip -verbose=2 || exit 1
+"@QT_MACDEPLOYQT_EXECUTABLE@" "$bundle" -no-strip -verbose=2 || exit 1
 
 #
-# The build process added to the Wireshark binary an rpath entry
-# pointing to the directory containing the Qt frameworks; remove
-# that entry from the Wireshark binary in the package.
+# The build process added to the Wireshark/Stratoshark binary an rpath
+# entry pointing to the directory containing the Qt frameworks; remove
+# that entry from the binary in the package.
 #
-/usr/bin/install_name_tool -delete_rpath "$qt_frameworks_dir" $pkgexec/Wireshark
+/usr/bin/install_name_tool -delete_rpath "$qt_frameworks_dir" "$pkgexec/$app_name"
+
+if [ -d "$sparkle_frameworks_dir" ] ; then
+	cp -R "$sparkle_frameworks_dir" "$pkglib" || exit 1
+	# Remove these if we ever start sandboxing.
+	rm -f "$pkglib/Sparkle.framework/XPCServices" || exit 1
+	rm -rf "$pkglib/Sparkle.framework/Versions/B/XPCServices" || exit 1
+fi
 
 # NOTE: we must rpathify *all* files, *including* Qt libraries etc.,
 #
 rpathify_file () {
+	local rpathify_exclude_prefixes="$install_exclude_prefixes|@rpath"
+
 	# Fix a given executable, library, or plugin to be relocatable
 	if [ ! -f "$1" ]; then
 		return 0;
@@ -222,8 +321,7 @@ rpathify_file () {
 	#
 	# OK, what type of file is this?
 	#
-	filetype=$( otool -hv "$1" | egrep MH_MAGIC | awk '{print $5}' ; exit ${PIPESTATUS[0]} )
-	if [ $? -ne 0 ] ; then
+	if ! filetype=$( otool -hv "$1" | grep -E MH_MAGIC | awk '{print $5}' ; exit "${PIPESTATUS[0]}" ) ; then
 		echo "Unable to rpathify $1 in $( pwd ): file type failed."
 		exit 1
 	fi
@@ -241,38 +339,47 @@ rpathify_file () {
 		#
 		if [[ "$filetype" = "DYLIB" || "$filetype" = "BUNDLE" ]]; then
 			echo "Changing shared library identification of $1"
-			base=`echo $1 | awk -F/ '{print $NF}'`
+			base=$( echo "$1" | awk -F/ '{print $NF}' )
 			#
 			# The library will end up in a directory in
 			# the rpath; this is what we should change its
 			# ID to.
 			#
 			to=@rpath/$base
-			/usr/bin/install_name_tool -id $to $1
+			/usr/bin/install_name_tool -id "$to" "$1"
 
 			#
 			# If we're a library and we depend on something in
 			# @executable_path/../Frameworks, replace that with
 			# @rpath.
 			#
-			otool -L $1 | grep @executable_path/../Frameworks | awk '{print $1}' | \
-			while read dep_lib ; do
-				base=`echo $dep_lib | awk -F/ '{print $NF}'`
+			while read -r dep_lib ; do
+				base=$( echo "$dep_lib" | awk -F/ '{print $NF}' )
 				to="@rpath/$base"
 				echo "Changing reference to $dep_lib to $to in $1"
-				/usr/bin/install_name_tool -change $dep_lib $to $1
-			done
+				/usr/bin/install_name_tool -change "$dep_lib" "$to" "$1"
+			done < <( otool -L "$1" | grep @executable_path/../Frameworks | awk '{print $1}' )
+
+			#
+			# Try to work around brotli's lack of a full path
+			# https://github.com/google/brotli/issues/934
+			#
+			while read -r base ; do
+				to="@rpath/$base"
+				echo "Changing reference to $base to $to in $1"
+				/usr/bin/install_name_tool -change "$base" "$to" "$1"
+			done < <( otool -L "$1" | grep '^	libbrotli' | awk '{print $1}' )
 		fi
 
 		#
 		# Find our local rpaths and remove them.
 		#
-		otool -l $1 | grep -A2 LC_RPATH \
+		otool -l "$1" | grep -A2 LC_RPATH \
 			| awk '$1=="path" && $2 !~ /^@/ {print $2}' \
-			| egrep -v "$exclude_prefixes" | \
-		while read lc_rpath ; do
+			| grep -E -v "$rpathify_exclude_prefixes" | \
+		while read -r lc_rpath ; do
 			echo "Stripping LC_RPATH $lc_rpath from $1"
-			install_name_tool -delete_rpath $lc_rpath $1
+			install_name_tool -delete_rpath "$lc_rpath" "$1"
 		done
 
 		#
@@ -293,16 +400,16 @@ rpathify_file () {
 			fi
 
 			echo "Adding @executable_path/$framework_path to rpath of $1"
-			/usr/bin/install_name_tool -add_rpath @executable_path/$framework_path $1
+			/usr/bin/install_name_tool -add_rpath @executable_path/$framework_path "$1"
 		fi
 
 		#
 		# Show the minimum supported version of macOS
 		# for each executable or library
 		#
-		if [[ "$filetype" = "EXECUTE" || "$filetype" = "DYLIB" ]] && [[ "$VERSION" -ge "7" ]] ; then
+		if [[ "$filetype" = "EXECUTE" || "$filetype" = "DYLIB" ]] ; then
 			echo "Minimum macOS version for $1:"
-			otool -l $1 | grep -A3 LC_VERSION_MIN_MACOSX
+			otool -l "$1" | grep -A3 LC_VERSION_MIN_MACOSX
 		fi
 
 		#
@@ -315,20 +422,22 @@ rpathify_file () {
 		# system on which the bundle will be installed,
 		# and should be referred to by their full pathnames.
 		#
-		libs="`\
-			otool -L $1 \
-			| fgrep compatibility \
+		local libs=()
+		while read -r lib ; do
+			libs+=("$lib")
+		done < <( otool -L "$1" \
+			| grep -F compatibility \
 			| cut -d\( -f1 \
-			| egrep -v "$exclude_prefixes" \
+			| grep -E -v "$rpathify_exclude_prefixes" \
 			| sort \
 			| uniq \
-			`"
+			)
 
-		for lib in $libs; do
+		for lib in "${libs[@]}"; do
 			#
 			# Get the file name of the library.
 			#
-			base=`echo $lib | awk -F/ '{print $NF}'`
+			base=$( echo "$lib" | awk -F/ '{print $NF}' )
 			#
 			# The library will end up in a directory in
 			# the rpath; this is what we should change its
@@ -339,7 +448,7 @@ rpathify_file () {
 			# Change the reference to that library.
 			#
 			echo "Changing reference to $lib to $to in $1"
-			/usr/bin/install_name_tool -change $lib $to $1
+			/usr/bin/install_name_tool -change "$lib" "$to" "$1"
 		done
 		;;
 	esac
@@ -350,16 +459,19 @@ rpathify_dir () {
 	# Make sure we *have* that directory
 	#
 	if [ -d "$1" ]; then
-		(cd "$1"
+		(cd "$1" || exit 1
 		echo "rpathifying $1"
 		#
 		# Make sure we *have* files to fix
 		#
-		files=`ls $2 2>/dev/null`
-		if [ ! -z "$files" ]; then
+		# shellcheck disable=SC2086
+		files=$( ls $2 2>/dev/null )
+		if [ -n "$files" ]; then
 			for file in $files; do
-				rpathify_file "$file" "`pwd`"
+				rpathify_file "$file" "$( pwd )"
 			done
+		else
+			echo "no files found in $1"
 		fi
 		)
 		rf_ret=$?
@@ -381,8 +493,7 @@ rpathify_files () {
 	rpathify_dir "$pkgexec/extcap" "*"
 }
 
-PATHLENGTH=`echo $LIBPREFIX | wc -c`
-if [ "$PATHLENGTH" -ge "6" ]; then
+if [ ${#LIBPREFIX} -ge "6" ]; then
 	# If the LIBPREFIX path is long enough to allow
 	# path rewriting, then do this.
 	# 6 is the length of @rpath, which replaces LIBPREFIX.
@@ -395,77 +506,212 @@ else
 
 fi
 
-echo "Dsymifying executables"
-if [ -z "$bundle_binary_list" ] ; then
-	echo "No executables specified for dsymifying."
-	exit 1
-fi
-for binary in $bundle_binary_list ; do
-	if [ -e "$binary" ];then
-		dsymutil "$binary"
-	fi
-done
+# QtNetwork might be linked with brotli.
+rpathify_file "$pkglib/QtNetwork.framework/Versions/Current/QtNetwork"
 
-echo "Dsymifying frameworks"
-for framework in $pkglib/*.framework/Versions/*/* ; do
+bundle_dsym="${bundle%%.app}.dSYM"
+
+frameworks=()
+for framework in "$pkglib"/*.framework/Versions/*/* ; do
 	if [ -f "$framework" ];then
-		dsymutil "$framework"
+		frameworks+=("$framework")
 	fi
 done
 
-echo "Dsymifying libraries"
-for library in $pkglib/*.dylib ; do
-	#
-	# Squelch warnings, in case the .o files from building
-	# support libraries aren't around any more.
-	#
-	dsymutil "$library" | egrep -v 'unable to open object file'
-done
+echo "Dsymifying binaries to $bundle_dsym:"
+# shellcheck disable=SC2086
+dsymutil --minimize --out "$bundle_dsym" \
+	"${bundle_binary_list[@]}" \
+	"${frameworks[@]}" \
+	"$pkglib"/*.dylib
 
-echo "Dsymifying plugins"
-for plugin in $pkgplugin/*/*.so ; do
-	dsymutil "$plugin"
-done
+# echo "Stripping binaries:"
+# # shellcheck disable=SC2086
+# strip -S \
+# 	"${bundle_binary_list[@]}" \
+# 	"${frameworks[@]}" \
+# 	"$pkglib"/*.dylib \
+# 	"$pkgplugin"/*/*.so
+
+# XXX What's the proper directory layout here?
+# dsymify_file () {
+# 	# out_dsym="${1/#$bundle/$bundle_dsym}.dSYM"
+# 	echo "    $1"
+# 	dsymutil --minimize --out "$bundle_dsym" "$1"
+# 	strip "$1"
+# }
+
+# echo "Dsymifying and stripping executables:"
+# if [ -z "${bundle_binary_list[@]}" ] ; then
+# 	echo "No executables specified for dsymifying."
+# 	exit 1
+# fi
+# for binary in "${bundle_binary_list[@]}" ; do
+# 	if [ -e "$binary" ];then
+# 		dsymify_file "$binary"
+# 	fi
+# done
+
+# echo "Dsymifying and stripping frameworks:"
+# for framework in "$pkglib"/*.framework/Versions/*/* ; do
+# 	if [ -f "$framework" ];then
+# 		dsymify_file "$framework"
+# 	fi
+# done
+
+# echo "Dsymifying and stripping libraries:"
+# for library in "$pkglib"/*.dylib ; do
+# 	#
+# 	# Squelch warnings, in case the .o files from building
+# 	# support libraries aren't around any more.
+# 	#
+# 	dsymify_file "$library" | grep -E -v 'unable to open object file'
+# done
+
+# echo "Dsymifying and stripping plugins:"
+# for plugin in "$pkgplugin"/*/*.so ; do
+# 	dsymify_file "$plugin"
+# done
 
 codesign_file () {
-	codesign --sign "Developer ID Application: $CODE_SIGN_IDENTITY" --verbose "$1"
-	codesign --verify --verbose "$1" || exit 1
-	spctl --assess --type execute "$1" || exit 1
+	# https://developer.apple.com/forums/thread/128166
+	# https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html
+	# https://developer.apple.com/library/archive/technotes/tn2206/_index.html
+	# https://developer.apple.com/documentation/security/notarizing_your_app_before_distribution/resolving_common_notarization_issues?language=objc
+	#
+	# XXX Do we need to add the com.apple.security.cs.allow-unsigned-executable-memory
+	# entitlement for Lua?
+	# https://developer.apple.com/documentation/security/hardened_runtime_entitlements?language=objc
+
+	codesign \
+		--sign "$codesign_dev_app_identity" \
+		--prefix "org.wireshark." \
+		--force \
+		--options runtime \
+		--entitlements "@CMAKE_SOURCE_DIR@/packaging/macosx/entitlements.plist" \
+		--timestamp \
+		--verbose \
+		"$1" || exit 1
+}
+
+# XXX We could do this via the productbuild calls in the {,un}install_*_pkg
+# targets in CMakeLists.txt instead.
+productsign_pkg () {
+	mv "$1" "$1.unsigned" || exit 1
+	productsign \
+		--sign "$codesign_dev_install_identity" \
+		--timestamp \
+		"$1.unsigned" "$1" || exit 1
+	rm -f "$1.unsigned" || exit 1
 }
 
 if [ -n "$CODE_SIGN_IDENTITY" ] ; then
 	security find-identity -v -s "$CODE_SIGN_IDENTITY" -p codesigning
 
-	echo "Signing executables"
-	if [ -z "$bundle_binary_list" ] ; then
+	# The Code Signing Guide says:
+	#
+	# "While you use the --deep option for verification to mimic what Gatekeeper does,
+	# it is not recommended for signing. During signing, if you have nested code, and
+	# if you are signing manually, you sign nested code in stages (as Xcode does
+	# automatically), starting with the most deeply embedded components first. You
+	# then sign code at the next level of hierarchy, and so on. You work your way
+	# outward, finally signing the top level entity that contains all the others.
+	# Signing all the components in one shot with --deep is for emergency repairs and
+	# temporary adjustments only. Note that signing with the combination --deep
+	# --force will forcibly re-sign all code in a bundle."
+
+	# We need to force-sign Sparkle and its Updater.app.
+	# https://sparkle-project.org/documentation/#4-distributing-your-app
+	# https://sparkle-project.org/documentation/sandboxing/#code-signing
+
+	if [ "$sparkle_version" == "2" ] ; then
+		echo "Signing Sparkle's assets"
+		codesign \
+			--sign "$codesign_dev_app_identity" \
+			--force \
+			--options runtime \
+			--verbose \
+			"$pkglib/Sparkle.framework/Versions/B/AutoUpdate" \
+			"$pkglib/Sparkle.framework/Versions/B/Updater.app" \
+			"$pkglib/Sparkle.framework" \
+			|| exit 1
+		# Uncomment if we ever start sandboxing.
+		# 	"$pkglib/Sparkle.framework/Versions/B/XPCServices/org.sparkle-project.InstallerLauncher.xpc"
+		# codesign \
+		# 	--sign "$codesign_dev_app_identity" \
+		# 	--force \
+		# 	--options runtime \
+		# 	--entitlements "$sparkle_frameworks_dir/../Entitlements/org.sparkle-project.Downloader.entitlements" \
+		# 	--verbose \
+		# 	"$pkglib/Sparkle.framework/Versions/B/XPCServices/org.sparkle-project.Downloader.xpc" \
+		# 	|| exit 1
+	else
+		echo "Signing Sparkle's AutoUpdate.app"
+		codesign \
+			--sign "$codesign_dev_app_identity" \
+			--force \
+			--timestamp \
+			--options runtime \
+			--verbose \
+			"$pkglib/Sparkle.framework/Versions/A/Resources/AutoUpdate.app" \
+			|| exit 1
+	fi
+
+	echo "Signing frameworks"
+	for framework in "$pkglib"/*.framework/Versions/* ; do
+		if [ -L "$framework" ] ; then
+			# Skip "Current"
+			continue
+		fi
+		codesign_file "$framework"
+	done
+
+	echo "Signing libraries"
+	for library in "$pkglib"/*.dylib ; do
+		codesign_file "$library"
+	done
+
+	plugin_list=$( find "$bundle/Contents/PlugIns" -type f -name "*.dylib" -o -name "*.so" )
+	echo "Signing plugins"
+	for plugin in $plugin_list ; do
+		codesign_file "$plugin"
+	done
+
+	echo "Signing extra packages"
+	find "$bundle/Contents/Resources/Extras" -type f -name "*.pkg" | \
+	while read -r extra_pkg ; do
+		productsign_pkg "$extra_pkg"
+	done
+
+	echo "Signing secondary executables"
+	if (( ! ${#secondary_binary_list[@]} )) ; then
 		echo "No executables specified for code signing."
 		exit 1
 	fi
-	for binary in $bundle_binary_list ; do
+	for binary in "${secondary_binary_list[@]}" ; do
 		if [ -e "$binary" ];then
 			codesign_file "$binary"
 		fi
 	done
 
-	echo "Signing frameworks"
-	for framework in $pkglib/*.framework/Versions/*/* ; do
-		codesign_file "$framework"
-	done
-
-	echo "Signing libraries"
-	for library in $pkglib/*.dylib ; do
-		codesign_file "$library"
-	done
-
-	echo "Signing plugins"
-	for plugin in $pkgplugin/*/*.so ; do
-		codesign_file "$plugin"
-	done
+	echo "Signing primary executable"
+	codesign_file "$pkgexec/$app_name"
 
 	echo "Signing $bundle"
 	codesign_file "$bundle"
+
+	# Code Signing Guide, "Testing Conformance with Command Line Tools"
+	codesign --verify --deep --strict --verbose=2 "$bundle" || exit 1
+	spctl --assess --type exec --verbose=2 "$bundle" || exit 1
 else
 	echo "Code signing not performed (no identity)"
+fi
+
+# File permission sanity check.
+if badperms=$( find "$bundle" ! -perm -0444 -exec ls -l "{}" + | grep . ) ; then
+	echo "Found files with restrictive permissions:"
+	echo "$badperms"
+	exit 1
 fi
 
 exit 0

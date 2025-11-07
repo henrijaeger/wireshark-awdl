@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "wlan_statistics_dialog.h"
 
@@ -20,7 +21,7 @@
 
 #include <ui/qt/models/percent_bar_delegate.h>
 #include <ui/qt/utils/qt_ui_utils.h>
-#include "wireshark_application.h"
+#include "main_application.h"
 
 // To do:
 // - Add the name resolution checkbox
@@ -115,7 +116,7 @@ public:
         if (wlan_hdr->type != MGT_BEACON) packets_++;
     }
     void draw(address *bssid, int num_packets) {
-        if(packets_ && num_packets > 0) {
+        if (packets_ && num_packets > 0) {
             setData(col_pct_packets_, Qt::UserRole, QVariant::fromValue<double>(packets_ * 100.0 / num_packets));
             setData(col_pct_retry_, Qt::UserRole, QVariant::fromValue<double>(retry_ * 100.0 / packets_));
         } else {
@@ -177,7 +178,7 @@ public:
                 << auth_ << deauth_ << other_ << text(col_protection_);
     }
     const QString filterExpression() {
-        QString filter_expr = QString("wlan.addr==%1")
+        QString filter_expr = QStringLiteral("wlan.addr==%1")
                 .arg(address_to_qstring(&addr_));
         return filter_expr;
     }
@@ -221,7 +222,7 @@ public:
         } else if (wlan_hdr->stats.ssid_len == 1 && wlan_hdr->stats.ssid[0] == 0) {
             ssid_text = QObject::tr("<Hidden>");
         } else {
-            gchar *str = format_text(NULL, wlan_hdr->stats.ssid, wlan_hdr->stats.ssid_len);
+            char *str = format_text(NULL, (const char *)wlan_hdr->stats.ssid, wlan_hdr->stats.ssid_len);
             ssid_text = str;
             wmem_free(NULL, str);
         }
@@ -292,9 +293,9 @@ public:
         }
 
         if (update_ssid) {
-            gchar* str;
+            char* str;
             ssid_ = QByteArray::fromRawData((const char *)wlan_hdr->stats.ssid, wlan_hdr->stats.ssid_len);
-            str = format_text(NULL, wlan_hdr->stats.ssid, wlan_hdr->stats.ssid_len);
+            str = format_text(NULL, (const char *)wlan_hdr->stats.ssid, wlan_hdr->stats.ssid_len);
             setText(col_ssid_, str);
             wmem_free(NULL, str);
             is_ssid_match = true;
@@ -350,8 +351,8 @@ public:
         WlanStationTreeWidgetItem* receiver_ws_ti = NULL;
         foreach (QTreeWidgetItem *cur_ti, stations_) {
             WlanStationTreeWidgetItem *cur_ws_ti = dynamic_cast<WlanStationTreeWidgetItem *>(cur_ti);
-            if (cur_ws_ti->isMatch(&wlan_hdr->src)) sender_ws_ti = cur_ws_ti;
-            if (cur_ws_ti->isMatch(&wlan_hdr->dst)) receiver_ws_ti = cur_ws_ti;
+            if (cur_ws_ti && (cur_ws_ti->isMatch(&wlan_hdr->src))) sender_ws_ti = cur_ws_ti;
+            if (cur_ws_ti && (cur_ws_ti->isMatch(&wlan_hdr->dst))) receiver_ws_ti = cur_ws_ti;
             if (sender_ws_ti && receiver_ws_ti) break;
         }
         if (!sender_ws_ti) {
@@ -385,7 +386,10 @@ public:
             WlanStationTreeWidgetItem *cur_ws_ti = dynamic_cast<WlanStationTreeWidgetItem *>(cur_ti);
             cur_ws_ti->draw(&bssid_, packets_ - beacon_);
             for (int col = 0; col < treeWidget()->columnCount(); col++) {
-                cur_ws_ti->setTextAlignment(col, treeWidget()->headerItem()->textAlignment(col));
+            // int QTreeWidgetItem::textAlignment(int column) const
+            // Returns the text alignment for the label in the given column.
+            // Note: This function returns an int for historical reasons. It will be corrected to return Qt::Alignment in Qt 7.
+                cur_ws_ti->setTextAlignment(col, static_cast<Qt::Alignment>(treeWidget()->headerItem()->textAlignment(col)));
             }
         }
 
@@ -439,10 +443,10 @@ public:
     }
 
     const QString filterExpression() {
-        QString filter_expr = QString("(wlan.bssid==%1")
+        QString filter_expr = QStringLiteral("(wlan.bssid==%1")
                 .arg(address_to_qstring(&bssid_));
         if (!ssid_.isEmpty() && ssid_[0] != '\0') {
-            filter_expr += QString(" || wlan.ssid==\"%1\"")
+            filter_expr += QStringLiteral(" || wlan.ssid==\"%1\"")
                     .arg(ssid_.constData());
         }
         filter_expr += ")";
@@ -500,8 +504,10 @@ WlanStatisticsDialog::WlanStatisticsDialog(QWidget &parent, CaptureFile &cf, con
             << tr("Deauths") << tr("Other");
     statsTreeWidget()->setHeaderLabels(header_labels);
     updateHeaderLabels();
-    statsTreeWidget()->setItemDelegateForColumn(col_pct_packets_, new PercentBarDelegate());
-    statsTreeWidget()->setItemDelegateForColumn(col_pct_retry_, new PercentBarDelegate());
+    packets_delegate_ = new PercentBarDelegate();
+    statsTreeWidget()->setItemDelegateForColumn(col_pct_packets_, packets_delegate_);
+    retry_delegate_ = new PercentBarDelegate();
+    statsTreeWidget()->setItemDelegateForColumn(col_pct_retry_, retry_delegate_);
     statsTreeWidget()->sortByColumn(col_bssid_, Qt::AscendingOrder);
 
     // resizeColumnToContents doesn't work well here, so set sizes manually.
@@ -545,6 +551,8 @@ WlanStatisticsDialog::WlanStatisticsDialog(QWidget &parent, CaptureFile &cf, con
 
 WlanStatisticsDialog::~WlanStatisticsDialog()
 {
+    delete packets_delegate_;
+    delete retry_delegate_;
     delete add_station_timer_;
 }
 
@@ -557,17 +565,17 @@ void WlanStatisticsDialog::tapReset(void *ws_dlg_ptr)
     ws_dlg->packet_count_ = 0;
 }
 
-gboolean WlanStatisticsDialog::tapPacket(void *ws_dlg_ptr, _packet_info *, epan_dissect *, const void *wlan_hdr_ptr)
+tap_packet_status WlanStatisticsDialog::tapPacket(void *ws_dlg_ptr, _packet_info *, epan_dissect *, const void *wlan_hdr_ptr, tap_flags_t)
 {
     WlanStatisticsDialog *ws_dlg = static_cast<WlanStatisticsDialog *>(ws_dlg_ptr);
     const wlan_hdr_t *wlan_hdr  = (const wlan_hdr_t *)wlan_hdr_ptr;
-    if (!ws_dlg || !wlan_hdr) return FALSE;
+    if (!ws_dlg || !wlan_hdr) return TAP_PACKET_DONT_REDRAW;
 
-    guint16 frame_type = wlan_hdr->type & 0xff0;
+    uint16_t frame_type = wlan_hdr->type & 0xff0;
     if (!((frame_type == 0x0) || (frame_type == 0x20) || (frame_type == 0x30))
         || ((frame_type == 0x20) && DATA_FRAME_IS_NULL(wlan_hdr->type))) {
         /* Not a management or non null data or extension frame; let's skip it */
-        return FALSE;
+        return TAP_PACKET_DONT_REDRAW;
     }
 
     ws_dlg->packet_count_++;
@@ -589,12 +597,15 @@ gboolean WlanStatisticsDialog::tapPacket(void *ws_dlg_ptr, _packet_info *, epan_
     if (!wn_ti) {
         wn_ti = new WlanNetworkTreeWidgetItem(ws_dlg->statsTreeWidget(), wlan_hdr);
         for (int col = 0; col < ws_dlg->statsTreeWidget()->columnCount(); col++) {
-            wn_ti->setTextAlignment(col, ws_dlg->statsTreeWidget()->headerItem()->textAlignment(col));
+            // int QTreeWidgetItem::textAlignment(int column) const
+            // Returns the text alignment for the label in the given column.
+            // Note: This function returns an int for historical reasons. It will be corrected to return Qt::Alignment in Qt 7.
+            wn_ti->setTextAlignment(col, static_cast<Qt::Alignment>(ws_dlg->statsTreeWidget()->headerItem()->textAlignment(col)));
         }
     }
 
     wn_ti->update(wlan_hdr);
-    return TRUE;
+    return TAP_PACKET_REDRAW;
 }
 
 void WlanStatisticsDialog::tapDraw(void *ws_dlg_ptr)
@@ -688,7 +699,6 @@ void WlanStatisticsDialog::updateHeaderLabels()
 void WlanStatisticsDialog::captureFileClosing()
 {
     remove_tap_listener(this);
-    updateWidgets();
 
     WiresharkDialog::captureFileClosing();
 }
@@ -722,7 +732,7 @@ wlan_statistics_init(const char *args, void*) {
     if (args_l.length() > 2) {
         filter = QStringList(args_l.mid(2)).join(",").toUtf8();
     }
-    wsApp->emitStatCommandSignal("WlanStatistics", filter.constData(), NULL);
+    mainApp->emitStatCommandSignal("WlanStatistics", filter.constData(), NULL);
 }
 
 static stat_tap_ui wlan_statistics_ui = {
@@ -735,22 +745,13 @@ static stat_tap_ui wlan_statistics_ui = {
 };
 
 extern "C" {
+
+void register_tap_listener_qt_wlan_statistics(void);
+
 void
 register_tap_listener_qt_wlan_statistics(void)
 {
     register_stat_tap_ui(&wlan_statistics_ui, NULL);
 }
-}
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+}

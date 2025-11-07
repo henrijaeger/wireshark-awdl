@@ -1,4 +1,5 @@
-/* cmdarg_err.h
+/** @file
+ *
  * Declarations of routines to report command-line argument errors.
  *
  * Wireshark - Network traffic analyzer
@@ -8,14 +9,11 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#ifndef __WSUTIL_CMDARG_ERR_H__
-#define __WSUTIL_CMDARG_ERR_H__
+#ifndef __CMDARG_ERR_H__
+#define __CMDARG_ERR_H__
 
+#include <wireshark.h>
 #include <stdarg.h>
-
-#include <glib.h>
-
-#include "ws_symbol_export.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +30,10 @@ cmdarg_err_init(void (*err)(const char *, va_list),
  * Report an error in command-line arguments.
  */
 WS_DLL_PUBLIC void
+vcmdarg_err(const char *fmt, va_list ap)
+    G_GNUC_PRINTF(1, 0);
+
+WS_DLL_PUBLIC void
 cmdarg_err(const char *fmt, ...)
     G_GNUC_PRINTF(1, 2);
 
@@ -42,8 +44,17 @@ WS_DLL_PUBLIC void
 cmdarg_err_cont(const char *fmt, ...)
     G_GNUC_PRINTF(1, 2);
 
+/*
+ * Error printing routines that report to the standard error.
+ */
+WS_DLL_PUBLIC void
+stderr_cmdarg_err(const char *msg_format, va_list ap);
+
+WS_DLL_PUBLIC void
+stderr_cmdarg_err_cont(const char *msg_format, va_list ap);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif /* __WSUTIL_CMDARG_ERR_H__ */
+#endif /* __CMDARG_ERR_H__ */

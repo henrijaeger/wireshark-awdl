@@ -1,10 +1,11 @@
-/* packet_list_model.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef PACKET_LIST_MODEL_H
 #define PACKET_LIST_MODEL_H
@@ -13,13 +14,13 @@
 
 #include <stdio.h>
 
-#include <glib.h>
-
 #include <epan/packet.h>
 
 #include <QAbstractItemModel>
 #include <QFont>
 #include <QVector>
+
+#include <ui/qt/progress_frame.h>
 
 #include "packet_list_record.h"
 
@@ -31,6 +32,12 @@ class PacketListModel : public QAbstractItemModel
 {
     Q_OBJECT
 public:
+
+    enum {
+        HEADER_CAN_DISPLAY_STRINGS = Qt::UserRole,
+        HEADER_CAN_DISPLAY_DETAILS,
+    };
+
     explicit PacketListModel(QObject *parent = 0, capture_file *cf = NULL);
     ~PacketListModel();
     void setCaptureFile(capture_file *cf);
@@ -38,17 +45,17 @@ public:
                       const QModelIndex & = QModelIndex()) const;
     QModelIndex parent(const QModelIndex &) const;
     int packetNumberToRow(int packet_num) const;
-    guint recreateVisibleRows();
+    unsigned recreateVisibleRows();
     void clear();
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const;
     int columnCount(const QModelIndex & = QModelIndex()) const;
     QVariant data(const QModelIndex &d_index, int role) const;
-    QVariant headerData(int section, Qt::Orientation orientation,
-                        int role = Qt::DisplayRole | Qt::ToolTipRole) const;
+    QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
 
-    gint appendPacket(frame_data *fdata);
-    frame_data *getRowFdata(int row);
+    int appendPacket(frame_data *fdata);
+    frame_data *getRowFdata(QModelIndex idx) const;
+    frame_data *getRowFdata(int row) const;
     void ensureRowColorized(int row);
     int visibleIndexOf(frame_data *fdata) const;
     /**
@@ -60,31 +67,26 @@ public:
      */
     void resetColumns();
     void resetColorized();
-    void toggleFrameMark(const QModelIndex &fm_index);
-    void setDisplayedFrameMark(gboolean set);
-    void toggleFrameIgnore(const QModelIndex &i_index);
-    void setDisplayedFrameIgnore(gboolean set);
+    void toggleFrameMark(const QModelIndexList &indeces);
+    void setDisplayedFrameMark(bool set);
+    void toggleFrameIgnore(const QModelIndexList &indeces);
+    void setDisplayedFrameIgnore(bool set);
     void toggleFrameRefTime(const QModelIndex &rt_index);
     void unsetAllFrameRefTime();
-    void applyTimeShift();
-
-    void setMaximiumRowHeight(int height);
+    void addFrameComment(const QModelIndexList &indices, const QByteArray &comment);
+    void setFrameComment(const QModelIndex &index, const QByteArray &comment, unsigned c_number);
+    void deleteFrameComments(const QModelIndexList &indices);
+    void deleteAllFrameComments();
 
 signals:
+    void packetAppended(capture_file *cap_file, frame_data *fdata, qsizetype row);
     void goToPacket(int);
-    void maxLineCountChanged(const QModelIndex &ih_index) const;
-    void itemHeightChanged(const QModelIndex &ih_index);
-    void pushBusyStatus(const QString &status);
-    void popBusyStatus();
-
-    void pushProgressStatus(const QString &status, bool animate, bool terminate_is_stop, gboolean *stop_flag);
-    void updateProgressStatus(int value);
-    void popProgressStatus();
 
     void bgColorizationProgress(int first, int last);
 
 public slots:
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder);
+    void stopSorting();
     void flushVisibleRows();
     void dissectIdle(bool reset = false);
 
@@ -96,9 +98,6 @@ private:
     QVector<PacketListRecord *> new_visible_rows_;
     QVector<int> number_to_row_;
 
-    int max_row_height_; // px
-    int max_line_count_;
-
     static int sort_column_;
     static int sort_column_is_numeric_;
     static int text_sort_column_;
@@ -107,26 +106,15 @@ private:
     static bool recordLessThan(PacketListRecord *r1, PacketListRecord *r2);
     static double parseNumericColumn(const QString &val, bool *ok);
 
+    static bool stop_flag_;
+    static ProgressFrame *progress_frame_;
+    static double exp_comps_;
+    static double comps_;
+
     QElapsedTimer *idle_dissection_timer_;
     int idle_dissection_row_;
 
     bool isNumericColumn(int column);
-
-private slots:
-    void emitItemHeightChanged(const QModelIndex &ih_index);
 };
 
 #endif // PACKET_LIST_MODEL_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

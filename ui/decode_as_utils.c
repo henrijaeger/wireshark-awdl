@@ -5,12 +5,11 @@
  * By David Hampton <dhampton@mac.com>
  * Copyright 2001 David Hampton
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 #include "config.h"
 
 #include <stdlib.h>
-
-#include <errno.h>
 
 #include "epan/decode_as.h"
 #include "epan/packet.h"
@@ -22,12 +21,12 @@
 
 #include "wsutil/file_util.h"
 #include "wsutil/filesystem.h"
+#include <wsutil/ws_assert.h>
 #include "wsutil/cmdarg_err.h"
-#include "version_info.h"
 
 /* XXX - We might want to switch this to a UAT */
 
-static const char* prev_display_dissector_name = NULL;
+static const char* prev_display_dissector_name;
 
 /*
 * For a dissector table, print on the stream described by output,
@@ -36,12 +35,33 @@ static const char* prev_display_dissector_name = NULL;
 */
 static void
 display_dissector_table_names(const char *table_name, const char *ui_name,
-gpointer output)
+void *output)
 {
-    if ((prev_display_dissector_name == NULL) ||
-        (strcmp(prev_display_dissector_name, table_name) != 0)) {
-        fprintf((FILE *)output, "\t%s (%s)\n", table_name, ui_name);
-        prev_display_dissector_name = table_name;
+    ftenum_t selector_type = get_dissector_table_selector_type(table_name);
+
+    switch (selector_type) {
+
+    case FT_UINT8:
+    case FT_UINT16:
+    case FT_UINT24:
+    case FT_UINT32:
+    case FT_STRING:
+    case FT_STRINGZ:
+    case FT_UINT_STRING:
+    case FT_STRINGZPAD:
+    case FT_STRINGZTRUNC:
+    case FT_NONE:
+        /* This option supports these types. */
+        if ((prev_display_dissector_name == NULL) ||
+            (strcmp(prev_display_dissector_name, table_name) != 0)) {
+            fprintf((FILE *)output, "\t%s (%s)\n", table_name, ui_name);
+            prev_display_dissector_name = table_name;
+        }
+        break;
+
+    default:
+        /* Other types (FT_GUID, FT_BYTES) are not supported. */
+        break;
     }
 }
 
@@ -51,19 +71,19 @@ gpointer output)
 * name for the protocol that corresponds to this handle.
 */
 static void
-display_dissector_names(const gchar *table _U_, gpointer handle, gpointer output)
+display_dissector_names(const char *table _U_, void *handle, void *output)
 {
     int          proto_id;
-    const gchar *proto_filter_name;
-    const gchar *proto_ui_name;
+    const char *proto_filter_name;
+    const char *proto_ui_name;
 
     proto_id = dissector_handle_get_protocol_index((dissector_handle_t)handle);
 
     if (proto_id != -1) {
         proto_filter_name = proto_get_protocol_filter_name(proto_id);
         proto_ui_name = proto_get_protocol_name(proto_id);
-        g_assert(proto_filter_name != NULL);
-        g_assert(proto_ui_name != NULL);
+        ws_assert(proto_filter_name != NULL);
+        ws_assert(proto_ui_name != NULL);
 
         if ((prev_display_dissector_name == NULL) ||
             (strcmp(prev_display_dissector_name, proto_filter_name) != 0)) {
@@ -79,8 +99,8 @@ display_dissector_names(const gchar *table _U_, gpointer handle, gpointer output
 * Allow dissector key names to be sorted alphabetically
 */
 
-static gint
-compare_dissector_key_name(gconstpointer dissector_a, gconstpointer dissector_b)
+static int
+compare_dissector_key_name(const void *dissector_a, const void *dissector_b)
 {
     return strcmp((const char*)dissector_a, (const char*)dissector_b);
 }
@@ -94,7 +114,7 @@ fprint_all_layer_types(FILE *output)
 
 {
     prev_display_dissector_name = NULL;
-    dissector_all_tables_foreach_table(display_dissector_table_names, (gpointer)output, (GCompareFunc)compare_dissector_key_name);
+    dissector_all_tables_foreach_table(display_dissector_table_names, (void *)output, (GCompareFunc)compare_dissector_key_name);
 }
 
 /*
@@ -103,13 +123,13 @@ fprint_all_layer_types(FILE *output)
 * We send the output to the stream described by the handle output.
 */
 static void
-fprint_all_protocols_for_layer_types(FILE *output, gchar *table_name)
+fprint_all_protocols_for_layer_types(FILE *output, char *table_name)
 
 {
     prev_display_dissector_name = NULL;
     dissector_table_foreach_handle(table_name,
         display_dissector_names,
-        (gpointer)output);
+        (void *)output);
 }
 
 /*
@@ -117,9 +137,9 @@ fprint_all_protocols_for_layer_types(FILE *output, gchar *table_name)
 * to pass parameters and store results
 */
 struct protocol_name_search{
-    gchar              *searched_name;  /* Protocol filter name we are looking for */
+    const char         *searched_name;  /* Protocol filter name we are looking for */
     dissector_handle_t  matched_handle; /* Handle for a dissector whose protocol has the specified filter name */
-    guint               nb_match;       /* How many dissectors matched searched_name */
+    unsigned            nb_match;       /* How many dissectors matched searched_name */
 };
 typedef struct protocol_name_search *protocol_name_search_t;
 
@@ -133,21 +153,21 @@ typedef struct protocol_name_search *protocol_name_search_t;
 * whole list of dissectors.
 */
 static void
-find_protocol_name_func(const gchar *table _U_, gpointer handle, gpointer user_data)
+find_protocol_name_func(const char *table _U_, void *handle, void *user_data)
 
 {
     int                     proto_id;
-    const gchar            *protocol_filter_name;
+    const char             *protocol_filter_name;
     protocol_name_search_t  search_info;
 
-    g_assert(handle);
+    ws_assert(handle);
 
     search_info = (protocol_name_search_t)user_data;
 
     proto_id = dissector_handle_get_protocol_index((dissector_handle_t)handle);
     if (proto_id != -1) {
         protocol_filter_name = proto_get_protocol_filter_name(proto_id);
-        g_assert(protocol_filter_name != NULL);
+        ws_assert(protocol_filter_name != NULL);
         if (strcmp(protocol_filter_name, search_info->searched_name) == 0) {
             /* Found a match */
             if (search_info->nb_match == 0) {
@@ -164,30 +184,30 @@ find_protocol_name_func(const gchar *table _U_, gpointer handle, gpointer user_d
 * feature (a string pointer by cl_param).
 * It checks the format of the command-line, searches for a matching table
 * and dissector.  If a table/dissector match is not found, we display a
-* summary of the available tables/dissectors (on stderr) and return FALSE.
+* summary of the available tables/dissectors (on stderr) and return false.
 * If everything is fine, we get the "Decode as" preference activated,
-* then we return TRUE.
+* then we return true.
 */
-gboolean decode_as_command_option(const gchar *cl_param)
+bool decode_as_command_option(const char *cl_param)
 {
-    gchar                        *table_name;
-    guint32                       selector = 0, selector2 = 0;
-    gchar                        *decoded_param;
-    gchar                        *remaining_param;
-    gchar                        *selector_str = NULL;
-    gchar                        *dissector_str;
+    char                         *table_name;
+    uint32_t                      selector = 0, selector2 = 0;
+    char                         *decoded_param;
+    char                         *remaining_param;
+    char                         *selector_str = NULL;
+    char                         *dissector_str;
     dissector_handle_t            dissector_matching;
     dissector_table_t             table_matching;
     ftenum_t                      dissector_table_selector_type;
     struct protocol_name_search   user_protocol_name;
-    guint64                       i;
+    uint64_t                      i;
     char                          op = '\0';
 
     /* The following code will allocate and copy the command-line options in a string pointed by decoded_param */
 
-    g_assert(cl_param);
+    ws_assert(cl_param);
     decoded_param = g_strdup(cl_param);
-    g_assert(decoded_param);
+    ws_assert(decoded_param);
 
 
     /* The lines below will parse this string (modifying it) to extract all
@@ -245,7 +265,7 @@ gboolean decode_as_command_option(const gchar *cl_param)
         /* Exit if the layer type was not found, or if no '=' separator was found
         (see above) */
         g_free(decoded_param);
-        return FALSE;
+        return false;
     }
 
     dissector_table_selector_type = get_dissector_table_selector_type(table_name);
@@ -286,21 +306,21 @@ gboolean decode_as_command_option(const gchar *cl_param)
     {
         /* The selector for this table is an unsigned number.  Parse it as such.
         Skip leading spaces for backwards compatibility (previously sscanf was used). */
-        gchar *str = selector_str;
-        gchar *end;
-        guint64 val;
+        char *str = selector_str;
+        char *end;
+        uint64_t val;
 
         while (g_ascii_isspace(*str)) {
             str++;
         }
 
         val = g_ascii_strtoull(str, &end, 0);
-        if (str == end || val > G_MAXUINT32) {
+        if (str == end || val > UINT32_MAX) {
             cmdarg_err("Invalid selector number \"%s\"", selector_str);
             g_free(decoded_param);
-            return FALSE;
+            return false;
         }
-        selector = (guint32) val;
+        selector = (uint32_t) val;
 
         if (*end == '\0') {
             /* not a range, but a single (valid) value */
@@ -312,18 +332,18 @@ gboolean decode_as_command_option(const gchar *cl_param)
             str = end + 1;
 
             val = g_ascii_strtoull(str, &end, 0);
-            if (str == end || val > G_MAXUINT32 || *end != '\0') {
+            if (str == end || val > UINT32_MAX || *end != '\0') {
                 cmdarg_err("Invalid selector numeric range \"%s\"", selector_str);
                 g_free(decoded_param);
-                return FALSE;
+                return false;
             }
-            selector2 = (guint32) val;
+            selector2 = (uint32_t) val;
 
             if (op == ':') {
-                if ((selector2 == 0) || ((guint64)selector + selector2 - 1) > G_MAXUINT32) {
+                if ((selector2 == 0) || ((uint64_t)selector + selector2 - 1) > UINT32_MAX) {
                     cmdarg_err("Invalid selector numeric range \"%s\"", selector_str);
                     g_free(decoded_param);
-                    return FALSE;
+                    return false;
                 }
             }
             else if (selector2 < selector) {
@@ -331,13 +351,13 @@ gboolean decode_as_command_option(const gchar *cl_param)
                 * this out as an error in case it's not what was intended? */
                 cmdarg_err("Invalid selector numeric range \"%s\"", selector_str);
                 g_free(decoded_param);
-                return FALSE;
+                return false;
             }
         } else {
             /* neither a valid single value, nor a range. */
             cmdarg_err("Invalid selector number \"%s\"", selector_str);
             g_free(decoded_param);
-            return FALSE;
+            return false;
         }
         break;
     }
@@ -346,6 +366,7 @@ gboolean decode_as_command_option(const gchar *cl_param)
     case FT_STRINGZ:
     case FT_UINT_STRING:
     case FT_STRINGZPAD:
+    case FT_STRINGZTRUNC:
         /* The selector for this table is a string. */
         break;
 
@@ -353,10 +374,23 @@ gboolean decode_as_command_option(const gchar *cl_param)
         /* There is no selector for this table */
         break;
 
+    case FT_BYTES:
+        /* Custom table. Parsing a selector is not really possible. */
+        cmdarg_err("\"%s\" is a custom table; specifying selectors on the command line is not supported.", table_name);
+        g_free(decoded_param);
+        return false;
+
+    case FT_GUID:
+        /* GUID table. It might be possible to parse a selector (guid_key)
+         * in the future, but not now. */
+        cmdarg_err("\"%s\" is a GUID table; specifying selectors on the command line is not supported.", table_name);
+        g_free(decoded_param);
+        return false;
+
     default:
         /* There are currently no dissector tables with any types other
         than the ones listed above. */
-        g_assert_not_reached();
+        ws_assert_not_reached();
     }
 
     if (remaining_param == NULL) {
@@ -364,7 +398,7 @@ gboolean decode_as_command_option(const gchar *cl_param)
         cmdarg_err("Valid protocols for layer type \"%s\" are:", table_name);
         fprint_all_protocols_for_layer_types(stderr, table_name);
         g_free(decoded_param);
-        return FALSE;
+        return false;
     }
 
     remaining_param++; /* Position after the selector number string */
@@ -386,8 +420,14 @@ gboolean decode_as_command_option(const gchar *cl_param)
         cmdarg_err("No protocol name specified"); /* Note, we don't exit here, but dissector_matching will remain NULL, so we exit below */
     }
     else {
+        header_field_info *hfi = proto_registrar_get_byalias(dissector_str);
+
         user_protocol_name.nb_match = 0;
-        user_protocol_name.searched_name = dissector_str;
+        if (hfi) {
+            user_protocol_name.searched_name = hfi->abbrev;
+        } else {
+            user_protocol_name.searched_name = dissector_str;
+        }
         user_protocol_name.matched_handle = NULL;
 
         dissector_table_foreach_handle(table_name, find_protocol_name_func, &user_protocol_name); /* Go and perform the search for this dissector in the this table's dissectors' names and shortnames */
@@ -419,7 +459,7 @@ gboolean decode_as_command_option(const gchar *cl_param)
         cmdarg_err("Valid protocols for layer type \"%s\" are:", table_name);
         fprint_all_protocols_for_layer_types(stderr, table_name);
         g_free(decoded_param);
-        return FALSE;
+        return false;
     }
 
     /* This is the end of the code that parses the command-line options.
@@ -446,13 +486,13 @@ gboolean decode_as_command_option(const gchar *cl_param)
             dissector_change_uint(table_name, selector, dissector_matching);
         }
         else if (op == ':') {
-            for (i = selector; i < (guint64)selector + selector2; i++) {
-                dissector_change_uint(table_name, (guint32)i, dissector_matching);
+            for (i = selector; i < (uint64_t)selector + selector2; i++) {
+                dissector_change_uint(table_name, (uint32_t)i, dissector_matching);
             }
         }
         else { /* op == '-' */
             for (i = selector; i <= selector2; i++) {
-                dissector_change_uint(table_name, (guint32)i, dissector_matching);
+                dissector_change_uint(table_name, (uint32_t)i, dissector_matching);
             }
         }
         break;
@@ -461,6 +501,7 @@ gboolean decode_as_command_option(const gchar *cl_param)
     case FT_STRINGZ:
     case FT_UINT_STRING:
     case FT_STRINGZPAD:
+    case FT_STRINGZTRUNC:
         /* The selector for this table is a string. */
         dissector_change_string(table_name, selector_str, dissector_matching);
         break;
@@ -472,22 +513,10 @@ gboolean decode_as_command_option(const gchar *cl_param)
 
     default:
         /* There are currently no dissector tables with any types other
-        than the ones listed above. */
-        g_assert_not_reached();
+        than the ones listed above. (We already exited for FT_GUID and
+        FT_BYTES tables.) */
+        ws_assert_not_reached();
     }
     g_free(decoded_param); /* "Decode As" rule has been successfully added */
-    return TRUE;
+    return true;
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

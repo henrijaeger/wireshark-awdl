@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # A small script to run xmllint on the Diameter XML files (after doing some
 # fixups to those files).
@@ -25,17 +25,26 @@ then
 	exit 0
 fi
 
+src_dir="$(dirname "$0")/.."
+diameter_dir="$src_dir/resources/protocols/diameter"
+
 # Ideally this would work regardless of our cwd
-if [ ! -r diameter/dictionary.xml ]
+if [ ! -r "$diameter_dir/dictionary.xml" ]
 then
-	echo "Couldn't find diameter/dictionary.xml" 1>&2
+	echo "Couldn't find $diameter_dir/dictionary.xml" 1>&2
 	exit 1
 fi
-if [ ! -r diameter/dictionary.dtd ]
+if [ ! -r "$diameter_dir/dictionary.dtd" ]
 then
-	echo "Couldn't find diameter/dictionary.dtd" 1>&2
+	echo "Couldn't find $diameter_dir/dictionary.dtd" 1>&2
 	exit 1
 fi
+
+if ! tmpdir=$(mktemp -d); then
+	echo "Could not create temporary directory" >&2
+	exit 1
+fi
+trap 'rm -rf "$tmpdir"' EXIT
 
 # First edit all the AVP names that start with "3GPP" to indicate "TGPP".
 # XML doesn't allow ID's to start with a digit but:
@@ -43,17 +52,30 @@ fi
 #   2) (but) we do want to use xmllint to find problems
 #   3) (and) users see the AVP names.  Showing them "TGPP" instead of "3GPP"
 #      is annoying enough to warrant this extra work.
-mkdir /tmp/diameter || exit 1
-cp diameter/dictionary.dtd /tmp/diameter || exit 1
-for f in diameter/*.xml
-do
-	sed 's/name="3GPP/name="TGPP/g' $f > /tmp/$f || exit 1
+
+# Declare and populate associative exceptions array
+declare -A exceptions=(
+        ["3GPP"]="TGPP"
+        ["5QI"]="FiveQI"
+)
+
+# Loop through the exceptions, building the sed options
+sedopts=
+for e in ${!exceptions[@]}; do
+        sedopts="${sedopts}s/name=\"$e/name=\"${exceptions[$e]}/;"
 done
 
-xmllint --noout --noent --postvalid /tmp/diameter/dictionary.xml &&
-	echo "Diameter dictionary is (mostly) valid XML."
+# Delete the last character, i.e., the trailing semicolon
+sedopts=${sedopts%?}
 
-rm -rf /tmp/diameter
+cp "$diameter_dir/dictionary.dtd" "$tmpdir" || exit 1
+for f in "$diameter_dir"/*.xml
+do
+        sed "${sedopts}" "$f" > "$tmpdir/${f##*/}" || exit 1
+done
+
+xmllint --noout --noent --postvalid "$tmpdir/dictionary.xml" &&
+	echo "Diameter dictionary is (mostly) valid XML."
 
 #
 # Editor modelines  -  https://www.wireshark.org/tools/modelines.html

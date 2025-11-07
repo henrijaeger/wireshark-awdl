@@ -35,12 +35,11 @@
 */
 
 #include "config.h"
+#include "mplog.h"
 
 #include <string.h>
 #include <wtap-int.h>
 #include <file_wrappers.h>
-
-#include "mplog.h"
 
 /* the block types */
 #define TYPE_PCD_PICC_A  0x70
@@ -59,7 +58,7 @@
 
 #define MPLOG_BLOCK_SIZE 8
 
-/* ISO14443 pseudo-header, see http://www.kaiser.cx/pcap-iso14443.html */
+/* ISO14443 pseudo-header, see https://www.kaiser.cx/pcap-iso14443.html */
 #define ISO14443_PSEUDO_HDR_VER  0
 #define ISO14443_PSEUDO_HDR_LEN  4
 /*  the two transfer events are the types that include a trailing CRC
@@ -68,10 +67,14 @@
 #define ISO14443_PSEUDO_HDR_PCD_TO_PICC  0xFE
 
 
-#define ISO14443_MAX_PKT_LEN     256
+#define ISO14443_MAX_PKT_LEN    4096
 
 #define PKT_BUF_LEN   (ISO14443_PSEUDO_HDR_LEN + ISO14443_MAX_PKT_LEN)
 
+
+static int mplog_file_type_subtype = -1;
+
+void register_mplog(void);
 
 /* read the next packet, starting at the current position of fh
    as we know very little about the file format, our approach is rather simple:
@@ -87,26 +90,26 @@
    - if two blocks of our packet's block type are more than 200us apart,
      we treat this as a packet boundary as described above
    */
-static gboolean mplog_read_packet(FILE_T fh, wtap_rec *rec,
-        Buffer *buf, int *err, gchar **err_info)
+static bool mplog_read_packet(FILE_T fh, wtap_rec *rec,
+        int *err, char **err_info)
 {
-    guint8 *p, *start_p;
+    uint8_t *p, *start_p;
     /* --- the last block of a known type --- */
-    guint64 last_ctr = 0;
+    uint64_t last_ctr = 0;
     /* --- the current block --- */
-    guint8 block[MPLOG_BLOCK_SIZE]; /* the entire block */
-    guint8 data, type; /* its data and block type bytes */
-    guint64 ctr; /* its timestamp counter */
+    uint8_t block[MPLOG_BLOCK_SIZE]; /* the entire block */
+    uint8_t data, type; /* its data and block type bytes */
+    uint64_t ctr; /* its timestamp counter */
     /* --- the packet we're assembling --- */
-    gint pkt_bytes = 0;
-    guint8 pkt_type = TYPE_UNKNOWN;
+    int pkt_bytes = 0;
+    uint8_t pkt_type = TYPE_UNKNOWN;
     /* the timestamp of the packet's first block,
        this will become the packet's timestamp */
-    guint64 pkt_ctr = 0;
+    uint64_t pkt_ctr = 0;
 
 
-    ws_buffer_assure_space(buf, PKT_BUF_LEN);
-    p = ws_buffer_start_ptr(buf);
+    ws_buffer_assure_space(&rec->data, PKT_BUF_LEN);
+    p = ws_buffer_start_ptr(&rec->data);
     start_p = p;
 
     /* leave space for the iso14443 pseudo header
@@ -158,7 +161,7 @@ static gboolean mplog_read_packet(FILE_T fh, wtap_rec *rec,
     } while (pkt_bytes < ISO14443_MAX_PKT_LEN);
 
     if (pkt_type == TYPE_UNKNOWN)
-        return FALSE;
+        return false;
 
     start_p[0] = ISO14443_PSEUDO_HDR_VER;
 
@@ -171,6 +174,7 @@ static gboolean mplog_read_packet(FILE_T fh, wtap_rec *rec,
     start_p[3] = pkt_bytes & 0xFF;
 
     rec->rec_type = REC_TYPE_PACKET;
+    rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->rec_header.packet_header.pkt_encap = WTAP_ENCAP_ISO14443;
     rec->presence_flags = WTAP_HAS_TS | WTAP_HAS_CAP_LEN;
     rec->ts.secs = (time_t)((pkt_ctr*10)/(1000*1000*1000));
@@ -178,41 +182,41 @@ static gboolean mplog_read_packet(FILE_T fh, wtap_rec *rec,
     rec->rec_header.packet_header.caplen = ISO14443_PSEUDO_HDR_LEN + pkt_bytes;
     rec->rec_header.packet_header.len = rec->rec_header.packet_header.caplen;
 
-    return TRUE;
+    return true;
 }
 
 
-static gboolean
-mplog_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
+static bool
+mplog_read(wtap *wth, wtap_rec *rec, int *err, char **err_info,
+           int64_t *data_offset)
 {
     *data_offset = file_tell(wth->fh);
 
-    return mplog_read_packet(
-            wth->fh, &wth->rec, wth->rec_data, err, err_info);
+    return mplog_read_packet(wth->fh, rec, err, err_info);
 }
 
 
-static gboolean
-mplog_seek_read(wtap *wth, gint64 seek_off, wtap_rec *rec, Buffer *buf,
-                int *err, gchar **err_info)
+static bool
+mplog_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
+                int *err, char **err_info)
 {
     if (-1 == file_seek(wth->random_fh, seek_off, SEEK_SET, err))
-        return FALSE;
+        return false;
 
-    if (!mplog_read_packet(wth->random_fh, rec, buf, err, err_info)) {
+    if (!mplog_read_packet(wth->random_fh, rec, err, err_info)) {
         /* Even if we got an immediate EOF, that's an error. */
         if (*err == 0)
             *err = WTAP_ERR_SHORT_READ;
-        return FALSE;
+        return false;
     }
-    return TRUE;
+    return true;
 }
 
 
-wtap_open_return_val mplog_open(wtap *wth, int *err, gchar **err_info)
+wtap_open_return_val mplog_open(wtap *wth, int *err, char **err_info)
 {
-    gboolean ok;
-    guint8 magic[6];
+    bool ok;
+    uint8_t magic[6];
 
     ok = wtap_read_bytes(wth->fh, magic, 6, err, err_info);
     if (!ok) {
@@ -231,19 +235,52 @@ wtap_open_return_val mplog_open(wtap *wth, int *err, gchar **err_info)
 
     wth->subtype_read = mplog_read;
     wth->subtype_seek_read = mplog_seek_read;
-    wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_MPLOG;
+    wth->file_type_subtype = mplog_file_type_subtype;
 
     /* skip the file header */
     if (-1 == file_seek(wth->fh, 0x80, SEEK_SET, err))
         return WTAP_OPEN_ERROR;
 
     *err = 0;
+
+    /*
+     * Add an IDB; we don't know how many interfaces were
+     * involved, so we just say one interface, about which
+     * we only know the link-layer type, snapshot length,
+     * and time stamp resolution.
+     */
+    wtap_add_generated_idb(wth);
+
     return WTAP_OPEN_MINE;
 }
 
+static const struct supported_block_type mplog_blocks_supported[] = {
+    /*
+     * We support packet blocks, with no comments or other options.
+     */
+    { WTAP_BLOCK_PACKET, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info mplog_info = {
+    "Micropross mplog", "mplog", "mplog", NULL,
+    false, BLOCKS_SUPPORTED(mplog_blocks_supported),
+    NULL, NULL, NULL
+};
+
+void register_mplog(void)
+{
+    mplog_file_type_subtype = wtap_register_file_type_subtype(&mplog_info);
+
+    /*
+     * Register name for backwards compatibility with the
+     * wtap_filetypes table in Lua.
+     */
+    wtap_register_backwards_compatibility_lua_name("MPLOG",
+                                                   mplog_file_type_subtype);
+}
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

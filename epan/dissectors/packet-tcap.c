@@ -1,11 +1,8 @@
 /* Do not modify this file. Changes will be overwritten.                      */
 /* Generated automatically by the ASN.1 to Wireshark dissector compiler       */
 /* packet-tcap.c                                                              */
-/* asn2wrs.py -b -p tcap -c ./tcap.cnf -s ./packet-tcap-template -D . -O ../.. tcap.asn UnidialoguePDUs.asn DialoguePDUs.asn */
+/* asn2wrs.py -b -q -L -p tcap -c ./tcap.cnf -s ./packet-tcap-template -D . -O ../.. tcap.asn UnidialoguePDUs.asn DialoguePDUs.asn */
 
-/* Input file: packet-tcap-template.c */
-
-#line 1 "./asn1/tcap/packet-tcap-template.c"
 /* packet-tcap-template.c
  * Routines for  TCAP
  * Copyright 2004 - 2005, Tim Endean <endeant@hotmail.com>
@@ -29,6 +26,7 @@
 #include <epan/address_types.h>
 #include <epan/strutil.h>
 #include <epan/show_exception.h>
+#include <wsutil/array.h>
 
 #include "packet-ber.h"
 #include "packet-tcap.h"
@@ -40,148 +38,136 @@
 #define PFNAME "tcap"
 
 /* Initialize the protocol and registered fields */
-static int proto_tcap = -1;
-static int hf_tcap_tag = -1;
-static int hf_tcap_length = -1;
-static int hf_tcap_data = -1;
-static int hf_tcap_tid = -1;
-static int hf_tcap_constructor_eoc=-1;
+static int proto_tcap;
+static int hf_tcap_tag;
+static int hf_tcap_length;
+static int hf_tcap_data;
+static int hf_tcap_tid;
+static int hf_tcap_constructor_eoc;
 
-int hf_tcapsrt_SessionId=-1;
-int hf_tcapsrt_Duplicate=-1;
-int hf_tcapsrt_BeginSession=-1;
-int hf_tcapsrt_EndSession=-1;
-int hf_tcapsrt_SessionTime=-1;
+int hf_tcapsrt_SessionId;
+int hf_tcapsrt_Duplicate;
+int hf_tcapsrt_BeginSession;
+int hf_tcapsrt_EndSession;
+int hf_tcapsrt_SessionTime;
 
-
-/*--- Included file: packet-tcap-hf.c ---*/
-#line 1 "./asn1/tcap/packet-tcap-hf.c"
-static int hf_tcap_UniDialoguePDU_PDU = -1;       /* UniDialoguePDU */
-static int hf_tcap_DialoguePDU_PDU = -1;          /* DialoguePDU */
-static int hf_tcap_oid = -1;                      /* OBJECT_IDENTIFIER */
-static int hf_tcap_dialog = -1;                   /* Dialog1 */
-static int hf_tcap_unidirectional = -1;           /* Unidirectional */
-static int hf_tcap_begin = -1;                    /* Begin */
-static int hf_tcap_end = -1;                      /* End */
-static int hf_tcap_continue = -1;                 /* Continue */
-static int hf_tcap_abort = -1;                    /* Abort */
-static int hf_tcap_dialoguePortion = -1;          /* DialoguePortion */
-static int hf_tcap_components = -1;               /* ComponentPortion */
-static int hf_tcap_otid = -1;                     /* OrigTransactionID */
-static int hf_tcap_dtid = -1;                     /* DestTransactionID */
-static int hf_tcap_reason = -1;                   /* Reason */
-static int hf_tcap_p_abortCause = -1;             /* P_AbortCause */
-static int hf_tcap_u_abortCause = -1;             /* DialoguePortion */
-static int hf_tcap__untag_item = -1;              /* Component */
-static int hf_tcap_invoke = -1;                   /* Invoke */
-static int hf_tcap_returnResultLast = -1;         /* ReturnResult */
-static int hf_tcap_returnError = -1;              /* ReturnError */
-static int hf_tcap_reject = -1;                   /* Reject */
-static int hf_tcap_returnResultNotLast = -1;      /* ReturnResult */
-static int hf_tcap_invokeID = -1;                 /* InvokeIdType */
-static int hf_tcap_linkedID = -1;                 /* InvokeIdType */
-static int hf_tcap_opCode = -1;                   /* OPERATION */
-static int hf_tcap_parameter = -1;                /* Parameter */
-static int hf_tcap_resultretres = -1;             /* T_resultretres */
-static int hf_tcap_errorCode = -1;                /* ErrorCode */
-static int hf_tcap_invokeIDRej = -1;              /* T_invokeIDRej */
-static int hf_tcap_derivable = -1;                /* InvokeIdType */
-static int hf_tcap_not_derivable = -1;            /* NULL */
-static int hf_tcap_problem = -1;                  /* T_problem */
-static int hf_tcap_generalProblem = -1;           /* GeneralProblem */
-static int hf_tcap_invokeProblem = -1;            /* InvokeProblem */
-static int hf_tcap_returnResultProblem = -1;      /* ReturnResultProblem */
-static int hf_tcap_returnErrorProblem = -1;       /* ReturnErrorProblem */
-static int hf_tcap_localValue = -1;               /* INTEGER */
-static int hf_tcap_globalValue = -1;              /* OBJECT_IDENTIFIER */
-static int hf_tcap_nationaler = -1;               /* INTEGER_M32768_32767 */
-static int hf_tcap_privateer = -1;                /* INTEGER */
-static int hf_tcap_unidialoguePDU = -1;           /* AUDT_apdu */
-static int hf_tcap_audt_protocol_version = -1;    /* AUDT_protocol_version */
-static int hf_tcap_audt_application_context_name = -1;  /* AUDT_application_context_name */
-static int hf_tcap_audt_user_information = -1;    /* AUDT_user_information */
-static int hf_tcap_audt_user_information_item = -1;  /* EXTERNAL */
-static int hf_tcap_dialogueRequest = -1;          /* AARQ_apdu */
-static int hf_tcap_dialogueResponse = -1;         /* AARE_apdu */
-static int hf_tcap_dialogueAbort = -1;            /* ABRT_apdu */
-static int hf_tcap_aarq_protocol_version = -1;    /* AARQ_protocol_version */
-static int hf_tcap_aarq_application_context_name = -1;  /* AARQ_application_context_name */
-static int hf_tcap_aarq_user_information = -1;    /* AARQ_user_information */
-static int hf_tcap_aarq_user_information_item = -1;  /* EXTERNAL */
-static int hf_tcap_aare_protocol_version = -1;    /* AARE_protocol_version */
-static int hf_tcap_aare_application_context_name = -1;  /* AARE_application_context_name */
-static int hf_tcap_result = -1;                   /* Associate_result */
-static int hf_tcap_result_source_diagnostic = -1;  /* Associate_source_diagnostic */
-static int hf_tcap_aare_user_information = -1;    /* AARE_user_information */
-static int hf_tcap_aare_user_information_item = -1;  /* EXTERNAL */
-static int hf_tcap_abort_source = -1;             /* ABRT_source */
-static int hf_tcap_abrt_user_information = -1;    /* ABRT_user_information */
-static int hf_tcap_abrt_user_information_item = -1;  /* EXTERNAL */
-static int hf_tcap_dialogue_service_user = -1;    /* T_dialogue_service_user */
-static int hf_tcap_dialogue_service_provider = -1;  /* T_dialogue_service_provider */
+static int hf_tcap_UniDialoguePDU_PDU;            /* UniDialoguePDU */
+static int hf_tcap_DialoguePDU_PDU;               /* DialoguePDU */
+static int hf_tcap_oid;                           /* OBJECT_IDENTIFIER */
+static int hf_tcap_dialog;                        /* Dialog1 */
+static int hf_tcap_unidirectional;                /* Unidirectional */
+static int hf_tcap_begin;                         /* Begin */
+static int hf_tcap_end;                           /* End */
+static int hf_tcap_continue;                      /* Continue */
+static int hf_tcap_abort;                         /* Abort */
+static int hf_tcap_dialoguePortion;               /* DialoguePortion */
+static int hf_tcap_components;                    /* ComponentPortion */
+static int hf_tcap_otid;                          /* OrigTransactionID */
+static int hf_tcap_dtid;                          /* DestTransactionID */
+static int hf_tcap_reason;                        /* Reason */
+static int hf_tcap_p_abortCause;                  /* P_AbortCause */
+static int hf_tcap_u_abortCause;                  /* DialoguePortion */
+static int hf_tcap__untag_item;                   /* Component */
+static int hf_tcap_invoke;                        /* Invoke */
+static int hf_tcap_returnResultLast;              /* ReturnResult */
+static int hf_tcap_returnError;                   /* ReturnError */
+static int hf_tcap_reject;                        /* Reject */
+static int hf_tcap_returnResultNotLast;           /* ReturnResult */
+static int hf_tcap_invokeID;                      /* InvokeIdType */
+static int hf_tcap_linkedID;                      /* InvokeIdType */
+static int hf_tcap_opCode;                        /* OPERATION */
+static int hf_tcap_parameter;                     /* Parameter */
+static int hf_tcap_resultretres;                  /* T_resultretres */
+static int hf_tcap_errorCode;                     /* ErrorCode */
+static int hf_tcap_invokeIDRej;                   /* T_invokeIDRej */
+static int hf_tcap_derivable;                     /* InvokeIdType */
+static int hf_tcap_not_derivable;                 /* NULL */
+static int hf_tcap_problem;                       /* T_problem */
+static int hf_tcap_generalProblem;                /* GeneralProblem */
+static int hf_tcap_invokeProblem;                 /* InvokeProblem */
+static int hf_tcap_returnResultProblem;           /* ReturnResultProblem */
+static int hf_tcap_returnErrorProblem;            /* ReturnErrorProblem */
+static int hf_tcap_localValue;                    /* INTEGER */
+static int hf_tcap_globalValue;                   /* OBJECT_IDENTIFIER */
+static int hf_tcap_nationaler;                    /* INTEGER_M32768_32767 */
+static int hf_tcap_privateer;                     /* INTEGER */
+static int hf_tcap_unidialoguePDU;                /* AUDT_apdu */
+static int hf_tcap_audt_protocol_version;         /* AUDT_protocol_version */
+static int hf_tcap_audt_application_context_name;  /* AUDT_application_context_name */
+static int hf_tcap_audt_user_information;         /* AUDT_user_information */
+static int hf_tcap_audt_user_information_item;    /* EXTERNAL */
+static int hf_tcap_dialogueRequest;               /* AARQ_apdu */
+static int hf_tcap_dialogueResponse;              /* AARE_apdu */
+static int hf_tcap_dialogueAbort;                 /* ABRT_apdu */
+static int hf_tcap_aarq_protocol_version;         /* AARQ_protocol_version */
+static int hf_tcap_aarq_application_context_name;  /* AARQ_application_context_name */
+static int hf_tcap_aarq_user_information;         /* AARQ_user_information */
+static int hf_tcap_aarq_user_information_item;    /* EXTERNAL */
+static int hf_tcap_aare_protocol_version;         /* AARE_protocol_version */
+static int hf_tcap_aare_application_context_name;  /* AARE_application_context_name */
+static int hf_tcap_result;                        /* Associate_result */
+static int hf_tcap_result_source_diagnostic;      /* Associate_source_diagnostic */
+static int hf_tcap_aare_user_information;         /* AARE_user_information */
+static int hf_tcap_aare_user_information_item;    /* EXTERNAL */
+static int hf_tcap_abort_source;                  /* ABRT_source */
+static int hf_tcap_abrt_user_information;         /* ABRT_user_information */
+static int hf_tcap_abrt_user_information_item;    /* EXTERNAL */
+static int hf_tcap_dialogue_service_user;         /* T_dialogue_service_user */
+static int hf_tcap_dialogue_service_provider;     /* T_dialogue_service_provider */
 /* named bits */
-static int hf_tcap_AUDT_protocol_version_version1 = -1;
-static int hf_tcap_AARQ_protocol_version_version1 = -1;
-static int hf_tcap_AARE_protocol_version_version1 = -1;
-
-/*--- End of included file: packet-tcap-hf.c ---*/
-#line 49 "./asn1/tcap/packet-tcap-template.c"
+static int hf_tcap_AUDT_protocol_version_version1;
+static int hf_tcap_AARQ_protocol_version_version1;
+static int hf_tcap_AARE_protocol_version_version1;
 
 /* Initialize the subtree pointers */
-static gint ett_tcap = -1;
-static gint ett_param = -1;
+static int ett_tcap;
+static int ett_param;
 
-static gint ett_otid = -1;
-static gint ett_dtid = -1;
-gint ett_tcap_stat = -1;
+static int ett_otid;
+static int ett_dtid;
+int ett_tcap_stat;
 
 static struct tcapsrt_info_t * gp_tcapsrt_info;
-static gboolean tcap_subdissector_used=FALSE;
-static dissector_handle_t requested_subdissector_handle = NULL;
+static bool tcap_subdissector_used=false;
+static dissector_handle_t requested_subdissector_handle;
 
 static int ss7pc_address_type = -1;
 
-static struct tcaphash_context_t * gp_tcap_context=NULL;
+static struct tcaphash_context_t * gp_tcap_context;
 
-
-/*--- Included file: packet-tcap-ett.c ---*/
-#line 1 "./asn1/tcap/packet-tcap-ett.c"
-static gint ett_tcap_ExternalPDU_U = -1;
-static gint ett_tcap_TCMessage = -1;
-static gint ett_tcap_Unidirectional = -1;
-static gint ett_tcap_Begin = -1;
-static gint ett_tcap_End = -1;
-static gint ett_tcap_Continue = -1;
-static gint ett_tcap_Abort = -1;
-static gint ett_tcap_Reason = -1;
-static gint ett_tcap_SEQUENCE_SIZE_1_MAX_OF_Component = -1;
-static gint ett_tcap_Component = -1;
-static gint ett_tcap_Invoke = -1;
-static gint ett_tcap_ReturnResult = -1;
-static gint ett_tcap_T_resultretres = -1;
-static gint ett_tcap_ReturnError = -1;
-static gint ett_tcap_Reject = -1;
-static gint ett_tcap_T_invokeIDRej = -1;
-static gint ett_tcap_T_problem = -1;
-static gint ett_tcap_OPERATION = -1;
-static gint ett_tcap_ErrorCode = -1;
-static gint ett_tcap_UniDialoguePDU = -1;
-static gint ett_tcap_AUDT_apdu_U = -1;
-static gint ett_tcap_AUDT_protocol_version = -1;
-static gint ett_tcap_AUDT_user_information = -1;
-static gint ett_tcap_DialoguePDU = -1;
-static gint ett_tcap_AARQ_apdu_U = -1;
-static gint ett_tcap_AARQ_protocol_version = -1;
-static gint ett_tcap_AARQ_user_information = -1;
-static gint ett_tcap_AARE_apdu_U = -1;
-static gint ett_tcap_AARE_protocol_version = -1;
-static gint ett_tcap_AARE_user_information = -1;
-static gint ett_tcap_ABRT_apdu_U = -1;
-static gint ett_tcap_ABRT_user_information = -1;
-static gint ett_tcap_Associate_source_diagnostic = -1;
-
-/*--- End of included file: packet-tcap-ett.c ---*/
-#line 67 "./asn1/tcap/packet-tcap-template.c"
+static int ett_tcap_ExternalPDU_U;
+static int ett_tcap_TCMessage;
+static int ett_tcap_Unidirectional;
+static int ett_tcap_Begin;
+static int ett_tcap_End;
+static int ett_tcap_Continue;
+static int ett_tcap_Abort;
+static int ett_tcap_Reason;
+static int ett_tcap_SEQUENCE_SIZE_1_MAX_OF_Component;
+static int ett_tcap_Component;
+static int ett_tcap_Invoke;
+static int ett_tcap_ReturnResult;
+static int ett_tcap_T_resultretres;
+static int ett_tcap_ReturnError;
+static int ett_tcap_Reject;
+static int ett_tcap_T_invokeIDRej;
+static int ett_tcap_T_problem;
+static int ett_tcap_OPERATION;
+static int ett_tcap_ErrorCode;
+static int ett_tcap_UniDialoguePDU;
+static int ett_tcap_AUDT_apdu_U;
+static int ett_tcap_AUDT_protocol_version;
+static int ett_tcap_AUDT_user_information;
+static int ett_tcap_DialoguePDU;
+static int ett_tcap_AARQ_apdu_U;
+static int ett_tcap_AARQ_protocol_version;
+static int ett_tcap_AARQ_user_information;
+static int ett_tcap_AARE_apdu_U;
+static int ett_tcap_AARE_protocol_version;
+static int ett_tcap_AARE_user_information;
+static int ett_tcap_ABRT_apdu_U;
+static int ett_tcap_ABRT_user_information;
+static int ett_tcap_Associate_source_diagnostic;
 
 /* When several Tcap components are received in a single TCAP message,
    we have to use several buffers for the stored parameters
@@ -194,76 +180,72 @@ static struct tcapsrt_info_t tcapsrt_global_info[MAX_TCAP_INSTANCE];
 static range_t *global_ssn_range;
 static range_t *ssn_range;
 
-gboolean gtcap_HandleSRT=FALSE;
 /* These two timeout (in second) are used when some message are lost,
    or when the same TCAP transcation identifier is reused */
-guint gtcap_RepetitionTimeout = 10;
-guint gtcap_LostTimeout = 30;
-gboolean gtcap_PersistentSRT=FALSE;
-gboolean gtcap_DisplaySRT=FALSE;
-gboolean gtcap_StatSRT=FALSE;
+static unsigned gtcap_RepetitionTimeout = 10;
+static unsigned gtcap_LostTimeout = 30;
+static bool gtcap_PersistentSRT=false;
+bool gtcap_DisplaySRT=false;
+bool gtcap_StatSRT=false;
 
 /* Global hash tables*/
-static wmem_map_t *tcaphash_context = NULL;
-static wmem_map_t *tcaphash_begin = NULL;
-static wmem_map_t *tcaphash_cont = NULL;
-static wmem_map_t *tcaphash_end = NULL;
-static wmem_map_t *tcaphash_ansi = NULL;
+static wmem_map_t *tcaphash_context;
+static wmem_map_t *tcaphash_begin;
+static wmem_map_t *tcaphash_cont;
+static wmem_map_t *tcaphash_end;
+static wmem_map_t *tcaphash_ansi;
 
-static guint32 tcapsrt_global_SessionId=1;
+static uint32_t tcapsrt_global_SessionId=1;
 
-static dissector_handle_t tcap_handle = NULL;
+static dissector_handle_t tcap_handle;
 static dissector_table_t ber_oid_dissector_table;
 static const char * cur_oid;
 static const char * tcapext_oid;
-static proto_tree * tcap_top_tree=NULL;
-static proto_tree * tcap_stat_tree=NULL;
+static proto_tree * tcap_top_tree;
+static proto_tree * tcap_stat_tree;
 
 static dissector_handle_t data_handle;
 static dissector_handle_t ansi_tcap_handle;
 
 static int dissect_tcap_param(asn1_ctx_t *actx, proto_tree *tree, tvbuff_t *tvb, int offset);
-static int dissect_tcap_ITU_ComponentPDU(gboolean implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx _U_, proto_tree *tree, int hf_index _U_);
+static bool dissect_tcap_ITU_ComponentPDU(bool implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_);
 
-static dissector_table_t ansi_sub_dissectors = NULL;
-static dissector_table_t itu_sub_dissectors = NULL;
+static dissector_table_t ansi_sub_dissectors;
+static dissector_table_t itu_sub_dissectors;
 
-extern void add_ansi_tcap_subdissector(guint32 ssn, dissector_handle_t dissector) {
+extern void add_ansi_tcap_subdissector(uint32_t ssn, dissector_handle_t dissector) {
   dissector_add_uint("ansi_tcap.ssn",ssn,dissector);
   dissector_add_uint("sccp.ssn",ssn,tcap_handle);
 }
 
-extern void add_itu_tcap_subdissector(guint32 ssn, dissector_handle_t dissector) {
+extern void add_itu_tcap_subdissector(uint32_t ssn, dissector_handle_t dissector) {
   dissector_add_uint("itu_tcap.ssn",ssn,dissector);
   dissector_add_uint("sccp.ssn",ssn,tcap_handle);
 }
 
-extern void delete_ansi_tcap_subdissector(guint32 ssn, dissector_handle_t dissector) {
+extern void delete_ansi_tcap_subdissector(uint32_t ssn, dissector_handle_t dissector) {
   dissector_delete_uint("ansi_tcap.ssn",ssn,dissector);
   if (!get_itu_tcap_subdissector(ssn))
       dissector_delete_uint("sccp.ssn",ssn,tcap_handle);
 }
-extern void delete_itu_tcap_subdissector(guint32 ssn, dissector_handle_t dissector _U_) {
+extern void delete_itu_tcap_subdissector(uint32_t ssn, dissector_handle_t dissector _U_) {
   dissector_delete_uint("itu_tcap.ssn",ssn,dissector);
   if (!get_ansi_tcap_subdissector(ssn))
     dissector_delete_uint("sccp.ssn", ssn,tcap_handle);
 }
 
-dissector_handle_t get_ansi_tcap_subdissector(guint32 ssn) {
+dissector_handle_t get_ansi_tcap_subdissector(uint32_t ssn) {
   return dissector_get_uint_handle(ansi_sub_dissectors, ssn);
 }
 
-dissector_handle_t get_itu_tcap_subdissector(guint32 ssn) {
+dissector_handle_t get_itu_tcap_subdissector(uint32_t ssn) {
   return dissector_get_uint_handle(itu_sub_dissectors, ssn);
 }
 
 
-/*--- Included file: packet-tcap-fn.c ---*/
-#line 1 "./asn1/tcap/packet-tcap-fn.c"
-
 
 static int
-dissect_tcap_OBJECT_IDENTIFIER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_OBJECT_IDENTIFIER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier(implicit_tag, actx, tree, tvb, offset, hf_index, NULL);
 
   return offset;
@@ -272,11 +254,9 @@ dissect_tcap_OBJECT_IDENTIFIER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
 
 
 static int
-dissect_tcap_Dialog1(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 72 "./asn1/tcap/tcap.cnf"
+dissect_tcap_Dialog1(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
-  offset = dissect_tcap_DialoguePDU(TRUE, tvb, offset, actx, tree, -1);
-
+  offset = dissect_tcap_DialoguePDU(true, tvb, offset, actx, tree, -1);
 
 
   return offset;
@@ -290,7 +270,7 @@ static const ber_sequence_t ExternalPDU_U_sequence[] = {
 };
 
 static int
-dissect_tcap_ExternalPDU_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ExternalPDU_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ExternalPDU_U_sequence, hf_index, ett_tcap_ExternalPDU_U);
 
@@ -300,25 +280,10 @@ dissect_tcap_ExternalPDU_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int off
 
 
 static int
-dissect_tcap_ExternalPDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 67 "./asn1/tcap/tcap.cnf"
+dissect_tcap_ExternalPDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_UNI, 8, TRUE, dissect_tcap_ExternalPDU_U);
-
-
-
-
-  return offset;
-}
-
-
-
-static int
-dissect_tcap_DialogueOC(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 62 "./asn1/tcap/tcap.cnf"
-
-  offset = dissect_tcap_ExternalPDU(FALSE /*implicit_tag*/, tvb, offset, actx, tree, -1);
+                                      hf_index, BER_CLASS_UNI, 8, true, dissect_tcap_ExternalPDU_U);
 
 
 
@@ -328,9 +293,20 @@ dissect_tcap_DialogueOC(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset
 
 
 static int
-dissect_tcap_DialoguePortion(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_DialogueOC(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+
+  offset = dissect_tcap_ExternalPDU(false /*implicit_tag*/, tvb, offset, actx, tree, -1);
+
+
+  return offset;
+}
+
+
+
+static int
+dissect_tcap_DialoguePortion(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 11, TRUE, dissect_tcap_DialogueOC);
+                                      hf_index, BER_CLASS_APP, 11, true, dissect_tcap_DialogueOC);
 
   return offset;
 }
@@ -338,7 +314,7 @@ dissect_tcap_DialoguePortion(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_tcap_InvokeIdType(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_InvokeIdType(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -348,7 +324,7 @@ dissect_tcap_InvokeIdType(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offs
 
 
 static int
-dissect_tcap_INTEGER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_INTEGER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -369,7 +345,7 @@ static const ber_choice_t OPERATION_choice[] = {
 };
 
 static int
-dissect_tcap_OPERATION(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_OPERATION(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  OPERATION_choice, hf_index, ett_tcap_OPERATION,
                                  NULL);
@@ -380,11 +356,9 @@ dissect_tcap_OPERATION(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset 
 
 
 static int
-dissect_tcap_Parameter(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 77 "./asn1/tcap/tcap.cnf"
+dissect_tcap_Parameter(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   offset = dissect_tcap_param(actx,tree,tvb,offset);
-
 
 
   return offset;
@@ -400,7 +374,7 @@ static const ber_sequence_t Invoke_sequence[] = {
 };
 
 static int
-dissect_tcap_Invoke(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_Invoke(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Invoke_sequence, hf_index, ett_tcap_Invoke);
 
@@ -415,7 +389,7 @@ static const ber_sequence_t T_resultretres_sequence[] = {
 };
 
 static int
-dissect_tcap_T_resultretres(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_T_resultretres(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    T_resultretres_sequence, hf_index, ett_tcap_T_resultretres);
 
@@ -430,7 +404,7 @@ static const ber_sequence_t ReturnResult_sequence[] = {
 };
 
 static int
-dissect_tcap_ReturnResult(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ReturnResult(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ReturnResult_sequence, hf_index, ett_tcap_ReturnResult);
 
@@ -440,7 +414,7 @@ dissect_tcap_ReturnResult(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offs
 
 
 static int
-dissect_tcap_INTEGER_M32768_32767(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_INTEGER_M32768_32767(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -461,7 +435,7 @@ static const ber_choice_t ErrorCode_choice[] = {
 };
 
 static int
-dissect_tcap_ErrorCode(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ErrorCode(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  ErrorCode_choice, hf_index, ett_tcap_ErrorCode,
                                  NULL);
@@ -478,7 +452,7 @@ static const ber_sequence_t ReturnError_sequence[] = {
 };
 
 static int
-dissect_tcap_ReturnError(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ReturnError(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ReturnError_sequence, hf_index, ett_tcap_ReturnError);
 
@@ -488,7 +462,7 @@ dissect_tcap_ReturnError(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 
 
 static int
-dissect_tcap_NULL(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_NULL(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_null(implicit_tag, actx, tree, tvb, offset, hf_index);
 
   return offset;
@@ -508,7 +482,7 @@ static const ber_choice_t T_invokeIDRej_choice[] = {
 };
 
 static int
-dissect_tcap_T_invokeIDRej(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_T_invokeIDRej(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  T_invokeIDRej_choice, hf_index, ett_tcap_T_invokeIDRej,
                                  NULL);
@@ -526,7 +500,7 @@ static const value_string tcap_GeneralProblem_vals[] = {
 
 
 static int
-dissect_tcap_GeneralProblem(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_GeneralProblem(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -548,7 +522,7 @@ static const value_string tcap_InvokeProblem_vals[] = {
 
 
 static int
-dissect_tcap_InvokeProblem(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_InvokeProblem(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -565,7 +539,7 @@ static const value_string tcap_ReturnResultProblem_vals[] = {
 
 
 static int
-dissect_tcap_ReturnResultProblem(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ReturnResultProblem(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -584,7 +558,7 @@ static const value_string tcap_ReturnErrorProblem_vals[] = {
 
 
 static int
-dissect_tcap_ReturnErrorProblem(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ReturnErrorProblem(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -609,7 +583,7 @@ static const ber_choice_t T_problem_choice[] = {
 };
 
 static int
-dissect_tcap_T_problem(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_T_problem(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  T_problem_choice, hf_index, ett_tcap_T_problem,
                                  NULL);
@@ -625,7 +599,7 @@ static const ber_sequence_t Reject_sequence[] = {
 };
 
 static int
-dissect_tcap_Reject(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_Reject(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Reject_sequence, hf_index, ett_tcap_Reject);
 
@@ -652,15 +626,14 @@ static const ber_choice_t Component_choice[] = {
 };
 
 static int
-dissect_tcap_Component(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 82 "./asn1/tcap/tcap.cnf"
+dissect_tcap_Component(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   tvbuff_t *next_tvb;
-  gint8 ber_class;
-  gboolean pc;
-  gint tag;
-  guint32 len, comp_offset;
-  volatile guint32 _offset;
-  gint ind_field;
+  int8_t ber_class;
+  bool pc;
+  int tag;
+  uint32_t len, comp_offset;
+  volatile uint32_t _offset;
+  bool ind_field;
 
   comp_offset = dissect_ber_identifier(actx->pinfo, tree, tvb, offset, &ber_class, &pc, &tag);
   comp_offset = dissect_ber_length(actx->pinfo, tree, tvb, comp_offset, &len, &ind_field);
@@ -669,6 +642,9 @@ dissect_tcap_Component(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset 
 
   if (!next_tvb)
     return comp_offset;
+  if(dissect_tcap_ITU_ComponentPDU(implicit_tag, next_tvb, 0, actx, tcap_top_tree, hf_index)){
+    return comp_offset;
+  }
 
   _offset = offset;
   TRY {
@@ -682,10 +658,7 @@ dissect_tcap_Component(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset 
   ENDTRY;
   offset = _offset;
 
-  dissect_tcap_ITU_ComponentPDU(implicit_tag, next_tvb, 0, actx, tcap_top_tree, hf_index);
-
 /* return comp_offset+len; or return offset (will be automatically added) */
-
 
 
   return offset;
@@ -697,7 +670,7 @@ static const ber_sequence_t SEQUENCE_SIZE_1_MAX_OF_Component_sequence_of[1] = {
 };
 
 static int
-dissect_tcap_SEQUENCE_SIZE_1_MAX_OF_Component(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_SEQUENCE_SIZE_1_MAX_OF_Component(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_SIZE_1_MAX_OF_Component_sequence_of, hf_index, ett_tcap_SEQUENCE_SIZE_1_MAX_OF_Component);
 
@@ -707,9 +680,9 @@ dissect_tcap_SEQUENCE_SIZE_1_MAX_OF_Component(gboolean implicit_tag _U_, tvbuff_
 
 
 static int
-dissect_tcap_ComponentPortion(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ComponentPortion(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 12, TRUE, dissect_tcap_SEQUENCE_SIZE_1_MAX_OF_Component);
+                                      hf_index, BER_CLASS_APP, 12, true, dissect_tcap_SEQUENCE_SIZE_1_MAX_OF_Component);
 
   return offset;
 }
@@ -722,7 +695,7 @@ static const ber_sequence_t Unidirectional_sequence[] = {
 };
 
 static int
-dissect_tcap_Unidirectional(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_Unidirectional(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Unidirectional_sequence, hf_index, ett_tcap_Unidirectional);
 
@@ -732,7 +705,7 @@ dissect_tcap_Unidirectional(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 
 static int
-dissect_tcap_OCTET_STRING_SIZE_1_4(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_OCTET_STRING_SIZE_1_4(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
                                        NULL);
 
@@ -742,10 +715,9 @@ dissect_tcap_OCTET_STRING_SIZE_1_4(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 
 
 static int
-dissect_tcap_OrigTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 134 "./asn1/tcap/tcap.cnf"
+dissect_tcap_OrigTransactionID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   tvbuff_t *parameter_tvb;
-  guint8 len, i;
+  uint8_t len, i;
   proto_tree *subtree;
   int saved_offset;
   struct tcap_private_t *p_tcap_private = (struct tcap_private_t*)actx->value_ptr;
@@ -753,9 +725,9 @@ dissect_tcap_OrigTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
   hf_index = hf_tcap_tid;
   saved_offset = offset;
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 8, TRUE, dissect_tcap_OCTET_STRING_SIZE_1_4);
+                                      hf_index, BER_CLASS_APP, 8, true, dissect_tcap_OCTET_STRING_SIZE_1_4);
 
-  PROTO_ITEM_SET_GENERATED(actx->created_item);
+  proto_item_set_generated(actx->created_item);
   offset = saved_offset;
 
   subtree = proto_tree_add_subtree(tree, tvb, offset, -1, ett_otid, NULL, "Source Transaction ID");
@@ -766,7 +738,7 @@ dissect_tcap_OrigTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
     len = tvb_reported_length_remaining(parameter_tvb, 0);
     switch(len) {
     case 1:
-      gp_tcapsrt_info->src_tid=tvb_get_guint8(parameter_tvb, 0);
+      gp_tcapsrt_info->src_tid=tvb_get_uint8(parameter_tvb, 0);
       break;
     case 2:
       gp_tcapsrt_info->src_tid=tvb_get_ntohs(parameter_tvb, 0);
@@ -781,17 +753,17 @@ dissect_tcap_OrigTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
       gp_tcapsrt_info->src_tid=0;
       break;
     }
-    p_tcap_private->src_tid = gp_tcapsrt_info->src_tid;
+    if (p_tcap_private)
+      p_tcap_private->src_tid = gp_tcapsrt_info->src_tid;
 
     if (len) {
       col_append_str(actx->pinfo->cinfo, COL_INFO, "otid(");
       for (i = 0; i < len; i++) {
-        col_append_fstr(actx->pinfo->cinfo, COL_INFO, "%02x",tvb_get_guint8(parameter_tvb,i));
+        col_append_fstr(actx->pinfo->cinfo, COL_INFO, "%02x",tvb_get_uint8(parameter_tvb,i));
       }
       col_append_str(actx->pinfo->cinfo, COL_INFO, ") ");
     }
   }
-
 
 
   return offset;
@@ -806,8 +778,7 @@ static const ber_sequence_t Begin_sequence[] = {
 };
 
 static int
-dissect_tcap_Begin(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 228 "./asn1/tcap/tcap.cnf"
+dissect_tcap_Begin(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 gp_tcapsrt_info->ope=TC_BEGIN;
 
 /*  Do not change col_add_str() to col_append_str() here: we _want_ this call
@@ -818,7 +789,6 @@ gp_tcapsrt_info->ope=TC_BEGIN;
  *  put that info there should call col_set_fence() to protect it.
  */
   col_set_str(actx->pinfo->cinfo, COL_INFO, "Begin ");
-
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Begin_sequence, hf_index, ett_tcap_Begin);
 
@@ -828,10 +798,9 @@ gp_tcapsrt_info->ope=TC_BEGIN;
 
 
 static int
-dissect_tcap_DestTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 182 "./asn1/tcap/tcap.cnf"
+dissect_tcap_DestTransactionID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   tvbuff_t *parameter_tvb;
-  guint8 len , i;
+  uint8_t len , i;
   proto_tree *subtree;
   int saved_offset;
   struct tcap_private_t *p_tcap_private = (struct tcap_private_t*)actx->value_ptr;
@@ -839,9 +808,9 @@ dissect_tcap_DestTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
   hf_index = hf_tcap_tid;
   saved_offset = offset;
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 9, TRUE, dissect_tcap_OCTET_STRING_SIZE_1_4);
+                                      hf_index, BER_CLASS_APP, 9, true, dissect_tcap_OCTET_STRING_SIZE_1_4);
 
-  PROTO_ITEM_SET_GENERATED(actx->created_item);
+  proto_item_set_generated(actx->created_item);
   offset = saved_offset;
 
   subtree = proto_tree_add_subtree(tree, tvb, offset, -1, ett_dtid, NULL, "Destination Transaction ID");
@@ -852,7 +821,7 @@ dissect_tcap_DestTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
     len = tvb_reported_length_remaining(parameter_tvb, 0);
     switch(len) {
     case 1:
-      gp_tcapsrt_info->dst_tid=tvb_get_guint8(parameter_tvb, 0);
+      gp_tcapsrt_info->dst_tid=tvb_get_uint8(parameter_tvb, 0);
       break;
     case 2:
       gp_tcapsrt_info->dst_tid=tvb_get_ntohs(parameter_tvb, 0);
@@ -867,17 +836,17 @@ dissect_tcap_DestTransactionID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
       gp_tcapsrt_info->dst_tid=0;
       break;
     }
-    p_tcap_private->dst_tid = gp_tcapsrt_info->dst_tid;
+    if (p_tcap_private)
+      p_tcap_private->dst_tid = gp_tcapsrt_info->dst_tid;
 
     if (len) {
       col_append_str(actx->pinfo->cinfo, COL_INFO, "dtid(");
       for(i = 0; i < len; i++) {
-        col_append_fstr(actx->pinfo->cinfo, COL_INFO, "%02x",tvb_get_guint8(parameter_tvb,i));
+        col_append_fstr(actx->pinfo->cinfo, COL_INFO, "%02x",tvb_get_uint8(parameter_tvb,i));
       }
       col_append_str(actx->pinfo->cinfo, COL_INFO, ") ");
     }
   }
-
 
   return offset;
 }
@@ -891,12 +860,10 @@ static const ber_sequence_t End_sequence[] = {
 };
 
 static int
-dissect_tcap_End(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 242 "./asn1/tcap/tcap.cnf"
+dissect_tcap_End(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 gp_tcapsrt_info->ope=TC_END;
 
   col_set_str(actx->pinfo->cinfo, COL_INFO, "End ");
-
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    End_sequence, hf_index, ett_tcap_End);
 
@@ -913,12 +880,10 @@ static const ber_sequence_t Continue_sequence[] = {
 };
 
 static int
-dissect_tcap_Continue(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 249 "./asn1/tcap/tcap.cnf"
+dissect_tcap_Continue(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 gp_tcapsrt_info->ope=TC_CONT;
 
   col_set_str(actx->pinfo->cinfo, COL_INFO, "Continue ");
-
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Continue_sequence, hf_index, ett_tcap_Continue);
 
@@ -937,7 +902,7 @@ static const value_string tcap_P_AbortCause_U_vals[] = {
 
 
 static int
-dissect_tcap_P_AbortCause_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_P_AbortCause_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -947,9 +912,9 @@ dissect_tcap_P_AbortCause_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 
 static int
-dissect_tcap_P_AbortCause(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_P_AbortCause(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 10, TRUE, dissect_tcap_P_AbortCause_U);
+                                      hf_index, BER_CLASS_APP, 10, true, dissect_tcap_P_AbortCause_U);
 
   return offset;
 }
@@ -968,7 +933,7 @@ static const ber_choice_t Reason_choice[] = {
 };
 
 static int
-dissect_tcap_Reason(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_Reason(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Reason_choice, hf_index, ett_tcap_Reason,
                                  NULL);
@@ -984,12 +949,10 @@ static const ber_sequence_t Abort_sequence[] = {
 };
 
 static int
-dissect_tcap_Abort(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 256 "./asn1/tcap/tcap.cnf"
+dissect_tcap_Abort(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 gp_tcapsrt_info->ope=TC_ABORT;
 
   col_set_str(actx->pinfo->cinfo, COL_INFO, "Abort ");
-
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Abort_sequence, hf_index, ett_tcap_Abort);
 
@@ -1007,7 +970,7 @@ static const ber_choice_t TCMessage_choice[] = {
 };
 
 static int
-dissect_tcap_TCMessage(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_TCMessage(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  TCMessage_choice, hf_index, ett_tcap_TCMessage,
                                  NULL);
@@ -1016,15 +979,15 @@ dissect_tcap_TCMessage(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset 
 }
 
 
-static const asn_namedbit AUDT_protocol_version_bits[] = {
-  {  0, &hf_tcap_AUDT_protocol_version_version1, -1, -1, "version1", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const AUDT_protocol_version_bits[] = {
+  &hf_tcap_AUDT_protocol_version_version1,
+  NULL
 };
 
 static int
-dissect_tcap_AUDT_protocol_version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AUDT_protocol_version(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    AUDT_protocol_version_bits, hf_index, ett_tcap_AUDT_protocol_version,
+                                    AUDT_protocol_version_bits, 1, hf_index, ett_tcap_AUDT_protocol_version,
                                     NULL);
 
   return offset;
@@ -1033,14 +996,14 @@ dissect_tcap_AUDT_protocol_version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 
 
 static int
-dissect_tcap_AUDT_application_context_name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 116 "./asn1/tcap/tcap.cnf"
+dissect_tcap_AUDT_application_context_name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   struct tcap_private_t *p_tcap_private = (struct tcap_private_t*)actx->value_ptr;
   offset = dissect_ber_object_identifier_str(implicit_tag, actx, tree, tvb, offset, hf_index, &cur_oid);
 
-  p_tcap_private->oid= (const void*) cur_oid;
-  p_tcap_private->acv=TRUE;
-
+  if (p_tcap_private) {
+    p_tcap_private->oid= (const void*) cur_oid;
+    p_tcap_private->acv=true;
+  }
 
   return offset;
 }
@@ -1048,7 +1011,7 @@ dissect_tcap_AUDT_application_context_name(gboolean implicit_tag _U_, tvbuff_t *
 
 
 static int
-dissect_tcap_EXTERNAL(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_EXTERNAL(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_external_type(implicit_tag, tree, tvb, offset, actx, hf_index, NULL);
 
   return offset;
@@ -1060,7 +1023,7 @@ static const ber_sequence_t AUDT_user_information_sequence_of[1] = {
 };
 
 static int
-dissect_tcap_AUDT_user_information(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AUDT_user_information(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       AUDT_user_information_sequence_of, hf_index, ett_tcap_AUDT_user_information);
 
@@ -1076,7 +1039,7 @@ static const ber_sequence_t AUDT_apdu_U_sequence[] = {
 };
 
 static int
-dissect_tcap_AUDT_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AUDT_apdu_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    AUDT_apdu_U_sequence, hf_index, ett_tcap_AUDT_apdu_U);
 
@@ -1086,9 +1049,9 @@ dissect_tcap_AUDT_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 
 
 static int
-dissect_tcap_AUDT_apdu(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AUDT_apdu(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 0, TRUE, dissect_tcap_AUDT_apdu_U);
+                                      hf_index, BER_CLASS_APP, 0, true, dissect_tcap_AUDT_apdu_U);
 
   return offset;
 }
@@ -1105,7 +1068,7 @@ static const ber_choice_t UniDialoguePDU_choice[] = {
 };
 
 int
-dissect_tcap_UniDialoguePDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_UniDialoguePDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  UniDialoguePDU_choice, hf_index, ett_tcap_UniDialoguePDU,
                                  NULL);
@@ -1114,15 +1077,15 @@ dissect_tcap_UniDialoguePDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 }
 
 
-static const asn_namedbit AARQ_protocol_version_bits[] = {
-  {  0, &hf_tcap_AARQ_protocol_version_version1, -1, -1, "version1", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const AARQ_protocol_version_bits[] = {
+  &hf_tcap_AARQ_protocol_version_version1,
+  NULL
 };
 
 static int
-dissect_tcap_AARQ_protocol_version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARQ_protocol_version(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    AARQ_protocol_version_bits, hf_index, ett_tcap_AARQ_protocol_version,
+                                    AARQ_protocol_version_bits, 1, hf_index, ett_tcap_AARQ_protocol_version,
                                     NULL);
 
   return offset;
@@ -1131,14 +1094,14 @@ dissect_tcap_AARQ_protocol_version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 
 
 static int
-dissect_tcap_AARQ_application_context_name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 122 "./asn1/tcap/tcap.cnf"
+dissect_tcap_AARQ_application_context_name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   struct tcap_private_t *p_tcap_private = (struct tcap_private_t*)actx->value_ptr;
   offset = dissect_ber_object_identifier_str(implicit_tag, actx, tree, tvb, offset, hf_index, &cur_oid);
 
-  p_tcap_private->oid= (const void*) cur_oid;
-  p_tcap_private->acv=TRUE;
-
+  if (p_tcap_private) {
+    p_tcap_private->oid= (const void*) cur_oid;
+    p_tcap_private->acv=true;
+  }
 
   return offset;
 }
@@ -1149,7 +1112,7 @@ static const ber_sequence_t AARQ_user_information_sequence_of[1] = {
 };
 
 static int
-dissect_tcap_AARQ_user_information(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARQ_user_information(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       AARQ_user_information_sequence_of, hf_index, ett_tcap_AARQ_user_information);
 
@@ -1165,7 +1128,7 @@ static const ber_sequence_t AARQ_apdu_U_sequence[] = {
 };
 
 static int
-dissect_tcap_AARQ_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARQ_apdu_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    AARQ_apdu_U_sequence, hf_index, ett_tcap_AARQ_apdu_U);
 
@@ -1175,23 +1138,23 @@ dissect_tcap_AARQ_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 
 
 static int
-dissect_tcap_AARQ_apdu(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARQ_apdu(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 0, TRUE, dissect_tcap_AARQ_apdu_U);
+                                      hf_index, BER_CLASS_APP, 0, true, dissect_tcap_AARQ_apdu_U);
 
   return offset;
 }
 
 
-static const asn_namedbit AARE_protocol_version_bits[] = {
-  {  0, &hf_tcap_AARE_protocol_version_version1, -1, -1, "version1", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const AARE_protocol_version_bits[] = {
+  &hf_tcap_AARE_protocol_version_version1,
+  NULL
 };
 
 static int
-dissect_tcap_AARE_protocol_version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARE_protocol_version(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    AARE_protocol_version_bits, hf_index, ett_tcap_AARE_protocol_version,
+                                    AARE_protocol_version_bits, 1, hf_index, ett_tcap_AARE_protocol_version,
                                     NULL);
 
   return offset;
@@ -1200,14 +1163,14 @@ dissect_tcap_AARE_protocol_version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 
 
 static int
-dissect_tcap_AARE_application_context_name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 128 "./asn1/tcap/tcap.cnf"
+dissect_tcap_AARE_application_context_name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   struct tcap_private_t *p_tcap_private = (struct tcap_private_t*)actx->value_ptr;
   offset = dissect_ber_object_identifier_str(implicit_tag, actx, tree, tvb, offset, hf_index, &cur_oid);
 
-  p_tcap_private->oid= (const void*) cur_oid;
-  p_tcap_private->acv=TRUE;
-
+  if (p_tcap_private) {
+    p_tcap_private->oid= (const void*) cur_oid;
+    p_tcap_private->acv=true;
+  }
 
   return offset;
 }
@@ -1221,7 +1184,7 @@ static const value_string tcap_Associate_result_vals[] = {
 
 
 static int
-dissect_tcap_Associate_result(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_Associate_result(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1238,7 +1201,7 @@ static const value_string tcap_T_dialogue_service_user_vals[] = {
 
 
 static int
-dissect_tcap_T_dialogue_service_user(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_T_dialogue_service_user(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1255,7 +1218,7 @@ static const value_string tcap_T_dialogue_service_provider_vals[] = {
 
 
 static int
-dissect_tcap_T_dialogue_service_provider(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_T_dialogue_service_provider(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1276,7 +1239,7 @@ static const ber_choice_t Associate_source_diagnostic_choice[] = {
 };
 
 static int
-dissect_tcap_Associate_source_diagnostic(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_Associate_source_diagnostic(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Associate_source_diagnostic_choice, hf_index, ett_tcap_Associate_source_diagnostic,
                                  NULL);
@@ -1290,7 +1253,7 @@ static const ber_sequence_t AARE_user_information_sequence_of[1] = {
 };
 
 static int
-dissect_tcap_AARE_user_information(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARE_user_information(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       AARE_user_information_sequence_of, hf_index, ett_tcap_AARE_user_information);
 
@@ -1308,7 +1271,7 @@ static const ber_sequence_t AARE_apdu_U_sequence[] = {
 };
 
 static int
-dissect_tcap_AARE_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARE_apdu_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    AARE_apdu_U_sequence, hf_index, ett_tcap_AARE_apdu_U);
 
@@ -1318,9 +1281,9 @@ dissect_tcap_AARE_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 
 
 static int
-dissect_tcap_AARE_apdu(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_AARE_apdu(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 1, TRUE, dissect_tcap_AARE_apdu_U);
+                                      hf_index, BER_CLASS_APP, 1, true, dissect_tcap_AARE_apdu_U);
 
   return offset;
 }
@@ -1334,7 +1297,7 @@ static const value_string tcap_ABRT_source_vals[] = {
 
 
 static int
-dissect_tcap_ABRT_source(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ABRT_source(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1347,7 +1310,7 @@ static const ber_sequence_t ABRT_user_information_sequence_of[1] = {
 };
 
 static int
-dissect_tcap_ABRT_user_information(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ABRT_user_information(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       ABRT_user_information_sequence_of, hf_index, ett_tcap_ABRT_user_information);
 
@@ -1362,7 +1325,7 @@ static const ber_sequence_t ABRT_apdu_U_sequence[] = {
 };
 
 static int
-dissect_tcap_ABRT_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ABRT_apdu_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ABRT_apdu_U_sequence, hf_index, ett_tcap_ABRT_apdu_U);
 
@@ -1372,9 +1335,9 @@ dissect_tcap_ABRT_apdu_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 
 
 static int
-dissect_tcap_ABRT_apdu(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_ABRT_apdu(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 4, TRUE, dissect_tcap_ABRT_apdu_U);
+                                      hf_index, BER_CLASS_APP, 4, true, dissect_tcap_ABRT_apdu_U);
 
   return offset;
 }
@@ -1395,7 +1358,7 @@ static const ber_choice_t DialoguePDU_choice[] = {
 };
 
 int
-dissect_tcap_DialoguePDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_tcap_DialoguePDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  DialoguePDU_choice, hf_index, ett_tcap_DialoguePDU,
                                  NULL);
@@ -1408,21 +1371,18 @@ dissect_tcap_DialoguePDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 static int dissect_UniDialoguePDU_PDU(tvbuff_t *tvb _U_, packet_info *pinfo _U_, proto_tree *tree _U_, void *data _U_) {
   int offset = 0;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
-  offset = dissect_tcap_UniDialoguePDU(FALSE, tvb, offset, &asn1_ctx, tree, hf_tcap_UniDialoguePDU_PDU);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
+  offset = dissect_tcap_UniDialoguePDU(false, tvb, offset, &asn1_ctx, tree, hf_tcap_UniDialoguePDU_PDU);
   return offset;
 }
 static int dissect_DialoguePDU_PDU(tvbuff_t *tvb _U_, packet_info *pinfo _U_, proto_tree *tree _U_, void *data _U_) {
   int offset = 0;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
-  offset = dissect_tcap_DialoguePDU(FALSE, tvb, offset, &asn1_ctx, tree, hf_tcap_DialoguePDU_PDU);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
+  offset = dissect_tcap_DialoguePDU(false, tvb, offset, &asn1_ctx, tree, hf_tcap_DialoguePDU_PDU);
   return offset;
 }
 
-
-/*--- End of included file: packet-tcap-fn.c ---*/
-#line 143 "./asn1/tcap/packet-tcap-template.c"
 
 /*
  * DEBUG functions
@@ -1433,10 +1393,10 @@ static int dissect_DialoguePDU_PDU(tvbuff_t *tvb _U_, packet_info *pinfo _U_, pr
 #ifdef DEBUG_TCAPSRT
 #include <stdio.h>
 #include <stdarg.h>
-static guint debug_level = 99;
+static unsigned debug_level = 99;
 
 static void
-dbg(guint level, const char* fmt, ...)
+dbg(unsigned level, const char* fmt, ...)
 {
   va_list ap;
 
@@ -1447,8 +1407,8 @@ dbg(guint level, const char* fmt, ...)
 }
 #endif
 
-static gint
-tcaphash_context_equal(gconstpointer k1, gconstpointer k2)
+static int
+tcaphash_context_equal(const void *k1, const void *k2)
 {
   const struct tcaphash_context_key_t *key1 = (const struct tcaphash_context_key_t *) k1;
   const struct tcaphash_context_key_t *key2 = (const struct tcaphash_context_key_t *) k2;
@@ -1457,40 +1417,40 @@ tcaphash_context_equal(gconstpointer k1, gconstpointer k2)
 }
 
 /* calculate a hash key */
-static guint
-tcaphash_context_calchash(gconstpointer k)
+static unsigned
+tcaphash_context_calchash(const void *k)
 {
   const struct tcaphash_context_key_t *key = (const struct tcaphash_context_key_t *) k;
   return key->session_id;
 }
 
 
-static gint
-tcaphash_begin_equal(gconstpointer k1, gconstpointer k2)
+static int
+tcaphash_begin_equal(const void *k1, const void *k2)
 {
   const struct tcaphash_begin_info_key_t *key1 = (const struct tcaphash_begin_info_key_t *) k1;
   const struct tcaphash_begin_info_key_t *key2 = (const struct tcaphash_begin_info_key_t *) k2;
 
   if (key1->hashKey == key2->hashKey) {
     if ( (key1->pc_hash == key2->pc_hash) && (key1->tid == key2->tid) )
-      return TRUE;
+      return true;
   }
-  return FALSE;
+  return false;
 }
 
 /* calculate a hash key */
-static guint
-tcaphash_begin_calchash(gconstpointer k)
+static unsigned
+tcaphash_begin_calchash(const void *k)
 {
   const struct tcaphash_begin_info_key_t *key = (const struct tcaphash_begin_info_key_t *) k;
-  guint hashkey;
+  unsigned hashkey;
   /* hashkey = key->opc_hash<<16 + key->dpc_hash<<8 + key->src_tid; */
   hashkey = key->tid;
   return hashkey;
 }
 
-static gint
-tcaphash_cont_equal(gconstpointer k1, gconstpointer k2)
+static int
+tcaphash_cont_equal(const void *k1, const void *k2)
 {
   const struct tcaphash_cont_info_key_t *key1 = (const struct tcaphash_cont_info_key_t *) k1;
   const struct tcaphash_cont_info_key_t *key2 = (const struct tcaphash_cont_info_key_t *) k2;
@@ -1501,31 +1461,31 @@ tcaphash_cont_equal(gconstpointer k1, gconstpointer k2)
          (key1->dpc_hash == key2->dpc_hash) &&
          (key1->src_tid == key2->src_tid) &&
          (key1->dst_tid == key2->dst_tid) ) {
-      return TRUE;
+      return true;
     }
     else if ( (key1->opc_hash == key2->dpc_hash) &&
               (key1->dpc_hash == key2->opc_hash) &&
               (key1->src_tid == key2->dst_tid) &&
               (key1->dst_tid == key2->src_tid) ) {
-      return TRUE;
+      return true;
     }
   }
-  return FALSE;
+  return false;
 }
 
 /* calculate a hash key */
-static guint
-tcaphash_cont_calchash(gconstpointer k)
+static unsigned
+tcaphash_cont_calchash(const void *k)
 {
   const struct tcaphash_cont_info_key_t *key = (const struct tcaphash_cont_info_key_t *) k;
-  guint hashkey;
+  unsigned hashkey;
   hashkey = key->src_tid + key->dst_tid;
   return hashkey;
 }
 
 
-static gint
-tcaphash_end_equal(gconstpointer k1, gconstpointer k2)
+static int
+tcaphash_end_equal(const void *k1, const void *k2)
 {
   const struct tcaphash_end_info_key_t *key1 = (const struct tcaphash_end_info_key_t *) k1;
   const struct tcaphash_end_info_key_t *key2 = (const struct tcaphash_end_info_key_t *) k2;
@@ -1534,23 +1494,23 @@ tcaphash_end_equal(gconstpointer k1, gconstpointer k2)
     if ( (key1->opc_hash == key2->opc_hash) &&
          (key1->dpc_hash == key2->dpc_hash) &&
          (key1->tid == key2->tid) )
-      return TRUE;
+      return true;
   }
-  return FALSE;
+  return false;
 }
 
 /* calculate a hash key */
-static guint
-tcaphash_end_calchash(gconstpointer k)
+static unsigned
+tcaphash_end_calchash(const void *k)
 {
   const struct tcaphash_end_info_key_t *key = (const struct tcaphash_end_info_key_t *) k;
-  guint hashkey;
+  unsigned hashkey;
   hashkey = key->tid;
   return hashkey;
 }
 
-static gint
-tcaphash_ansi_equal(gconstpointer k1, gconstpointer k2)
+static int
+tcaphash_ansi_equal(const void *k1, const void *k2)
 {
   const struct tcaphash_ansi_info_key_t *key1 = (const struct tcaphash_ansi_info_key_t *) k1;
   const struct tcaphash_ansi_info_key_t *key2 = (const struct tcaphash_ansi_info_key_t *) k2;
@@ -1565,17 +1525,17 @@ tcaphash_ansi_equal(gconstpointer k1, gconstpointer k2)
            (key1->dpc_hash == key2->opc_hash) &&
            (key1->tid == key2->tid) )
          )
-      return TRUE;
+      return true;
   }
-  return FALSE;
+  return false;
 }
 
 /* calculate a hash key */
-static guint
-tcaphash_ansi_calchash(gconstpointer k)
+static unsigned
+tcaphash_ansi_calchash(const void *k)
 {
   const struct tcaphash_ansi_info_key_t *key = (const struct tcaphash_ansi_info_key_t *) k;
-  guint hashkey;
+  unsigned hashkey;
   /* hashkey = key->opc_hash<<16 + key->dpc_hash<<8 + key->src_tid; */
   hashkey = key->tid;
   return hashkey;
@@ -1590,7 +1550,7 @@ update_tcaphash_begincall(struct tcaphash_begincall_t *p_tcaphash_begincall,
 {
   p_tcaphash_begincall->context->first_frame = pinfo->num;
   p_tcaphash_begincall->context->last_frame = 0;
-  p_tcaphash_begincall->context->responded = FALSE;
+  p_tcaphash_begincall->context->responded = false;
   p_tcaphash_begincall->context->begin_time = pinfo->abs_ts;
 }
 
@@ -1615,7 +1575,7 @@ append_tcaphash_begincall(struct tcaphash_begincall_t *prev_begincall,
   p_new_tcaphash_begincall->context->first_frame = pinfo->num;
   p_new_tcaphash_begincall->next_begincall=NULL;
   p_new_tcaphash_begincall->previous_begincall=prev_begincall;
-  p_new_tcaphash_begincall->father=FALSE;
+  p_new_tcaphash_begincall->father=false;
 
 #ifdef DEBUG_TCAPSRT
   dbg(10,"+B%d ", p_new_tcaphash_begincall->context->session_id);
@@ -1640,7 +1600,7 @@ update_tcaphash_ansicall(struct tcaphash_ansicall_t *p_tcaphash_ansicall,
 {
   p_tcaphash_ansicall->context->first_frame = pinfo->num;
   p_tcaphash_ansicall->context->last_frame = 0;
-  p_tcaphash_ansicall->context->responded = FALSE;
+  p_tcaphash_ansicall->context->responded = false;
   p_tcaphash_ansicall->context->begin_time = pinfo->abs_ts;
 }
 
@@ -1665,7 +1625,7 @@ append_tcaphash_ansicall(struct tcaphash_ansicall_t *prev_ansicall,
   p_new_tcaphash_ansicall->context->first_frame = pinfo->num;
   p_new_tcaphash_ansicall->next_ansicall=NULL;
   p_new_tcaphash_ansicall->previous_ansicall=prev_ansicall;
-  p_new_tcaphash_ansicall->father=FALSE;
+  p_new_tcaphash_ansicall->father=false;
 
 #ifdef DEBUG_TCAPSRT
   dbg(10,"+A%d ", p_new_tcaphash_ansicall->context->session_id);
@@ -1697,7 +1657,7 @@ append_tcaphash_contcall(struct tcaphash_contcall_t *prev_contcall,
   p_new_tcaphash_contcall->contkey=prev_contcall->contkey;
   p_new_tcaphash_contcall->next_contcall=NULL;
   p_new_tcaphash_contcall->previous_contcall=prev_contcall;
-  p_new_tcaphash_contcall->father=FALSE;
+  p_new_tcaphash_contcall->father=false;
 
 #ifdef DEBUG_TCAPSRT
   dbg(10,"+C%d ", p_new_tcaphash_contcall->context->session_id);
@@ -1723,7 +1683,7 @@ append_tcaphash_endcall(struct tcaphash_endcall_t *prev_endcall,
   p_new_tcaphash_endcall->endkey=prev_endcall->endkey;
   p_new_tcaphash_endcall->next_endcall=NULL;
   p_new_tcaphash_endcall->previous_endcall=prev_endcall;
-  p_new_tcaphash_endcall->father=FALSE;
+  p_new_tcaphash_endcall->father=false;
 
 #ifdef DEBUG_TCAPSRT
   dbg(10,"+E%d ", p_new_tcaphash_endcall->context->session_id);
@@ -1739,7 +1699,7 @@ append_tcaphash_endcall(struct tcaphash_endcall_t *prev_endcall,
  */
 static struct tcaphash_begincall_t *
 find_tcaphash_begin(struct tcaphash_begin_info_key_t *p_tcaphash_begin_key,
-                    packet_info *pinfo, gboolean isBegin)
+                    packet_info *pinfo, bool isBegin)
 {
   struct tcaphash_begincall_t *p_tcaphash_begincall = NULL;
   p_tcaphash_begincall = (struct tcaphash_begincall_t *)wmem_map_lookup(tcaphash_begin, p_tcaphash_begin_key);
@@ -1825,7 +1785,7 @@ find_tcaphash_cont(struct tcaphash_cont_info_key_t *p_tcaphash_cont_key,
 
 static struct tcaphash_endcall_t *
 find_tcaphash_end(struct tcaphash_end_info_key_t *p_tcaphash_end_key,
-                  packet_info *pinfo, gboolean isEnd)
+                  packet_info *pinfo, bool isEnd)
 {
   struct tcaphash_endcall_t *p_tcaphash_endcall = NULL;
   p_tcaphash_endcall = (struct tcaphash_endcall_t *)wmem_map_lookup(tcaphash_end, p_tcaphash_end_key);
@@ -1921,7 +1881,7 @@ new_tcaphash_begin(struct tcaphash_begin_info_key_t *p_tcaphash_begin_key,
   p_new_tcaphash_begincall->beginkey=p_new_tcaphash_begin_key;
   p_new_tcaphash_begincall->context=p_tcaphash_context;
   p_tcaphash_context->begincall=p_new_tcaphash_begincall;
-  p_new_tcaphash_begincall->father=TRUE;
+  p_new_tcaphash_begincall->father=true;
   p_new_tcaphash_begincall->next_begincall=NULL;
   p_new_tcaphash_begincall->previous_begincall=NULL;
 
@@ -1960,7 +1920,7 @@ new_tcaphash_cont(struct tcaphash_cont_info_key_t *p_tcaphash_cont_key,
   p_new_tcaphash_contcall->contkey=p_new_tcaphash_cont_key;
   p_new_tcaphash_contcall->context=p_tcaphash_context;
   p_tcaphash_context->contcall=p_new_tcaphash_contcall;
-  p_new_tcaphash_contcall->father=TRUE;
+  p_new_tcaphash_contcall->father=true;
   p_new_tcaphash_contcall->next_contcall=NULL;
   p_new_tcaphash_contcall->previous_contcall=NULL;
 
@@ -1997,7 +1957,7 @@ new_tcaphash_end(struct tcaphash_end_info_key_t *p_tcaphash_end_key,
   p_new_tcaphash_endcall->endkey=p_new_tcaphash_end_key;
   p_new_tcaphash_endcall->context=p_tcaphash_context;
   p_tcaphash_context->endcall=p_new_tcaphash_endcall;
-  p_new_tcaphash_endcall->father=TRUE;
+  p_new_tcaphash_endcall->father=true;
   p_new_tcaphash_endcall->next_endcall=NULL;
   p_new_tcaphash_endcall->previous_endcall=NULL;
 
@@ -2032,7 +1992,7 @@ new_tcaphash_ansi(struct tcaphash_ansi_info_key_t *p_tcaphash_ansi_key,
   p_new_tcaphash_ansicall->ansikey=p_new_tcaphash_ansi_key;
   p_new_tcaphash_ansicall->context=p_tcaphash_context;
   p_tcaphash_context->ansicall=p_new_tcaphash_ansicall;
-  p_new_tcaphash_ansicall->father=TRUE;
+  p_new_tcaphash_ansicall->father=true;
   p_new_tcaphash_ansicall->next_ansicall=NULL;
   p_new_tcaphash_ansicall->previous_ansicall=NULL;
 
@@ -2056,7 +2016,7 @@ create_tcaphash_cont(struct tcaphash_cont_info_key_t *p_tcaphash_cont_key,
 
   if (p_tcaphash_contcall1) {
     /* Walk through list of transaction with identical keys */
-    /* go the the end to insert new record */
+    /* go to the end to insert new record */
     do {
       if (!p_tcaphash_contcall1->next_contcall) {
         p_tcaphash_contcall=append_tcaphash_contcall(p_tcaphash_contcall1,
@@ -2085,7 +2045,7 @@ create_tcaphash_end(struct tcaphash_end_info_key_t *p_tcaphash_end_key,
 
   if (p_tcaphash_endcall1) {
     /* Walk through list of transaction with identical keys */
-    /* go the the end to insert new record */
+    /* go to the end to insert new record */
     do {
       if (!p_tcaphash_endcall1->next_endcall) {
         p_tcaphash_endcall=append_tcaphash_endcall(p_tcaphash_endcall1,
@@ -2122,7 +2082,7 @@ tcaphash_begin_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
   proto_tree *stat_tree=NULL;
 
 #ifdef DEBUG_TCAPSRT
-  dbg(51,"src %s srcTid %lx dst %s ", address_to_str(wmem_packet_scope(), &pinfo->src), p_tcapsrt_info->src_tid, address_to_str(wmem_packet_scope(), &pinfo->dst));
+  dbg(51,"src %s srcTid %lx dst %s ", address_to_str(pinfo->pool, &pinfo->src), p_tcapsrt_info->src_tid, address_to_str(pinfo->pool, &pinfo->dst));
 #endif
 
   /* prepare the key data */
@@ -2133,7 +2093,7 @@ tcaphash_begin_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     tcaphash_begin_key.pc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)pinfo->src.data);
   } else {
     /* Don't have MTP3 PCs (have SCCP GT ?) */
-    tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->src));
+    tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->src));
   }
   tcaphash_begin_key.hashKey=tcaphash_begin_calchash(&tcaphash_begin_key);
 
@@ -2141,7 +2101,7 @@ tcaphash_begin_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 #ifdef DEBUG_TCAPSRT
   dbg(10,"\n Hbegin #%u ", pinfo->num);
   dbg(11,"key %lx ",tcaphash_begin_key.hashKey);
-  dbg(51,"addr %s ", address_to_str(wmem_packet_scope(), &pinfo->src));
+  dbg(51,"addr %s ", address_to_str(pinfo->pool, &pinfo->src));
   dbg(51,"Tid %lx \n",tcaphash_begin_key.tid);
 #endif
 
@@ -2172,11 +2132,11 @@ tcaphash_begin_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
            and this request occurred after the timeout for message lost */
         if ( ( p_tcaphash_begincall->context->last_frame != 0
                && pinfo->num > p_tcaphash_begincall->context->first_frame
-               && (guint) pinfo->abs_ts.secs > (guint)(p_tcaphash_begincall->context->begin_time.secs + gtcap_RepetitionTimeout)
+               && (unsigned) pinfo->abs_ts.secs > (unsigned)(p_tcaphash_begincall->context->begin_time.secs + gtcap_RepetitionTimeout)
                ) ||
              ( p_tcaphash_begincall->context->last_frame == 0
                && pinfo->num > p_tcaphash_begincall->context->first_frame
-               && (guint)pinfo->abs_ts.secs > (guint)(p_tcaphash_begincall->context->begin_time.secs + gtcap_LostTimeout)
+               && (unsigned)pinfo->abs_ts.secs > (unsigned)(p_tcaphash_begincall->context->begin_time.secs + gtcap_LostTimeout)
                )
              )
           {
@@ -2227,12 +2187,12 @@ tcaphash_begin_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             p_tcaphash_context=p_tcaphash_begincall->context;
             if (gtcap_DisplaySRT && tree) {
               stat_tree = proto_tree_add_subtree(tree, tvb, 0, -1, ett_tcap_stat, &stat_item, "Stat");
-              PROTO_ITEM_SET_GENERATED(stat_item);
+              proto_item_set_generated(stat_item);
               pi = proto_tree_add_uint_format(stat_tree, hf_tcapsrt_Duplicate, tvb, 0, 0,
                                               p_tcaphash_context->first_frame,
                                               "Duplicate with session %u in frame %u",
                                               p_tcaphash_context->session_id,p_tcaphash_context->first_frame);
-              PROTO_ITEM_SET_GENERATED(pi);
+              proto_item_set_generated(pi);
             }
             return p_tcaphash_context;
           } /* Previous session closed */
@@ -2269,9 +2229,9 @@ tcaphash_begin_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
        p_tcaphash_context &&
        p_tcaphash_context->session_id) {
     stat_tree = proto_tree_add_subtree(tree, tvb, 0, 0, ett_tcap_stat, &stat_item, "Stat");
-    PROTO_ITEM_SET_GENERATED(stat_item);
+    proto_item_set_generated(stat_item);
     pi = proto_tree_add_uint(stat_tree, hf_tcapsrt_SessionId, tvb, 0,0, p_tcaphash_context->session_id);
-    PROTO_ITEM_SET_GENERATED(pi);
+    proto_item_set_generated(pi);
 
     /* add link to response frame, if available */
     /* p_tcaphash_begincall->context->last_frame) */
@@ -2283,7 +2243,7 @@ tcaphash_begin_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                       p_tcaphash_context->last_frame,
                                       "End of session in frame %u",
                                       p_tcaphash_context->last_frame);
-      PROTO_ITEM_SET_GENERATED(pi);
+      proto_item_set_generated(pi);
     }
   }
   return p_tcaphash_context;
@@ -2310,10 +2270,10 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
   proto_item *pi;
   proto_item *stat_item=NULL;
   proto_tree *stat_tree=NULL;
-  gboolean use_dst = FALSE;
+  bool use_dst = false;
 
 #ifdef DEBUG_TCAPSRT
-  dbg(51,"src %s srcTid %lx dst %s dstTid %lx ", address_to_str(wmem_packet_scope(), &pinfo->src), p_tcapsrt_info->src_tid, address_to_str(wmem_packet_scope(), &pinfo->dst), p_tcapsrt_info->dst_tid);
+  dbg(51,"src %s srcTid %lx dst %s dstTid %lx ", address_to_str(pinfo->pool, &pinfo->src), p_tcapsrt_info->src_tid, address_to_str(pinfo->pool, &pinfo->dst), p_tcapsrt_info->dst_tid);
   dbg(10,"\n Hcont #%u ", pinfo->num);
 #endif
 
@@ -2327,14 +2287,14 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     tcaphash_cont_key.dpc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)pinfo->dst.data);
   } else {
     /* Don't have MTP3 PCs (have SCCP GT ?) */
-    tcaphash_cont_key.opc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->src));
-    tcaphash_cont_key.dpc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->dst));
+    tcaphash_cont_key.opc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->src));
+    tcaphash_cont_key.dpc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->dst));
   }
   tcaphash_cont_key.hashKey=tcaphash_cont_calchash(&tcaphash_cont_key);
 
 #ifdef DEBUG_TCAPSRT
   dbg(11,"Ckey %lx ", tcaphash_cont_key.hashKey);
-  dbg(51,"addr %s %s ", address_to_str(wmem_packet_scope(), &pinfo->src), address_to_str(wmem_packet_scope(), &pinfo->dst));
+  dbg(51,"addr %s %s ", address_to_str(pinfo->pool, &pinfo->src), address_to_str(pinfo->pool, &pinfo->dst));
   dbg(51,"Tid %lx %lx \n",tcaphash_cont_key.src_tid, tcaphash_cont_key.dst_tid);
 #endif
   p_tcaphash_contcall = find_tcaphash_cont(&tcaphash_cont_key, pinfo);
@@ -2355,16 +2315,16 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
       tcaphash_begin_key.pc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)pinfo->dst.data);
     } else {
       /* Don't have MTP3 PCs (have SCCP GT ?) */
-      tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->dst));
+      tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->dst));
     }
     tcaphash_begin_key.hashKey=tcaphash_begin_calchash(&tcaphash_begin_key);
 
 #ifdef DEBUG_TCAPSRT
     dbg(11,"Bkey %lx ", tcaphash_begin_key.hashKey);
-    dbg(51,"addr %s ", address_to_str(wmem_packet_scope(), &pinfo->dst));
+    dbg(51,"addr %s ", address_to_str(pinfo->pool, &pinfo->dst));
     dbg(51,"Tid %lx \n",tcaphash_begin_key.tid);
 #endif
-    p_tcaphash_begincall = find_tcaphash_begin(&tcaphash_begin_key, pinfo, FALSE);
+    p_tcaphash_begincall = find_tcaphash_begin(&tcaphash_begin_key, pinfo, false);
     if(!p_tcaphash_begincall){
       try_src:
 /* can this actually happen? */
@@ -2372,7 +2332,7 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         dbg(12,"BNotFound trying stid,src");
 #endif
         /* Do we have a continue from the same source? (stid,src) */
-        use_dst = TRUE;
+        use_dst = true;
         tcaphash_begin_key.tid = p_tcapsrt_info->src_tid;
         if (pinfo->src.type == ss7pc_address_type && pinfo->dst.type == ss7pc_address_type)
         {
@@ -2380,15 +2340,15 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
           tcaphash_begin_key.pc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)pinfo->src.data);
         } else {
           /* Don't have MTP3 PCs (have SCCP GT ?) */
-          tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->src));
+          tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->src));
         }
         tcaphash_begin_key.hashKey=tcaphash_begin_calchash(&tcaphash_begin_key);
 #ifdef DEBUG_TCAPSRT
         dbg(11,"Bkey %lx ", tcaphash_begin_key.hashKey);
-        dbg(51,"addr %s ", address_to_str(wmem_packet_scope(), &pinfo->src));
+        dbg(51,"addr %s ", address_to_str(pinfo->pool, &pinfo->src));
         dbg(51,"Tid %lx \n",tcaphash_begin_key.tid);
 #endif
-        p_tcaphash_begincall = find_tcaphash_begin(&tcaphash_begin_key, pinfo,FALSE);
+        p_tcaphash_begincall = find_tcaphash_begin(&tcaphash_begin_key, pinfo,false);
     }
     if(p_tcaphash_begincall &&
        !p_tcaphash_begincall->context->contcall ) {
@@ -2396,7 +2356,7 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
       dbg(12,"BFound \n");
 #endif
       p_tcaphash_context=p_tcaphash_begincall->context;
-      p_tcaphash_context->responded=TRUE;
+      p_tcaphash_context->responded=true;
 
 #ifdef DEBUG_TCAPSRT
       dbg(10,"New Ckey %lx ",tcaphash_cont_key.hashKey);
@@ -2414,14 +2374,14 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         tcaphash_end_key.opc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)(use_dst ? pinfo->src.data : pinfo->dst.data));
     } else {
         /* Don't have MTP3 PCs (have SCCP GT ?) */
-        tcaphash_end_key.dpc_hash = g_str_hash(address_to_str(wmem_packet_scope(), use_dst ? &pinfo->dst : &pinfo->src));
-        tcaphash_end_key.opc_hash = g_str_hash(address_to_str(wmem_packet_scope(), use_dst ? &pinfo->src : &pinfo->dst));
+        tcaphash_end_key.dpc_hash = g_str_hash(address_to_str(pinfo->pool, use_dst ? &pinfo->dst : &pinfo->src));
+        tcaphash_end_key.opc_hash = g_str_hash(address_to_str(pinfo->pool, use_dst ? &pinfo->src : &pinfo->dst));
     }
       tcaphash_end_key.hashKey=tcaphash_end_calchash(&tcaphash_end_key);
 
 #ifdef DEBUG_TCAPSRT
       dbg(10,"New Ekey %lx ",tcaphash_end_key.hashKey);
-      dbg(51,"addr %s ", address_to_str(wmem_packet_scope(), use_dst ? &pinfo->dst : &pinfo->src));
+      dbg(51,"addr %s ", address_to_str(pinfo->pool, use_dst ? &pinfo->dst : &pinfo->src));
       dbg(51,"Tid %lx ",tcaphash_end_key.tid);
       dbg(11,"Frame reqlink #%u ", pinfo->num);
 #endif
@@ -2443,9 +2403,9 @@ tcaphash_cont_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
       p_tcaphash_context &&
       p_tcaphash_context->session_id) {
     stat_tree = proto_tree_add_subtree(tree, tvb, 0, -1, ett_tcap_stat, &stat_item, "Stat");
-    PROTO_ITEM_SET_GENERATED(stat_item);
+    proto_item_set_generated(stat_item);
     pi = proto_tree_add_uint(stat_tree, hf_tcapsrt_SessionId, tvb, 0,0, p_tcaphash_context->session_id);
-    PROTO_ITEM_SET_GENERATED(pi);
+    proto_item_set_generated(pi);
   }
 
   return p_tcaphash_context;
@@ -2479,7 +2439,7 @@ tcaphash_end_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
   proto_tree *stat_tree=NULL;
 
 #ifdef DEBUG_TCAPSRT
-  dbg(51,"src %s dst %s dstTid %lx ", address_to_str(wmem_packet_scope(), &pinfo->src), address_to_str(wmem_packet_scope(), &pinfo->dst), p_tcapsrt_info->dst_tid);
+  dbg(51,"src %s dst %s dstTid %lx ", address_to_str(pinfo->pool, &pinfo->src), address_to_str(pinfo->pool, &pinfo->dst), p_tcapsrt_info->dst_tid);
   dbg(10,"\n Hend #%u ", pinfo->num);
 #endif
   /* look only for matching request, if matching conversation is available. */
@@ -2491,17 +2451,17 @@ tcaphash_end_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     tcaphash_end_key.dpc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)pinfo->dst.data);
   } else {
     /* Don't have MTP3 PCs (have SCCP GT ?) */
-    tcaphash_end_key.opc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->src));
-    tcaphash_end_key.dpc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->dst));
+    tcaphash_end_key.opc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->src));
+    tcaphash_end_key.dpc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->dst));
 }
   tcaphash_end_key.hashKey=tcaphash_end_calchash(&tcaphash_end_key);
 
 #ifdef DEBUG_TCAPSRT
   dbg(11,"Ekey %lx ",tcaphash_end_key.hashKey);
-  dbg(11,"addr %s ", address_to_str(wmem_packet_scope(), &pinfo->dst));
+  dbg(11,"addr %s ", address_to_str(pinfo->pool, &pinfo->dst));
   dbg(51,"Tid %lx ",tcaphash_end_key.tid);
 #endif
-  p_tcaphash_endcall = find_tcaphash_end(&tcaphash_end_key, pinfo,TRUE);
+  p_tcaphash_endcall = find_tcaphash_end(&tcaphash_end_key, pinfo,true);
 
   if(!p_tcaphash_endcall) {
 #ifdef DEBUG_TCAPSRT
@@ -2514,16 +2474,16 @@ tcaphash_end_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
       tcaphash_begin_key.pc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)pinfo->dst.data);
     } else {
       /* Don't have MTP3 PCs (have SCCP GT ?) */
-      tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->dst));
+      tcaphash_begin_key.pc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->dst));
     }
     tcaphash_begin_key.hashKey=tcaphash_begin_calchash(&tcaphash_begin_key);
 
 #ifdef DEBUG_TCAPSRT
     dbg(11,"Bkey %lx ", tcaphash_begin_key.hashKey);
-    dbg(51,"addr %s ", address_to_str(wmem_packet_scope(), &pinfo->dst));
+    dbg(51,"addr %s ", address_to_str(pinfo->pool, &pinfo->dst));
     dbg(51,"Tid %lx ",tcaphash_begin_key.tid);
 #endif
-    p_tcaphash_begincall = find_tcaphash_begin(&tcaphash_begin_key, pinfo,FALSE);
+    p_tcaphash_begincall = find_tcaphash_begin(&tcaphash_begin_key, pinfo,false);
     if(!p_tcaphash_begincall) {
 #ifdef DEBUG_TCAPSRT
       dbg(12,"BnotFound ");
@@ -2545,10 +2505,10 @@ tcaphash_end_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 #endif
     if (gtcap_DisplaySRT && tree) {
       stat_tree = proto_tree_add_subtree(tree, tvb, 0, -1, ett_tcap_stat, &stat_item, "Stat");
-      PROTO_ITEM_SET_GENERATED(stat_item);
+      proto_item_set_generated(stat_item);
 
       pi = proto_tree_add_uint(stat_tree, hf_tcapsrt_SessionId, tvb, 0,0, p_tcaphash_context->session_id);
-      PROTO_ITEM_SET_GENERATED(pi);
+      proto_item_set_generated(pi);
     }
 
 #ifdef DEBUG_TCAPSRT
@@ -2560,13 +2520,13 @@ tcaphash_end_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                       p_tcaphash_context->first_frame,
                                       "Begin of session in frame %u",
                                       p_tcaphash_context->first_frame);
-      PROTO_ITEM_SET_GENERATED(pi);
+      proto_item_set_generated(pi);
       /* Calculate Service Response Time */
       nstime_delta(&delta, &pinfo->abs_ts, &p_tcaphash_context->begin_time);
 
       /* display Service Response Time and make it filterable */
       pi = proto_tree_add_time(stat_tree, hf_tcapsrt_SessionTime, tvb, 0, 0, &delta);
-      PROTO_ITEM_SET_GENERATED(pi);
+      proto_item_set_generated(pi);
     }
     /* Close the context and remove it (if needed) */
     tcapsrt_close(p_tcaphash_context,pinfo);
@@ -2598,7 +2558,7 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
   struct tcaphash_ansi_info_key_t tcaphash_ansi_key;
   proto_item *pi;
   nstime_t delta;
-  gboolean isResponse=FALSE;
+  bool isResponse=false;
   proto_tree * stat_tree=NULL;
   proto_item * stat_item=NULL;
 
@@ -2611,8 +2571,8 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     tcaphash_ansi_key.dpc_hash = mtp3_pc_hash((const mtp3_addr_pc_t *)pinfo->dst.data);
   } else {
     /* Don't have MTP3 PCs (have SCCP GT ?) */
-    tcaphash_ansi_key.opc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->src));
-    tcaphash_ansi_key.dpc_hash = g_str_hash(address_to_str(wmem_packet_scope(), &pinfo->dst));
+    tcaphash_ansi_key.opc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->src));
+    tcaphash_ansi_key.dpc_hash = g_str_hash(address_to_str(pinfo->pool, &pinfo->dst));
   }
   tcaphash_ansi_key.hashKey=tcaphash_ansi_calchash(&tcaphash_ansi_key);
 
@@ -2620,7 +2580,7 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 #ifdef DEBUG_TCAPSRT
   dbg(10,"\n Hansi #%u ", pinfo->num);
   dbg(11,"key %lx ",tcaphash_ansi_key.hashKey);
-  dbg(51,"PC %s %s ",address_to_str(wmem_packet_scope(), &pinfo->src), address_to_str(wmem_packet_scope(), &pinfo->dst));
+  dbg(51,"PC %s %s ",address_to_str(pinfo->pool, &pinfo->src), address_to_str(pinfo->pool, &pinfo->dst));
   dbg(51,"Tid %lx ",tcaphash_ansi_key.tid);
 #endif
   p_tcaphash_ansicall = (struct tcaphash_ansicall_t *)
@@ -2635,7 +2595,7 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 #ifdef DEBUG_TCAPSRT
         dbg(22,"Request already seen ");
 #endif
-        isResponse=FALSE;
+        isResponse=false;
         p_tcaphash_context=p_tcaphash_ansicall->context;
         break;
       }
@@ -2646,7 +2606,7 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 #ifdef DEBUG_TCAPSRT
         dbg(22,"Response already seen ");
 #endif
-        isResponse=TRUE;
+        isResponse=true;
         p_tcaphash_context=p_tcaphash_ansicall->context;
         break;
       }
@@ -2661,17 +2621,17 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         dbg(12,"Update key %lx ",tcaphash_ansi_key.hashKey);
 #endif
         p_tcaphash_ansicall->context->last_frame = pinfo->num;
-        p_tcaphash_ansicall->context->responded = TRUE;
-        p_tcaphash_ansicall->context->closed = TRUE;
+        p_tcaphash_ansicall->context->responded = true;
+        p_tcaphash_ansicall->context->closed = true;
         p_tcaphash_context=p_tcaphash_ansicall->context;
-        isResponse=TRUE;
+        isResponse=true;
 
         if (gtcap_DisplaySRT && tree) {
           stat_tree = proto_tree_add_subtree(tree, tvb, 0, -1, ett_tcap_stat, &stat_item, "Stat");
-          PROTO_ITEM_SET_GENERATED(stat_item);
+          proto_item_set_generated(stat_item);
 
           pi = proto_tree_add_uint(stat_tree, hf_tcapsrt_SessionId, tvb, 0,0, p_tcaphash_context->session_id);
-          PROTO_ITEM_SET_GENERATED(pi);
+          proto_item_set_generated(pi);
 
 #ifdef DEBUG_TCAPSRT
           dbg(20,"Display framereqlink %d ",p_tcaphash_context->first_frame);
@@ -2681,13 +2641,13 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                           p_tcaphash_context->first_frame,
                                           "Begin of session in frame %u",
                                           p_tcaphash_context->first_frame);
-          PROTO_ITEM_SET_GENERATED(pi);
+          proto_item_set_generated(pi);
           /* Calculate Service Response Time */
           nstime_delta(&delta, &pinfo->abs_ts, &p_tcaphash_context->begin_time);
 
           /* display Service Response Time and make it filterable */
           pi = proto_tree_add_time(stat_tree, hf_tcapsrt_SessionTime, tvb, 0, 0, &delta);
-          PROTO_ITEM_SET_GENERATED(pi);
+          proto_item_set_generated(pi);
         }
         break;
       } /* Lastframe=0, so take it */
@@ -2705,11 +2665,11 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
            and this request occurred after the timeout for message lost */
         if ( ( p_tcaphash_ansicall->context->last_frame != 0
                && pinfo->num > p_tcaphash_ansicall->context->first_frame
-               && (guint) pinfo->abs_ts.secs > (guint)(p_tcaphash_ansicall->context->begin_time.secs + gtcap_RepetitionTimeout)
+               && (unsigned) pinfo->abs_ts.secs > (unsigned)(p_tcaphash_ansicall->context->begin_time.secs + gtcap_RepetitionTimeout)
                ) ||
              ( p_tcaphash_ansicall->context->last_frame == 0
                && pinfo->num > p_tcaphash_ansicall->context->first_frame
-               && (guint)pinfo->abs_ts.secs > (guint)(p_tcaphash_ansicall->context->begin_time.secs + gtcap_LostTimeout)
+               && (unsigned)pinfo->abs_ts.secs > (unsigned)(p_tcaphash_ansicall->context->begin_time.secs + gtcap_LostTimeout)
                )
              )
           {
@@ -2760,10 +2720,10 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
             if (gtcap_DisplaySRT && tree) {
               stat_tree = proto_tree_add_subtree(tree, tvb, 0, -1, ett_tcap_stat, &stat_item, "Stat");
-              PROTO_ITEM_SET_GENERATED(stat_item);
+              proto_item_set_generated(stat_item);
 
               pi = proto_tree_add_uint(stat_tree, hf_tcapsrt_SessionId, tvb, 0,0, p_tcaphash_context->session_id);
-              PROTO_ITEM_SET_GENERATED(pi);
+              proto_item_set_generated(pi);
 
 #ifdef DEBUG_TCAPSRT
               dbg(20,"Display framereqlink %d ",p_tcaphash_context->first_frame);
@@ -2773,13 +2733,13 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                               p_tcaphash_context->first_frame,
                                               "Begin of session in frame %u",
                                               p_tcaphash_context->first_frame);
-              PROTO_ITEM_SET_GENERATED(pi);
+              proto_item_set_generated(pi);
               /* Calculate Service Response Time */
               nstime_delta(&delta, &pinfo->abs_ts, &p_tcaphash_context->begin_time);
 
               /* display Service Response Time and make it filterable */
               pi = proto_tree_add_time(stat_tree, hf_tcapsrt_SessionTime, tvb, 0, 0, &delta);
-              PROTO_ITEM_SET_GENERATED(pi);
+              proto_item_set_generated(pi);
             }
             p_tcaphash_context=p_tcaphash_ansicall->context;
           } /* test with Timeout */
@@ -2812,9 +2772,9 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
        p_tcaphash_context &&
        p_tcaphash_context->session_id) {
     stat_tree = proto_tree_add_subtree(tree, tvb, 0, -1, ett_tcap_stat, &stat_item, "Stat");
-    PROTO_ITEM_SET_GENERATED(stat_item);
+    proto_item_set_generated(stat_item);
     pi = proto_tree_add_uint(stat_tree, hf_tcapsrt_SessionId, tvb, 0,0, p_tcaphash_context->session_id);
-    PROTO_ITEM_SET_GENERATED(pi);
+    proto_item_set_generated(pi);
   }
 
 
@@ -2829,7 +2789,7 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                       p_tcaphash_ansicall->context->last_frame,
                                       "End of session in frame %u",
                                       p_tcaphash_ansicall->context->last_frame);
-      PROTO_ITEM_SET_GENERATED(pi);
+      proto_item_set_generated(pi);
     } else { /* Response */
 #ifdef DEBUG_TCAPSRT
       dbg(20,"Display framereqlink %d ",p_tcaphash_context->first_frame);
@@ -2840,13 +2800,13 @@ tcaphash_ansi_matching(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                         p_tcaphash_context->first_frame,
                                         "Begin of session in frame %u",
                                         p_tcaphash_context->first_frame);
-        PROTO_ITEM_SET_GENERATED(pi);
+        proto_item_set_generated(pi);
         /* Calculate Service Response Time */
         nstime_delta(&delta, &pinfo->abs_ts, &p_tcaphash_context->begin_time);
 
         /* display Service Response Time and make it filterable */
         pi = proto_tree_add_time(stat_tree, hf_tcapsrt_SessionTime, tvb, 0, 0, &delta);
-        PROTO_ITEM_SET_GENERATED(pi);
+        proto_item_set_generated(pi);
       }
     } /* Request or Response */
   }
@@ -2959,10 +2919,10 @@ tcapsrt_close(struct tcaphash_context_t *p_tcaphash_context,
   dbg(60,"Force close ");
 #endif
   if (p_tcaphash_context) {
-    p_tcaphash_context->responded=TRUE;
+    p_tcaphash_context->responded=true;
     p_tcaphash_context->last_frame = pinfo->num;
     p_tcaphash_context->end_time = pinfo->abs_ts;
-    p_tcaphash_context->closed=TRUE;
+    p_tcaphash_context->closed=true;
 
     /* If the endkey is present */
     if (p_tcaphash_context->endcall
@@ -3106,9 +3066,9 @@ dissect_tcap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* d
   struct tcaphash_context_t * p_tcap_context;
   dissector_handle_t subdissector_handle;
   asn1_ctx_t asn1_ctx;
-  gint8 ber_class;
-  gboolean pc;
-  gint tag;
+  int8_t ber_class;
+  bool pc;
+  int tag;
   struct tcap_private_t *p_tcap_private;
 
   /* Check if ANSI TCAP and call the ANSI TCAP dissector if that's the case
@@ -3143,7 +3103,7 @@ dissect_tcap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* d
   }
 
   /* ITU TCAP */
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
 
   tcap_top_tree = parent_tree;
   tcap_stat_tree = NULL;
@@ -3159,14 +3119,14 @@ dissect_tcap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* d
   cur_oid = NULL;
   tcapext_oid = NULL;
 
-  p_tcap_private = wmem_new0(wmem_packet_scope(), struct tcap_private_t);
+  p_tcap_private = wmem_new0(pinfo->pool, struct tcap_private_t);
   asn1_ctx.value_ptr = p_tcap_private;
   gp_tcapsrt_info=tcapsrt_razinfo();
-  tcap_subdissector_used=FALSE;
+  tcap_subdissector_used=false;
   gp_tcap_context=NULL;
-  dissect_tcap_TCMessage(FALSE, tvb, 0, &asn1_ctx, tree, -1);
+  dissect_tcap_TCMessage(false, tvb, 0, &asn1_ctx, tree, -1);
 
-  if (gtcap_HandleSRT && !tcap_subdissector_used ) {
+  if (!tcap_subdissector_used ) {
     p_tcap_context=tcapsrt_call_matching(tvb, pinfo, tcap_stat_tree, gp_tcapsrt_info);
     p_tcap_private->context=p_tcap_context;
 
@@ -3175,15 +3135,15 @@ dissect_tcap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* d
      */
     if ( p_tcap_context && cur_oid && !p_tcap_context->oid_present ) {
       /* Save the application context and the sub dissector */
-      g_strlcpy(p_tcap_context->oid, cur_oid, sizeof(p_tcap_context->oid));
-      p_tcap_context->oid_present=TRUE;
+      (void) g_strlcpy(p_tcap_context->oid, cur_oid, sizeof(p_tcap_context->oid));
+      p_tcap_context->oid_present=true;
       if ( (subdissector_handle = dissector_get_string_handle(ber_oid_dissector_table, cur_oid)) ) {
         p_tcap_context->subdissector_handle=subdissector_handle;
-        p_tcap_context->subdissector_present=TRUE;
+        p_tcap_context->subdissector_present=true;
       }
     }
-    if (gtcap_HandleSRT && p_tcap_context && p_tcap_context->callback) {
-      /* Callback fonction for the upper layer */
+    if (p_tcap_context && p_tcap_context->callback) {
+      /* Callback function for the upper layer */
       (p_tcap_context->callback)(tvb, pinfo, tcap_stat_tree, p_tcap_context);
     }
   }
@@ -3200,15 +3160,9 @@ proto_reg_handoff_tcap(void)
 
   ss7pc_address_type = address_type_get_by_name("AT_SS7PC");
 
-
-/*--- Included file: packet-tcap-dis-tab.c ---*/
-#line 1 "./asn1/tcap/packet-tcap-dis-tab.c"
   register_ber_oid_dissector("0.0.17.773.1.1.1", dissect_DialoguePDU_PDU, proto_tcap, "id-as-dialogue");
   register_ber_oid_dissector("0.0.17.773.1.2.1", dissect_UniDialoguePDU_PDU, proto_tcap, "id-as-uniDialogue");
 
-
-/*--- End of included file: packet-tcap-dis-tab.c ---*/
-#line 1921 "./asn1/tcap/packet-tcap-template.c"
 }
 
 static void init_tcap(void);
@@ -3281,9 +3235,6 @@ proto_register_tcap(void)
         FT_FRAMENUM, BASE_NONE, NULL, 0x0,
         "SRT Duplicated with Session", HFILL }
     },
-
-/*--- Included file: packet-tcap-hfarr.c ---*/
-#line 1 "./asn1/tcap/packet-tcap-hfarr.c"
     { &hf_tcap_UniDialoguePDU_PDU,
       { "UniDialoguePDU", "tcap.UniDialoguePDU",
         FT_UINT32, BASE_DEC, VALS(tcap_UniDialoguePDU_vals), 0,
@@ -3449,19 +3400,19 @@ proto_register_tcap(void)
         FT_NONE, BASE_NONE, NULL, 0,
         "AUDT_apdu", HFILL }},
     { &hf_tcap_audt_protocol_version,
-      { "protocol-version", "tcap.protocol_version",
+      { "protocol-version", "tcap.audt_protocol_version",
         FT_BYTES, BASE_NONE, NULL, 0,
         "AUDT_protocol_version", HFILL }},
     { &hf_tcap_audt_application_context_name,
-      { "application-context-name", "tcap.application_context_name",
+      { "application-context-name", "tcap.audt_application_context_name",
         FT_OID, BASE_NONE, NULL, 0,
         "AUDT_application_context_name", HFILL }},
     { &hf_tcap_audt_user_information,
-      { "user-information", "tcap.user_information",
+      { "user-information", "tcap.audt_user_information",
         FT_UINT32, BASE_DEC, NULL, 0,
         "AUDT_user_information", HFILL }},
     { &hf_tcap_audt_user_information_item,
-      { "user-information item", "tcap.user_information_item_element",
+      { "user-information item", "tcap.audt_user_information_item_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "EXTERNAL", HFILL }},
     { &hf_tcap_dialogueRequest,
@@ -3477,27 +3428,27 @@ proto_register_tcap(void)
         FT_NONE, BASE_NONE, NULL, 0,
         "ABRT_apdu", HFILL }},
     { &hf_tcap_aarq_protocol_version,
-      { "protocol-version", "tcap.protocol_version",
+      { "protocol-version", "tcap.aarq_protocol_version",
         FT_BYTES, BASE_NONE, NULL, 0,
         "AARQ_protocol_version", HFILL }},
     { &hf_tcap_aarq_application_context_name,
-      { "application-context-name", "tcap.application_context_name",
+      { "application-context-name", "tcap.aarq_application_context_name",
         FT_OID, BASE_NONE, NULL, 0,
         "AARQ_application_context_name", HFILL }},
     { &hf_tcap_aarq_user_information,
-      { "user-information", "tcap.user_information",
+      { "user-information", "tcap.aarq_user_information",
         FT_UINT32, BASE_DEC, NULL, 0,
         "AARQ_user_information", HFILL }},
     { &hf_tcap_aarq_user_information_item,
-      { "user-information item", "tcap.user_information_item_element",
+      { "user-information item", "tcap.aarq_user_information_item_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "EXTERNAL", HFILL }},
     { &hf_tcap_aare_protocol_version,
-      { "protocol-version", "tcap.protocol_version",
+      { "protocol-version", "tcap.aare_protocol_version",
         FT_BYTES, BASE_NONE, NULL, 0,
         "AARE_protocol_version", HFILL }},
     { &hf_tcap_aare_application_context_name,
-      { "application-context-name", "tcap.application_context_name",
+      { "application-context-name", "tcap.aare_application_context_name",
         FT_OID, BASE_NONE, NULL, 0,
         "AARE_application_context_name", HFILL }},
     { &hf_tcap_result,
@@ -3509,11 +3460,11 @@ proto_register_tcap(void)
         FT_UINT32, BASE_DEC, VALS(tcap_Associate_source_diagnostic_vals), 0,
         "Associate_source_diagnostic", HFILL }},
     { &hf_tcap_aare_user_information,
-      { "user-information", "tcap.user_information",
+      { "user-information", "tcap.aare_user_information",
         FT_UINT32, BASE_DEC, NULL, 0,
         "AARE_user_information", HFILL }},
     { &hf_tcap_aare_user_information_item,
-      { "user-information item", "tcap.user_information_item_element",
+      { "user-information item", "tcap.aare_user_information_item_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "EXTERNAL", HFILL }},
     { &hf_tcap_abort_source,
@@ -3521,11 +3472,11 @@ proto_register_tcap(void)
         FT_INT32, BASE_DEC, VALS(tcap_ABRT_source_vals), 0,
         "ABRT_source", HFILL }},
     { &hf_tcap_abrt_user_information,
-      { "user-information", "tcap.user_information",
+      { "user-information", "tcap.abrt_user_information",
         FT_UINT32, BASE_DEC, NULL, 0,
         "ABRT_user_information", HFILL }},
     { &hf_tcap_abrt_user_information_item,
-      { "user-information item", "tcap.user_information_item_element",
+      { "user-information item", "tcap.abrt_user_information_item_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "EXTERNAL", HFILL }},
     { &hf_tcap_dialogue_service_user,
@@ -3537,32 +3488,26 @@ proto_register_tcap(void)
         FT_INT32, BASE_DEC, VALS(tcap_T_dialogue_service_provider_vals), 0,
         NULL, HFILL }},
     { &hf_tcap_AUDT_protocol_version_version1,
-      { "version1", "tcap.version1",
+      { "version1", "tcap.AUDT.protocol.version.version1",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_tcap_AARQ_protocol_version_version1,
-      { "version1", "tcap.version1",
+      { "version1", "tcap.AARQ.protocol.version.version1",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_tcap_AARE_protocol_version_version1,
-      { "version1", "tcap.version1",
+      { "version1", "tcap.AARE.protocol.version.version1",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
-
-/*--- End of included file: packet-tcap-hfarr.c ---*/
-#line 1994 "./asn1/tcap/packet-tcap-template.c"
   };
 
 /* Setup protocol subtree array */
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_tcap,
     &ett_param,
     &ett_otid,
     &ett_dtid,
     &ett_tcap_stat,
-
-/*--- Included file: packet-tcap-ettarr.c ---*/
-#line 1 "./asn1/tcap/packet-tcap-ettarr.c"
     &ett_tcap_ExternalPDU_U,
     &ett_tcap_TCMessage,
     &ett_tcap_Unidirectional,
@@ -3596,9 +3541,6 @@ proto_register_tcap(void)
     &ett_tcap_ABRT_apdu_U,
     &ett_tcap_ABRT_user_information,
     &ett_tcap_Associate_source_diagnostic,
-
-/*--- End of included file: packet-tcap-ettarr.c ---*/
-#line 2004 "./asn1/tcap/packet-tcap-template.c"
   };
 
   /*static enum_val_t tcap_options[] = {
@@ -3624,7 +3566,7 @@ proto_register_tcap(void)
 #if 0
   prefs_register_enum_preference(tcap_module, "standard", "ITU TCAP standard",
                                  "The SS7 standard used in ITU TCAP packets",
-                                 &tcap_standard, tcap_options, FALSE);
+                                 &tcap_standard, tcap_options, false);
 #else
   prefs_register_obsolete_preference(tcap_module, "standard");
 #endif
@@ -3644,10 +3586,7 @@ proto_register_tcap(void)
                                   "SCCP (and SUA) SSNs to decode as TCAP",
                                   &global_ssn_range, MAX_SSN);
 
-  prefs_register_bool_preference(tcap_module, "srt",
-                                 "Service Response Time Analyse",
-                                 "Activate the analyse for Response Time",
-                                 &gtcap_HandleSRT);
+  prefs_register_obsolete_preference(tcap_module, "srt");
 
   prefs_register_bool_preference(tcap_module, "persistentsrt",
                                  "Persistent stats for SRT",
@@ -3656,18 +3595,16 @@ proto_register_tcap(void)
 
   prefs_register_uint_preference(tcap_module, "repetitiontimeout",
                                  "Repetition timeout",
-                                 "Maximal delay for message repetion",
+                                 "Maximal delay for message repetition",
                                  10, &gtcap_RepetitionTimeout);
 
   prefs_register_uint_preference(tcap_module, "losttimeout",
-                                 "lost timeout",
+                                 "Lost timeout",
                                  "Maximal delay for message lost",
                                  10, &gtcap_LostTimeout);
 
   /* 'globally' register dissector */
-  register_dissector("tcap", dissect_tcap, proto_tcap);
-
-  tcap_handle = create_dissector_handle(dissect_tcap, proto_tcap);
+  tcap_handle = register_dissector("tcap", dissect_tcap, proto_tcap);
 
   /* hash-tables for SRT */
   tcaphash_context = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(), tcaphash_context_calchash, tcaphash_context_equal);
@@ -3681,14 +3618,14 @@ proto_register_tcap(void)
 }
 
 
-static void range_delete_callback(guint32 ssn, gpointer ptr _U_)
+static void range_delete_callback(uint32_t ssn, void *ptr _U_)
 {
   if ( ssn && !get_ansi_tcap_subdissector(ssn) && !get_itu_tcap_subdissector(ssn) ) {
     dissector_delete_uint("sccp.ssn", ssn, tcap_handle);
   }
 }
 
-static void range_add_callback(guint32 ssn, gpointer ptr _U_)
+static void range_add_callback(uint32_t ssn, void *ptr _U_)
 {
   if (ssn && !get_ansi_tcap_subdissector(ssn) && !get_itu_tcap_subdissector(ssn) ) {
     dissector_add_uint("sccp.ssn", ssn, tcap_handle);
@@ -3704,8 +3641,11 @@ static void init_tcap(void)
   /* Reset the session counter */
   tcapsrt_global_SessionId=1;
 
-  /* Display of SRT only if Persistent Stat */
-  gtcap_DisplaySRT=gtcap_PersistentSRT || gtcap_HandleSRT&gtcap_StatSRT;
+  /* Display of SRT is enabled
+   * 1) For wireshark only if Persistent Stat is enabled
+   * 2) For tshark, if the CLI SRT tap is registered
+   */
+  gtcap_DisplaySRT=gtcap_PersistentSRT || gtcap_StatSRT;
 }
 
 static void cleanup_tcap(void)
@@ -3715,18 +3655,19 @@ static void cleanup_tcap(void)
 }
 
 static int
+// NOLINTNEXTLINE(misc-no-recursion)
 dissect_tcap_param(asn1_ctx_t *actx, proto_tree *tree, tvbuff_t *tvb, int offset)
 {
-  gint tag_offset, saved_offset, len_offset;
+  int tag_offset, saved_offset, len_offset;
   tvbuff_t *next_tvb;
   proto_tree *subtree;
-  gint8 ber_class;
-  gboolean pc;
-  gint32 tag;
-  guint32 len;
-  guint32 tag_length;
-  guint32 len_length;
-  gboolean ind_field;
+  int8_t ber_class;
+  bool pc;
+  int32_t tag;
+  uint32_t len;
+  uint32_t tag_length;
+  uint32_t len_length;
+  bool ind_field;
 
   while (tvb_reported_length_remaining(tvb, offset) > 0)
   {
@@ -3754,10 +3695,12 @@ dissect_tcap_param(asn1_ctx_t *actx, proto_tree *tree, tvbuff_t *tvb, int offset
       proto_tree_add_uint(subtree, hf_tcap_length, tvb, tag_offset,
         len_length, len);
 
-      if (len-(2*ind_field)) /*should always be positive unless we get an empty contructor pointless? */
+      if (len - (ind_field ? 2 : 0)) /*should always be positive unless we get an empty constructor pointless? */
       {
-        next_tvb = tvb_new_subset_length(tvb, offset, len-(2*ind_field));
+        next_tvb = tvb_new_subset_length(tvb, offset, len - (ind_field ? 2 : 0));
+        increment_dissection_depth(actx->pinfo);
         dissect_tcap_param(actx, subtree,next_tvb,0);
+        decrement_dissection_depth(actx->pinfo);
       }
 
       if (ind_field)
@@ -3780,7 +3723,7 @@ dissect_tcap_param(asn1_ctx_t *actx, proto_tree *tree, tvbuff_t *tvb, int offset
       if (len) /* check for NULLS */
       {
         next_tvb = tvb_new_subset_length(tvb, offset, len);
-        dissect_ber_octet_string(TRUE, actx, tree, next_tvb, 0,
+        dissect_ber_octet_string(true, actx, tree, next_tvb, 0,
           hf_tcap_data, NULL);
       }
 
@@ -3793,11 +3736,11 @@ dissect_tcap_param(asn1_ctx_t *actx, proto_tree *tree, tvbuff_t *tvb, int offset
 /*
  * Call ITU Subdissector to decode the Tcap Component
  */
-static int
-dissect_tcap_ITU_ComponentPDU(gboolean implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_)
+static bool
+dissect_tcap_ITU_ComponentPDU(bool implicit_tag _U_, tvbuff_t *tvb, int offset _U_, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_)
 {
   dissector_handle_t subdissector_handle=NULL;
-  gboolean is_subdissector=FALSE;
+  bool is_subdissector=false;
   struct tcaphash_context_t * p_tcap_context=NULL;
   struct tcap_private_t *p_tcap_private = (struct tcap_private_t*)actx->value_ptr;
 
@@ -3808,120 +3751,120 @@ dissect_tcap_ITU_ComponentPDU(gboolean implicit_tag _U_, tvbuff_t *tvb, int offs
   /*
    * Handle The TCAP Service Response Time
    */
-  if ( gtcap_HandleSRT ) {
-    if (!tcap_subdissector_used) {
-      p_tcap_context=tcapsrt_call_matching(tvb, actx->pinfo, tcap_stat_tree, gp_tcapsrt_info);
-      tcap_subdissector_used=TRUE;
-      gp_tcap_context=p_tcap_context;
-      p_tcap_private->context=p_tcap_context;
-    } else {
-      /* Take the last TCAP context */
-      p_tcap_context = gp_tcap_context;
-      p_tcap_private->context=p_tcap_context;
-    }
+  if (!tcap_subdissector_used) {
+    p_tcap_context=tcapsrt_call_matching(tvb, actx->pinfo, tcap_stat_tree, gp_tcapsrt_info);
+    tcap_subdissector_used=false;
+    gp_tcap_context=p_tcap_context;
+    p_tcap_private->context=p_tcap_context;
+  } else {
+    /* Take the last TCAP context */
+    p_tcap_context = gp_tcap_context;
+    p_tcap_private->context=p_tcap_context;
   }
   if (p_tcap_context) {
-    if (cur_oid) {
-      if (p_tcap_context->oid_present) {
-        /* We have already an Application Context, check if we have
-           to fallback to a lower version */
-        if ( strncmp(p_tcap_context->oid, cur_oid, sizeof(p_tcap_context->oid))!=0) {
-          /* ACN, changed, Fallback to lower version
-           * and update the subdissector (purely formal)
-           */
-          g_strlcpy(p_tcap_context->oid,cur_oid, sizeof(p_tcap_context->oid));
-          if ( (subdissector_handle = dissector_get_string_handle(ber_oid_dissector_table, cur_oid)) ) {
-            p_tcap_context->subdissector_handle=subdissector_handle;
-            p_tcap_context->subdissector_present=TRUE;
-          }
-        }
+      if (cur_oid) {
+          if (p_tcap_context->oid_present) {
+              /* We have already an Application Context, check if we have
+                 to fallback to a lower version */
+              if (strncmp(p_tcap_context->oid, cur_oid, sizeof(p_tcap_context->oid)) != 0) {
+                  /* ACN, changed, Fallback to lower version
+                   * and update the subdissector (purely formal)
+                   */
+                  (void) g_strlcpy(p_tcap_context->oid, cur_oid, sizeof(p_tcap_context->oid));
+                  if ((subdissector_handle = dissector_get_string_handle(ber_oid_dissector_table, cur_oid))) {
+                      p_tcap_context->subdissector_handle = subdissector_handle;
+                      p_tcap_context->subdissector_present = true;
+                  }
+              }
+          } else {
+              /* We do not have the OID in the TCAP context, so store it */
+              (void) g_strlcpy(p_tcap_context->oid, cur_oid, sizeof(p_tcap_context->oid));
+              p_tcap_context->oid_present = true;
+              /* Try to find a subdissector according to OID */
+              if ((subdissector_handle
+                  = dissector_get_string_handle(ber_oid_dissector_table, cur_oid))) {
+                  p_tcap_context->subdissector_handle = subdissector_handle;
+                  p_tcap_context->subdissector_present = true;
+              } else {
+                  /* Not found, so try to find a subdissector according to SSN */
+                  if ((subdissector_handle = get_itu_tcap_subdissector(actx->pinfo->match_uint))) {
+                      /* Found according to SSN */
+                      p_tcap_context->subdissector_handle = subdissector_handle;
+                      p_tcap_context->subdissector_present = true;
+                  }
+              }
+          } /* context OID */
       } else {
-        /* We do not have the OID in the TCAP context, so store it */
-        g_strlcpy(p_tcap_context->oid, cur_oid, sizeof(p_tcap_context->oid));
-        p_tcap_context->oid_present=TRUE;
-        /* Try to find a subdissector according to OID */
-        if ( (subdissector_handle
-          = dissector_get_string_handle(ber_oid_dissector_table, cur_oid)) ) {
-          p_tcap_context->subdissector_handle=subdissector_handle;
-          p_tcap_context->subdissector_present=TRUE;
-        } else {
-          /* Not found, so try to find a subdissector according to SSN */
-          if ( (subdissector_handle = get_itu_tcap_subdissector(actx->pinfo->match_uint))) {
-            /* Found according to SSN */
-            p_tcap_context->subdissector_handle=subdissector_handle;
-            p_tcap_context->subdissector_present=TRUE;
+          /* Copy the OID from the TCAP context to the current oid */
+          if (p_tcap_context->oid_present) {
+              p_tcap_private->oid = (void*)p_tcap_context->oid;
+              p_tcap_private->acv = true;
           }
-        }
-      } /* context OID */
-    } else {
-      /* Copy the OID from the TCAP context to the current oid */
-      if (p_tcap_context->oid_present) {
-        p_tcap_private->oid= (void*) p_tcap_context->oid;
-        p_tcap_private->acv=TRUE;
-      }
-    } /* no OID */
+      } /* no OID */
   } /* no TCAP context */
 
 
-  if ( p_tcap_context
-       && p_tcap_context->subdissector_present) {
-    /* Take the subdissector from the context */
-    subdissector_handle=p_tcap_context->subdissector_handle;
-    is_subdissector=TRUE;
+  if (p_tcap_context
+      && p_tcap_context->subdissector_present) {
+      /* Take the subdissector from the context */
+      subdissector_handle = p_tcap_context->subdissector_handle;
+      is_subdissector = true;
   }
 
   /* Have SccpUsersTable protocol taking precedence over sccp.ssn table */
   if (!is_subdissector && requested_subdissector_handle) {
-    is_subdissector = TRUE;
-    subdissector_handle = requested_subdissector_handle;
+      is_subdissector = true;
+      subdissector_handle = requested_subdissector_handle;
   }
 
   if (!is_subdissector) {
-    /*
-     * If we do not currently know the subdissector, we have to find it
-     * - first, according to the OID
-     * - then according to the SSN
-     * - and at least, take the default Data handler
-     */
-    if (ber_oid_dissector_table && cur_oid) {
-      /* Search if we can find the sub protocol according to the A.C.N */
-      if ( (subdissector_handle
-        = dissector_get_string_handle(ber_oid_dissector_table, cur_oid)) ) {
-        /* found */
-        is_subdissector=TRUE;
+      /*
+       * If we do not currently know the subdissector, we have to find it
+       * - first, according to the OID
+       * - then according to the SSN
+       * - and at least, take the default Data handler
+       */
+      if (ber_oid_dissector_table && cur_oid) {
+          /* Search if we can find the sub protocol according to the A.C.N */
+          if ((subdissector_handle
+              = dissector_get_string_handle(ber_oid_dissector_table, cur_oid))) {
+              /* found */
+              is_subdissector = true;
+          } else {
+              /* Search if we can found the sub protocol according to the SSN table */
+              if ((subdissector_handle
+                  = get_itu_tcap_subdissector(actx->pinfo->match_uint))) {
+                  /* Found according to SSN */
+                  is_subdissector = true;
+              } else {
+                  /* Nothing found, take the Data handler */
+                  subdissector_handle = data_handle;
+                  is_subdissector = true;
+              } /* SSN */
+          } /* ACN */
       } else {
-        /* Search if we can found the sub protocol according to the SSN table */
-        if ( (subdissector_handle
-          = get_itu_tcap_subdissector(actx->pinfo->match_uint))) {
-          /* Found according to SSN */
-          is_subdissector=TRUE;
-        } else {
-          /* Nothing found, take the Data handler */
-          subdissector_handle = data_handle;
-          is_subdissector=TRUE;
-        } /* SSN */
-      } /* ACN */
-    } else {
-      /* There is no A.C.N for this transaction, so search in the SSN table */
-      if ( (subdissector_handle = get_itu_tcap_subdissector(actx->pinfo->match_uint))) {
-        /* Found according to SSN */
-        is_subdissector=TRUE;
-      } else {
-        subdissector_handle = data_handle;
-        is_subdissector=TRUE;
-      }
-    } /* OID */
+          /* There is no A.C.N for this transaction, so search in the SSN table */
+          if ((subdissector_handle = get_itu_tcap_subdissector(actx->pinfo->match_uint))) {
+              /* Found according to SSN */
+              is_subdissector = true;
+          } else {
+              subdissector_handle = data_handle;
+              is_subdissector = true;
+          }
+      } /* OID */
   } else {
-    /* We have it already */
+      /* We have it already */
   }
 
   /* Call the sub dissector if present, and not already called */
   if (is_subdissector) {
-    call_dissector_with_data(subdissector_handle, tvb, actx->pinfo, tree, actx->value_ptr);
-    col_set_fence(actx->pinfo->cinfo, COL_INFO);
+      bool is_active = call_dissector_only(subdissector_handle, tvb, actx->pinfo, tree, actx->value_ptr);
+      col_set_fence(actx->pinfo->cinfo, COL_INFO);
+      if(!is_active){
+          return false;
+    }
   }
-
-  return offset;
+  return true;
 }
 
 void

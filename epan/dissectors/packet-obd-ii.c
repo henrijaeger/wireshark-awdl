@@ -14,92 +14,130 @@
 
 #include <epan/packet.h>
 #include <epan/proto.h>
+#include <epan/unit_strings.h>
+#include <expert.h>
 
 #include <wsutil/utf8_entities.h>
 
 #include "packet-socketcan.h"
+#include "packet-iso15765.h"
 
 void proto_register_obdii(void);
 void proto_reg_handoff_obdii(void);
 
-static int proto_obdii = -1;
+static dissector_handle_t obdii_handle;
 
-static int ett_obdii = -1;
+static int proto_obdii;
 
-static int hf_obdii_data_bytes = -1;
-static int hf_obdii_mode = -1;
-static int hf_obdii_raw_value = -1;
+static int ett_obdii;
 
-static int hf_obdii_mode01_pid = -1;
-static int hf_obdii_mode01_supported_pid = -1;
-static int hf_obdii_mode01_unsupported_pid = -1;
-static int hf_obdii_mode01_fuel_system1_status = -1;
-static int hf_obdii_mode01_fuel_system2_status = -1;
-static int hf_obdii_mode01_engine_load = -1;
-static int hf_obdii_mode01_engine_coolant_temp = -1;
-static int hf_obdii_mode01_short_term_fuel_bank1 = -1;
-static int hf_obdii_mode01_long_term_fuel_bank1 = -1;
-static int hf_obdii_mode01_short_term_fuel_bank2 = -1;
-static int hf_obdii_mode01_long_term_fuel_bank2 = -1;
-static int hf_obdii_mode01_fuel_pressure = -1;
-static int hf_obdii_mode01_engine_rpm = -1;
-static int hf_obdii_mode01_vehicle_speed = -1;
-static int hf_obdii_mode01_timing_advance = -1;
-static int hf_obdii_mode01_intake_air_temp = -1;
-static int hf_obdii_mode01_maf_air_flow_rate = -1;
-static int hf_obdii_mode01_throttle_position = -1;
-static int hf_obdii_mode01_secondary_air_status = -1;
-static int hf_obdii_mode01_obd_standards = -1;
-static int hf_obdii_mode01_engine_uptime = -1;
-static int hf_obdii_mode01_fuel_rail_pressure = -1;
-static int hf_obdii_mode01_fuel_rail_gauge_pressure = -1;
-static int hf_obdii_mode01_fuel_rail_absolute_pressure = -1;
-static int hf_obdii_mode01_commanded_egr = -1;
-static int hf_obdii_mode01_egr_error = -1;
-static int hf_obdii_mode01_commanded_evap_purge = -1;
-static int hf_obdii_mode01_fuel_tank_level_input = -1;
-static int hf_obdii_mode01_warm_ups = -1;
-static int hf_obdii_mode01_evap_system_vapor_pressure = -1;
-static int hf_obdii_mode01_absolute_barometric_pressure = -1;
-static int hf_obdii_mode01_intake_manifold_absolute_pressure = -1;
-static int hf_obdii_mode01_oxygen_sensor_id = -1;
-static int hf_obdii_mode01_oxygen_sensor_fuel_air_ratio = -1;
-static int hf_obdii_mode01_oxygen_sensor_voltage = -1;
-static int hf_obdii_mode01_oxygen_sensor_current = -1;
-static int hf_obdii_mode01_distance_traveled_with_mil = -1;
-static int hf_obdii_mode01_distance_traveled_since_code_clear = -1;
-static int hf_obdii_mode01_time_run_with_mil = -1;
-static int hf_obdii_mode01_time_since_trouble_code_clear = -1;
-static int hf_obdii_mode01_catalyst_temp_11 = -1;
-static int hf_obdii_mode01_catalyst_temp_21 = -1;
-static int hf_obdii_mode01_catalyst_temp_12 = -1;
-static int hf_obdii_mode01_catalyst_temp_22 = -1;
-static int hf_obdii_mode01_ambient_air_temp = -1;
-static int hf_obdii_mode01_absolute_throttle_position_B = -1;
-static int hf_obdii_mode01_absolute_throttle_position_C = -1;
-static int hf_obdii_mode01_accelerator_pedal_position_D = -1;
-static int hf_obdii_mode01_accelerator_pedal_position_E = -1;
-static int hf_obdii_mode01_accelerator_pedal_position_F = -1;
-static int hf_obdii_mode01_commanded_throttle_actuator = -1;
-static int hf_obdii_mode01_fuel_type = -1;
-static int hf_obdii_mode01_control_module_voltage = -1;
-static int hf_obdii_mode01_absolute_load_value = -1;
-static int hf_obdii_mode01_fuel_air_commanded_equiv_ratio = -1;
-static int hf_obdii_mode01_relative_throttle_position = -1;
-static int hf_obdii_mode01_ethanol_fuel = -1;
-static int hf_obdii_mode01_absolute_evap_system_vapor_pressure = -1;
-static int hf_obdii_mode01_relative_accelerator_pedal_position = -1;
-static int hf_obdii_mode01_hybrid_battery_remaining_life = -1;
-static int hf_obdii_mode01_engine_oil_temp = -1;
-static int hf_obdii_mode01_fuel_injection_timing = -1;
-static int hf_obdii_mode01_engine_fuel_rate = -1;
-static int hf_obdii_mode01_torque_driver_demand_engine = -1;
-static int hf_obdii_mode01_torque_actual_engine = -1;
-static int hf_obdii_mode01_torque_reference_engine = -1;
+static int hf_obdii_mode;
+static int hf_obdii_raw_value;
 
-#define ODBII_CAN_QUERY_ID        0x7DF
-#define ODBII_CAN_RESPONSE_ID_MIN 0x7E8
-#define ODBII_CAN_RESPONSE_ID_MAX 0x7EF
+static int hf_obdii_mode01_pid;
+static int hf_obdii_mode01_supported_pid;
+static int hf_obdii_mode01_unsupported_pid;
+static int hf_obdii_mode01_fuel_system1_status;
+static int hf_obdii_mode01_fuel_system2_status;
+static int hf_obdii_mode01_engine_load;
+static int hf_obdii_mode01_engine_coolant_temp;
+static int hf_obdii_mode01_short_term_fuel_bank1;
+static int hf_obdii_mode01_long_term_fuel_bank1;
+static int hf_obdii_mode01_short_term_fuel_bank2;
+static int hf_obdii_mode01_long_term_fuel_bank2;
+static int hf_obdii_mode01_fuel_pressure;
+static int hf_obdii_mode01_engine_rpm;
+static int hf_obdii_mode01_vehicle_speed;
+static int hf_obdii_mode01_timing_advance;
+static int hf_obdii_mode01_intake_air_temp;
+static int hf_obdii_mode01_maf_air_flow_rate;
+static int hf_obdii_mode01_throttle_position;
+static int hf_obdii_mode01_secondary_air_status;
+static int hf_obdii_mode01_obd_standards;
+static int hf_obdii_mode01_engine_uptime;
+static int hf_obdii_mode01_fuel_rail_pressure;
+static int hf_obdii_mode01_fuel_rail_gauge_pressure;
+static int hf_obdii_mode01_fuel_rail_absolute_pressure;
+static int hf_obdii_mode01_commanded_egr;
+static int hf_obdii_mode01_egr_error;
+static int hf_obdii_mode01_commanded_evap_purge;
+static int hf_obdii_mode01_fuel_tank_level_input;
+static int hf_obdii_mode01_warm_ups;
+static int hf_obdii_mode01_evap_system_vapor_pressure;
+static int hf_obdii_mode01_absolute_barometric_pressure;
+static int hf_obdii_mode01_intake_manifold_absolute_pressure;
+static int hf_obdii_mode01_oxygen_sensor_id;
+static int hf_obdii_mode01_oxygen_sensor_fuel_air_ratio;
+static int hf_obdii_mode01_oxygen_sensor_voltage;
+static int hf_obdii_mode01_oxygen_sensor_current;
+static int hf_obdii_mode01_distance_traveled_with_mil;
+static int hf_obdii_mode01_distance_traveled_since_code_clear;
+static int hf_obdii_mode01_time_run_with_mil;
+static int hf_obdii_mode01_time_since_trouble_code_clear;
+static int hf_obdii_mode01_catalyst_temp_11;
+static int hf_obdii_mode01_catalyst_temp_21;
+static int hf_obdii_mode01_catalyst_temp_12;
+static int hf_obdii_mode01_catalyst_temp_22;
+static int hf_obdii_mode01_ambient_air_temp;
+static int hf_obdii_mode01_absolute_throttle_position_B;
+static int hf_obdii_mode01_absolute_throttle_position_C;
+static int hf_obdii_mode01_accelerator_pedal_position_D;
+static int hf_obdii_mode01_accelerator_pedal_position_E;
+static int hf_obdii_mode01_accelerator_pedal_position_F;
+static int hf_obdii_mode01_commanded_throttle_actuator;
+static int hf_obdii_mode01_fuel_type;
+static int hf_obdii_mode01_control_module_voltage;
+static int hf_obdii_mode01_absolute_load_value;
+static int hf_obdii_mode01_fuel_air_commanded_equiv_ratio;
+static int hf_obdii_mode01_relative_throttle_position;
+static int hf_obdii_mode01_ethanol_fuel;
+static int hf_obdii_mode01_absolute_evap_system_vapor_pressure;
+static int hf_obdii_mode01_relative_accelerator_pedal_position;
+static int hf_obdii_mode01_hybrid_battery_remaining_life;
+static int hf_obdii_mode01_engine_oil_temp;
+static int hf_obdii_mode01_fuel_injection_timing;
+static int hf_obdii_mode01_engine_fuel_rate;
+static int hf_obdii_mode01_torque_driver_demand_engine;
+static int hf_obdii_mode01_torque_actual_engine;
+static int hf_obdii_mode01_torque_reference_engine;
+
+static int hf_obdii_mode09_pid;
+static int hf_obdii_mode09_supported_pid;
+static int hf_obdii_mode09_unsupported_pid;
+
+static int hf_obdii_vin;
+static int hf_obdii_ecu_name;
+
+static expert_field ei_obdii_padding;
+
+/* OBD-II CAN IDs have three aspects.
+   - IDs are either standard 11bit format (SFF) or extended 29bit format (EFF)
+   - An ID can be a query ID or a response ID.
+   - Response IDs fall into two ranges for both SFF and EFF formats
+
+   SFF response IDs can vary in the lowest nibble as follows:
+     two ranges: 0x7e0-0x7e7 and 0x7e8 - 0x7ef
+   EFF response IDs can vary in the lowest byte or the second lowest byte as follows:
+     0x18daXXf1 or 0x18daf1XX, where XX is in the range 0x00 - 0xff
+
+   The following defines set up bit patterns and masks to determine both query and responses.
+*/
+#define ODBII_CAN_QUERY_ID_SFF               0x7DF
+#define ODBII_CAN_RESPONSE_ID_LOWER_MIN_SFF  0x7E0
+#define ODBII_CAN_RESPONSE_ID_UPPER_MIN_SFF  0x7E8
+#define ODBII_CAN_RESPONSE_ID_LOWER_MASK_SFF 0x7
+#define ODBII_CAN_RESPONSE_ID_UPPER_MASK_SFF 0x7
+
+#define ODBII_CAN_QUERY_ID_EFF               0x18DB33F1
+#define ODBII_CAN_RESPONSE_ID_LOWER_MIN_EFF  0x18DA00F1
+#define ODBII_CAN_RESPONSE_ID_UPPER_MIN_EFF  0x18DAF100
+#define ODBII_CAN_RESPONSE_ID_LOWER_MASK_EFF 0xFF00
+#define ODBII_CAN_RESPONSE_ID_UPPER_MASK_EFF 0x00FF
+
+#define OBDII_MODE_POS  0x00
+#define OBDII_PID_POS   0x01
+#define OBDII_VAL_OFF   0x02
+#define OBDII_MODE07_DATA_OFF 0x01
 
 #define OBDII_MODE01_PIDS_SUPPORT00         0x00
 #define OBDII_MODE01_MONITOR_STATUS         0x01
@@ -203,6 +241,14 @@ static int hf_obdii_mode01_torque_reference_engine = -1;
 #define OBDII_MODE01_PIDS_SUPPORT80         0x80
 #define OBDII_MODE01_PIDS_SUPPORTA0         0xA0
 #define OBDII_MODE01_PIDS_SUPPORTC0         0xC0
+
+#define OBDII_MODE09_PIDS_SUPPORT00 			0x00
+#define OBDII_MODE09_VIN02								0x02
+#define OBDII_MODE09_CALIBRATION_ID04			0x04
+#define OBDII_MODE09_CAL_VER_NUMBERS06		0x06
+#define OBDII_MODE09_PERFORMANCE_SPARK08	0x08
+#define OBDII_MODE09_ECU_NAME0A						0x0A
+#define OBDII_MODE09_PERFORMANCE_COMPRESSION0B 0x0B
 
 /* unit_name_string for OBDII_MODE01_TIMING_ADVANCE */
 static const unit_name_string units_degree_btdc = { UTF8_DEGREE_SIGN "BTDC", NULL };
@@ -451,6 +497,20 @@ static const value_string obdii_mode01_pid_vals[] =
 
 static value_string_ext obdii_mode01_pid_vals_ext = VALUE_STRING_EXT_INIT(obdii_mode01_pid_vals);
 
+static const value_string obdii_mode09_pid_vals[] =
+{
+	{ OBDII_MODE09_PIDS_SUPPORT00, "PIDs supported [00 - 20]" },
+	{ OBDII_MODE09_VIN02, "Vehicle VIN" },
+	{ OBDII_MODE09_CALIBRATION_ID04, "Calibration ID" },
+	{ OBDII_MODE09_CAL_VER_NUMBERS06, "Calibration Verification Numbers" },
+	{ OBDII_MODE09_PERFORMANCE_SPARK08, "In-use performance tracking for spark ignition vehicles" },
+	{ OBDII_MODE09_ECU_NAME0A, "ECU Name" },
+	{ OBDII_MODE09_PERFORMANCE_COMPRESSION0B, "In-use performance tracking for compression ignition vehicles" },
+	{ 0x00, NULL }
+};
+
+static value_string_ext obdii_mode09_pid_vals_ext = VALUE_STRING_EXT_INIT(obdii_mode09_pid_vals);
+
 static const value_string obdii_mode_vals[] =
 {
 	{ 0x01, "Show current data" },
@@ -469,32 +529,32 @@ static const value_string obdii_mode_vals[] =
 struct obdii_packet_info
 {
 	packet_info *pinfo;
-	guint32 can_id;
+	uint32_t can_id;
 
-	guint8 data_bytes;
-	guint8 mode;
+	uint8_t data_bytes;
+	uint8_t mode;
 
-	guint8 value_bytes;
+	uint8_t value_bytes;
 	int value_offset;
-	guint8 valueA, valueB, valueC, valueD;
+	uint8_t valueA, valueB, valueC, valueD, valueE;
 };
 
-static gboolean
+static bool
 dissect_obdii_common_temperature(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 1)
 	{
-		gint16 val = ((int) oinfo->valueA) - 40;
+		int16_t val = ((int) oinfo->valueA) - 40;
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %d " UTF8_DEGREE_SIGN "C", val);
 		proto_tree_add_int(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
+static bool
 dissect_obdii_common_percent(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 1)
@@ -503,13 +563,13 @@ dissect_obdii_common_percent(tvbuff_t *tvb, struct obdii_packet_info *oinfo, pro
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %.2f %%", val);
 		proto_tree_add_double(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
+static bool
 dissect_obdii_common_percent_neg(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 1)
@@ -518,73 +578,73 @@ dissect_obdii_common_percent_neg(tvbuff_t *tvb, struct obdii_packet_info *oinfo,
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %.2f %%", val);
 		proto_tree_add_double(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
+static bool
 dissect_obdii_common_fuel_rail_pressure(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 2)
 	{
-		guint val = 10 * (256 * oinfo->valueA + oinfo->valueB);
+		unsigned val = 10 * (256 * oinfo->valueA + oinfo->valueB);
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u kPa", val);
 		proto_tree_add_uint(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
+static bool
 dissect_obdii_common_absolute_pressure(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 1)
 	{
-		guint8 val = oinfo->valueA;
+		uint8_t val = oinfo->valueA;
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u kPa", val);
 		proto_tree_add_uint(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
+static bool
 dissect_obdii_common_distance_travelled(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 2)
 	{
-		guint16 val = 256 * oinfo->valueA + oinfo->valueB;
+		uint16_t val = 256 * oinfo->valueA + oinfo->valueB;
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u km", val);
 		proto_tree_add_uint(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
+static bool
 dissect_obdii_common_time(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 2)
 	{
-		guint16 val = 256 * oinfo->valueA + oinfo->valueB;
+		uint16_t val = 256 * oinfo->valueA + oinfo->valueB;
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u minutes", val);
 		proto_tree_add_uint(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
+static bool
 dissect_obdii_common_torque(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree, int hf_field)
 {
 	if (oinfo->value_bytes == 1)
@@ -593,25 +653,25 @@ dissect_obdii_common_torque(tvbuff_t *tvb, struct obdii_packet_info *oinfo, prot
 
 		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %d %%", val);
 		proto_tree_add_int(tree, hf_field, tvb, oinfo->value_offset, oinfo->value_bytes, val);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
 static void
 dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree)
 {
-	guint8 pid = tvb_get_guint8(tvb, 2);
+	uint8_t pid = tvb_get_uint8(tvb, OBDII_PID_POS);
 	int value_offset;
-	gboolean handled = FALSE;
+	bool handled = false;
 
 	col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, "- %s", val_to_str_ext(pid, &obdii_mode01_pid_vals_ext, "Unknown (%.2x)"));
-	proto_tree_add_uint(tree, hf_obdii_mode01_pid, tvb, 2, 1, pid);
+	proto_tree_add_uint(tree, hf_obdii_mode01_pid, tvb, OBDII_PID_POS, 1, pid);
 
-	proto_tree_add_item(tree, hf_obdii_raw_value, tvb, 3, MIN(oinfo->value_bytes, 4), ENC_NA);
+	proto_tree_add_item(tree, hf_obdii_raw_value, tvb, OBDII_VAL_OFF, MIN(oinfo->value_bytes, 4), ENC_NA);
 
-	value_offset = 3;
+	value_offset = OBDII_VAL_OFF;
 	oinfo->value_offset = value_offset;
 
 	/* https://en.wikipedia.org/wiki/OBD-II_PIDs#Mode_01 */
@@ -626,7 +686,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_PIDS_SUPPORTC0:
 		if ((handled = (oinfo->value_bytes == 4)))
 		{
-			guint32 val = ((oinfo->valueA << 24) | (oinfo->valueB << 16) | (oinfo->valueC << 8) | (oinfo->valueD << 0));
+			uint32_t val = ((oinfo->valueA << 24) | (oinfo->valueB << 16) | (oinfo->valueC << 8) | (oinfo->valueD << 0));
 			int i;
 			const char *sepa;
 			char bits_str[33];
@@ -634,13 +694,13 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 			sepa = ": ";
 			for (i = 31; i >= 0; i--)
 			{
-				guint this_pid = (pid + 32 - i);
+				unsigned this_pid = (pid + 32 - i);
 				proto_item *ti;
 
 				memset(bits_str, '.', 32);
 				bits_str[32] = '\0';
 
-				if ((val & (1 << i)))
+				if ((val & (1U << i)))
 				{
 					col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, "%s%.2X", sepa, this_pid);
 					ti = proto_tree_add_uint(tree, hf_obdii_mode01_supported_pid, tvb, value_offset, oinfo->value_bytes, this_pid);
@@ -661,8 +721,8 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_FUEL_SYSTEM_STATUS:
 		if ((handled = (oinfo->value_bytes == 2)))
 		{
-			guint8 fuel_system1_val = oinfo->valueA;
-			guint8 fuel_system2_val = oinfo->valueB;
+			uint8_t fuel_system1_val = oinfo->valueA;
+			uint8_t fuel_system2_val = oinfo->valueB;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": System 1: %s", val_to_str(fuel_system1_val, obdii_fuel_system_status_vals, "Unknown (%.2X)"));
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ", System 2: %s", val_to_str(fuel_system2_val, obdii_fuel_system_status_vals, "Unknown (%.2X)"));
@@ -699,7 +759,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_FUEL_PRESSURE:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint16 val = 3 * oinfo->valueA;
+			uint16_t val = 3 * oinfo->valueA;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u kPa", val);
 			proto_tree_add_uint(tree, hf_obdii_mode01_fuel_pressure, tvb, value_offset, oinfo->value_bytes, val);
@@ -719,7 +779,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_VEHICLE_SPEED:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint8 val = oinfo->valueA;
+			uint8_t val = oinfo->valueA;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u km/h", val);
 			proto_tree_add_uint(tree, hf_obdii_mode01_vehicle_speed, tvb, value_offset, oinfo->value_bytes, val);
@@ -757,7 +817,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_SECONDARY_AIR_STATUS:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint8 air_status = oinfo->valueA;
+			uint8_t air_status = oinfo->valueA;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %s", val_to_str(air_status, obdii_secondary_air_status_vals, "Unknown (%.2X)"));
 			proto_tree_add_uint(tree, hf_obdii_mode01_secondary_air_status, tvb, value_offset, oinfo->value_bytes, air_status);
@@ -767,14 +827,14 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_OXYGEN_SENSOR_PRESET2:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint8 bank1_sensor1 = (oinfo->valueA & (1 << 0));
-			guint8 bank1_sensor2 = (oinfo->valueA & (1 << 1));
-			guint8 bank1_sensor3 = (oinfo->valueA & (1 << 2));
-			guint8 bank1_sensor4 = (oinfo->valueA & (1 << 3));
-			guint8 bank2_sensor1 = (oinfo->valueA & (1 << 4));
-			guint8 bank2_sensor2 = (oinfo->valueA & (1 << 5));
-			guint8 bank2_sensor3 = (oinfo->valueA & (1 << 6));
-			guint8 bank2_sensor4 = (oinfo->valueA & (1 << 7));
+			uint8_t bank1_sensor1 = (oinfo->valueA & (1 << 0));
+			uint8_t bank1_sensor2 = (oinfo->valueA & (1 << 1));
+			uint8_t bank1_sensor3 = (oinfo->valueA & (1 << 2));
+			uint8_t bank1_sensor4 = (oinfo->valueA & (1 << 3));
+			uint8_t bank2_sensor1 = (oinfo->valueA & (1 << 4));
+			uint8_t bank2_sensor2 = (oinfo->valueA & (1 << 5));
+			uint8_t bank2_sensor3 = (oinfo->valueA & (1 << 6));
+			uint8_t bank2_sensor4 = (oinfo->valueA & (1 << 7));
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": Bank1 sensors: %s%s%s%s%s",
 				bank1_sensor1 ? "1 " : "", bank1_sensor2 ? "2 " : "", bank1_sensor3 ? "3 " : "", bank1_sensor4 ? "4 " : "",
@@ -791,14 +851,14 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_OXYGEN_SENSOR_PRESET4:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint8 bank1_sensor1 = (oinfo->valueA & (1 << 0));
-			guint8 bank1_sensor2 = (oinfo->valueA & (1 << 1));
-			guint8 bank2_sensor1 = (oinfo->valueA & (1 << 2));
-			guint8 bank2_sensor2 = (oinfo->valueA & (1 << 3));
-			guint8 bank3_sensor1 = (oinfo->valueA & (1 << 4));
-			guint8 bank3_sensor2 = (oinfo->valueA & (1 << 5));
-			guint8 bank4_sensor1 = (oinfo->valueA & (1 << 6));
-			guint8 bank4_sensor2 = (oinfo->valueA & (1 << 7));
+			uint8_t bank1_sensor1 = (oinfo->valueA & (1 << 0));
+			uint8_t bank1_sensor2 = (oinfo->valueA & (1 << 1));
+			uint8_t bank2_sensor1 = (oinfo->valueA & (1 << 2));
+			uint8_t bank2_sensor2 = (oinfo->valueA & (1 << 3));
+			uint8_t bank3_sensor1 = (oinfo->valueA & (1 << 4));
+			uint8_t bank3_sensor2 = (oinfo->valueA & (1 << 5));
+			uint8_t bank4_sensor1 = (oinfo->valueA & (1 << 6));
+			uint8_t bank4_sensor2 = (oinfo->valueA & (1 << 7));
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": Bank1 sensors: %s%s%s",
 				bank1_sensor1 ? "1 " : "", bank1_sensor2 ? "2 " : "",
@@ -846,7 +906,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_OBD_STANDARDS:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint8 val = oinfo->valueA;
+			uint8_t val = oinfo->valueA;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %s", val_to_str(val, obdii_standards_vals, "Unknown (%u)"));
 			proto_tree_add_uint(tree, hf_obdii_mode01_obd_standards, tvb, value_offset, oinfo->value_bytes, val);
@@ -856,7 +916,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_ENGINE_UPTIME:
 		if ((handled = (oinfo->value_bytes == 2)))
 		{
-			guint16 val = 256 * oinfo->valueA + oinfo->valueB;
+			uint16_t val = 256 * oinfo->valueA + oinfo->valueB;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u s", val);
 			proto_tree_add_uint(tree, hf_obdii_mode01_engine_uptime, tvb, value_offset, oinfo->value_bytes, val);
@@ -922,7 +982,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_WARM_UPS_SINCE_CLEAR:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint8 val = oinfo->valueA;
+			uint8_t val = oinfo->valueA;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u", val);
 			proto_tree_add_uint(tree, hf_obdii_mode01_warm_ups, tvb, value_offset, oinfo->value_bytes, val);
@@ -932,7 +992,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_EVAP_SYSTEM_VAPOR_PRESSURE:
 		if ((handled = (oinfo->value_bytes == 2)))
 		{
-			double val = ((gint16) (oinfo->valueA * 256 + oinfo->valueB)) / 4.0;
+			double val = ((int16_t) (oinfo->valueA * 256 + oinfo->valueB)) / 4.0;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %.2f kPa", val);
 			proto_tree_add_double(tree, hf_obdii_mode01_evap_system_vapor_pressure, tvb, value_offset, oinfo->value_bytes, val);
@@ -1070,7 +1130,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_FUEL_TYPE:
 		if ((handled = (oinfo->value_bytes == 1)))
 		{
-			guint8 val = oinfo->valueA;
+			uint8_t val = oinfo->valueA;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %s", val_to_str(val, obdii_fuel_type_coding_vals, "Unknown (%u)"));
 			proto_tree_add_uint(tree, hf_obdii_mode01_fuel_type, tvb, value_offset, oinfo->value_bytes, val);
@@ -1149,7 +1209,7 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	case OBDII_MODE01_TORQUE_REFERENCE_ENGINE:
 		if ((handled = (oinfo->value_bytes == 2)))
 		{
-			guint16 val = 256 * oinfo->valueA + oinfo->valueB;
+			uint16_t val = 256 * oinfo->valueA + oinfo->valueB;
 
 			col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": %u Nm", val);
 			proto_tree_add_uint(tree, hf_obdii_mode01_torque_reference_engine, tvb, value_offset, oinfo->value_bytes, val);
@@ -1160,28 +1220,85 @@ dissect_obdii_mode_01(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree
 	if (!handled)
 	{
 		/* display raw */
-		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, ": <");
+		col_append_str(oinfo->pinfo->cinfo, COL_INFO, ": <");
 		if (oinfo->value_bytes >= 1) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueA);
 		if (oinfo->value_bytes >= 2) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueB);
 		if (oinfo->value_bytes >= 3) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueC);
 		if (oinfo->value_bytes >= 4) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueD);
-		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " >");
+		col_append_str(oinfo->pinfo->cinfo, COL_INFO, " >");
 	}
 }
+
+static void
+dissect_obdii_mode_07(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree)
+{
+	proto_tree_add_item(tree, hf_obdii_raw_value, tvb, OBDII_MODE07_DATA_OFF, oinfo->value_bytes, ENC_NA);
+
+	/* display raw */
+	col_append_str(oinfo->pinfo->cinfo, COL_INFO, ": <");
+	if (oinfo->value_bytes >= 1) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueA);
+	if (oinfo->value_bytes >= 2) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueB);
+	if (oinfo->value_bytes >= 3) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueC);
+	if (oinfo->value_bytes >= 4) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueD);
+	if (oinfo->value_bytes >= 5) col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " %.2X", oinfo->valueE);
+	col_append_str(oinfo->pinfo->cinfo, COL_INFO, " >");
+}
+
+static void
+dissect_obdii_mode_09(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree)
+{
+	uint8_t pid = tvb_get_uint8(tvb, OBDII_PID_POS);
+	int value_offset;
+
+	col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, "- %s", val_to_str_ext(pid, &obdii_mode09_pid_vals_ext, "Unknown (%.2x)"));
+	proto_tree_add_uint(tree, hf_obdii_mode09_pid, tvb, OBDII_PID_POS, 1, pid);
+
+	value_offset = OBDII_VAL_OFF;
+	oinfo->value_offset = value_offset;
+
+	switch (pid)
+	{
+	case OBDII_MODE09_PIDS_SUPPORT00:
+		proto_tree_add_item(tree, hf_obdii_raw_value, tvb, OBDII_VAL_OFF, oinfo->value_bytes, ENC_NA);
+		break;
+	case OBDII_MODE09_VIN02:
+		proto_tree_add_item(tree, hf_obdii_vin, tvb, OBDII_VAL_OFF+1, oinfo->value_bytes-1, ENC_ASCII);
+		break;
+	case OBDII_MODE09_CALIBRATION_ID04:
+	case OBDII_MODE09_CAL_VER_NUMBERS06:
+	case OBDII_MODE09_PERFORMANCE_SPARK08:
+		proto_tree_add_item(tree, hf_obdii_raw_value, tvb, OBDII_VAL_OFF, oinfo->value_bytes, ENC_NA);
+		break;
+	case OBDII_MODE09_ECU_NAME0A:
+		proto_tree_add_item(tree, hf_obdii_ecu_name, tvb, OBDII_VAL_OFF+1, oinfo->value_bytes-1, ENC_ASCII);
+		break;
+	case OBDII_MODE09_PERFORMANCE_COMPRESSION0B:
+	default:
+		proto_tree_add_item(tree, hf_obdii_raw_value, tvb, OBDII_VAL_OFF, oinfo->value_bytes, ENC_NA);
+		break;
+	}
+}
+
 
 static int
 dissect_obdii_query(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *tree)
 {
-	guint16 pid;
+	uint16_t pid;
 	int pid_len;
 	const char *mode_str;
 	const char *pid_str;
 
 	pid_len = oinfo->data_bytes - 1;
-	if (pid_len == 1)
-		pid  = tvb_get_guint8(tvb, 2);
+	if (pid_len == 0)
+	{
+		if (oinfo->mode != 0x04 && oinfo->mode != 0x07)
+			return 0;
+		pid = 0; /* Should never be required but set to satisfy petri-dish */
+	}
+	else if (pid_len == 1)
+		pid  = tvb_get_uint8(tvb, OBDII_PID_POS);
 	else if (pid_len == 2)
-		pid = tvb_get_ntohs(tvb, 2);
+		pid = tvb_get_ntohs(tvb, OBDII_PID_POS);
 	else
 		return 0;
 
@@ -1191,15 +1308,27 @@ dissect_obdii_query(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tree *
 	{
 	case 0x01:
 		pid_str = val_to_str_ext(pid, &obdii_mode01_pid_vals_ext, "Unknown (%.2x)");
-		proto_tree_add_uint(tree, hf_obdii_mode01_pid, tvb, 2, pid_len, pid);
+		proto_tree_add_uint(tree, hf_obdii_mode01_pid, tvb, OBDII_PID_POS, pid_len, pid);
+		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " Request[%.3x] %s - %s", oinfo->can_id, mode_str, pid_str);
+		break;
+
+	case 0x04:
+	case 0x07:
+		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " Request[%.3x] %s", oinfo->can_id, mode_str);
+		break;
+
+	case 0x09:
+		pid_str = val_to_str_ext(pid, &obdii_mode09_pid_vals_ext, "Unknown (%.2x)");
+		proto_tree_add_uint(tree, hf_obdii_mode09_pid, tvb, OBDII_PID_POS, pid_len, pid);
+		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " Request[%.3x] %s - %s", oinfo->can_id, mode_str, pid_str);
 		break;
 
 	default:
 		pid_str = wmem_strdup_printf(wmem_packet_scope(), "Unknown (%.2x)", pid);
+		col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " Request[%.3x] %s - %s", oinfo->can_id, mode_str, pid_str);
 		break;
 	}
 
-	col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, " Request[%.3x] %s - %s", oinfo->can_id, mode_str, pid_str);
 	return tvb_captured_length(tvb);
 }
 
@@ -1208,54 +1337,95 @@ dissect_obdii_response(tvbuff_t *tvb, struct obdii_packet_info *oinfo, proto_tre
 {
 	col_append_fstr(oinfo->pinfo->cinfo, COL_INFO, "Response[%.3x] %s ", oinfo->can_id, val_to_str(oinfo->mode, obdii_mode_vals, "Unknown (%.2x)"));
 
-	oinfo->value_bytes = 1 + (oinfo->data_bytes - 3);
+	if (oinfo->mode == 0x04 && oinfo->data_bytes == 0x01) {
+		return tvb_captured_length(tvb);
+	}
 
-	if (oinfo->value_bytes >= 1) oinfo->valueA = tvb_get_guint8(tvb, 3);
-	if (oinfo->value_bytes >= 2) oinfo->valueB = tvb_get_guint8(tvb, 4);
-	if (oinfo->value_bytes >= 3) oinfo->valueC = tvb_get_guint8(tvb, 5);
-	if (oinfo->value_bytes >= 4) oinfo->valueD = tvb_get_guint8(tvb, 6);
+	oinfo->value_bytes = oinfo->data_bytes - OBDII_VAL_OFF;
+
+	if (oinfo->value_bytes >= 1) oinfo->valueA = tvb_get_uint8(tvb, OBDII_VAL_OFF);
+	if (oinfo->value_bytes >= 2) oinfo->valueB = tvb_get_uint8(tvb, OBDII_VAL_OFF + 1);
+	if (oinfo->value_bytes >= 3) oinfo->valueC = tvb_get_uint8(tvb, OBDII_VAL_OFF + 2);
+	if (oinfo->value_bytes >= 4) oinfo->valueD = tvb_get_uint8(tvb, OBDII_VAL_OFF + 3);
+	if (oinfo->value_bytes >= 5) oinfo->valueE = tvb_get_uint8(tvb, OBDII_VAL_OFF + 4);
 
 	switch (oinfo->mode)
 	{
 	case 0x01:
 		dissect_obdii_mode_01(tvb, oinfo, tree);
 		break;
+	case 0x07:
+		dissect_obdii_mode_07(tvb, oinfo, tree);
+		break;
+	case 0x09:
+		dissect_obdii_mode_09(tvb, oinfo, tree);
 	}
 
 	return tvb_captured_length(tvb);
 }
 
 static int
-dissect_obdii(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+dissect_obdii_iso15765(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-	struct can_identifier *can_id = (struct can_identifier *) data;
+	iso15765_info_t iso15765_info;
+	uint32_t        can_id_only;
 	struct obdii_packet_info oinfo;
 
 	proto_tree *obdii_tree;
 	proto_item *ti;
 
-	guint8 data_bytes;
-	guint8 mode;
+	uint8_t data_bytes;
+	uint8_t mode;
+	bool id_is_query;
+	bool id_is_response;
+
+	DISSECTOR_ASSERT(data);
+
+	iso15765_info = *((iso15765_info_t *) data);
+	if (iso15765_info.bus_type != ISO15765_TYPE_CAN && iso15765_info.bus_type != ISO15765_TYPE_CAN_FD) {
+		return 0;
+	}
+
+	can_id_only = iso15765_info.id & CAN_EFF_MASK;
+
+	/* If we're using 29bit extended ID's then use extended ID parameters */
+	if (iso15765_info.id & CAN_EFF_FLAG)
+	{
+		id_is_query = (can_id_only == ODBII_CAN_QUERY_ID_EFF);
+		id_is_response = ((((can_id_only & ~ODBII_CAN_RESPONSE_ID_LOWER_MASK_EFF) ^ ODBII_CAN_RESPONSE_ID_LOWER_MIN_EFF) == 0) ||
+			(((can_id_only & ~ODBII_CAN_RESPONSE_ID_UPPER_MASK_EFF) ^ ODBII_CAN_RESPONSE_ID_UPPER_MIN_EFF) == 0)) ? 1 : 0;
+	}
+	else
+	{
+		id_is_query = (can_id_only == ODBII_CAN_QUERY_ID_SFF);
+		id_is_response = ((((can_id_only & ~ODBII_CAN_RESPONSE_ID_LOWER_MASK_SFF) ^ ODBII_CAN_RESPONSE_ID_LOWER_MIN_SFF) == 0) ||
+			(((can_id_only & ~ODBII_CAN_RESPONSE_ID_UPPER_MASK_SFF) ^ ODBII_CAN_RESPONSE_ID_UPPER_MIN_SFF) == 0));
+	}
 
 	/* validate */
-	if (!can_id || !(can_id->id == ODBII_CAN_QUERY_ID || (can_id->id >= ODBII_CAN_RESPONSE_ID_MIN && can_id->id <= ODBII_CAN_RESPONSE_ID_MAX)))
+	if (iso15765_info.id & (CAN_ERR_FLAG | CAN_RTR_FLAG))
 		return 0;
 
-	if (tvb_reported_length(tvb) != 8)
+	if (!(id_is_query || id_is_response))
 		return 0;
 
-	data_bytes = tvb_get_guint8(tvb, 0);
-	mode = tvb_get_guint8(tvb, 1);
+	data_bytes = tvb_reported_length(tvb);
+	mode = tvb_get_uint8(tvb, OBDII_MODE_POS);
 
-	if (can_id->id == ODBII_CAN_QUERY_ID)
+	/* Mode 7 is a datalength of 1, all other queries either 2 or 3 bytes */
+	if (id_is_query)
 	{
-		if (!(data_bytes == 2 || data_bytes == 3))
+		if (iso15765_info.len != 8)
+			expert_add_info(pinfo, NULL, &ei_obdii_padding);
+		if (data_bytes == 0 || data_bytes > 3)
+			return 0;
+		if (mode > 0x0a)
 			return 0;
 	}
 
-	if ((can_id->id >= ODBII_CAN_RESPONSE_ID_MIN && can_id->id <= ODBII_CAN_RESPONSE_ID_MAX))
+	if (id_is_response)
 	{
-		if (!(data_bytes >= 3 && data_bytes <= 7))
+		if (mode != 0x44 && data_bytes < 2)
 			return 0;
 		if (mode < 0x40)
 			return 0;
@@ -1269,19 +1439,18 @@ dissect_obdii(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 	ti = proto_tree_add_item(tree, proto_obdii, tvb, 0, -1, ENC_NA);
 	obdii_tree = proto_item_add_subtree(ti, ett_obdii);
 
-	proto_tree_add_item(obdii_tree, hf_obdii_data_bytes, tvb, 0, 1, ENC_NA);
-	proto_tree_add_uint(obdii_tree, hf_obdii_mode, tvb, 1, 1, mode);
+	proto_tree_add_uint(obdii_tree, hf_obdii_mode, tvb, OBDII_MODE_POS, 1, mode);
 
 	memset(&oinfo, 0, sizeof(oinfo));
 	oinfo.pinfo = pinfo;
-	oinfo.can_id = can_id->id;
+	oinfo.can_id = can_id_only;
 	oinfo.data_bytes = data_bytes;
 	oinfo.mode = mode;
 
-	if (can_id->id == ODBII_CAN_QUERY_ID)
+	if (id_is_query)
 		return dissect_obdii_query(tvb, &oinfo, obdii_tree);
 
-	if (can_id->id >= ODBII_CAN_RESPONSE_ID_MIN && can_id->id <= ODBII_CAN_RESPONSE_ID_MAX)
+	if (id_is_response)
 		return dissect_obdii_response(tvb, &oinfo, obdii_tree);
 
 	/* never here */
@@ -1290,20 +1459,65 @@ dissect_obdii(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 	return tvb_captured_length(tvb);
 }
 
+static int
+dissect_obdii_uds(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
+    struct obdii_packet_info  oinfo;
+
+    proto_tree               *obdii_tree;
+    proto_item               *ti;
+
+    uint8_t                   data_bytes;
+    uint8_t                   mode;
+    bool                      response;
+
+    data_bytes = tvb_reported_length(tvb);
+    mode = tvb_get_uint8(tvb, OBDII_MODE_POS);
+    response = (mode & 0x40) == 0x40;
+    mode = mode & 0xbf;
+
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "OBD-II");
+    col_clear(pinfo->cinfo, COL_INFO);
+
+    ti = proto_tree_add_item(tree, proto_obdii, tvb, 0, -1, ENC_NA);
+    obdii_tree = proto_item_add_subtree(ti, ett_obdii);
+
+    proto_tree_add_uint(obdii_tree, hf_obdii_mode, tvb, OBDII_MODE_POS, 1, mode);
+
+    memset(&oinfo, 0, sizeof(oinfo));
+    oinfo.pinfo = pinfo;
+    oinfo.can_id = 0;
+    oinfo.data_bytes = data_bytes;
+    oinfo.mode = mode;
+
+    if (!response) {
+        return dissect_obdii_query(tvb, &oinfo, obdii_tree);
+    } else {
+        return dissect_obdii_response(tvb, &oinfo, obdii_tree);
+    }
+
+    /* never here */
+    DISSECTOR_ASSERT_NOT_REACHED();
+
+    return tvb_captured_length(tvb);
+}
+
+static bool
+dissect_obdii_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    return dissect_obdii_iso15765(tvb, pinfo, tree, data) != 0;
+}
+
 void
 proto_register_obdii(void)
 {
 	static hf_register_info hf[] = {
-		{ &hf_obdii_data_bytes,
-			{ "Number of data bytes", "obd-ii.data_bytes", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL },
-		},
 		{ &hf_obdii_mode,
 			{ "Mode", "obd-ii.mode", FT_UINT8, BASE_HEX, VALS(obdii_mode_vals), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_raw_value,
 			{ "Raw value", "obd-ii.raw_value", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL },
 		},
-
 		{ &hf_obdii_mode01_pid,
 			{ "PID", "obd-ii.mode01_pid", FT_UINT16, BASE_HEX | BASE_EXT_STRING, VALS_EXT_PTR(&obdii_mode01_pid_vals_ext), 0x0, NULL, HFILL },
 		},
@@ -1320,43 +1534,43 @@ proto_register_obdii(void)
 			{ "Fuel system 2 status", "obd-ii.mode01_fuel_system2_status", FT_UINT8, BASE_HEX, VALS(obdii_fuel_system_status_vals), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_engine_load,
-			{ "Calculated engine load", "obd-ii.mode01_engine_load", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Calculated engine load", "obd-ii.mode01_engine_load", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_engine_coolant_temp,
-			{ "Engine coolant temperature", "obd-ii.mode01_engine_coolant_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Engine coolant temperature", "obd-ii.mode01_engine_coolant_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_short_term_fuel_bank1,
-			{ "Short term fuel trim (Bank 1)", "obd-ii.mode01_short_term_fuel_bank1", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Short term fuel trim (Bank 1)", "obd-ii.mode01_short_term_fuel_bank1", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_short_term_fuel_bank2,
-			{ "Short term fuel trim (Bank 2)", "obd-ii.mode01_short_term_fuel_bank2", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Short term fuel trim (Bank 2)", "obd-ii.mode01_short_term_fuel_bank2", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_long_term_fuel_bank1,
-			{ "Long term fuel trim (Bank 1)", "obd-ii.mode01_long_term_fuel_bank1", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Long term fuel trim (Bank 1)", "obd-ii.mode01_long_term_fuel_bank1", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_long_term_fuel_bank2,
-			{ "Long term fuel trim (Bank 2)", "obd-ii.mode01_long_term_fuel_bank2", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Long term fuel trim (Bank 2)", "obd-ii.mode01_long_term_fuel_bank2", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_fuel_pressure,
-			{ "Fuel pressure", "obd-ii.mode01_fuel_pressure", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL },
+			{ "Fuel pressure", "obd-ii.mode01_fuel_pressure", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_engine_rpm,
-			{ "Engine RPM", "obd-ii.mode01_engine_rpm", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_revolutions_per_minute, 0x0, NULL, HFILL },
+			{ "Engine RPM", "obd-ii.mode01_engine_rpm", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_revolutions_per_minute), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_vehicle_speed,
-			{ "Vehicle Speed", "obd-ii.mode01_vehicle_speed", FT_UINT8, BASE_DEC | BASE_UNIT_STRING, &units_kmh, 0x0, NULL, HFILL },
+			{ "Vehicle Speed", "obd-ii.mode01_vehicle_speed", FT_UINT8, BASE_DEC | BASE_UNIT_STRING, UNS(&units_kmh), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_timing_advance,
-			{ "Timing advance", "obd-ii.mode01_timing_advance", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_degree_btdc, 0x0, NULL, HFILL },
+			{ "Timing advance", "obd-ii.mode01_timing_advance", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_degree_btdc), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_intake_air_temp,
-			{ "Intake air temperature", "obd-ii.mode01_intake_air_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Intake air temperature", "obd-ii.mode01_intake_air_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_maf_air_flow_rate,
-			{ "MAF air flow rate", "obd-ii.mode01_maf_air_flow_rate", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_grams_per_second, 0x0, NULL, HFILL },
+			{ "MAF air flow rate", "obd-ii.mode01_maf_air_flow_rate", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_grams_per_second), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_throttle_position,
-			{ "Throttle position", "obd-ii.mode01_throttle_position", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Throttle position", "obd-ii.mode01_throttle_position", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_secondary_air_status,
 			{ "Commanded secondary air status", "obd-ii.mode01_secondary_air_status", FT_UINT8, BASE_HEX, VALS(obdii_secondary_air_status_vals), 0x0, NULL, HFILL },
@@ -1365,40 +1579,40 @@ proto_register_obdii(void)
 			{ "OBD Standards", "obd-ii.mode01_obd_standards", FT_UINT8, BASE_DEC, VALS(obdii_standards_vals), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_engine_uptime,
-			{ "Run time since engine start", "obd-ii.mode01_engine_uptime", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_seconds, 0x0, NULL, HFILL }
+			{ "Run time since engine start", "obd-ii.mode01_engine_uptime", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_seconds), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_fuel_rail_pressure,
-			{ "Fuel Rail Pressure", "obd-ii.mode01_fuel_rail_pressure", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL }
+			{ "Fuel Rail Pressure", "obd-ii.mode01_fuel_rail_pressure", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_fuel_rail_gauge_pressure,
-			{ "Fuel Rail Gauge Pressure", "obd-ii.mode01_fuel_rail_gaguge_pressure", FT_UINT24, BASE_DEC | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL }
+			{ "Fuel Rail Gauge Pressure", "obd-ii.mode01_fuel_rail_gauge_pressure", FT_UINT24, BASE_DEC | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_fuel_rail_absolute_pressure,
-			{ "Fuel rail absolute pressure", "obd-ii.mode01_fuel_rail_absolute_pressure", FT_UINT24, BASE_DEC | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL }
+			{ "Fuel rail absolute pressure", "obd-ii.mode01_fuel_rail_absolute_pressure", FT_UINT24, BASE_DEC | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_commanded_egr,
-			{ "Commanded EGR", "obd-ii.mode01_commanded_egr", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL }
+			{ "Commanded EGR", "obd-ii.mode01_commanded_egr", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_egr_error,
-			{ "EGR Error", "obd-ii.mode01_egr_error", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL }
+			{ "EGR Error", "obd-ii.mode01_egr_error", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_commanded_evap_purge,
-			{ "Commanded evaporative purge", "obd-ii.mode01_commanded_evap_purge", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL }
+			{ "Commanded evaporative purge", "obd-ii.mode01_commanded_evap_purge", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_fuel_tank_level_input,
-			{ "Fuel Tank Level Input", "obd-ii.mode01_fuel_tank_level_input", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL }
+			{ "Fuel Tank Level Input", "obd-ii.mode01_fuel_tank_level_input", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_warm_ups,
 			{ "Warm-ups since codes cleared", "obd-ii.mode01_warm_ups", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_evap_system_vapor_pressure,
-			{ "Evap. System Vapor Pressure", "obd-ii.mode01_evap_system_vapor_pressure", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL }
+			{ "Evap. System Vapor Pressure", "obd-ii.mode01_evap_system_vapor_pressure", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_absolute_barometric_pressure,
-			{ "Absolute Barometric Pressure", "obd-ii.mode01_absolute_barometric_pressure", FT_UINT8, BASE_DEC | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL }
+			{ "Absolute Barometric Pressure", "obd-ii.mode01_absolute_barometric_pressure", FT_UINT8, BASE_DEC | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_intake_manifold_absolute_pressure,
-			{ "Intake manifold absolute pressure", "obd-ii.mode01_intake_manifold_absolute_pressure", FT_UINT8, BASE_DEC | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL }
+			{ "Intake manifold absolute pressure", "obd-ii.mode01_intake_manifold_absolute_pressure", FT_UINT8, BASE_DEC | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_oxygen_sensor_id,
 			{ "Oxygen Sensor ID", "obd-ii.mode01_oxygen_sensor_id", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }
@@ -1407,100 +1621,115 @@ proto_register_obdii(void)
 			{ "Fuel-Air Equivalence Ratio", "obd-ii.mode01_oxygen_sensor_fuel_air_ratio", FT_DOUBLE, BASE_NONE, NULL, 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_oxygen_sensor_voltage,
-			{ "Voltage", "obd-ii.mode01_oxygen_sensor_voltage", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_volt, 0x0, NULL, HFILL }
+			{ "Voltage", "obd-ii.mode01_oxygen_sensor_voltage", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_volt), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_oxygen_sensor_current,
-			{ "Current", "obd-ii.mode01_oxygen_sensor_current", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_milliamps, 0x0, NULL, HFILL }
+			{ "Current", "obd-ii.mode01_oxygen_sensor_current", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_milliamps), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_distance_traveled_with_mil,
-			{ "Distance traveled with MIL on", "obd-ii.mode01_distance_traveled_with_mil", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_km, 0x0, NULL, HFILL }
+			{ "Distance traveled with MIL on", "obd-ii.mode01_distance_traveled_with_mil", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_km), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_distance_traveled_since_code_clear,
-			{ "Distance traveled since codes cleared", "obd-ii.mode01_distance_traveled_since_code_clear", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_km, 0x0, NULL, HFILL }
+			{ "Distance traveled since codes cleared", "obd-ii.mode01_distance_traveled_since_code_clear", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_km), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_time_run_with_mil,
-			{ "Time run with MIL on", "obd-ii.mode01_time_run_with_mil", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_minute_minutes, 0x0, NULL, HFILL }
+			{ "Time run with MIL on", "obd-ii.mode01_time_run_with_mil", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_minute_minutes), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_time_since_trouble_code_clear,
-			{ "Time since trouble codes cleared", "obd-ii.mode01_time_since_trouble_code_clear", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_minute_minutes, 0x0, NULL, HFILL }
+			{ "Time since trouble codes cleared", "obd-ii.mode01_time_since_trouble_code_clear", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_minute_minutes), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_fuel_type,
 			{ "Fuel type", "obd-ii.mode01_fuel_type", FT_UINT8, BASE_DEC, VALS(obdii_fuel_type_coding_vals), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_control_module_voltage,
-			{ "Control module voltage", "obd-ii.mode01_control_module_voltage", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_volt, 0x0, NULL, HFILL },
+			{ "Control module voltage", "obd-ii.mode01_control_module_voltage", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_volt), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_absolute_load_value,
-			{ "Absolute load value", "obd-ii.mode01_absolute_load_value", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Absolute load value", "obd-ii.mode01_absolute_load_value", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_fuel_air_commanded_equiv_ratio,
 			{ "Fuel-Air commanded equivalence ratio", "obd-ii.mode01_fuel_air_commanded_equiv_ratio", FT_DOUBLE, BASE_NONE, NULL, 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_relative_throttle_position,
-			{ "Relative throttle position", "obd-ii.mode01_relative_throttle_position", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Relative throttle position", "obd-ii.mode01_relative_throttle_position", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_catalyst_temp_11,
-			{ "Catalyst Temperature (Bank 1, Sensor 1)", "obd-ii.mode01_catalyst_temp_11", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Catalyst Temperature (Bank 1, Sensor 1)", "obd-ii.mode01_catalyst_temp_11", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_catalyst_temp_21,
-			{ "Catalyst Temperature (Bank 2, Sensor 1)", "obd-ii.mode01_catalyst_temp_21", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Catalyst Temperature (Bank 2, Sensor 1)", "obd-ii.mode01_catalyst_temp_21", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_catalyst_temp_12,
-			{ "Catalyst Temperature (Bank 1, Sensor 2)", "obd-ii.mode01_catalyst_temp_12", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Catalyst Temperature (Bank 1, Sensor 2)", "obd-ii.mode01_catalyst_temp_12", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_catalyst_temp_22,
-			{ "Catalyst Temperature (Bank 2, Sensor 2)", "obd-ii.mode01_catalyst_temp_22", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Catalyst Temperature (Bank 2, Sensor 2)", "obd-ii.mode01_catalyst_temp_22", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_ambient_air_temp,
-			{ "Ambient air temperature", "obd-ii.mode01_ambient_air_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Ambient air temperature", "obd-ii.mode01_ambient_air_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_absolute_throttle_position_B,
-			{ "Absolute throttle position B", "obd-ii.mode01_bsolute_throttle_position_B", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Absolute throttle position B", "obd-ii.mode01_absolute_throttle_position_B", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_absolute_throttle_position_C,
-			{ "Absolute throttle position C", "obd-ii.mode01_absolute_throttle_position_C", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Absolute throttle position C", "obd-ii.mode01_absolute_throttle_position_C", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_accelerator_pedal_position_D,
-			{ "Accelerator pedal position D", "obd-ii.mode01_accelerator_pedal_position_D", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Accelerator pedal position D", "obd-ii.mode01_accelerator_pedal_position_D", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_accelerator_pedal_position_E,
-			{ "Accelerator pedal position E", "obd-ii.mode01_accelerator_pedal_position_E", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Accelerator pedal position E", "obd-ii.mode01_accelerator_pedal_position_E", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_accelerator_pedal_position_F,
-			{ "Accelerator pedal position F", "obd-ii.mode01_accelerator_pedal_position_F", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Accelerator pedal position F", "obd-ii.mode01_accelerator_pedal_position_F", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_commanded_throttle_actuator,
-			{ "Commanded throttle actuator", "obd-ii.mode01_commanded_throttle_actuator", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Commanded throttle actuator", "obd-ii.mode01_commanded_throttle_actuator", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_ethanol_fuel,
-			{ "Ethanol fuel %", "obd-ii.mode01_ethanol_fuel", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Ethanol fuel %", "obd-ii.mode01_ethanol_fuel", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_absolute_evap_system_vapor_pressure,
-			{ "Absolute Evap system Vapor Pressure", "obd-ii.mode01_absolute_evap_system_vapor_pressure", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_kilopascal, 0x0, NULL, HFILL }
+			{ "Absolute Evap system Vapor Pressure", "obd-ii.mode01_absolute_evap_system_vapor_pressure", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_kilopascal), 0x0, NULL, HFILL }
 		},
 		{ &hf_obdii_mode01_relative_accelerator_pedal_position,
-			{ "Relative accelerator pedal position", "obd-ii.mode01_relative_accelerator_pedal_position", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Relative accelerator pedal position", "obd-ii.mode01_relative_accelerator_pedal_position", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_hybrid_battery_remaining_life,
-			{ "Hybrid battery pack remaining life", "obd-ii.mode01_hybrid_battery_remaining_life", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Hybrid battery pack remaining life", "obd-ii.mode01_hybrid_battery_remaining_life", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_engine_oil_temp,
-			{ "Engine oil temperature", "obd-ii.mode01_engine_oil_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, &units_degree_celsius, 0x0, NULL, HFILL },
+			{ "Engine oil temperature", "obd-ii.mode01_engine_oil_temp", FT_INT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_fuel_injection_timing,
-			{ "Fuel injection timing", "obd-ii.mode01_fuel_injection_timing", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_degree_degrees, 0x0, NULL, HFILL },
+			{ "Fuel injection timing", "obd-ii.mode01_fuel_injection_timing", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_degree_degrees), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_engine_fuel_rate,
-			{ "Engine fuel rate", "obd-ii.mode01_engine_fuel_rate", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, &units_liter_per_hour, 0x0, NULL, HFILL },
+			{ "Engine fuel rate", "obd-ii.mode01_engine_fuel_rate", FT_DOUBLE, BASE_NONE | BASE_UNIT_STRING, UNS(&units_liter_per_hour), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_torque_driver_demand_engine,
-			{ "Driver's demand engine - percent torque", "obd-ii.mode01_torque_driver_demand_engine", FT_INT16, BASE_DEC | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Driver's demand engine - percent torque", "obd-ii.mode01_torque_driver_demand_engine", FT_INT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_torque_actual_engine,
-			{ "Actual engine - percent torque", "obd-ii.mode01_torque_actual_engine", FT_INT16, BASE_DEC | BASE_UNIT_STRING, &units_percent, 0x0, NULL, HFILL },
+			{ "Actual engine - percent torque", "obd-ii.mode01_torque_actual_engine", FT_INT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_percent), 0x0, NULL, HFILL },
 		},
 		{ &hf_obdii_mode01_torque_reference_engine,
-			{ "Engine reference torque", "obd-ii.mode01_torque_reference_engine", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, &units_newton_metre, 0x0, NULL, HFILL },
+			{ "Engine reference torque", "obd-ii.mode01_torque_reference_engine", FT_UINT16, BASE_DEC | BASE_UNIT_STRING, UNS(&units_newton_metre), 0x0, NULL, HFILL },
+		},
+		{ &hf_obdii_mode09_pid,
+			{ "PID", "obd-ii.mode09_pid", FT_UINT16, BASE_HEX | BASE_EXT_STRING, VALS_EXT_PTR(&obdii_mode09_pid_vals_ext), 0x0, NULL, HFILL },
+		},
+		{ &hf_obdii_mode09_supported_pid,
+			{ "Supported PID", "obd-ii.mode09_supported_pid", FT_UINT8, BASE_HEX | BASE_EXT_STRING, VALS_EXT_PTR(&obdii_mode09_pid_vals_ext), 0x0, NULL, HFILL },
+		},
+		{ &hf_obdii_mode09_unsupported_pid,
+			{ "NOT Supported PID", "obd-ii.mode09_unsupported_pid", FT_UINT8, BASE_HEX | BASE_EXT_STRING, VALS_EXT_PTR(&obdii_mode09_pid_vals_ext), 0x0, NULL, HFILL },
+		},
+		{ &hf_obdii_vin,
+			{ "VIN", "obd-ii.VIN", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL },
+		},
+		{ &hf_obdii_ecu_name,
+			{ "ECU Name", "obd-ii.ecu_name", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL },
 		},
 	};
 
@@ -1508,23 +1737,36 @@ proto_register_obdii(void)
 		&ett_obdii
 	};
 
+	struct expert_module *expert_obdii;
+
+	static ei_register_info obdii_ei[] =
+	{
+		{ &ei_obdii_padding,
+			{ "obdii.padding", PI_PROTOCOL, PI_WARN, "OBD2 Spec requires 8 byte, zero padded frames. Some tools/ecus may ignore frames that don't follow this rule.", EXPFILL }},
+	};
+
 	proto_obdii = proto_register_protocol("OBD-II PID", "OBD-II", "obd-ii");
 	proto_register_field_array(proto_obdii, hf, array_length(hf));
 	proto_register_subtree_array(ett, array_length(ett));
+
+	expert_obdii = expert_register_protocol(proto_obdii);
+	expert_register_field_array(expert_obdii, obdii_ei, array_length(obdii_ei));
+
+	obdii_handle = register_dissector("obd-ii", dissect_obdii_iso15765, proto_obdii);
+	register_dissector("obd-ii-uds", dissect_obdii_uds, proto_obdii);
 }
 
 void
 proto_reg_handoff_obdii(void)
 {
-	dissector_handle_t obdii_handle;
+	dissector_add_for_decode_as("iso15765.subdissector", obdii_handle);
 
-	obdii_handle = create_dissector_handle(dissect_obdii, proto_obdii);
-
-	dissector_add_for_decode_as("can.subdissector", obdii_handle);
+	/* heuristics default off since these standardized IDs might be reused outside automotive systems */
+	heur_dissector_add("can", dissect_obdii_heur, "OBD-II Heuristic", "obd-ii_can_heur", proto_obdii, HEURISTIC_DISABLE);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

@@ -31,8 +31,7 @@
 #include <epan/conversation.h>
 #include <epan/expert.h>
 #include <epan/prefs.h>
-
-#include <stdio.h>
+#include <epan/charsets.h>
 
 void proto_register_hl7(void);
 void proto_reg_handoff_hl7(void);
@@ -53,31 +52,30 @@ struct msh {                    // typical/default values
 };
 
 dissector_handle_t hl7_handle;
-dissector_handle_t hl7_heur_handle;
 
-static int proto_hl7 = -1;
+static int proto_hl7;
 
-static gint hf_hl7_raw = -1;
-static gint hf_hl7_raw_segment = -1;
-static gint hf_hl7_llp_sob = -1;
-static gint hf_hl7_llp_eob = -1;
-static gint hf_hl7_message_type = -1;
-static gint hf_hl7_event_type = -1;
-static gint hf_hl7_segment = -1;
-static gint hf_hl7_field = -1;
+static int hf_hl7_raw;
+static int hf_hl7_raw_segment;
+static int hf_hl7_llp_sob;
+static int hf_hl7_llp_eob;
+static int hf_hl7_message_type;
+static int hf_hl7_event_type;
+static int hf_hl7_segment;
+static int hf_hl7_field;
 
-static gint ett_hl7 = -1;
-static gint ett_hl7_segment = -1;
+static int ett_hl7;
+static int ett_hl7_segment;
 
-static expert_field ei_hl7_malformed = EI_INIT;
+static expert_field ei_hl7_malformed;
 
 /* FF: global_hl7_raw determines whether we are going to display
  * the raw text of the HL7 message (like SIP and MEGACO dissectors) */
-static gboolean global_hl7_raw = FALSE;
+static bool global_hl7_raw;
 
 /* FF: global_hl7_llp determines whether we are going to display
  * the LLP block markers */
-static gboolean global_hl7_llp = FALSE;
+static bool global_hl7_llp;
 
 /* as per Health Level Seven, Version 2.6, appendix A */
 static const string_string hl7_msg_type_vals[] = {
@@ -125,7 +123,7 @@ static const string_string hl7_msg_type_vals[] = {
     { "ORM", "Pharmacy/treatment order" },
     { "ORN", "Non-stock requisition - General order acknowledgment" },
     { "ORP", "Pharmacy/treatment order acknowledgment" },
-    { "ORR", "General order response response to any ORM" },
+    { "ORR", "General order response message response to any ORM" },
     { "ORS", "Stock requisition - Order acknowledgment" },
     { "ORU", "Unsolicited transmission of an observation" },
     { "OSQ", "Query response for order status" },
@@ -677,19 +675,19 @@ static const string_string hl7_event_type_vals[] = {
     { NULL, NULL }
 };
 
-static gboolean
+static bool
 event_present(const struct msh *msh) {
-    return msh->trigger_event[0] == 0 ? FALSE : TRUE;
+    return msh->trigger_event[0] == 0 ? false : true;
 }
 
 static int
-parse_msh(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, gint offset,
+parse_msh(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, int offset,
           struct msh *msh)
 {
-    gint segment_len = -1;
-    gint end_of_segment_offset = -1;
-    gint field_separator_offset = -1;
-    gint field_number = 0;
+    int segment_len = -1;
+    int end_of_segment_offset = -1;
+    int field_separator_offset = -1;
+    int field_number = 0;
 
     /* initialize msh */
     msh->trigger_event[0] ='\0';
@@ -698,22 +696,22 @@ parse_msh(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, gint offset,
     /* e.g. MSH|^~\&|||||||XZY^IJK|||||||\r */
     field_number = 1;
     offset += 3; // skip 'MSH'
-    msh->field_separator = tvb_get_guint8(tvb, offset);
+    msh->field_separator = tvb_get_uint8(tvb, offset);
     offset += 1;
-    msh->component_separator = tvb_get_guint8(tvb, offset);
+    msh->component_separator = tvb_get_uint8(tvb, offset);
     offset += 1;
-    msh->repetition_separator = tvb_get_guint8(tvb, offset);
+    msh->repetition_separator = tvb_get_uint8(tvb, offset);
     offset += 1;
-    msh->escape_character = tvb_get_guint8(tvb, offset);
+    msh->escape_character = tvb_get_uint8(tvb, offset);
     offset += 1;
-    msh->subcomponent_separator = tvb_get_guint8(tvb, offset);
+    msh->subcomponent_separator = tvb_get_uint8(tvb, offset);
     offset += 1;
     field_number++;
 
     /* FF: even if HL7 2.3.1 says each segment must be terminated with CR
      * we look either for a CR or an LF or both (I did find a system out
      * there that uses both) */
-    segment_len = tvb_find_line_end(tvb, offset, -1, NULL, TRUE);
+    segment_len = tvb_find_line_end(tvb, offset, -1, NULL, true);
     if (segment_len == -1) {
         expert_add_info_format(pinfo, NULL, &ei_hl7_malformed,
                                "Segments must be terminated with CR");
@@ -723,7 +721,7 @@ parse_msh(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, gint offset,
 
     while (offset < end_of_segment_offset) {
         field_separator_offset =
-            tvb_find_guint8(tvb, offset, end_of_segment_offset - offset,
+            tvb_find_uint8(tvb, offset, end_of_segment_offset - offset,
                             msh->field_separator);
         if (field_separator_offset == -1) {
             if (field_number < 9) {
@@ -735,33 +733,27 @@ parse_msh(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, gint offset,
         }
         field_number++;
         offset = field_separator_offset + 1;
-        if (tvb_get_guint8(tvb, offset) == msh->field_separator) {
+        if (tvb_get_uint8(tvb, offset) == msh->field_separator) {
             /* skip the empty field '||' */
             continue;
         }
         if (field_number == 9) { /* 9th field is the message type[^event] */
-            msh->message_type[0] = tvb_get_guint8(tvb, offset);
-            msh->message_type[1] = tvb_get_guint8(tvb, offset + 1);
-            msh->message_type[2] = tvb_get_guint8(tvb, offset + 2);
-            msh->message_type[3] = '\0';
+            tvb_get_raw_bytes_as_string(tvb, offset, msh->message_type, 4);
             if (tree) {
                 proto_item *hidden_item;
                 hidden_item = proto_tree_add_item(tree, hf_hl7_message_type,
                                                   tvb, offset, 3,
-                                                  ENC_ASCII|ENC_NA);
-                PROTO_ITEM_SET_HIDDEN(hidden_item);
+                                                  ENC_ASCII);
+                proto_item_set_hidden(hidden_item);
             }
-            if (tvb_get_guint8(tvb, offset + 3) == msh->component_separator) {
-                msh->trigger_event[0] = tvb_get_guint8(tvb, offset + 4);
-                msh->trigger_event[1] = tvb_get_guint8(tvb, offset + 5);
-                msh->trigger_event[2] = tvb_get_guint8(tvb, offset + 6);
-                msh->trigger_event[3] = '\0';
+            if (tvb_get_uint8(tvb, offset + 3) == msh->component_separator) {
+                tvb_get_raw_bytes_as_string(tvb, offset + 4, msh->trigger_event, 4);
                 if (tree) {
                     proto_item *hidden_item;
                     hidden_item = proto_tree_add_item(tree, hf_hl7_event_type,
                                                       tvb, offset + 4, 3,
-                                                      ENC_ASCII|ENC_NA);
-                    PROTO_ITEM_SET_HIDDEN(hidden_item);
+                                                      ENC_ASCII);
+                    proto_item_set_hidden(hidden_item);
                 }
             }
         }
@@ -771,19 +763,19 @@ parse_msh(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, gint offset,
 
 static void
 dissect_hl7_segment(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree _U_,
-                    gint offset, gint segment_len, gint segment_len_crlf _U_,
+                    int offset, int segment_len, int segment_len_crlf _U_,
                     const struct msh *msh _U_)
 {
     /* segment layout xyz|a|b||||c|d\rxyz|a|b|c||||d... */
     proto_tree *segment_tree = NULL;
     proto_item *ti = NULL;
     char *field_str = NULL;
-    gint end_of_segment_offset = 0;
-    gint field_separator_offset = 0;
-    gint field_num = 0;
-    gint field_len = 0;
-    gint segment_consumed = 0;
-    gboolean last_field = FALSE;
+    int end_of_segment_offset = 0;
+    int field_separator_offset = 0;
+    int field_num = 0;
+    int field_len = 0;
+    int segment_consumed = 0;
+    bool last_field = false;
 
     /* calculate where the segment ends */
     end_of_segment_offset = offset + segment_len;
@@ -795,7 +787,7 @@ dissect_hl7_segment(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree _U_,
 
         /* get next '|' offset */
         field_separator_offset =
-            tvb_find_guint8(tvb, offset,
+            tvb_find_uint8(tvb, offset,
                             segment_len - segment_consumed,
                             msh->field_separator);
 
@@ -803,7 +795,7 @@ dissect_hl7_segment(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree _U_,
             /* we do not have a field separator */
             if (segment_consumed != segment_len) {
                 /* this is the last field */
-                last_field = TRUE;
+                last_field = true;
                 field_len = segment_len - segment_consumed;
                 segment_consumed += field_len + 1;
             } else {
@@ -827,24 +819,24 @@ dissect_hl7_segment(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree _U_,
         /* process the field (the 1st one generate a node in the tree view) */
         if (field_num == 1) {
             char *segment_type_id = NULL;
-            segment_type_id = tvb_get_string_enc(wmem_packet_scope(),
+            segment_type_id = tvb_get_string_enc(pinfo->pool,
                                                  tvb, offset, 3, ENC_ASCII);
             ti = proto_tree_add_item(tree, hf_hl7_segment,
                                      tvb, offset, segment_len_crlf,
-                                     ENC_ASCII|ENC_NA);
+                                     ENC_ASCII);
             proto_item_set_text(ti, "%s (%s)", segment_type_id,
                                 str_to_str(segment_type_id, hl7_seg_type_vals,
                                            "Unknown Segment"));
             segment_tree = proto_item_add_subtree(ti, ett_hl7_segment);
             if (global_hl7_raw) {
                 proto_tree_add_item(segment_tree, hf_hl7_raw_segment, tvb, offset,
-                                    segment_len_crlf, ENC_ASCII|ENC_NA);
+                                    segment_len_crlf, ENC_ASCII);
             }
         }
-        field_str = tvb_get_string_enc(wmem_packet_scope(),
+        field_str = tvb_get_string_enc(pinfo->pool,
                                        tvb, offset, field_len, ENC_ASCII);
         ti = proto_tree_add_item(segment_tree, hf_hl7_field,
-                                 tvb, offset, field_len, ENC_ASCII|ENC_NA);
+                                 tvb, offset, field_len, ENC_ASCII);
         proto_item_set_text(ti, "field %d: %s", field_num, field_str);
 
         /* if this is the last field we are done */
@@ -858,15 +850,15 @@ dissect_hl7_segment(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree _U_,
 }
 
 static void
-dissect_hl7_message(tvbuff_t *tvb, guint tvb_offset, gint len,
+dissect_hl7_message(tvbuff_t *tvb, unsigned tvb_offset, int len,
                     packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    guint offset = tvb_offset;
-    guint sob_offset = offset;
-    guint eob_offset = offset + len - 2;
+    unsigned offset = tvb_offset;
+    unsigned sob_offset = offset;
+    unsigned eob_offset = offset + len - 2;
     proto_tree *hl7_tree = NULL;
     proto_item *ti = NULL;
-    struct msh msh;
+    struct msh msh = {0};
     int ret = 0;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "HL7");
@@ -879,23 +871,12 @@ dissect_hl7_message(tvbuff_t *tvb, guint tvb_offset, gint len,
 
     /* enrich info column */
     if (event_present(&msh)) {
-        if (offset == 0) {
-            col_append_fstr(pinfo->cinfo, COL_INFO, "%s (%s)",
-                            msh.message_type,
-                            msh.trigger_event);
-        } else {
-            col_append_fstr(pinfo->cinfo, COL_INFO, ", %s (%s)",
-                            msh.message_type,
-                            msh.trigger_event);
-        }
+        col_append_sep_fstr(pinfo->cinfo, COL_INFO, NULL, "%s (%s)",
+                            get_ascii_string(pinfo->pool, msh.message_type, 3),
+                            get_ascii_string(pinfo->pool, msh.trigger_event, 3));
     } else {
-        if (offset == 0) {
-            col_append_str(pinfo->cinfo, COL_INFO,
-                            msh.message_type);
-        } else {
-            col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-                            msh.message_type);
-        }
+        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL,
+                            get_ascii_string(pinfo->pool, msh.message_type, 3));
     }
     /* set a fence so that subsequent col_clear calls will
      * not wipe out col information regarding this PDU */
@@ -921,18 +902,18 @@ dissect_hl7_message(tvbuff_t *tvb, guint tvb_offset, gint len,
     offset++;
     if (global_hl7_raw) {
         proto_tree_add_item(hl7_tree, hf_hl7_raw, tvb, offset, len - 3,
-                            ENC_ASCII|ENC_NA);
+                            ENC_ASCII);
     }
 
     /* body */
     while (offset < eob_offset) {
-        gint next_offset = -1;
-        gint segment_len = -1;
-        gint segment_len_crlf = -1;
+        int next_offset = -1;
+        int segment_len = -1;
+        int segment_len_crlf = -1;
         /* FF: even if HL7 2.3.1 says each segment must be terminated with CR
          * we look either for a CR or an LF or both (I did find a system out
          * there that uses both) */
-        segment_len = tvb_find_line_end(tvb, offset, -1, &next_offset, TRUE);
+        segment_len = tvb_find_line_end(tvb, offset, -1, &next_offset, true);
         if (segment_len == -1) {
             expert_add_info_format(pinfo, NULL, &ei_hl7_malformed,
                                    "Segments must be terminated with CR");
@@ -953,11 +934,11 @@ dissect_hl7_message(tvbuff_t *tvb, guint tvb_offset, gint len,
 static int
 dissect_hl7(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    guint offset = 0;
+    unsigned offset = 0;
 
     while (offset < tvb_reported_length(tvb)) {
-        gint available = tvb_reported_length_remaining(tvb, offset);
-        gint llp_eob_offset = tvb_find_guint16(tvb, offset, offset + available, LLP_EOB);
+        int available = tvb_reported_length_remaining(tvb, offset);
+        int llp_eob_offset = tvb_find_uint16(tvb, offset, offset + available, LLP_EOB);
 
         if (llp_eob_offset == -1) {
             /* we ran out of data: ask for more */
@@ -968,13 +949,13 @@ dissect_hl7(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
         /* tvb_find_ utilities return the *start* of the signature, here we
          * take care of the LLP_EOB bytes */
-        gint llp_block_len = llp_eob_offset - offset + 2;
+        int llp_block_len = llp_eob_offset - offset + 2;
 
         /* FF: nasty case, check whether the capture started after the SOB
          * transmission. If this is the case we display these trailing bytes
          * as 'Data' and we will dissect the next complete message.
          */
-        if (tvb_get_guint8(tvb, 0) != LLP_SOB) {
+        if (tvb_get_uint8(tvb, 0) != LLP_SOB) {
             tvbuff_t *new_tvb = tvb_new_subset_remaining(tvb, offset);
             call_data_dissector(new_tvb, pinfo, tree);
             return (offset + available);
@@ -983,7 +964,7 @@ dissect_hl7(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
         /* FF: ok we got a complete LLP block '0x0B HL7-message 0x1C 0x0D',
          * do the dissection */
         dissect_hl7_message(tvb, offset, llp_block_len, pinfo, tree, data);
-        offset += (guint)llp_block_len;
+        offset += (unsigned)llp_block_len;
     }
 
     /* if we get here, then the end of the tvb matched with the end of a
@@ -991,7 +972,7 @@ dissect_hl7(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
     return tvb_captured_length(tvb);
 }
 
-static gboolean
+static bool
 dissect_hl7_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *data _U_)
 {
     conversation_t *conversation = NULL;
@@ -999,9 +980,9 @@ dissect_hl7_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *
     /* heuristic is based on first 5 bytes analisys, we assume
        0x0B + "MSH|" is good enough */
     if ((tvb_reported_length_remaining(tvb, 0) < 5) ||
-        (tvb_get_guint8(tvb, 0) != LLP_SOB) ||
+        (tvb_get_uint8(tvb, 0) != LLP_SOB) ||
         (tvb_strncaseeql(tvb, 1, "MSH|", 4) != 0)) {
-        return FALSE;
+        return false;
     }
 
     /* heuristic test passed, associate the non-heuristic port based
@@ -1021,26 +1002,24 @@ dissect_hl7_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *
      * to continue the next processing from the beginning of the PDU
      * (desegment_offset = 0) because we did not consume/dissect
      * anything in this cycle. */
-    gint llp_eob_offset = tvb_find_guint16(tvb, 0, -1, LLP_EOB);
+    int llp_eob_offset = tvb_find_uint16(tvb, 0, -1, LLP_EOB);
 
     if (llp_eob_offset == -1) {
         pinfo->desegment_offset = 0;
         pinfo->desegment_len = DESEGMENT_ONE_MORE_SEGMENT;
     }
 
-    return TRUE;
+    return true;
 }
 
 void
 proto_reg_handoff_hl7(void)
 {
     /* register as heuristic dissector for TCP */
-    hl7_heur_handle = create_dissector_handle(dissect_hl7_heur, proto_hl7);
     heur_dissector_add("tcp", dissect_hl7_heur, "HL7 over TCP",
                        "hl7_tcp", proto_hl7, HEURISTIC_ENABLE);
 
     /* register as normal dissector for TCP well-known port */
-    hl7_handle = create_dissector_handle(dissect_hl7, proto_hl7);
     dissector_add_uint_with_preference("tcp.port", TCP_PORT_HL7, hl7_handle);
 }
 
@@ -1086,7 +1065,7 @@ proto_register_hl7(void)
         },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_hl7,
         &ett_hl7_segment,
     };
@@ -1103,7 +1082,7 @@ proto_register_hl7(void)
     proto_register_subtree_array(ett, array_length(ett));
     expert_hl7 = expert_register_protocol(proto_hl7);
     expert_register_field_array(expert_hl7, ei, array_length(ei));
-    hl7_module = prefs_register_protocol(proto_hl7, proto_reg_handoff_hl7);
+    hl7_module = prefs_register_protocol(proto_hl7, NULL);
     prefs_register_bool_preference(hl7_module, "display_raw",
                                    "Display raw text for HL7 message",
                                    "Specifies that the raw text of the "
@@ -1116,10 +1095,12 @@ proto_register_hl7(void)
                                    "should be displayed (Start/End Of Block) "
                                    "in addition to the dissection tree",
                                    &global_hl7_llp);
+
+    hl7_handle = register_dissector("hl7", dissect_hl7, proto_hl7);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

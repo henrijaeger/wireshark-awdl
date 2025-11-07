@@ -1,4 +1,4 @@
-/* main_window_preferences_frame.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -40,14 +40,15 @@ private:
     pref_t *pref_recent_df_entries_max_;
     pref_t *pref_recent_files_count_max_;
     pref_t *pref_ask_unsaved_;
-    pref_t *pref_auto_scroll_on_expand_;
-    pref_t *pref_auto_scroll_percentage_;
+    pref_t *pref_autocomplete_filter_;
     pref_t *pref_toolbar_main_style_;
-    pref_t *pref_toolbar_filter_style_;
+    pref_t *pref_window_title_;
+    pref_t *pref_prepend_window_title_;
     void updateWidgets();
 
 private slots:
     void on_geometryCheckBox_toggled(bool checked);
+    void on_foStyleCWDRadioButton_toggled(bool checked);
     void on_foStyleLastOpenedRadioButton_toggled(bool checked);
     void on_foStyleSpecifiedRadioButton_toggled(bool checked);
     void on_foStyleSpecifiedLineEdit_textEdited(const QString &new_dir);
@@ -55,8 +56,11 @@ private slots:
     void on_maxFilterLineEdit_textEdited(const QString &new_max);
     void on_maxRecentLineEdit_textEdited(const QString &new_max);
     void on_confirmUnsavedCheckBox_toggled(bool checked);
+    void on_displayAutoCompleteCheckBox_toggled(bool checked);
     void on_mainToolbarComboBox_currentIndexChanged(int index);
     void on_languageComboBox_currentIndexChanged(int index);
+    void on_windowTitle_textEdited(const QString &new_title);
+    void on_prependWindowTitle_textEdited(const QString &new_prefix);
 };
 
 #endif // MAIN_WINDOW_PREFERENCES_FRAME_H

@@ -19,7 +19,7 @@
 void proto_register_hpteam(void);
 void proto_reg_handoff_hpteam(void);
 
-static int proto_hpteam = -1;
+static int proto_hpteam;
 
 /* Known HP NIC teaming PID values */
 static const value_string hpteam_pid_vals[] = {
@@ -27,11 +27,11 @@ static const value_string hpteam_pid_vals[] = {
 	{ 0,		NULL }
 };
 
-static gint hf_hpteam = -1;
-static gint hf_llc_hpteam_pid = -1;
+static int hf_hpteam;
+static int hf_llc_hpteam_pid;
 
 /* These are the ids of the subtrees that we may be creating */
-static gint ett_hpteam = -1;
+static int ett_hpteam;
 
 static dissector_handle_t hpteam_handle;
 
@@ -78,7 +78,7 @@ dissect_hpteam(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "HP NIC Team");
 	col_add_fstr(pinfo->cinfo, COL_INFO, "HP NIC Teaming Heartbeat; Port MAC = %s",
-	    address_to_str(wmem_packet_scope(), &pinfo->dl_src));
+	    address_to_str(pinfo->pool, &pinfo->dl_src));
 
 	if (tree) { /* we are being asked for details */
 		proto_item *hpteam_item;
@@ -107,7 +107,7 @@ void proto_register_hpteam(void)
 		}
 	};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_hpteam
 	};
 
@@ -127,7 +127,7 @@ void proto_reg_handoff_hpteam(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

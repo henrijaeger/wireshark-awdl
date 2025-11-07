@@ -9,6 +9,7 @@
  */
 
 #include "config.h"
+#define WS_LOG_DOMAIN LOG_DOMAIN_EPAN
 
 #include <glib.h>
 #include <stdio.h>
@@ -16,6 +17,9 @@
 #include "packet.h"
 
 #include "capture_dissectors.h"
+#include <wsutil/ws_assert.h>
+
+#include <wsutil/wslog.h>
 
 struct capture_dissector_table {
     GHashTable *hash_table;
@@ -31,12 +35,12 @@ struct capture_dissector_handle
 
 typedef struct capture_dissector_count
 {
-    guint32 count;
+    uint64_t count;
 } capture_dissector_count_t;
 
-static GHashTable *registered_dissectors = NULL;
+static GHashTable *registered_dissectors;
 
-static GHashTable *capture_dissector_tables = NULL;
+static GHashTable *capture_dissector_tables;
 
 static void
 destroy_capture_dissector_table(void *data)
@@ -65,14 +69,14 @@ void register_capture_dissector_table(const char *name, const char *ui_name)
 
     /* Make sure the registration is unique */
     if(g_hash_table_lookup( capture_dissector_tables, name )) {
-        g_error("The capture dissector table %s (%s) is already registered - are you using a buggy plugin?", name, ui_name);
+        ws_error("The capture dissector table %s (%s) is already registered - are you using a buggy plugin?", name, ui_name);
     }
 
     sub_dissectors = g_new(struct capture_dissector_table, 1);
 
     sub_dissectors->hash_table = g_hash_table_new_full( g_direct_hash, g_direct_equal, NULL, NULL );
     sub_dissectors->ui_name = ui_name;
-    g_hash_table_insert( capture_dissector_tables, (gpointer)name, (gpointer) sub_dissectors );
+    g_hash_table_insert( capture_dissector_tables, (void *)name, (void *) sub_dissectors );
 
 }
 
@@ -104,14 +108,14 @@ capture_dissector_handle_t register_capture_dissector(const char *name, capture_
     capture_dissector_handle_t handle;
 
     /* Make sure the registration is unique */
-    g_assert(g_hash_table_lookup(registered_dissectors, name) == NULL);
+    ws_assert(g_hash_table_lookup(registered_dissectors, name) == NULL);
 
     handle = new_capture_dissector_handle(dissector, proto, name);
-    g_hash_table_insert(registered_dissectors, (gpointer)name, handle);
+    g_hash_table_insert(registered_dissectors, (void *)name, handle);
     return handle;
 }
 
-void capture_dissector_add_uint(const char *name, const guint32 pattern, capture_dissector_handle_t handle)
+void capture_dissector_add_uint(const char *name, const uint32_t pattern, capture_dissector_handle_t handle)
 {
     struct capture_dissector_table*	sub_dissectors;
 
@@ -121,20 +125,17 @@ void capture_dissector_add_uint(const char *name, const guint32 pattern, capture
     /* Make sure table exists */
     sub_dissectors = (struct capture_dissector_table*)g_hash_table_lookup( capture_dissector_tables, name );
     if (sub_dissectors == NULL) {
-            fprintf(stderr, "OOPS: Subdissector \"%s\" not found in capture_dissector_tables\n", name);
-            if (getenv("WIRESHARK_ABORT_ON_DISSECTOR_BUG") != NULL)
-                    abort();
+            ws_dissector_oops("Subdissector \"%s\" not found in capture_dissector_tables\n", name);
             return;
     }
-    g_assert(sub_dissectors != NULL);
 
     /* Make sure the registration is unique */
-    g_assert(g_hash_table_lookup(sub_dissectors->hash_table, GUINT_TO_POINTER(pattern)) == NULL);
+    ws_assert(g_hash_table_lookup(sub_dissectors->hash_table, GUINT_TO_POINTER(pattern)) == NULL);
 
-    g_hash_table_insert(sub_dissectors->hash_table, GUINT_TO_POINTER(pattern), (gpointer) handle);
+    g_hash_table_insert(sub_dissectors->hash_table, GUINT_TO_POINTER(pattern), (void *) handle);
 }
 
-gboolean try_capture_dissector(const char* name, const guint32 pattern, const guchar *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header)
+bool try_capture_dissector(const char* name, const uint32_t pattern, const uint8_t *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header)
 {
     struct capture_dissector_table*	sub_dissectors;
     capture_dissector_handle_t handle;
@@ -143,26 +144,26 @@ gboolean try_capture_dissector(const char* name, const guint32 pattern, const gu
     if (sub_dissectors == NULL)
     {
         /* XXX - ASSERT? */
-        return FALSE;
+        return false;
     }
 
     handle = (capture_dissector_handle_t)g_hash_table_lookup(sub_dissectors->hash_table, GUINT_TO_POINTER(pattern));
     if (handle == NULL)
-        return FALSE;
+        return false;
 
     return handle->dissector(pd, offset, len, cpinfo, pseudo_header);
 }
 
-gboolean call_capture_dissector(capture_dissector_handle_t handle, const guchar *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header)
+bool call_capture_dissector(capture_dissector_handle_t handle, const uint8_t *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header)
 {
     if (handle == NULL)
-        return FALSE;
+        return false;
     return handle->dissector(pd, offset, len, cpinfo, pseudo_header);
 }
 
-guint32 capture_dissector_get_count(packet_counts* counts, const int proto)
+uint64_t capture_dissector_get_count(packet_counts* counts, const int proto)
 {
-    capture_dissector_count_t* hash_count = (capture_dissector_count_t*)g_hash_table_lookup(counts->counts_hash, GUINT_TO_POINTER(proto));
+    capture_dissector_count_t* hash_count = (capture_dissector_count_t*)g_hash_table_lookup(counts->counts_hash, GINT_TO_POINTER(proto));
     if (hash_count == NULL)
         return 0;
 
@@ -172,18 +173,18 @@ guint32 capture_dissector_get_count(packet_counts* counts, const int proto)
 void capture_dissector_increment_count(capture_packet_info_t *cpinfo, const int proto)
 {
     /* See if we already have a counter for the protocol */
-    capture_dissector_count_t* hash_count = (capture_dissector_count_t*)g_hash_table_lookup(cpinfo->counts, GUINT_TO_POINTER(proto));
+    capture_dissector_count_t* hash_count = (capture_dissector_count_t*)g_hash_table_lookup(cpinfo->counts, GINT_TO_POINTER(proto));
     if (hash_count == NULL)
     {
         hash_count = g_new0(capture_dissector_count_t, 1);
-        g_hash_table_insert(cpinfo->counts, GUINT_TO_POINTER(proto), (gpointer)hash_count);
+        g_hash_table_insert(cpinfo->counts, GINT_TO_POINTER(proto), (void *)hash_count);
     }
 
     hash_count->count++;
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

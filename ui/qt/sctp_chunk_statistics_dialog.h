@@ -1,16 +1,16 @@
-/* sctp_chunck_statistics_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef SCTP_CHUNK_STATISTICS_DIALOG_H
 #define SCTP_CHUNK_STATISTICS_DIALOG_H
 
 #include <config.h>
-#include <glib.h>
 
 #include <file.h>
 #include <wsutil/file_util.h>
@@ -61,7 +61,7 @@ signals:
 
 private:
     Ui::SCTPChunkStatisticsDialog *ui;
-    guint16 selected_assoc_id;
+    uint16_t selected_assoc_id;
     capture_file *cap_file_;
     QMenu ctx_menu_;
     QPoint selected_point;
@@ -70,7 +70,7 @@ private:
         int row;
         int id;
         int hide;
-        char name[30];
+        char name[24];
     };
 
     QMap<int, struct chunkTypes> chunks, tempChunks;
@@ -80,16 +80,3 @@ private:
 };
 
 #endif // SCTP_CHUNK_STATISTICS_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -9,8 +9,6 @@
 
 #include "config.h"
 
-#include <glib.h>
-
 #include "file.h"
 #include "fileset.h"
 
@@ -21,7 +19,7 @@
 #include "file_set_dialog.h"
 #include <ui_file_set_dialog.h>
 #include "models/fileset_entry_model.h"
-#include "wireshark_application.h"
+#include "main_application.h"
 
 #include <QDialogButtonBox>
 #include <QPushButton>
@@ -70,8 +68,8 @@ FileSetDialog::FileSetDialog(QWidget *parent) :
 
     close_button_ = fs_ui_->buttonBox->button(QDialogButtonBox::Close);
 
-    connect(fs_ui_->fileSetTree->selectionModel(), SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
-            this, SLOT(selectionChanged(QItemSelection,QItemSelection)));
+    connect(fs_ui_->fileSetTree->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, &FileSetDialog::selectionChanged);
 
     beginAddFile();
     addFile();
@@ -108,7 +106,7 @@ void FileSetDialog::addFile(fileset_entry *entry) {
 void FileSetDialog::beginAddFile()
 {
     cur_idx_ = -1;
-    setWindowTitle(wsApp->windowTitleString(tr("No files in Set")));
+    setWindowTitle(mainApp->windowTitleString(tr("No files in Set")));
     fs_ui_->directoryLabel->setText(tr("No capture loaded"));
     fs_ui_->directoryLabel->setEnabled(false);
 }
@@ -116,7 +114,7 @@ void FileSetDialog::beginAddFile()
 void FileSetDialog::endAddFile()
 {
     if (fileset_entry_model_->entryCount() > 0) {
-        setWindowTitle(wsApp->windowTitleString(tr("%Ln File(s) in Set", "",
+        setWindowTitle(mainApp->windowTitleString(tr("%Ln File(s) in Set", "",
                                                    fileset_entry_model_->entryCount())));
     }
 
@@ -125,7 +123,7 @@ void FileSetDialog::endAddFile()
     fs_ui_->directoryLabel->setUrl(QUrl::fromLocalFile(dir_name).toString());
     fs_ui_->directoryLabel->setEnabled(true);
 
-    if(cur_idx_ >= 0) {
+    if (cur_idx_ >= 0) {
         fs_ui_->fileSetTree->setCurrentIndex(fileset_entry_model_->index(cur_idx_, 0));
     }
 
@@ -153,18 +151,5 @@ void FileSetDialog::selectionChanged(const QItemSelection &selected, const QItem
 
 void FileSetDialog::on_buttonBox_helpRequested()
 {
-    wsApp->helpTopicAction(HELP_FILESET_DIALOG);
+    mainApp->helpTopicAction(HELP_FILESET_DIALOG);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

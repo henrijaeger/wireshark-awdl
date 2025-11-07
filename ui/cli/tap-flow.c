@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 /* This module provides udp and tcp follow stream capabilities to tshark.
  * It is only used by tshark and not wireshark.
@@ -45,16 +46,16 @@ flow_draw(void *arg)
     sequence_analysis_info_free(flow_info);
 }
 
-static gboolean flow_arg_strncmp(const char **opt_argp, const char *strp)
+static bool flow_arg_strncmp(const char **opt_argp, const char *strp)
 {
     size_t len = strlen(strp);
 
     if (strncmp(*opt_argp, strp, len) == 0)
     {
         *opt_argp += len;
-        return TRUE;
+        return true;
     }
-    return FALSE;
+    return false;
 }
 
 static void
@@ -93,7 +94,7 @@ flow_init(const char *opt_argp, void *userdata)
     sequence_analysis_list_free(flow_info);
 
     errp = register_tap_listener(sequence_analysis_get_tap_listener_name(analysis), flow_info, filter, sequence_analysis_get_tap_flags(analysis),
-                                NULL, sequence_analysis_get_packet_func(analysis), flow_draw);
+                                NULL, sequence_analysis_get_packet_func(analysis), flow_draw, NULL);
 
     if (errp != NULL)
     {
@@ -104,13 +105,13 @@ flow_init(const char *opt_argp, void *userdata)
     }
 }
 
-static gboolean
+static bool
 flow_register(const void *key _U_, void *value, void *userdata _U_)
 {
     register_analysis_t* analysis = (register_analysis_t*)value;
     stat_tap_ui flow_ui;
     GString *cmd_str = g_string_new(STR_FLOW);
-    gchar *cli_string;
+    char *cli_string;
 
     g_string_append(cmd_str, sequence_analysis_get_name(analysis));
     cli_string = g_string_free(cmd_str, FALSE);
@@ -123,7 +124,7 @@ flow_register(const void *key _U_, void *value, void *userdata _U_)
     flow_ui.params = NULL;
     register_stat_tap_ui(&flow_ui, analysis);
     g_free(cli_string);
-    return FALSE;
+    return false;
 }
 
 void
@@ -133,7 +134,7 @@ register_tap_listener_flow(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 4

@@ -1,4 +1,5 @@
-/* preference_utils.h
+/** @file
+ *
  * Routines for handling preferences
  *
  * Wireshark - Network traffic analyzer
@@ -8,8 +9,10 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#ifndef __PREFRENCE_UTILS_H__
-#define __PREFRENCE_UTILS_H__
+#ifndef __PREFERENCE_UTILS_H__
+#define __PREFERENCE_UTILS_H__
+
+#include <glib.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,7 +25,7 @@ extern "C" {
 
 /** If autoscroll in live captures is active or not
  */
-extern gboolean auto_scroll_live;
+extern bool auto_scroll_live;
 
 /** Fill in capture options with values from the preferences
  */
@@ -56,20 +59,54 @@ extern unsigned int prefs_store_ext(const char * module, const char * key, const
  *
  * @return true if the value has been stored successfully
  */
-extern gboolean prefs_store_ext_multiple(const char * module, GHashTable * pref_values);
+extern bool prefs_store_ext_multiple(const char * module, GHashTable * pref_values);
 
 /** Add a custom column.
  *
  * @param fmt column format
  * @param title column title
  * @param custom_field column custom field
- * @param custom_occurrence custom occurrence
+ * @param position the intended position of the insert
  *
  * @return The index of the inserted column
  */
-gint column_prefs_add_custom(gint fmt, const gchar *title,
-                             const gchar *custom_field,
-                             gint custom_occurrence);
+int column_prefs_add_custom(int fmt, const char *title,
+                             const char *custom_field,
+                             int position);
+
+/** Check if a custom column exists.
+ *
+ * @param custom_field column custom field
+ *
+ * @return The index of the column if existing, -1 if not existing
+ */
+int column_prefs_has_custom(const char *custom_field);
+
+/** Check if a custom column's data can be displayed differently
+ * resolved or unresolved, e.g. it has a field with a value string.
+ *
+ * This is for when adding or editing custom columns. Compare with
+ * display_column_strings() in packet_list_utils.h, which is for columns
+ * that have already been added.
+ *
+ * @param custom_field column custom field
+ *
+ * @return true if a custom column with the field description
+ * would support being displayed differently resolved or unresolved,
+ * false otherwise.
+ */
+bool column_prefs_custom_display_strings(const char *custom_field);
+
+/** Check if a custom column's data can be displayed with details,
+ * e.g. it has a field.
+ *
+ * This is for when adding or editing custom columns.
+ *
+ * @param custom_field column custom field
+ *
+ * @return true if a custom column has at least one single field.
+ */
+bool column_prefs_custom_display_details(const char *custom_field);
 
 /** Remove a column.
  *
@@ -81,28 +118,15 @@ void column_prefs_remove_link(GList* col_link);
  *
  * @param col Column number
  */
-void column_prefs_remove_nth(gint col);
+void column_prefs_remove_nth(int col);
 
 /** Save the UAT and complete migration of old preferences by writing the main
  * preferences file (if necessary).
  */
-void save_migrated_uat(const char *uat_name, gboolean *old_pref);
+void save_migrated_uat(const char *uat_name, bool *old_pref);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif /* __PREFRENCE_UTILS_H__ */
-
-/*
- * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+#endif /* __PREFERENCE_UTILS_H__ */

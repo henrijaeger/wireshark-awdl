@@ -38,14 +38,48 @@
 /* Info attached to each NR RLC frame */
 typedef struct rlc_nr_info
 {
-    guint8          rlcMode;
-    guint8          direction;
-    guint8          sequenceNumberLength;
-    guint8          bearerType;
-    guint8          bearerId;
-    guint16         ueid;
-    guint16         pduLength;
+    uint8_t         rlcMode;
+    uint8_t         direction;
+    uint8_t         sequenceNumberLength;
+    uint8_t         bearerType;
+    uint8_t         bearerId;
+    uint16_t        ueid;
+    uint16_t        pduLength;
 } rlc_nr_info;
+
+typedef struct nr_drb_rlc_pdcp_mapping_t
+{
+    bool       active;
+    uint16_t   ueid;                /* Mandatory */
+    uint8_t    drbid;               /* Mandatory */
+
+    bool       pdcpUlSnLength_present;
+    uint8_t    pdcpUlSnLength;        /* Part of PDCP config - optional */
+    bool       pdcpDlSnLength_present;
+    uint8_t    pdcpDlSnLength;        /* Part of PDCP config - optional */
+    bool       pdcpUlSdap;
+    bool       pdcpDlSdap;
+    bool       pdcpIntegrityProtection;
+    bool       pdcpCipheringDisabled;
+
+} nr_drb_rlc_pdcp_mapping_t;
+
+/* TODO: could probably merge this struct with above */
+typedef struct pdcp_ue_parameters {
+    uint32_t  id;
+    uint8_t   pdcp_sn_bits_ul;
+    uint8_t   pdcp_sn_bits_dl;
+    bool      pdcp_sdap_ul;
+    bool      pdcp_sdap_dl;
+    bool      pdcp_integrity;
+    bool      pdcp_ciphering_disabled;
+} pdcp_bearer_parameters;
+
+/* Configure DRB PDCP channel properties. */
+void set_rlc_nr_drb_pdcp_mapping(packet_info *pinfo,
+                                 nr_drb_rlc_pdcp_mapping_t *drb_mapping);
+
+pdcp_bearer_parameters* get_rlc_nr_drb_pdcp_mapping(uint16_t ue_id, uint8_t drb_id);
 
 /*****************************************************************/
 /* UDP framing format                                            */
@@ -95,7 +129,7 @@ typedef struct rlc_nr_info
 #endif
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

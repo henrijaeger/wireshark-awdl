@@ -15,6 +15,7 @@
 
 #include <ui/qt/models/uat_model.h>
 #include <ui/qt/models/pref_models.h>
+#include <ui/qt/main_application.h>
 
 #include <QPushButton>
 #include <QKeyEvent>
@@ -68,7 +69,7 @@ void FilterExpressionFrame::editExpression(int exprIdx)
     }
 
     UatModel * uatModel = new UatModel(this, "Display expressions");
-    if ( ! uatModel->index(exprIdx, 1).isValid() )
+    if (! uatModel->index(exprIdx, 1).isValid())
         return;
 
     editExpression_ = exprIdx;
@@ -106,7 +107,7 @@ void FilterExpressionFrame::updateWidgets()
 void FilterExpressionFrame::on_filterExpressionPreferencesPushButton_clicked()
 {
     on_buttonBox_rejected();
-    emit showPreferencesDialog(PrefsModel::FILTER_BUTTONS_PREFERENCE_TREE_NAME);
+    emit showPreferencesDialog(PrefsModel::typeToString(PrefsModel::FilterButtons));
 }
 
 void FilterExpressionFrame::on_labelLineEdit_textChanged(const QString)
@@ -125,16 +126,16 @@ void FilterExpressionFrame::on_buttonBox_accepted()
     QByteArray expr_ba = ui->displayFilterLineEdit->text().toUtf8();
     QByteArray comment_ba = ui->commentLineEdit->text().toUtf8();
 
-    if ( ui->labelLineEdit->text().length() == 0 || ui->displayFilterLineEdit->text().length() == 0 )
+    if (ui->labelLineEdit->text().length() == 0 || ui->displayFilterLineEdit->text().length() == 0)
         return;
 
-    if ( ! ui->displayFilterLineEdit->checkFilter() )
+    if (! ui->displayFilterLineEdit->checkFilter())
         return;
 
-    if ( editExpression_ >= 0 )
+    if (editExpression_ >= 0)
     {
         UatModel * uatModel = new UatModel(this, "Display expressions");
-        if ( ! uatModel->index(editExpression_, 1).isValid() )
+        if (! uatModel->index(editExpression_, 1).isValid())
             return;
 
         uatModel->setData(uatModel->index(editExpression_, 1), QVariant::fromValue(label_ba));
@@ -143,7 +144,7 @@ void FilterExpressionFrame::on_buttonBox_accepted()
     }
     else
     {
-        filter_expression_new(label_ba.constData(), expr_ba.constData(), comment_ba.constData(), TRUE);
+        filter_expression_new(label_ba.constData(), expr_ba.constData(), comment_ba.constData(), true);
     }
 
     save_migrated_uat("Display expressions", &prefs.filter_expressions_old);
@@ -169,27 +170,14 @@ void FilterExpressionFrame::keyPressEvent(QKeyEvent *event)
             if (ui->buttonBox->button(QDialogButtonBox::Ok)->isEnabled()) {
                 on_buttonBox_accepted();
             } else if (ui->labelLineEdit->text().length() == 0) {
-                emit pushFilterSyntaxStatus(tr("Missing label."));
+                mainApp->pushStatus(MainApplication::FilterSyntax, tr("Missing label."));
             } else if (ui->displayFilterLineEdit->syntaxState() == SyntaxLineEdit::Empty) {
-                emit pushFilterSyntaxStatus(tr("Missing filter expression."));
+                mainApp->pushStatus(MainApplication::FilterSyntax, tr("Missing filter expression."));
             } else if (ui->displayFilterLineEdit->syntaxState() != SyntaxLineEdit::Valid) {
-                emit pushFilterSyntaxStatus(tr("Invalid filter expression."));
+                mainApp->pushStatus(MainApplication::FilterSyntax, tr("Invalid filter expression."));
             }
         }
     }
 
     AccordionFrame::keyPressEvent(event);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

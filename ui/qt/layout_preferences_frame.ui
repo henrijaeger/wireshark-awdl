@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>414</width>
-    <height>287</height>
+    <height>409</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -37,7 +37,7 @@
         <string/>
        </property>
        <property name="icon">
-        <iconset resource="../../image/layout.qrc">
+        <iconset resource="../../resources/layout.qrc">
          <normaloff>:/layout/layout_5.png</normaloff>:/layout/layout_5.png</iconset>
        </property>
        <property name="iconSize">
@@ -60,7 +60,7 @@
         <string/>
        </property>
        <property name="icon">
-        <iconset resource="../../image/layout.qrc">
+        <iconset resource="../../resources/layout.qrc">
          <normaloff>:/layout/layout_2.png</normaloff>:/layout/layout_2.png</iconset>
        </property>
        <property name="iconSize">
@@ -83,7 +83,7 @@
         <string/>
        </property>
        <property name="icon">
-        <iconset resource="../../image/layout.qrc">
+        <iconset resource="../../resources/layout.qrc">
          <normaloff>:/layout/layout_1.png</normaloff>:/layout/layout_1.png</iconset>
        </property>
        <property name="iconSize">
@@ -106,7 +106,7 @@
         <string/>
        </property>
        <property name="icon">
-        <iconset resource="../../image/layout.qrc">
+        <iconset resource="../../resources/layout.qrc">
          <normaloff>:/layout/layout_4.png</normaloff>:/layout/layout_4.png</iconset>
        </property>
        <property name="iconSize">
@@ -129,7 +129,7 @@
         <string/>
        </property>
        <property name="icon">
-        <iconset resource="../../image/layout.qrc">
+        <iconset resource="../../resources/layout.qrc">
          <normaloff>:/layout/layout_3.png</normaloff>:/layout/layout_3.png</iconset>
        </property>
        <property name="iconSize">
@@ -152,7 +152,7 @@
         <string/>
        </property>
        <property name="icon">
-        <iconset resource="../../image/layout.qrc">
+        <iconset resource="../../resources/layout.qrc">
          <normaloff>:/layout/layout_6.png</normaloff>:/layout/layout_6.png</iconset>
        </property>
        <property name="iconSize">
@@ -213,6 +213,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QRadioButton" name="pane1PacketDiagramRadioButton">
+         <property name="text">
+          <string>Packet Diagram</string>
+         </property>
+         <attribute name="buttonGroup">
+          <string notr="true">pane1ButtonGroup</string>
+         </attribute>
+        </widget>
+       </item>
+       <item>
         <widget class="QRadioButton" name="pane1NoneRadioButton">
          <property name="text">
           <string>None</string>
@@ -257,6 +267,16 @@
         <widget class="QRadioButton" name="pane2PacketBytesRadioButton">
          <property name="text">
           <string>Packet Bytes</string>
+         </property>
+         <attribute name="buttonGroup">
+          <string notr="true">pane2ButtonGroup</string>
+         </attribute>
+        </widget>
+       </item>
+       <item>
+        <widget class="QRadioButton" name="pane2PacketDiagramRadioButton">
+         <property name="text">
+          <string>Packet Diagram</string>
          </property>
          <attribute name="buttonGroup">
           <string notr="true">pane2ButtonGroup</string>
@@ -315,6 +335,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QRadioButton" name="pane3PacketDiagramRadioButton">
+         <property name="text">
+          <string>Packet Diagram</string>
+         </property>
+         <attribute name="buttonGroup">
+          <string notr="true">pane3ButtonGroup</string>
+         </attribute>
+        </widget>
+       </item>
+       <item>
         <widget class="QRadioButton" name="pane3NoneRadioButton">
          <property name="text">
           <string>None</string>
@@ -355,6 +385,55 @@
     <widget class="QCheckBox" name="packetListSeparatorCheckBox">
      <property name="text">
       <string>Show packet separator</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="packetListHeaderShowColumnDefinition">
+     <property name="text">
+      <string>Show column definition in column context menu</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="packetListAllowSorting">
+     <property name="text">
+      <string>Allow the list to be sorted</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="packetListCachedRows">
+     <item>
+      <widget class="QLabel" name="packetListCachedRowsLabel">
+       <property name="text">
+        <string>Maximum number of cached rows (affects sorting)</string>
+       </property>
+       <property name="toolTip">
+        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If more than this many rows are displayed, then sorting by columns that require packet dissection will be disabled. Increasing this number increases memory consumption by caching column values.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="packetListCachedRowsLineEdit">
+       <property name="toolTip">
+        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If more than this many rows are displayed, then sorting by columns that require packet dissection will be disabled. Increasing this number increases memory consumption by caching column values.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="packetListCachedRowsHorizontalSpacer">
+       <property name="orientation">
+        <enum>Qt:Horizontal</enum>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="packetListHoverStyleCheckbox">
+     <property name="text">
+      <string>Enable mouse-over colorization</string>
      </property>
     </widget>
    </item>
@@ -418,13 +497,13 @@
   </layout>
  </widget>
  <resources>
-  <include location="../../image/layout.qrc"/>
+  <include location="../../resources/layout.qrc"/>
  </resources>
  <connections/>
  <buttongroups>
   <buttongroup name="layoutButtonGroup"/>
-  <buttongroup name="pane2ButtonGroup"/>
   <buttongroup name="pane3ButtonGroup"/>
+  <buttongroup name="pane2ButtonGroup"/>
   <buttongroup name="pane1ButtonGroup"/>
  </buttongroups>
 </ui>

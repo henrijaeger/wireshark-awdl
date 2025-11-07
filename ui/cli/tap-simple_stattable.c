@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -15,6 +16,7 @@
 #include <epan/packet.h>
 #include <epan/timestamp.h>
 #include <epan/stat_tap_ui.h>
+#include <wsutil/cmdarg_err.h>
 #include <ui/cli/tshark-tap.h>
 
 typedef struct _table_stat_t {
@@ -28,11 +30,11 @@ simple_draw(void *arg)
 	stat_data_t* stat_data = (stat_data_t*)arg;
 	table_stat_t* stats = (table_stat_t*)stat_data->user_data;
 	size_t i;
-	guint table_index, element, field_index;
+	unsigned table_index, element, field_index;
 	stat_tap_table_item* field;
 	stat_tap_table* table;
 	stat_tap_table_item_type* field_data;
-	gchar fmt_string[250];
+	char fmt_string[250];
 
 	/* printing results */
 	printf("\n");
@@ -59,7 +61,7 @@ simple_draw(void *arg)
 				if (field_data->type == TABLE_ITEM_NONE) /* Nothing for us here */
 					break;
 
-				g_snprintf(fmt_string, sizeof(fmt_string), "%s |", field->field_format);
+				snprintf(fmt_string, sizeof(fmt_string), "%s |", field->field_format);
 				switch(field->type)
 				{
 				case TABLE_ITEM_UINT:
@@ -87,6 +89,13 @@ simple_draw(void *arg)
 	printf("=====================================================================================================\n");
 }
 
+static void simple_finish(void *tapdata)
+{
+	stat_data_t *stat_data = (stat_data_t *)tapdata;
+
+	g_free(stat_data->user_data);
+}
+
 static void
 init_stat_table(stat_tap_table_ui *stat_tap, const char *filter)
 {
@@ -98,12 +107,14 @@ init_stat_table(stat_tap_table_ui *stat_tap, const char *filter)
 	ui->stats.stat_tap_data = stat_tap;
 	ui->stats.user_data = ui;
 
-	stat_tap->stat_tap_init_cb(stat_tap, NULL, NULL);
+	stat_tap->stat_tap_init_cb(stat_tap);
 
-	error_string = register_tap_listener(stat_tap->tap_name, &ui->stats, filter, 0, NULL, stat_tap->packet_func, simple_draw);
+	error_string = register_tap_listener(stat_tap->tap_name, &ui->stats,
+			filter, 0, NULL, stat_tap->packet_func, simple_draw,
+			simple_finish);
 	if (error_string) {
-/*		free_rtd_table(&ui->rtd.stat_table, NULL, NULL); */
-		fprintf(stderr, "tshark: Couldn't register tap: %s\n", error_string->str);
+/*		free_rtd_table(&ui->rtd.stat_table); */
+		cmdarg_err("Couldn't register tap: %s", error_string->str);
 		g_string_free(error_string, TRUE);
 		exit(1);
 	}
@@ -119,7 +130,7 @@ simple_stat_init(const char *opt_arg, void* userdata)
 	stat_tap_get_filter(stat_tap, opt_arg, &filter, &err);
 	if (err != NULL)
 	{
-		fprintf(stderr, "tshark: %s\n", err);
+		cmdarg_err("%s", err);
 		g_free(err);
 		exit(1);
 	}
@@ -127,7 +138,7 @@ simple_stat_init(const char *opt_arg, void* userdata)
 	init_stat_table(stat_tap, filter);
 }
 
-gboolean
+bool
 register_simple_stat_tables(const void *key, void *value, void *userdata _U_)
 {
 	stat_tap_table_ui *stat_tap = (stat_tap_table_ui*)value;
@@ -141,11 +152,11 @@ register_simple_stat_tables(const void *key, void *value, void *userdata _U_)
 	ui_info.params = stat_tap->params;
 
 	register_stat_tap_ui(&ui_info, stat_tap);
-	return FALSE;
+	return false;
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

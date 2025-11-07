@@ -1,4 +1,4 @@
-/* merge.h
+/** @file
  * Definitions for routines for merging files.
  *
  * Wireshark - Network traffic analyzer
@@ -30,26 +30,14 @@ typedef enum {
 typedef struct merge_in_file_s {
     const char     *filename;
     wtap           *wth;
+    wtap_rec        rec;
     in_file_state_e state;
-    guint32         packet_num;     /* current packet number */
-    gint64          size;           /* file size */
+    uint32_t        packet_num;     /* current packet number */
+    int64_t         size;           /* file size */
     GArray         *idb_index_map;  /* used for mapping the old phdr interface_id values to new during merge */
+    unsigned        nrbs_seen;      /* number of elements processed so far from wth->nrbs */
+    unsigned        dsbs_seen;      /* number of elements processed so far from wth->dsbs */
 } merge_in_file_t;
-
-/** Return values from merge_files(). */
-typedef enum {
-    MERGE_OK,
-    MERGE_USER_ABORTED,
-    /* below here are true errors */
-    MERGE_ERR_CANT_OPEN_INFILE,
-    MERGE_ERR_CANT_OPEN_OUTFILE,
-    MERGE_ERR_CANT_READ_INFILE,
-    MERGE_ERR_BAD_PHDR_INTERFACE_ID,
-    MERGE_ERR_CANT_WRITE_OUTFILE,
-    MERGE_ERR_CANT_CLOSE_OUTFILE,
-    MERGE_ERR_INVALID_OPTION
-} merge_result;
-
 
 /** Merge events, used as an arg in the callback function - indicates when the callback was invoked. */
 typedef enum {
@@ -100,11 +88,11 @@ merge_idb_merge_mode_to_string(const int mode);
  * was invoked, the num is an int specific to the event, in_files is an array
  * of the created merge info, in_file_count is the size of the array, data is
  * whatever was passed in the data member of this struct. The callback_func
- * routine's return value should be TRUE if merging should be aborted.
+ * routine's return value should be true if merging should be aborted.
  */
 typedef struct {
-    gboolean (*callback_func)(merge_event event, int num,
-                              const merge_in_file_t in_files[], const guint in_file_count,
+    bool (*callback_func)(merge_event event, int num,
+                              const merge_in_file_t in_files[], const unsigned in_file_count,
                               void *data);
     void *data; /**< private data to use for passing through to the callback function */
 } merge_progress_callback_t;
@@ -121,26 +109,19 @@ typedef struct {
  * @param snaplen The snaplen to limit it to, or 0 to leave as it is in the files
  * @param app_name The application name performing the merge, used in SHB info
  * @param cb The callback information to use during execution
- * @param[out] err Set to the internal WTAP_ERR_XXX error code if it failed
- *   with MERGE_ERR_CANT_OPEN_INFILE, MERGE_ERR_CANT_OPEN_OUTFILE,
- *   MERGE_ERR_CANT_READ_INFILE, MERGE_ERR_CANT_WRITE_OUTFILE, or
- *   MERGE_ERR_CANT_CLOSE_OUTFILE
- * @param[out] err_info Additional information for some WTAP_ERR_XXX codes
- * @param[out] err_fileno Set to the input file number which failed, if it
- *   failed
- * @param[out] err_framenum Set to the input frame number if it failed
- * @return the frame type
+ * @param compression_type The compresion type to use for the output
+ * @return true on success, false on failure
  */
-WS_DLL_PUBLIC merge_result
-merge_files(const gchar* out_filename, const int file_type,
-            const char *const *in_filenames, const guint in_file_count,
-            const gboolean do_append, const idb_merge_mode mode,
-            guint snaplen, const gchar *app_name, merge_progress_callback_t* cb,
-            int *err, gchar **err_info, guint *err_fileno,
-            guint32 *err_framenum);
+WS_DLL_PUBLIC bool
+merge_files(const char* out_filename, const int file_type,
+            const char *const *in_filenames, const unsigned in_file_count,
+            const bool do_append, const idb_merge_mode mode,
+            unsigned snaplen, const char *app_name, merge_progress_callback_t* cb,
+            wtap_compression_type compression_type);
 
 /** Merge the given input files to a temporary file
  *
+ * @param tmpdir Points to the directory in which to write the temporary file
  * @param out_filenamep Points to a pointer that's set to point to the
  *        pathname of the temporary file; it's allocated with g_malloc()
  * @param pfx A string to be used as the prefix for the temporary file name
@@ -152,24 +133,14 @@ merge_files(const gchar* out_filename, const int file_type,
  * @param snaplen The snaplen to limit it to, or 0 to leave as it is in the files
  * @param app_name The application name performing the merge, used in SHB info
  * @param cb The callback information to use during execution
- * @param[out] err Set to the internal WTAP_ERR_XXX error code if it failed
- *   with MERGE_ERR_CANT_OPEN_INFILE, MERGE_ERR_CANT_OPEN_OUTFILE,
- *   MERGE_ERR_CANT_READ_INFILE, MERGE_ERR_CANT_WRITE_OUTFILE, or
- *   MERGE_ERR_CANT_CLOSE_OUTFILE
- * @param[out] err_info Additional information for some WTAP_ERR_XXX codes
- * @param[out] err_fileno Set to the input file number which failed, if it
- *   failed
- * @param[out] err_framenum Set to the input frame number if it failed
- * @return the frame type
+ * @return true on success, false on failure
  */
-WS_DLL_PUBLIC merge_result
-merge_files_to_tempfile(gchar **out_filenamep, const char *pfx,
+WS_DLL_PUBLIC bool
+merge_files_to_tempfile(const char *tmpdir, char **out_filenamep, const char *pfx,
                         const int file_type, const char *const *in_filenames,
-                        const guint in_file_count, const gboolean do_append,
-                        const idb_merge_mode mode, guint snaplen,
-                        const gchar *app_name, merge_progress_callback_t* cb,
-                        int *err, gchar **err_info, guint *err_fileno,
-                        guint32 *err_framenum);
+                        const unsigned in_file_count, const bool do_append,
+                        const idb_merge_mode mode, unsigned snaplen,
+                        const char *app_name, merge_progress_callback_t* cb);
 
 /** Merge the given input files to the standard output
  *
@@ -181,23 +152,14 @@ merge_files_to_tempfile(gchar **out_filenamep, const char *pfx,
  * @param snaplen The snaplen to limit it to, or 0 to leave as it is in the files
  * @param app_name The application name performing the merge, used in SHB info
  * @param cb The callback information to use during execution
- * @param[out] err Set to the internal WTAP_ERR_XXX error code if it failed
- *   with MERGE_ERR_CANT_OPEN_INFILE, MERGE_ERR_CANT_OPEN_OUTFILE,
- *   MERGE_ERR_CANT_READ_INFILE, MERGE_ERR_CANT_WRITE_OUTFILE, or
- *   MERGE_ERR_CANT_CLOSE_OUTFILE
- * @param[out] err_info Additional information for some WTAP_ERR_XXX codes
- * @param[out] err_fileno Set to the input file number which failed, if it
- *   failed
- * @param[out] err_framenum Set to the input frame number if it failed
- * @return the frame type
+ * @return true on success, false on failure
  */
-WS_DLL_PUBLIC merge_result
+WS_DLL_PUBLIC bool
 merge_files_to_stdout(const int file_type, const char *const *in_filenames,
-                      const guint in_file_count, const gboolean do_append,
-                      const idb_merge_mode mode, guint snaplen,
-                      const gchar *app_name, merge_progress_callback_t* cb,
-                      int *err, gchar **err_info, guint *err_fileno,
-                      guint32 *err_framenum);
+                      const unsigned in_file_count, const bool do_append,
+                      const idb_merge_mode mode, unsigned snaplen,
+                      const char *app_name, merge_progress_callback_t* cb,
+                      wtap_compression_type compression_type);
 
 #ifdef __cplusplus
 }

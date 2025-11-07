@@ -1,10 +1,11 @@
-/* syntax_line_edit.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef SYNTAX_LINE_EDIT_H
 #define SYNTAX_LINE_EDIT_H
@@ -30,11 +31,18 @@ public:
     SyntaxState syntaxState() const { return syntax_state_; }
     void setSyntaxState(SyntaxState state = Empty);
     QString syntaxErrorMessage();
+    // Error message with filter expression and location error.
+    QString syntaxErrorMessageFull();
     QString styleSheet() const;
     QString deprecatedToken();
 
     void setCompleter(QCompleter *c);
     QCompleter *completer() const { return completer_; }
+    void allowCompletion(bool enabled);
+
+    static QString createSyntaxErrorMessageFull(const QString &filter,
+                                                const QString &err_msg,
+                                                qsizetype loc_start, size_t loc_length);
 
 public slots:
     void setStyleSheet(const QString &style_sheet);
@@ -42,7 +50,7 @@ public slots:
     void insertFilter(const QString &filter);
 
     // Built-in syntax checks. Connect textChanged to these as needed.
-    void checkDisplayFilter(QString filter);
+    bool checkDisplayFilter(QString filter);
     void checkFieldName(QString field);
     void checkCustomColumn(QString fields);
     void checkInteger(QString number);
@@ -52,22 +60,26 @@ protected:
     QStringListModel *completion_model_;
     void setCompletionTokenChars(const QString &token_chars) { token_chars_ = token_chars; }
     bool isComplexFilter(const QString &filter);
-    virtual void buildCompletionList(const QString&) { }
+    virtual void buildCompletionList(const QString &field_word, const QString &preamble) { Q_UNUSED(field_word); Q_UNUSED(preamble); }
     // x = Start position, y = length
     QPoint getTokenUnderCursor();
+    // Returns (preamble, token)
+    QStringList splitLineUnderCursor();
 
     virtual bool event(QEvent *event);
     void completionKeyPressEvent(QKeyEvent *event);
     void completionFocusInEvent(QFocusEvent *event);
     virtual void focusOutEvent(QFocusEvent *event);
+    virtual void paintEvent(QPaintEvent *event);
 
 private:
     SyntaxState syntax_state_;
     QString style_sheet_;
     QString state_style_sheet_;
     QString syntax_error_message_;
+    QString syntax_error_message_full_;
     QString token_chars_;
-    QColor busy_fg_;
+    bool completion_enabled_;
 
 private slots:
     void insertFieldCompletion(const QString &completion_text);

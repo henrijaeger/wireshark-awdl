@@ -1,4 +1,5 @@
-/* pref_module_view.h
+/** @file
+ *
  * Tree view of preference module data.
  *
  * Wireshark - Network traffic analyzer
@@ -20,10 +21,10 @@ class PrefModuleTreeView : public QTreeView
 public:
     PrefModuleTreeView(QWidget *parent = 0);
 
-    void setPane(const QString pane_name);
+    void setPane(const QString module_name);
 
 signals:
-    void goToPane(QString pane);
+    void goToPane(QString module_name);
 
 protected slots:
     void currentChanged(const QModelIndex &current, const QModelIndex &previous);
@@ -35,16 +36,3 @@ private:
     QString appearanceName_;
 };
 #endif // PREFERENCE_MODULE_VIEW_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

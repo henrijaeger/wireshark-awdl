@@ -43,15 +43,17 @@ static const value_string gdb_ack[] = {
 void proto_register_gdb(void);
 void proto_reg_handoff_gdb(void);
 
-static int proto_gdb = -1;
+static dissector_handle_t gdb_handle;
 
-static gint ett_gdb = -1;
+static int proto_gdb;
 
-static int hf_gdb_ack = -1;
-static int hf_gdb_start = -1;
-static int hf_gdb_payload = -1;
-static int hf_gdb_end = -1;
-static int hf_gdb_chksum = -1;
+static int ett_gdb;
+
+static int hf_gdb_ack;
+static int hf_gdb_start;
+static int hf_gdb_payload;
+static int hf_gdb_end;
+static int hf_gdb_chksum;
 
 static tvbparse_wanted_t *want;
 
@@ -59,7 +61,7 @@ static void
 dissect_gdb_token(void *tvbparse_data, const void *wanted_data, tvbparse_elem_t *tok)
 {
     proto_tree *tree;
-    guint       token;
+    unsigned    token;
 
     if (!tok)   /* XXX - is this check necessary? */
         return;
@@ -75,7 +77,7 @@ dissect_gdb_token(void *tvbparse_data, const void *wanted_data, tvbparse_elem_t 
             break;
         case GDB_TOK_START:
             proto_tree_add_item(tree, hf_gdb_start,
-                    tok->tvb, tok->offset, tok->len, ENC_ASCII|ENC_NA);
+                    tok->tvb, tok->offset, tok->len, ENC_ASCII);
             break;
         case GDB_TOK_PAYLOAD:
             proto_tree_add_item(tree, hf_gdb_payload,
@@ -83,11 +85,11 @@ dissect_gdb_token(void *tvbparse_data, const void *wanted_data, tvbparse_elem_t 
             break;
         case GDB_TOK_END:
             proto_tree_add_item(tree, hf_gdb_end,
-                    tok->tvb, tok->offset, tok->len, ENC_ASCII|ENC_NA);
+                    tok->tvb, tok->offset, tok->len, ENC_ASCII);
             break;
         case GDB_TOK_CHKSUM:
             proto_tree_add_item(tree, hf_gdb_chksum,
-                    tok->tvb, tok->offset, tok->len, ENC_ASCII|ENC_NA);
+                    tok->tvb, tok->offset, tok->len, ENC_ASCII);
             break;
         default:
             break;
@@ -133,7 +135,7 @@ dissect_gdb_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
     gdb_tree = proto_item_add_subtree(ti, ett_gdb);
 
     /* XXX support multiple sub-trees */
-    tt = tvbparse_init(tvb, 0, -1, (void *)gdb_tree, NULL);
+    tt = tvbparse_init(pinfo->pool, tvb, 0, -1, (void *)gdb_tree, NULL);
 
     while(tvbparse_get(tt, want)) {
         ;
@@ -144,15 +146,15 @@ dissect_gdb_packet(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
 static int
 dissect_gdb_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
-    gint      offset=0, offset_start;
-    gint      pos;
-    guint     packet_len;
+    int       offset=0, offset_start;
+    int       pos;
+    unsigned  packet_len;
     tvbuff_t *packet_tvb;
 
     while (tvb_captured_length_remaining(tvb, offset) > 0) {
         packet_tvb = NULL;
         offset_start = offset;
-        pos = tvb_find_guint8(tvb, offset, -1, '#');
+        pos = tvb_find_uint8(tvb, offset, -1, '#');
         if (pos != -1) {
             offset += pos;
             offset++; /* skip the hash sign */
@@ -199,12 +201,13 @@ proto_register_gdb(void)
               NULL, 0, NULL, HFILL } }
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_gdb
     };
 
 
     proto_gdb = proto_register_protocol("GDB Remote Serial Protocol", "GDB remote", "gdb");
+    gdb_handle = register_dissector("gdb", dissect_gdb_tcp, proto_gdb);
 
     proto_register_field_array(proto_gdb, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
@@ -216,15 +219,11 @@ proto_register_gdb(void)
 void
 proto_reg_handoff_gdb(void)
 {
-    dissector_handle_t  gdb_handle;
-
-    gdb_handle = create_dissector_handle(dissect_gdb_tcp, proto_gdb);
-
     dissector_add_for_decode_as_with_preference("tcp.port", gdb_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

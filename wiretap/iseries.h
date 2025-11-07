@@ -1,4 +1,4 @@
-/* iseries.h
+/** @file
  *
  * Wiretap Library
  * Copyright (c) 2005 by Martin Warnes <martin@warnes.homeip.net>
@@ -12,6 +12,6 @@
 #include <glib.h>
 #include "wtap.h"
 
-wtap_open_return_val iseries_open(wtap *wth, int *err, gchar **err_info);
+wtap_open_return_val iseries_open(wtap *wth, int *err, char **err_info);
 
 #endif

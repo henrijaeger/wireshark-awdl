@@ -10,8 +10,7 @@
 
 #include "config.h"
 
-
-#include <wsutil/cmdarg_err.h>
+#include "cmdarg_err.h"
 
 static void (*print_err)(const char *, va_list ap);
 static void (*print_err_cont)(const char *, va_list ap);
@@ -30,6 +29,12 @@ cmdarg_err_init(void (*err)(const char *, va_list),
 /*
  * Report an error in command-line arguments.
  */
+void
+vcmdarg_err(const char *fmt, va_list ap)
+{
+    print_err(fmt, ap);
+}
+
 void
 cmdarg_err(const char *fmt, ...)
 {
@@ -54,14 +59,19 @@ cmdarg_err_cont(const char *fmt, ...)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
+ * Error printing routines that report to the standard error.
  */
+void
+stderr_cmdarg_err(const char *msg_format, va_list ap)
+{
+    fprintf(stderr, "%s: ", g_get_prgname());
+    vfprintf(stderr, msg_format, ap);
+    fprintf(stderr, "\n");
+}
+
+void
+stderr_cmdarg_err_cont(const char *msg_format, va_list ap)
+{
+    vfprintf(stderr, msg_format, ap);
+    fprintf(stderr, "\n");
+}

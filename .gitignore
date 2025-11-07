@@ -8,6 +8,9 @@
 #   https://help.github.com/articles/ignoring-files
 #
 
+# Note that this affects tools other than git. For example, ripgrep (rg)
+# and The Silver Searcher (ag) will obey this file by default.
+
 # Compiled or generated source #
 ################################
 *.dll
@@ -17,7 +20,8 @@
 *.lo
 *.obj
 *.pyc
-*.so*
+*.so
+*.so.*
 *.[oa]
 *.dylib
 *grammar.out
@@ -25,7 +29,6 @@
 *scanner.c
 *_dict.c
 *_lex.h
-init.lua
 epan/dissectors/dcerpc/idl2wrs
 epan/dissectors/dcerpc/*/packet-dcerpc-*.[hc]
 epan/dissectors/mesa
@@ -36,7 +39,6 @@ epan/dissectors/dissectors.in.txt
 epan/dtd_parse.c
 epan/dtd_preparse.c
 epan/uat_load.c
-epan/version_info.c
 epan/wslua/declare_wslua.h
 epan/wslua/register_wslua.c
 epan/wslua/taps.txt
@@ -46,75 +48,19 @@ plugins/epan/*/plugin.c
 plugins/wiretap/*/plugin.c
 plugins/codecs/*/plugin.c
 plugins/epan/mate/mate_parser.c
-version.h
 tools/lemon/lemon
 tshark-tap-register.c
 wiretap/ascend.c
 wiretap/ascend.h
 wiretap/k12text.c
-wiretap/version_info.c
 wireshark-tap-register.c
-ui/gtk/wireshark-gresources.c
-ui/gtk/wireshark-gresources.h
-
-# Generated makefile system #
-#############################
-.dirstamp
-aclocal.m4
-androiddump
-autom4te.cache
-capinfos
-captype
-ciscodump
-compile
-config.h
-config.h.in
-config.cache
-config.log
-config.status
-configure
-depcomp
-dftest
-dumpcap
-editcap
-exntest
-fuzzshark
-install-sh
-libtool
-libtool.m4
-lt~obsolete.m4
-ltmain.sh
-ltoptions.m4
-ltsugar.m4
-ltversion.m4
-Makefile
-Makefile.in
-mergecap
-missing
-mmdbresolve
-oids_test
-randpkt
-randpktdump
-rawshark
-reordercap
-reassemble_test
-sharkd
-sshdump
-stamp-h1
-text2pcap
-tfshark
-tshark
-tvbtest
-udpdump
-wireshark
-wmem_test
-ylwrap
 
 # CMake #
 ##################
+/*build*/
 CMakeCache.txt
 CMakeFiles
-CMakeLists.txt.user*
+CMakeUserPresets.json
 cmake_install.cmake
 CPackConfig.cmake
 CPackSourceConfig.cmake
@@ -131,73 +77,33 @@ epan/dissectors/asn1/*/*-stamp
 epan/dissectors/pidl/*-stamp
 epan/dissectors/dcerpc/*-stamp
 
-
-# Generated dir #
-##################
-.deps
-.libs
-packaging/rpm/RPMS
-packaging/rpm/SRPMS
-
-
 # Doc #
 ########
-*.html
-*.[14]
-AUTHORS.git
-AUTHORS-SHORT
-AUTHORS-SHORT-FORMAT
-doxygen.cfg
-doxygen-*.tag
-help/faq.txt
-pod2htm[di].tmp
-wireshark.pod
-docbook/developer-guide-toc.hhc
-docbook/developer-guide.hhp
-docbook/developer-guide*.xml
-docbook/user-guide-toc.hhc
-docbook/user-guide.hhp
-docbook/user-guide*.xml
-docbook/ws?g_src/WS?G_*.dbk
-docbook/*-guide-*.fo
-docbook/*-guide-*.pdf
-docbook/ws?g_html/
-docbook/ws?g_html_chunked/
-docbook/ws?g_chm/
-docbook/release-notes-*.pdf
-docbook/release-notes.txt
-docbook/wsluarm
-docbook/wsluarm_src/
+doc/man_pages/*.html
+doc/man_pages/*.[14]
+doc/developer-guide*.xml
+doc/user-guide*.xml
+doc/*-guide-*.pdf
+doc/ws?g_html/
+doc/ws?g_html_chunked/
+doc/Wireshark Release Notes.html
+doc/Wireshark Release Notes.txt
+doc/Stratoshark Release Notes.html
+doc/Stratoshark Release Notes.txt
+doc/wsluarm
+doc/wsluarm_src/
 wsar_html/
 wsar_html.zip
 
 # Qt #
 ######
-qtshark
 /ui/qt/__/
-/ui/qt/*.qrc.depends
-/ui/qt/*.pro.user
 /ui/qt/*.qm
 /ui/qt/**/moc_*.cpp
-/ui/qt/**/moc_*.cpp_parameters
-/ui/qt/**/*.moc.cpp
-/ui/qt/**/*.rcc.cpp
-/ui/qt/**/moc_*.cxx
 /ui/qt/i18n.qrc
 /ui/qt/qrc_*.cpp
-/ui/qt/qrc_*.cxx
 /ui/qt/ui_*.h
-/ui/qt/console.lua
-/wireshark-qt*
-
-# abi #
-#######
-epan/abi-check-headers/
-epan/abi-descriptor.xml
-wiretap/abi-check-headers/
-wiretap/abi-descriptor.xml
-wsutil/abi-check-headers/
-wsutil/abi-descriptor.xml
+*.ui.autosave
 
 # Windows Stuff #
 #################
@@ -205,7 +111,6 @@ wsutil/abi-descriptor.xml
 *.dir/
 *.dsp
 *.dsw
-*.chm
 *.exp
 *.lib
 *.ilk
@@ -213,49 +118,55 @@ wsutil/abi-descriptor.xml
 *.pdb
 *.nativecodeanalysis.xml
 *.rc
-!image/file_dlg_win32.rc
+!file_dlg_win32.rc
 *.res
 *.vcxproj*
 /Copying.txt
 /News.txt
 /README.txt
 /README.windows.txt
-Win32/
 Wireshark.opensdf
 Wireshark.sdf
 Wireshark.sln
 Wireshark.*.suo
-x64/
-_libs_check_
-/wireshark-gtk*
-doc/ws.css
-ui/qt/config.pri
 packaging/nsis/all-manifest.nsh
-packaging/nsis/gtk-dll-manifest.nsh
-/packaging/portableapps/WiresharkPortable/
-/zlib/
+packaging/nsis/config.nsh
+packaging/nsis/qt-dll-manifest.nsh
+packaging/portableapps/WiresharkPortable/
+packaging/portableapps/Files/
+packaging/portableapps/appinfo.ini
+wireshark-win??-libs*/
+
+# macOS Stuff
+.DS_Store
+macosx-support-libs
+packaging/macosx/Info.plist
+packaging/macosx/osx-dmg.sh
+packaging/macosx/PkgInfo
+
+# clangd #
+##########
+.cache
+compile_commands.json
+
+# Qt Creator
+CMakeLists.txt.user*
+
+# Debian packaging
+/debian/
 
 # Misc #
 ########
 .vagrant
 .vscode
-*.swp
+.idea
+*.sw?
 *~
-.DS_Store
 cscope.*
-dummy.cpp
 tags
 TAGS
-macosx-support-libs
-packaging/macosx/COPYING.txt
-packaging/macosx/Info.plist
-packaging/macosx/osx-dmg.sh
-packaging/macosx/PkgInfo
-packaging/macosx/Wireshark_package.pmdoc/index.xml
-packaging/nsis/config.nsh
-packaging/nsis/qt-dll-manifest.nsh
-packaging/portableapps/Files/
-packaging/portableapps/appinfo.ini
-packaging/rpm/SPECS/wireshark.spec
 vgcore.*
-Wireshark.*
+.pytest_cache/
+test/*.log
+*.code-workspace
+__pycache__/

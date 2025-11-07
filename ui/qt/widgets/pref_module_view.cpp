@@ -14,31 +14,31 @@
 #include <QHeaderView>
 
 PrefModuleTreeView::PrefModuleTreeView(QWidget *parent) : QTreeView(parent),
-    appearanceName_(PrefsModel::APPEARANCE_PREFERENCE_TREE_NAME)
+    appearanceName_(PrefsModel::typeToString(PrefsModel::Appearance))
 {
 }
 
-void PrefModuleTreeView::setPane(const QString pane_name)
+void PrefModuleTreeView::setPane(const QString module_name)
 {
     QModelIndex newIndex, modelIndex, appearanceIndex, protocolIndex, statIndex;
-    QString modelTreeName;
+    QString moduleName;
     int row;
 
     //look for the pane name in the main tree before trying children
     for (row = 0; row < model()->rowCount(); row++)
     {
         modelIndex = model()->index(row, ModulePrefsModel::colName);
-        modelTreeName = model()->data(modelIndex, Qt::DisplayRole).toString();
+        moduleName = model()->data(modelIndex, ModulePrefsModel::ModuleName).toString();
 
-        if (modelTreeName.compare(appearanceName_) == 0) {
+        if (moduleName.compare(appearanceName_) == 0) {
             appearanceIndex = modelIndex;
-        } else if (modelTreeName.compare("Protocols") == 0) {
+        } else if (moduleName.compare("Protocols") == 0) {
             protocolIndex = modelIndex;
-        } else if (modelTreeName.compare("Statistics") == 0) {
+        } else if (moduleName.compare("Statistics") == 0) {
             statIndex = modelIndex;
         }
 
-        if (modelTreeName.compare(pane_name) == 0) {
+        if (moduleName.compare(module_name) == 0) {
             newIndex = modelIndex;
             break;
         }
@@ -46,22 +46,23 @@ void PrefModuleTreeView::setPane(const QString pane_name)
 
     //Look through appearance children
     if (!newIndex.isValid()) {
-        newIndex = findModule(appearanceIndex, pane_name);
+        newIndex = findModule(appearanceIndex, module_name);
     }
 
     //Look through protocol children
     if (!newIndex.isValid()) {
-        newIndex = findModule(protocolIndex, pane_name);
+        newIndex = findModule(protocolIndex, module_name);
     }
 
     //Look through stat children
     if (!newIndex.isValid()) {
-        newIndex = findModule(statIndex, pane_name);
+        newIndex = findModule(statIndex, module_name);
     }
 
     setCurrentIndex(newIndex);
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 QModelIndex PrefModuleTreeView::findModule(QModelIndex& parent, const QString& name)
 {
     QModelIndex findIndex, modelIndex;
@@ -75,6 +76,12 @@ QModelIndex PrefModuleTreeView::findModule(QModelIndex& parent, const QString& n
             findIndex = modelIndex;
             break;
         }
+        if (model()->rowCount(modelIndex) > 0) {
+            // We recurse here, but our depth is limited
+            findIndex = findModule(modelIndex, name);
+            if (findIndex.isValid())
+                break;
+        }
     }
 
     return findIndex;
@@ -85,22 +92,10 @@ void PrefModuleTreeView::currentChanged(const QModelIndex &current, const QModel
 {
     if (current.isValid())
     {
-        QString pane_name = model()->data(current, ModulePrefsModel::ModuleName).toString();
+        QString module_name = model()->data(current, ModulePrefsModel::ModuleName).toString();
 
-        emit goToPane(pane_name);
+        emit goToPane(module_name);
     }
 
     QTreeView::currentChanged(current, previous);
 }
-
-/* * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

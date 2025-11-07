@@ -1,5 +1,7 @@
 /* packet-bofl.c
  * Routines for Wellfleet BOFL dissection
+ * Wellfleet -> Baynetworks -> Nortel -> Avaya -> Extremenetworks
+ * Protocol is now called Simple Loop Protection Protocol (SLPP)
  * Author: Endoh Akira (endoh@netmarks.co.jp)
  *
  * Wireshark - Network traffic analyzer
@@ -26,24 +28,55 @@
  *       6           6        2      4       4       n bytes
  */
 
+/* From the above link:
+ *
+ * Wellfleet BOFL
+ *
+ * The Wellfleet Breath of Life (BOFL) protocol is used as a line sensing protocol on:
+ *
+ * Ethernet LANs to detect transmitter jams.
+ * Synchronous lines running WFLT STD protocols to determine if the line is up.
+ * Dial backup PPP lines.
+ * The frame format of Wellfleet BOFL is shown following the Ethernet header in the following illustration:
+ *
+ * Destination | Source |8102 | PDU | Sequence | Padding
+ *  6          |  6     | 2   |  4  |  4       | n bytes
+ * <-------------------------->
+ *       Ethernet Header
+ *
+ * 8102
+ * EtherType (0x8102 for Wellfleet BOFL frames).
+ *
+ * PDU
+ * PDU field normally equals 0x01010000, but may equal 0x01011111 in some new releases on synchronous links.
+ *
+ * Sequence
+ * 4-byte sequence field is an incremental counter.
+ *
+ * Padding
+ * Padding to fill out the frame to 64 bytes.
+ */
+
 #include "config.h"
 
 #include <epan/packet.h>
 
-#define ETHER_TYPE_BOFL 0x8102
+#define ETHER_TYPE_SLPP 0x8102
 #define BOFL_MIN_LEN    8
 
 void proto_register_bofl(void);
 void proto_reg_handoff_bofl(void);
 
+static dissector_handle_t bofl_handle;
+
 /* Initialize the protocol and registered fields */
-static int proto_bofl       = -1;
-static int hf_bofl_pdu      = -1;
-static int hf_bofl_sequence = -1;
-static int hf_bofl_padding  = -1;
+static int proto_bofl;
+static int hf_bofl_pdu;
+static int hf_bofl_sequence;
+static int hf_bofl_padding;
 
 /* Initialize the subtree pointers */
-static gint ett_bofl = -1;
+static int ett_bofl;
 
 /* Code to actually dissect the packets */
 static int
@@ -51,8 +84,8 @@ dissect_bofl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
 {
     proto_item  *ti;
     proto_tree  *bofl_tree;
-    gint        len;
-    guint32     pdu, sequence;
+    int         len;
+    uint32_t    pdu, sequence;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "BOFL");
 
@@ -102,7 +135,7 @@ proto_register_bofl(void)
         }
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_bofl,
     };
 
@@ -110,20 +143,19 @@ proto_register_bofl(void)
                                          "BOFL", "bofl");
     proto_register_field_array(proto_bofl, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
+
+    bofl_handle = register_dissector("bofl", dissect_bofl, proto_bofl);
 }
 
 
 void
 proto_reg_handoff_bofl(void)
 {
-    dissector_handle_t bofl_handle;
-
-    bofl_handle = create_dissector_handle(dissect_bofl, proto_bofl);
-    dissector_add_uint("ethertype", ETHER_TYPE_BOFL, bofl_handle);
+    dissector_add_uint("ethertype", ETHER_TYPE_SLPP, bofl_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

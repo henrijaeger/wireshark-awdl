@@ -12,19 +12,19 @@
  * off to heuristic dissectors to try to identify the file's contents.
  *
  * Wiretap Library
-* SPDX-License-Identifier: GPL-2.0-or-later*/
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
+#include "mime_file.h"
 
-#ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
-#endif
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
-#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -32,39 +32,52 @@
 #include "wtap-int.h"
 #include "file_wrappers.h"
 #include <wsutil/buffer.h>
-#include "mime_file.h"
 
 typedef struct {
-	const guint8 *magic;
-	guint magic_len;
+	const uint8_t *magic;
+	unsigned magic_len;
 } mime_files_t;
 
 /*
  * Written by Marton Nemeth <nm127@freemail.hu>
  * Copyright 2009 Marton Nemeth
- * The JPEG and JFIF specification can be found at:
+ * The JPEG specification can be found at:
  *
- * http://www.jpeg.org/public/jfif.pdf
- * http://www.w3.org/Graphics/JPEG/itu-t81.pdf
+ * https://www.w3.org/Graphics/JPEG/itu-t81.pdf
+ * https://www.itu.int/rec/T-REC-T.81/en (but you have to pay for it)
+ *
+ * and the JFIF specification can be found at:
+ *
+ * https://www.itu.int/rec/T-REC-T.871-201105-I/en
+ * https://www.w3.org/Graphics/JPEG/jfif3.pdf
  */
-static const guint8 jpeg_jfif_magic[] = { 0xFF, 0xD8, /* SOF */
+static const uint8_t jpeg_jfif_magic[] = { 0xFF, 0xD8, /* SOF */
 					  0xFF        /* start of the next marker */
 					};
 
 /* <?xml */
-static const guint8 xml_magic[]    = { '<', '?', 'x', 'm', 'l' };
-static const guint8 png_magic[]    = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
-static const guint8 gif87a_magic[] = { 'G', 'I', 'F', '8', '7', 'a'};
-static const guint8 gif89a_magic[] = { 'G', 'I', 'F', '8', '9', 'a'};
-static const guint8 elf_magic[]    = { 0x7F, 'E', 'L', 'F'};
-static const guint8 btsnoop_magic[]    = { 'b', 't', 's', 'n', 'o', 'o', 'p', 0};
-static const guint8 pcap_magic[]           = { 0xA1, 0xB2, 0xC3, 0xD4 };
-static const guint8 pcap_swapped_magic[]   = { 0xD4, 0xC3, 0xB2, 0xA1 };
-static const guint8 pcapng_premagic[]      = { 0x0A, 0x0D, 0x0D, 0x0A };
+static const uint8_t xml_magic[]    = { '<', '?', 'x', 'm', 'l' };
+static const uint8_t png_magic[]    = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
+static const uint8_t gif87a_magic[] = { 'G', 'I', 'F', '8', '7', 'a'};
+static const uint8_t gif89a_magic[] = { 'G', 'I', 'F', '8', '9', 'a'};
+static const uint8_t elf_magic[]    = { 0x7F, 'E', 'L', 'F'};
+static const uint8_t tiff_le_magic[]    = { 'I', 'I', 42, 0 };
+static const uint8_t tiff_be_magic[]    = { 'M', 'M', 0, 42 };
+static const uint8_t riff_magic[]    = { 'R', 'I', 'F', 'F' };
+static const uint8_t btsnoop_magic[]    = { 'b', 't', 's', 'n', 'o', 'o', 'p', 0};
+static const uint8_t pcap_magic[]           = { 0xA1, 0xB2, 0xC3, 0xD4 };
+static const uint8_t pcap_swapped_magic[]   = { 0xD4, 0xC3, 0xB2, 0xA1 };
+static const uint8_t pcap_nsec_magic[]           = { 0xA1, 0xB2, 0x3C, 0x4D };
+static const uint8_t pcap_nsec_swapped_magic[]   = { 0x4D, 0x3C, 0xB2, 0xA1 };
+static const uint8_t pcapng_premagic[]      = { 0x0A, 0x0D, 0x0D, 0x0A };
+static const uint8_t blf_magic[]                 = { 'L', 'O', 'G', 'G' };
+static const uint8_t autosar_dlt_magic[]         = { 'D', 'L', 'T', 0x01 };
+static const uint8_t ttl_magic[]		 = { 'T', 'T', 'L', ' ' };
+static const uint8_t rtpdump_magic[]         = { '#', '!', 'r', 't', 'p', 'p', 'l', 'a', 'y', '1', '.', '0', ' ' };
 
 /* File does not start with it */
-static const guint8 pcapng_xmagic[]         = { 0x1A, 0x2B, 0x3C, 0x4D };
-static const guint8 pcapng_swapped_xmagic[] = { 0x4D, 0x3C, 0x2B, 0x1A };
+static const uint8_t pcapng_xmagic[]         = { 0x1A, 0x2B, 0x3C, 0x4D };
+static const uint8_t pcapng_swapped_xmagic[] = { 0x4D, 0x3C, 0x2B, 0x1A };
 
 static const mime_files_t magic_files[] = {
 	{ jpeg_jfif_magic, sizeof(jpeg_jfif_magic) },
@@ -73,106 +86,42 @@ static const mime_files_t magic_files[] = {
 	{ gif87a_magic, sizeof(gif87a_magic) },
 	{ gif89a_magic, sizeof(gif89a_magic) },
 	{ elf_magic, sizeof(elf_magic) },
+	{ tiff_le_magic, sizeof(tiff_le_magic) },
+	{ tiff_be_magic, sizeof(tiff_be_magic) },
+	{ riff_magic, sizeof(riff_magic) },
 	{ btsnoop_magic, sizeof(btsnoop_magic) },
 	{ pcap_magic, sizeof(pcap_magic) },
 	{ pcap_swapped_magic, sizeof(pcap_swapped_magic) },
-	{ pcapng_premagic, sizeof(pcapng_premagic) }
+	{ pcap_nsec_magic, sizeof(pcap_nsec_magic) },
+	{ pcap_nsec_swapped_magic, sizeof(pcap_nsec_swapped_magic) },
+	{ pcapng_premagic, sizeof(pcapng_premagic) },
+	{ blf_magic, sizeof(blf_magic) },
+	{ autosar_dlt_magic, sizeof(autosar_dlt_magic) },
+	{ ttl_magic, sizeof(ttl_magic) },
+	{ rtpdump_magic, sizeof(rtpdump_magic) },
 };
 
-#define	N_MAGIC_TYPES	(sizeof(magic_files) / sizeof(magic_files[0]))
+#define	N_MAGIC_TYPES	array_length(magic_files)
 
-/*
- * Impose a not-too-large limit on the maximum file size, to avoid eating
- * up 99% of the (address space, swap partition, disk space for swap/page
- * files); if we were to return smaller chunks and let the dissector do
- * reassembly, it would *still* have to allocate a buffer the size of
- * the file, so it's not as if we'd neve try to allocate a buffer the
- * size of the file.
- */
-#define MAX_FILE_SIZE	G_MAXINT
+static int mime_file_type_subtype = -1;
 
-static gboolean
-mime_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
-    Buffer *buf, int *err, gchar **err_info)
-{
-	gint64 file_size;
-	int packet_size;
-
-	if ((file_size = wtap_file_size(wth, err)) == -1)
-		return FALSE;
-
-	if (file_size > MAX_FILE_SIZE) {
-		/*
-		 * Don't blow up trying to allocate space for an
-		 * immensely-large file.
-		 */
-		*err = WTAP_ERR_BAD_FILE;
-		*err_info = g_strdup_printf("mime_file: File has %" G_GINT64_MODIFIER "d-byte packet, bigger than maximum of %u",
-				file_size, MAX_FILE_SIZE);
-		return FALSE;
-	}
-	packet_size = (int)file_size;
-
-	rec->rec_type = REC_TYPE_PACKET;
-	rec->presence_flags = 0; /* yes, we have no bananas^Wtime stamp */
-
-	rec->rec_header.packet_header.caplen = packet_size;
-	rec->rec_header.packet_header.len = packet_size;
-
-	rec->ts.secs = 0;
-	rec->ts.nsecs = 0;
-
-	return wtap_read_packet_bytes(fh, buf, packet_size, err, err_info);
-}
-
-static gboolean
-mime_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
-{
-	gint64 offset;
-
-	*err = 0;
-
-	offset = file_tell(wth->fh);
-
-	/* there is only ever one packet */
-	if (offset != 0)
-		return FALSE;
-
-	*data_offset = offset;
-
-	return mime_read_file(wth, wth->fh, &wth->rec, wth->rec_data, err, err_info);
-}
-
-static gboolean
-mime_seek_read(wtap *wth, gint64 seek_off, wtap_rec *rec, Buffer *buf, int *err, gchar **err_info)
-{
-	/* there is only one packet */
-	if (seek_off > 0) {
-		*err = 0;
-		return FALSE;
-	}
-
-	if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
-		return FALSE;
-
-	return mime_read_file(wth, wth->random_fh, rec, buf, err, err_info);
-}
+void register_mime(void);
 
 wtap_open_return_val
-mime_file_open(wtap *wth, int *err, gchar **err_info)
+mime_file_open(wtap *wth, int *err, char **err_info)
 {
 	char magic_buf[128]; /* increase buffer size when needed */
 	int bytes_read;
-	gboolean found_file;
-	/* guint file_ok; */
-	guint i;
+	bool found_file;
+	/* unsigned file_ok; */
+	unsigned i;
 
-	guint read_bytes = 12;
+	unsigned read_bytes = 12;
 
 	for (i = 0; i < N_MAGIC_TYPES; i++)
 		read_bytes = MAX(read_bytes, magic_files[i].magic_len);
 
-	read_bytes = (guint)MIN(read_bytes, sizeof(magic_buf));
+	read_bytes = (unsigned)MIN(read_bytes, sizeof(magic_buf));
 	bytes_read = file_read(magic_buf, read_bytes, wth->fh);
 
 	if (bytes_read < 0) {
@@ -182,16 +131,16 @@ mime_file_open(wtap *wth, int *err, gchar **err_info)
 	if (bytes_read == 0)
 		return WTAP_OPEN_NOT_MINE;
 
-	found_file = FALSE;
+	found_file = false;
 	for (i = 0; i < N_MAGIC_TYPES; i++) {
-		if ((guint) bytes_read >= magic_files[i].magic_len && !memcmp(magic_buf, magic_files[i].magic, MIN(magic_files[i].magic_len, (guint) bytes_read))) {
+		if ((unsigned) bytes_read >= magic_files[i].magic_len && !memcmp(magic_buf, magic_files[i].magic, MIN(magic_files[i].magic_len, (unsigned) bytes_read))) {
 			if (!found_file) {
 				if (magic_files[i].magic == pcapng_premagic) {
 					if (memcmp(magic_buf + 8, pcapng_xmagic, sizeof(pcapng_xmagic)) &&
 							memcmp(magic_buf + 8, pcapng_swapped_xmagic, sizeof(pcapng_swapped_xmagic)))
 						continue;
 				}
-				found_file = TRUE;
+				found_file = true;
 			} else
 				return WTAP_OPEN_NOT_MINE;	/* many files matched, bad file */
 		}
@@ -203,18 +152,75 @@ mime_file_open(wtap *wth, int *err, gchar **err_info)
 	if (file_seek(wth->fh, 0, SEEK_SET, err) == -1)
 		return WTAP_OPEN_ERROR;
 
-	wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_MIME;
+	wth->file_type_subtype = mime_file_type_subtype;
 	wth->file_encap = WTAP_ENCAP_MIME;
 	wth->file_tsprec = WTAP_TSPREC_SEC;
-	wth->subtype_read = mime_read;
-	wth->subtype_seek_read = mime_seek_read;
+	wth->subtype_read = wtap_full_file_read;
+	wth->subtype_seek_read = wtap_full_file_seek_read;
 	wth->snapshot_length = 0;
 
 	return WTAP_OPEN_MINE;
 }
 
+static const struct supported_block_type mime_blocks_supported[] = {
+	/*
+	 * This is a file format that we dissect, so we provide
+	 * only one "packet" with the file's contents, and don't
+	 * support any options.
+	 */
+	{ WTAP_BLOCK_PACKET, ONE_BLOCK_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info mime_info = {
+	"MIME File Format", "mime", NULL, NULL,
+	false, BLOCKS_SUPPORTED(mime_blocks_supported),
+	NULL, NULL, NULL
+};
+
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * XXX - registered solely for the benefit of Lua scripts that
+ * look for the file type "JPEG_JFIF"; it may be removed once
+ * we get rid of wtap_filetypes.
+ */
+static const struct supported_block_type jpeg_jfif_blocks_supported[] = {
+	/*
+	 * This is a file format that we dissect, so we provide
+	 * only one "packet" with the file's contents, and don't
+	 * support any options.
+	 */
+	{ WTAP_BLOCK_PACKET, ONE_BLOCK_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info jpeg_jfif_info = {
+	"JPEG/JFIF", "jpeg", "jpg", "jpeg;jfif",
+	false, BLOCKS_SUPPORTED(jpeg_jfif_blocks_supported),
+	NULL, NULL, NULL
+};
+
+void register_mime(void)
+{
+	int jpeg_jfif_file_type_subtype;
+
+	mime_file_type_subtype = wtap_register_file_type_subtype(&mime_info);
+
+	/*
+	 * Obsoleted by "mime", but we want it for the backwards-
+	 * compatibility table for Lua.
+	 */
+	jpeg_jfif_file_type_subtype = wtap_register_file_type_subtype(&jpeg_jfif_info);
+
+	/*
+	 * Register names for backwards compatibility with the
+	 * wtap_filetypes table in Lua.
+	 */
+	wtap_register_backwards_compatibility_lua_name("MIME",
+	    mime_file_type_subtype);
+	wtap_register_backwards_compatibility_lua_name("JPEG_JFIF",
+	    jpeg_jfif_file_type_subtype);
+}
+
+/*
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

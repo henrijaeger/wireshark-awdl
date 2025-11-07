@@ -17,21 +17,14 @@
 #include "lua_bitop.h"
 #include "ws_diag_control.h"
 
-#ifdef _MSC_VER
-/* MSVC is stuck in the last century and doesn't have C99's stdint.h. */
-typedef __int32 int32_t;
-typedef unsigned __int32 uint32_t;
-typedef unsigned __int64 uint64_t;
-#else
 #include <stdint.h>
-#endif
 
 typedef int32_t SBits;
 typedef uint32_t UBits;
 
 typedef union {
   lua_Number n;
-#ifdef LUA_NUMBER_DOUBLE
+#if defined(LUA_NUMBER_DOUBLE) || defined(LUA_FLOAT_DOUBLE)
   uint64_t b;
 #else
   UBits b;
@@ -43,47 +36,43 @@ static UBits barg(lua_State *L, int idx)
 {
   BitNum bn;
   UBits b;
-#if LUA_VERSION_NUM < 502
-  bn.n = lua_tonumber(L, idx);
-#else
   bn.n = luaL_checknumber(L, idx);
-#endif
-#if defined(LUA_NUMBER_DOUBLE)
+#if defined(LUA_NUMBER_DOUBLE) || defined(LUA_FLOAT_DOUBLE)
   bn.n += 6755399441055744.0;  /* 2^52+2^51 */
 #ifdef SWAPPED_DOUBLE
   b = (UBits)(bn.b >> 32);
 #else
   b = (UBits)bn.b;
 #endif
-#elif defined(LUA_NUMBER_INT) || defined(LUA_NUMBER_LONG) || \
-      defined(LUA_NUMBER_LONGLONG) || defined(LUA_NUMBER_LONG_LONG) || \
-      defined(LUA_NUMBER_LLONG)
+#elif defined(LUA_NUMBER_INT)       || defined(LUA_INT_INT) || \
+      defined(LUA_NUMBER_LONG)      || defined(LUA_INT_LONG) || \
+      defined(LUA_NUMBER_LONGLONG)  || defined(LUA_INT_LONGLONG) || \
+      defined(LUA_NUMBER_LONG_LONG) || defined(LUA_NUMBER_LLONG)
   if (sizeof(UBits) == sizeof(lua_Number))
     b = bn.b;
   else
     b = (UBits)(SBits)bn.n;
-#elif defined(LUA_NUMBER_FLOAT)
+#elif defined(LUA_NUMBER_FLOAT) || defined(LUA_FLOAT_FLOAT)
 #error "A 'float' lua_Number type is incompatible with this library"
 #else
-#error "Unknown number type, check LUA_NUMBER_* in luaconf.h"
-#endif
-#if LUA_VERSION_NUM < 502
-  if (b == 0 && !lua_isnumber(L, idx)) {
-    luaL_typerror(L, idx, "number");
-  }
+#error "Unknown number type, check LUA_NUMBER_*, LUA_FLOAT_*, LUA_INT_* in luaconf.h"
 #endif
   return b;
 }
 
 /* Return bit type. */
+#if LUA_VERSION_NUM < 503
 #define BRET(b)  lua_pushnumber(L, (lua_Number)(SBits)(b)); return 1;
+#else
+#define BRET(b)  lua_pushinteger(L, (lua_Integer)(SBits)(b)); return 1;
+#endif
 
 static int bit_tobit(lua_State *L) { BRET(barg(L, 1)) }
 static int bit_bnot(lua_State *L) { BRET(~barg(L, 1)) }
 
 #define BIT_OP(func, opr) \
   static int func(lua_State *L) { int i; UBits b = barg(L, 1); \
-    for (i = lua_gettop(L); i > 1; i--) b opr barg(L, i); BRET(b) }
+    for (i = lua_gettop(L); i > 1; i--) { b opr barg(L, i); } BRET(b) }
 BIT_OP(bit_band, &=)
 BIT_OP(bit_bor, |=)
 BIT_OP(bit_bxor, ^=)
@@ -116,6 +105,7 @@ static int bit_tohex(lua_State *L)
   const char *hexdigits = "0123456789abcdef";
   char buf[8];
   int i;
+  if (n == INT32_MIN) n = INT32_MIN+1;
   if (n < 0) { n = -n; hexdigits = "0123456789ABCDEF"; }
   if (n > 8) n = 8;
   for (i = (int)n; --i >= 0; ) { buf[i] = hexdigits[b & 15]; b >>= 4; }
@@ -148,11 +138,15 @@ static const struct luaL_Reg bit_funcs[] = {
 LUALIB_API int luaopen_bit(lua_State *L)
 {
   UBits b;
+#if LUA_VERSION_NUM < 503
   lua_pushnumber(L, (lua_Number)1437217655L);
+#else
+  lua_pushinteger(L, (lua_Integer)1437217655L);
+#endif
   b = barg(L, -1);
   if (b != (UBits)1437217655L || BAD_SAR) {  /* Perform a simple self-test. */
     const char *msg = "compiled with incompatible luaconf.h";
-#ifdef LUA_NUMBER_DOUBLE
+#if defined(LUA_NUMBER_DOUBLE) || defined(LUA_FLOAT_DOUBLE)
 #ifdef _WIN32
     if (b == (UBits)1610612736L)
       msg = "use D3DCREATE_FPU_PRESERVE with DirectX";
@@ -166,13 +160,8 @@ DIAG_OFF(unreachable-code)
 DIAG_ON(unreachable-code)
     luaL_error(L, "bit library self-test failed (%s)", msg);
   }
-#if LUA_VERSION_NUM < 502
-  luaL_register(L, "bit", bit_funcs);
-  return 1;
-#else
+
   luaL_newlib(L, bit_funcs);
-  lua_setglobal(L, "bit"); /* added for wireshark */
-  return 0; /* changed from 1 to 0 for wireshark, since lua_setglobal now pops the table */
-#endif
+  return 1;
 }
 

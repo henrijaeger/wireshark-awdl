@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "sctp_graph_byte_dialog.h"
 #include <ui_sctp_graph_byte_dialog.h>
@@ -38,7 +39,7 @@ SCTPGraphByteDialog::SCTPGraphByteDialog(QWidget *parent, const sctp_assoc_info_
             | Qt::WindowMaximizeButtonHint
             | Qt::WindowCloseButtonHint;
     this->setWindowFlags(flags);
-    this->setWindowTitle(QString(tr("SCTP Data and Adv. Rec. Window over Time: %1 Port1 %2 Port2 %3"))
+    this->setWindowTitle(tr("SCTP Data and Adv. Rec. Window over Time: %1 Port1 %2 Port2 %3")
             .arg(gchar_free_to_qstring(cf_get_display_name(cap_file_))).arg(assoc->port1).arg(assoc->port2));
     if ((direction == 1 && assoc->n_array_tsn1 == 0) || (direction == 2 && assoc->n_array_tsn2 == 0)) {
         QMessageBox msgBox;
@@ -58,11 +59,11 @@ SCTPGraphByteDialog::~SCTPGraphByteDialog()
 
 void SCTPGraphByteDialog::drawBytesGraph(const sctp_assoc_info_t *selected_assoc)
 {
-    GList *listTSN = NULL,*tlist;
-    tsn_t *tsn;
-    guint8 type;
-    guint32 maxBytes;
-    guint64 sumBytes = 0;
+    GList *listTSN = Q_NULLPTR, *tlist = Q_NULLPTR;
+    tsn_t *tsn = Q_NULLPTR;
+    uint8_t type;
+    uint32_t maxBytes;
+    uint64_t sumBytes = 0;
 
     if (direction == 1) {
         maxBytes = selected_assoc->n_data_bytes_ep1;
@@ -74,14 +75,14 @@ void SCTPGraphByteDialog::drawBytesGraph(const sctp_assoc_info_t *selected_assoc
 
 
     while (listTSN) {
-        tsn = (tsn_t*) (listTSN->data);
+        tsn = gxx_list_data(tsn_t*, listTSN);
         tlist = g_list_first(tsn->tsns);
-        guint16 length;
+        uint16_t length;
         while (tlist)
         {
-            type = ((struct chunk_header *)tlist->data)->type;
+            type = gxx_list_data(struct chunk_header *, tlist)->type;
             if (type == SCTP_DATA_CHUNK_ID || type == SCTP_I_DATA_CHUNK_ID) {
-                length = g_ntohs(((struct data_chunk_header *)tlist->data)->length);
+                length = g_ntohs(gxx_list_data(struct data_chunk_header *, tlist)->length);
                 if (type == SCTP_DATA_CHUNK_ID)
                     length -= DATA_CHUNK_HEADER_LENGTH;
                 else
@@ -91,9 +92,9 @@ void SCTPGraphByteDialog::drawBytesGraph(const sctp_assoc_info_t *selected_assoc
                 xb.append(tsn->secs + tsn->usecs/1000000.0);
                 fb.append(tsn->frame_number);
             }
-            tlist = g_list_next(tlist);
+            tlist = gxx_list_next(tlist);
         }
-        listTSN = g_list_previous(listTSN);
+        listTSN = gxx_list_previous(listTSN);
     }
 
 
@@ -106,7 +107,7 @@ void SCTPGraphByteDialog::drawBytesGraph(const sctp_assoc_info_t *selected_assoc
     // Add Bytes graph
     if (xb.size() > 0) {
         QCPGraph *gr = ui->sctpPlot->addGraph(ui->sctpPlot->xAxis, ui->sctpPlot->yAxis);
-        gr->setName(QString(tr("Bytes")));
+        gr->setName(tr("Bytes"));
         myScatter.setPen(QPen(Qt::red));
         myScatter.setBrush(Qt::red);
         ui->sctpPlot->graph(0)->setScatterStyle(myScatter);
@@ -132,7 +133,7 @@ void SCTPGraphByteDialog::drawGraph()
     ui->sctpPlot->clearGraphs();
     drawBytesGraph(selected_assoc);
     ui->sctpPlot->setInteractions(QCP::iRangeZoom | QCP::iRangeDrag | QCP::iSelectPlottables);
-    connect(ui->sctpPlot, SIGNAL(plottableClick(QCPAbstractPlottable*,QMouseEvent*)), this, SLOT(graphClicked(QCPAbstractPlottable*, QMouseEvent*)));
+    connect(ui->sctpPlot, &QCustomPlot::plottableClick, this, &SCTPGraphByteDialog::graphClicked);
     ui->sctpPlot->replot();
 }
 
@@ -151,7 +152,7 @@ void SCTPGraphByteDialog::on_pushButton_4_clicked()
     ui->sctpPlot->replot();
 }
 
-void SCTPGraphByteDialog::graphClicked(QCPAbstractPlottable* plottable, QMouseEvent* event)
+void SCTPGraphByteDialog::graphClicked(QCPAbstractPlottable* plottable, int, QMouseEvent* event)
 {
     if (plottable->name().contains(tr("Bytes"), Qt::CaseInsensitive)) {
         double bytes = ui->sctpPlot->yAxis->pixelToCoord(event->pos().y());
@@ -163,10 +164,10 @@ void SCTPGraphByteDialog::graphClicked(QCPAbstractPlottable* plottable, QMouseEv
             }
         }
         if (cap_file_ && frame_num > 0) {
-            cf_goto_frame(cap_file_, frame_num);
+            cf_goto_frame(cap_file_, frame_num, false);
         }
 
-        ui->hintLabel->setText(QString(tr("<small><i>Graph %1: Received bytes=%2 Time=%3 secs </i></small>"))
+        ui->hintLabel->setText(tr("<small><i>Graph %1: Received bytes=%2 Time=%3 secs </i></small>")
                                .arg(plottable->name())
                                .arg(yb.value(i))
                                .arg(xb.value(i)));
@@ -178,16 +179,3 @@ void SCTPGraphByteDialog::on_saveButton_clicked()
 {
     SCTPGraphDialog::save_graph(this, ui->sctpPlot);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

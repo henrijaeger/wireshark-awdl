@@ -46,18 +46,18 @@
 /**************************************************************************
  * Names of types in userdata parameter part
  */
-#define S7COMM_UD_TYPE_PUSH                 0x0
-#define S7COMM_UD_TYPE_REQ                  0x4
-#define S7COMM_UD_TYPE_RES                  0x8
+#define S7COMM_UD_TYPE_IND                  0x0
+#define S7COMM_UD_TYPE_REQ                  0x1
+#define S7COMM_UD_TYPE_RES                  0x2
 
 extern const value_string s7comm_item_return_valuenames[];
 
-guint32 s7comm_decode_ud_cpu_diagnostic_message(tvbuff_t *tvb, packet_info *pinfo, gboolean add_info_to_col, proto_tree *data_tree, guint32 offset);
+uint32_t s7comm_decode_ud_cpu_diagnostic_message(tvbuff_t *tvb, packet_info *pinfo, bool add_info_to_col, proto_tree *data_tree, uint32_t offset);
 
 #endif
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

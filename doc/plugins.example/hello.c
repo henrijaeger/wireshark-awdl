@@ -7,27 +7,24 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
+#define WS_BUILD_DLL
+#include <wireshark.h>
+#include <wsutil/plugins.h>
 #include <epan/packet.h>
 #include <epan/proto.h>
-#include <ws_attributes.h>
 
 #ifndef VERSION
 #define VERSION "0.0.0"
 #endif
 
-#define DLL_PUBLIC __attribute__((__visibility__("default")))
+WS_DLL_PUBLIC_DEF const char plugin_version[] = VERSION;
+WS_DLL_PUBLIC_DEF const int plugin_want_major = WIRESHARK_VERSION_MAJOR;
+WS_DLL_PUBLIC_DEF const int plugin_want_minor = WIRESHARK_VERSION_MINOR;
 
-DLL_PUBLIC const gchar plugin_version[] = VERSION;
-DLL_PUBLIC const gchar plugin_release[] = VERSION_RELEASE;
+WS_DLL_PUBLIC void plugin_register(void);
+WS_DLL_PUBLIC uint32_t plugin_describe(void);
 
-DLL_PUBLIC void plugin_register(void);
-
-
-static int proto_hello = -1;
+static int proto_hello;
 static dissector_handle_t handle_hello;
 
 static int
@@ -59,4 +56,10 @@ plugin_register(void)
     plug.register_protoinfo = proto_register_hello;
     plug.register_handoff = proto_reg_handoff_hello; /* or NULL */
     proto_register_plugin(&plug);
+}
+
+uint32_t
+plugin_describe(void)
+{
+    return WS_PLUGIN_DESC_DISSECTOR;
 }

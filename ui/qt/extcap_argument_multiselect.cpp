@@ -4,15 +4,14 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <extcap_argument.h>
 #include <extcap_argument_file.h>
 
 #include <wsutil/utf8_entities.h>
 
-#include <QObject>
-#include <QWidget>
 #include <QLabel>
 #include <QLineEdit>
 #include <QBoxLayout>
@@ -25,39 +24,44 @@
 #include <extcap_parser.h>
 #include <extcap_argument_multiselect.h>
 
-ExtArgMultiSelect::ExtArgMultiSelect(extcap_arg * argument) :
-        ExtcapArgument(argument), treeView(0), viewModel(0) {}
+ExtArgMultiSelect::ExtArgMultiSelect(extcap_arg * argument, QObject *parent) :
+        ExtcapArgument(argument, parent), treeView(0), viewModel(0) {}
 
 ExtArgMultiSelect::~ExtArgMultiSelect()
 {
-    if ( treeView != 0 )
+    if (treeView != 0)
         delete treeView;
-    if ( viewModel != 0 )
+    if (viewModel != 0)
         delete viewModel;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 QList<QStandardItem *> ExtArgMultiSelect::valueWalker(ExtcapValueList list, QStringList &defaults)
 {
     ExtcapValueList::iterator iter = list.begin();
     QList<QStandardItem *> items;
 
-    while ( iter != list.end() )
+    while (iter != list.end())
     {
         QStandardItem * item = new QStandardItem((*iter).value());
-        if ( (*iter).enabled() == false )
+        if ((*iter).enabled() == false)
         {
-            item->setSelectable(false);
+            item->setCheckable(false);
         }
         else
-            item->setSelectable(true);
+        {
+            item->setCheckable(true);
+        }
 
         item->setData((*iter).call(), Qt::UserRole);
         if ((*iter).isDefault())
             defaults << (*iter).call();
 
+        item->setSelectable(false);
         item->setEditable(false);
+        // We recurse here, but the tree is only two levels deep
         QList<QStandardItem *> childs = valueWalker((*iter).children(), defaults);
-        if ( childs.length() > 0 )
+        if (childs.length() > 0)
             item->appendRows(childs);
 
         items << item;
@@ -67,53 +71,59 @@ QList<QStandardItem *> ExtArgMultiSelect::valueWalker(ExtcapValueList list, QStr
     return items;
 }
 
-void ExtArgMultiSelect::selectItemsWalker(QStandardItem * item, QStringList defaults)
+// NOLINTNEXTLINE(misc-no-recursion)
+void ExtArgMultiSelect::checkItemsWalker(QStandardItem * item, QStringList defaults)
 {
-    QModelIndexList results;
     QModelIndex index;
 
-    if ( item->hasChildren() )
+    if (item->hasChildren())
     {
         for (int row = 0; row < item->rowCount(); row++)
         {
             QStandardItem * child = item->child(row);
-            if ( child != 0 )
+            if (child != 0)
             {
-                selectItemsWalker(child, defaults);
+                // We recurse here, but the tree is only two levels deep
+                checkItemsWalker(child, defaults);
             }
         }
     }
 
     QString data = item->data(Qt::UserRole).toString();
 
-    if ( defaults.contains(data) )
+    if (defaults.contains(data))
     {
-        treeView->selectionModel()->select(item->index(), QItemSelectionModel::Select);
+        item->setCheckState(Qt::Checked);
         index = item->index();
-        while ( index.isValid() )
+        while (index.isValid())
         {
             treeView->setExpanded(index, true);
             index = index.parent();
         }
+    } else if (item->isCheckable()) {
+        item->setCheckState(Qt::Unchecked);
     }
 }
 
 QWidget * ExtArgMultiSelect::createEditor(QWidget * parent)
 {
-    QStringList defaults;
+    QStringList checked;
 
-    QList<QStandardItem *> items = valueWalker(values, defaults);
+    QList<QStandardItem *> items = valueWalker(values, checked);
     if (items.length() == 0)
         return new QWidget();
 
-    if ( defaultValue().length() > 0 )
-        defaults = defaultValue().split(",", QString::SkipEmptyParts);
+    /* Value can be empty if no items are checked */
+    if (_argument->pref_valptr && (*_argument->pref_valptr))
+    {
+        checked = QString(*_argument->pref_valptr).split(",", Qt::SkipEmptyParts);
+    }
 
     viewModel = new QStandardItemModel();
     QList<QStandardItem *>::const_iterator iter = items.constBegin();
-    while ( iter != items.constEnd() )
+    while (iter != items.constEnd())
     {
-        ((QStandardItemModel *)viewModel)->appendRow((*iter));
+        viewModel->appendRow((*iter));
         ++iter;
     }
 
@@ -126,29 +136,26 @@ QWidget * ExtArgMultiSelect::createEditor(QWidget * parent)
     treeView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     treeView->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-    for (int row = 0; row < viewModel->rowCount(); row++ )
-        selectItemsWalker(((QStandardItemModel*)viewModel)->item(row), defaults);
+    for (int row = 0; row < viewModel->rowCount(); row++)
+        checkItemsWalker(((QStandardItemModel*)viewModel)->item(row), checked);
 
-    connect ( treeView->selectionModel(),
-            SIGNAL(selectionChanged(const QItemSelection &, const QItemSelection &)),
-            SLOT(selectionChanged(const QItemSelection &, const QItemSelection &)) );
+    connect(viewModel, &QStandardItemModel::itemChanged, this, &ExtArgMultiSelect::valueChanged);
 
     return treeView;
 }
 
 QString ExtArgMultiSelect::value()
 {
-    if ( viewModel == 0 )
+    if (viewModel == 0)
         return QString();
 
     QStringList result;
-    QModelIndexList selected = treeView->selectionModel()->selectedIndexes();
-
-    if ( selected.size() <= 0 )
+    QModelIndexList checked = viewModel->match(viewModel->index(0, 0), Qt::CheckStateRole, Qt::Checked, -1, Qt::MatchExactly | Qt::MatchRecursive);
+    if (checked.size() <= 0)
         return QString();
 
-    QModelIndexList::const_iterator iter = selected.constBegin();
-    while ( iter != selected.constEnd() )
+    QModelIndexList::const_iterator iter = checked.constBegin();
+    while (iter != checked.constEnd())
     {
         QModelIndex index = (QModelIndex)(*iter);
 
@@ -157,50 +164,53 @@ QString ExtArgMultiSelect::value()
         ++iter;
     }
 
-    return result.join(QString(","));
-}
-
-void ExtArgMultiSelect::selectionChanged(const QItemSelection &, const QItemSelection &)
-{
-    emit valueChanged();
+    return result.join(QString(','));
 }
 
 bool ExtArgMultiSelect::isValid()
 {
     bool valid = true;
 
-    if ( isRequired() )
+    if (isRequired())
     {
-        if ( viewModel == 0 )
+        if (viewModel == 0)
             valid = false;
         else
         {
-            QStringList result;
-            QModelIndexList selected = treeView->selectionModel()->selectedIndexes();
-
-            if ( selected.size() <= 0 )
+            QModelIndexList checked = viewModel->match(viewModel->index(0, 0), Qt::CheckStateRole, Qt::Checked, -1, Qt::MatchExactly | Qt::MatchRecursive);
+            if (checked.size() <= 0)
                 valid = false;
         }
     }
 
     QString lblInvalidColor = ColorUtils::fromColorT(prefs.gui_text_invalid).name();
     QString txtStyle("QTreeView { background-color: %1; } ");
-    if ( viewModel != 0 )
-        treeView->setStyleSheet( txtStyle.arg(valid ? QString("") : lblInvalidColor) );
+    if (viewModel != 0)
+        treeView->setStyleSheet(txtStyle.arg(valid ? QString("") : lblInvalidColor));
 
     return valid;
 }
 
+QString ExtArgMultiSelect::defaultValue()
+{
+    QStringList checked;
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+    valueWalker(values, checked);
+
+    return checked.join(QString(','));
+}
+
+bool ExtArgMultiSelect::isSetDefaultValueSupported()
+{
+    return true;
+}
+
+void ExtArgMultiSelect::setDefaultValue()
+{
+    QStringList checked;
+
+    checked = defaultValue().split(",", Qt::SkipEmptyParts);
+    for (int row = 0; row < viewModel->rowCount(); row++)
+        checkItemsWalker(((QStandardItemModel*)viewModel)->item(row), checked);
+}
+

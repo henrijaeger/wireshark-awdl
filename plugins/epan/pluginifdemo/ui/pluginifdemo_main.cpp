@@ -9,12 +9,12 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#include <plugins/pluginifdemo/ui/pluginifdemo_main.h>
+#include <plugins/epan/pluginifdemo/ui/pluginifdemo_main.h>
 #include <ui_pluginifdemo_main.h>
 
 #include <config.h>
 
-#include <ui/uihandler.h>
+#include "uihandler.h"
 
 #include <QWidget>
 #include <QLineEdit>
@@ -42,7 +42,7 @@ void PluginIfTypeModel::addPluginIfType(const PluginIfType &ifType)
 
 int PluginIfTypeModel::rowCount(const QModelIndex &) const
 {
-    return m_pluginIfTypes.count();
+    return static_cast<int>(m_pluginIfTypes.count());
 }
 
 QVariant PluginIfTypeModel::data(const QModelIndex & idx, int role) const
@@ -208,7 +208,7 @@ void PluginIFDemo_Main::on_cmbElements_currentTextChanged(const QString & newTex
     while ( walker && walker->data )
     {
         ext_toolbar_value_t * listItem = (ext_toolbar_value_t *)walker->data;
-        QString content = QString("%1: %2").arg(listItem->value).arg(listItem->display);
+        QString content = QStringLiteral("%1: %2").arg(listItem->value).arg(listItem->display);
         listModel->appendRow(new QStandardItem(content));
         indexModel->appendRow(new QStandardItem(listItem->value));
 
@@ -240,12 +240,12 @@ void PluginIFDemo_Main::on_btnAddItem_clicked()
     if ( ui->txtNewItemDisplay->text().length() <= 0 || ui->txtNewItemValue->text().length() <= 0 )
         return;
 
-    QString content = QString("%1: %2").arg(ui->txtNewItemValue->text()).arg(ui->txtNewItemDisplay->text());
+    QString content = QStringLiteral("%1: %2").arg(ui->txtNewItemValue->text()).arg(ui->txtNewItemDisplay->text());
 
     QList<QStandardItem *> items = listModel->findItems(content);
     if ( items.count() > 0 )
         return;
-    items = listModel->findItems(QString("%1: ").arg(ui->txtNewItemValue->text()), Qt::MatchStartsWith);
+    items = listModel->findItems(QStringLiteral("%1: ").arg(ui->txtNewItemValue->text()), Qt::MatchStartsWith);
     if ( items.count() > 0 )
         return;
 
@@ -286,7 +286,7 @@ void PluginIFDemo_Main::on_btnRemoveItem_clicked()
             bool silent = ui->chkSilent->checkState() == Qt::Checked ? true : false;
 
             QString content = listModel->data(idx).toString();
-            int pos = content.indexOf(":");
+            int pos = static_cast<int>(content.indexOf(":"));
 
             gchar * value = g_strdup(content.left(pos).toUtf8().constData() );
             /* -2 because removal of : and space */
@@ -314,11 +314,11 @@ void PluginIFDemo_Main::on_btnSendList_clicked()
     for( int i = 0; i < listModel->rowCount(); i++ )
     {
         QString content = listModel->data(listModel->index(i, 0)).toString();
-        int pos = content.indexOf(":");
+        int pos = static_cast<int>(content.indexOf(":"));
 
         ext_toolbar_value_t * valEntry = g_new0(ext_toolbar_value_t, 1);
-        valEntry->value = g_strdup(content.left(pos).toStdString().c_str() );
-        valEntry->display = g_strdup(content.right(content.size() - pos + 1).toStdString().c_str());
+        valEntry->value = g_strdup(content.left(pos).toUtf8().constData());
+        valEntry->display = g_strdup(content.right(content.size() - pos + 1).toUtf8().constData());
 
         items = g_list_append(items, valEntry);
     }
@@ -360,7 +360,7 @@ void PluginIFDemo_Main::on_lstItems_clicked(const QModelIndex &idx)
     bool silent = ui->chkSilent->checkState() == Qt::Checked ? true : false;
 
     QString content = listModel->data(listModel->index(idx.row(), 0)).toString();
-    int pos = content.indexOf(":");
+    int pos = static_cast<int>(content.indexOf(":"));
 
     gchar * idxData = g_strdup(content.left(pos).toUtf8().constData() );
 

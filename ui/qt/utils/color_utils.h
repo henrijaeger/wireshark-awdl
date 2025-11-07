@@ -1,17 +1,16 @@
-/* color_utils.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef COLOR_UTILS_H
 #define COLOR_UTILS_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include <epan/color_filters.h>
 
@@ -21,7 +20,6 @@
 
 class ColorUtils : public QObject
 {
-    Q_OBJECT
 public:
     explicit ColorUtils(QObject *parent = 0);
 
@@ -44,28 +42,57 @@ public:
     static QRgb graphColor(int item);
     static QRgb sequenceColor(int item);
 
-signals:
+    /** Checks if our application is in "dark mode".
+     * Dark mode is determined by comparing the application palette's window
+     * text color with the window color.
+     *
+     * @return true if we're running in dark mode, false otherwise.
+     */
+    static bool themeIsDark();
 
-public slots:
+    static void setScheme(int scheme);
+    /**
+     * Returns an appropriate link color for the current mode.
+     * @return A brush suitable for setting a text color.
+     */
+    static QBrush themeLinkBrush();
+    /**
+     * Returns an appropriate HTML+CSS link style for the current mode.
+     * @return A "<style>a:link { color: ... ; }</style>" string
+     */
+    static QString themeLinkStyle();
+    /**
+     * Returns either QPalette::Text or QPalette::Base as appropriate for the
+     * specified foreground color
+     *
+     * @param color The background color.
+     * @return A contrasting foreground color for the current mode / theme.
+     */
+    static const QColor contrastingTextColor(const QColor color);
+
+    /**
+     * Returns an appropriate background color for hovered abstract items.
+     * @return The background color.
+     */
+    static const QColor hoverBackground();
+
+    /**
+     * Returns an appropriate warning background color for the current mode.
+     * @return The background color.
+     */
+    static const QColor warningBackground();
+
+    /**
+     * Returns an appropriate foreground color for disabled text.
+     * @return The foreground color.
+     */
+    static const QColor disabledForeground();
 
 private:
     static QList<QRgb> graph_colors_;
     static QList<QRgb> sequence_colors_;
 };
 
-void color_filter_qt_add_cb(color_filter_t *colorf, gpointer user_data);
+void color_filter_qt_add_cb(color_filter_t *colorf, void *user_data);
 
 #endif // COLOR_UTILS_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

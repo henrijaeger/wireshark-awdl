@@ -1,10 +1,11 @@
-/* filter_action.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 /* Derived from gtk/filter_utils.h */
 
@@ -14,6 +15,7 @@
 #include <wsutil/utf8_entities.h>
 
 #include <QAction>
+#include <QActionGroup>
 
 class FilterAction : public QAction
 {
@@ -28,6 +30,7 @@ public:
         ActionPrepare,
         ActionWebLookup
     };
+    Q_ENUM(Action)
 
     /* Action type - says what to do with the filter */
     enum ActionType {
@@ -38,6 +41,7 @@ public:
         ActionTypeAndNot,
         ActionTypeOrNot
     };
+    Q_ENUM(ActionType)
 
     /* Action direction */
     enum ActionDirection {
@@ -52,6 +56,7 @@ public:
         ActionDirectionAnyFromB
     };
 
+    explicit FilterAction(QObject *parent, Action action, ActionType type, QString actionName);
     explicit FilterAction(QObject *parent, Action action, ActionType type, ActionDirection direction);
     explicit FilterAction(QObject *parent, Action action, ActionType type);
     explicit FilterAction(QObject *parent, Action action);
@@ -68,6 +73,10 @@ public:
     static const QList<ActionDirection> actionDirections();
     static const QString actionDirectionName(ActionDirection direction);
 
+    static QActionGroup * createFilterGroup(QString filter, bool prepare, bool enabled, QWidget * parent);
+    static QMenu * createFilterMenu(FilterAction::Action act, QString filter, bool enabled, QWidget * parent);
+    static QAction * copyFilterAction(QString filter, QWidget *par);
+
 signals:
 
 public slots:
@@ -77,19 +86,12 @@ private:
     ActionType type_;
     ActionDirection direction_;
 
+    QString actionName_;
+
+private slots:
+    void groupTriggered(QAction *);
+    void copyActionTriggered();
+
 };
 
 #endif // FILTER_ACTION_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -1,4 +1,4 @@
-/* main_status_bar.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -14,7 +14,7 @@
 
 #include "cfile.h"
 
-#include "capchild/capture_session.h"
+#include "capture/capture_session.h"
 
 #include <ui/qt/utils/field_information.h>
 #include <ui/qt/widgets/label_stack.h>
@@ -40,6 +40,17 @@ public:
     void setFileName(CaptureFile &cf);
 
 protected:
+
+    enum StatusContext {
+        STATUS_CTX_MAIN,
+        STATUS_CTX_FILE,
+        STATUS_CTX_FIELD,
+        STATUS_CTX_BYTE,
+        STATUS_CTX_FILTER,
+        STATUS_CTX_PROGRESS,
+        STATUS_CTX_TEMPORARY
+    };
+
     virtual void changeEvent(QEvent* event);
 
 private:
@@ -54,9 +65,13 @@ private:
 
     // Capture statistics
     bool cs_fixed_;
-    guint32 cs_count_;
+    uint64_t cs_count_;
 
     void showCaptureStatistics();
+    void setStatusbarForCaptureFile();
+
+    void pushGenericStatus(StatusContext status, const QString &message, const QString &messagetip = QString());
+    void popGenericStatus(StatusContext status);
 
 signals:
     void showExpertInfo();
@@ -67,22 +82,7 @@ public slots:
     void setCaptureFile(capture_file *cf);
     void selectedFieldChanged(FieldInformation *);
     void highlightedFieldChanged(FieldInformation *);
-    void pushTemporaryStatus(const QString &message);
-    void popTemporaryStatus();
-    void pushFileStatus(const QString &message, const QString &messagetip = QString());
-    void popFileStatus();
-    void pushFieldStatus(const QString &message);
-    void popFieldStatus();
-    void pushByteStatus(const QString &message);
-    void popByteStatus();
-    void pushFilterStatus(const QString &message);
-    void popFilterStatus();
-    void pushBusyStatus(const QString &message, const QString &messagetip = QString());
-    void popBusyStatus();
-    void pushProgressStatus(const QString &message, bool animate, bool terminate_is_stop = false, gboolean *stop_flag = NULL);
-    void updateProgressStatus(int value);
-    void popProgressStatus();
-    void selectedFrameChanged(int);
+    void selectedFrameChanged(QList<int>);
 
     void updateCaptureStatistics(capture_session * cap_session);
     void updateCaptureFixedStatistics(capture_session * cap_session);
@@ -90,27 +90,14 @@ public slots:
     void captureEventHandler(CaptureEvent ev);
 
 private slots:
-    void pushPacketStatus(const QString &message);
-    void popPacketStatus();
-
+    void appInitialized();
     void toggleBackground(bool enabled);
     void setProfileName();
     void switchToProfile();
     void manageProfile();
     void showProfileMenu(const QPoint &global_pos, Qt::MouseButton button);
+
+    friend MainApplication;
 };
 
 #endif // MAIN_STATUS_BAR_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

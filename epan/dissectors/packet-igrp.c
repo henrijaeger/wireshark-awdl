@@ -21,6 +21,8 @@
 #include <epan/expert.h>
 #include <epan/to_str.h>
 #include <epan/ipproto.h>
+#include <epan/tfs.h>
+#include <epan/unit_strings.h>
 
 void proto_register_igrp(void);
 void proto_reg_handoff_igrp(void);
@@ -28,37 +30,39 @@ void proto_reg_handoff_igrp(void);
 #define IGRP_HEADER_LENGTH 12
 #define IGRP_ENTRY_LENGTH 14
 
-static gint proto_igrp = -1;
-static gint hf_igrp_update = -1;
-static gint hf_igrp_as = -1;
+static dissector_handle_t igrp_handle;
+
+static int proto_igrp;
+static int hf_igrp_update;
+static int hf_igrp_as;
 /* Generated from convert_proto_tree_add_text.pl */
-static int hf_igrp_load = -1;
-static int hf_igrp_bandwidth = -1;
-static int hf_igrp_command = -1;
-static int hf_igrp_reliability = -1;
-static int hf_igrp_network = -1;
-static int hf_igrp_version = -1;
-static int hf_igrp_interior_routes = -1;
-static int hf_igrp_mtu = -1;
-static int hf_igrp_hop_count = -1;
-static int hf_igrp_exterior_routes = -1;
-static int hf_igrp_delay = -1;
-static int hf_igrp_checksum = -1;
-static int hf_igrp_system_routes = -1;
-static gint ett_igrp = -1;
-static gint ett_igrp_vektor = -1;
-static gint ett_igrp_net = -1;
+static int hf_igrp_load;
+static int hf_igrp_bandwidth;
+static int hf_igrp_command;
+static int hf_igrp_reliability;
+static int hf_igrp_network;
+static int hf_igrp_version;
+static int hf_igrp_interior_routes;
+static int hf_igrp_mtu;
+static int hf_igrp_hop_count;
+static int hf_igrp_exterior_routes;
+static int hf_igrp_delay;
+static int hf_igrp_checksum;
+static int hf_igrp_system_routes;
+static int ett_igrp;
+static int ett_igrp_vektor;
+static int ett_igrp_net;
 
-static expert_field ei_igrp_version = EI_INIT;
+static expert_field ei_igrp_version;
 
-static void dissect_vektor_igrp (tvbuff_t *tvb, proto_tree *igrp_vektor_tree, guint8 network);
+static void dissect_vektor_igrp (packet_info *pinfo, tvbuff_t *tvb, proto_tree *igrp_vektor_tree, uint8_t network);
 
 static int dissect_igrp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
-  guint8 ver_and_opcode,version,opcode,network;
-  gint offset=IGRP_HEADER_LENGTH;
-  guint16 ninterior,nsystem,nexterior;
-  const guint8 *ipsrc;
+  uint8_t ver_and_opcode,version,opcode,network;
+  int offset=IGRP_HEADER_LENGTH;
+  uint16_t ninterior,nsystem,nexterior;
+  const uint8_t *ipsrc;
   proto_item *ti;
   proto_tree *igrp_tree, *igrp_vektor_tree;
   tvbuff_t   *next_tvb;
@@ -66,7 +70,7 @@ static int dissect_igrp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
   col_set_str(pinfo->cinfo, COL_PROTOCOL, "IGRP");
   col_clear(pinfo->cinfo, COL_INFO);
 
-  ver_and_opcode = tvb_get_guint8(tvb,0);
+  ver_and_opcode = tvb_get_uint8(tvb,0);
 
   switch (ver_and_opcode) {
   case 0x11:
@@ -106,7 +110,7 @@ static int dissect_igrp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
 
     /* this is a ugly hack to find the first byte of the IP source address */
     if (pinfo->net_src.type == AT_IPv4) {
-      ipsrc = (const guint8 *)pinfo->net_src.data;
+      ipsrc = (const uint8_t *)pinfo->net_src.data;
       network = ipsrc[0];
     } else
       network = 0; /* XXX - shouldn't happen */
@@ -115,7 +119,7 @@ static int dissect_igrp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     for( ; ninterior>0 ; ninterior-- ) {
       igrp_vektor_tree =  proto_item_add_subtree(ti,ett_igrp_vektor);
       next_tvb = tvb_new_subset_length_caplen(tvb, offset, IGRP_ENTRY_LENGTH, -1);
-      dissect_vektor_igrp (next_tvb,igrp_vektor_tree,network);
+      dissect_vektor_igrp (pinfo,next_tvb,igrp_vektor_tree,network);
       offset+=IGRP_ENTRY_LENGTH;
     }
 
@@ -123,7 +127,7 @@ static int dissect_igrp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     for( ; nsystem>0 ; nsystem-- ) {
       igrp_vektor_tree =  proto_item_add_subtree(ti,ett_igrp_vektor);
       next_tvb = tvb_new_subset_length_caplen(tvb, offset, IGRP_ENTRY_LENGTH, -1);
-      dissect_vektor_igrp (next_tvb,igrp_vektor_tree,0);
+      dissect_vektor_igrp (pinfo,next_tvb,igrp_vektor_tree,0);
       offset+=IGRP_ENTRY_LENGTH;
     }
 
@@ -131,7 +135,7 @@ static int dissect_igrp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     for( ; nexterior>0 ; nexterior-- ) {
       igrp_vektor_tree =  proto_item_add_subtree(ti,ett_igrp_vektor);
       next_tvb = tvb_new_subset_length_caplen(tvb, offset, IGRP_ENTRY_LENGTH, -1);
-      dissect_vektor_igrp (next_tvb,igrp_vektor_tree,0);
+      dissect_vektor_igrp (pinfo,next_tvb,igrp_vektor_tree,0);
       offset+=IGRP_ENTRY_LENGTH;
     }
 
@@ -140,11 +144,11 @@ static int dissect_igrp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
   return tvb_captured_length(tvb);
 }
 
-static void dissect_vektor_igrp (tvbuff_t *tvb, proto_tree *igrp_vektor_tree, guint8 network)
+static void dissect_vektor_igrp (packet_info *pinfo, tvbuff_t *tvb, proto_tree *igrp_vektor_tree, uint8_t network)
 {
   union {
-    guint8 addr_bytes[4];
-    guint32 addr_word;
+    uint8_t addr_bytes[4];
+    uint32_t addr_word;
   } addr;
   address ip_addr;
 
@@ -154,23 +158,23 @@ static void dissect_vektor_igrp (tvbuff_t *tvb, proto_tree *igrp_vektor_tree, gu
      * bytes in the vector are the lower 3 bytes.
      */
     addr.addr_bytes[0]=network;
-    addr.addr_bytes[1]=tvb_get_guint8(tvb,0);
-    addr.addr_bytes[2]=tvb_get_guint8(tvb,1);
-    addr.addr_bytes[3]=tvb_get_guint8(tvb,2);
+    addr.addr_bytes[1]=tvb_get_uint8(tvb,0);
+    addr.addr_bytes[2]=tvb_get_uint8(tvb,1);
+    addr.addr_bytes[3]=tvb_get_uint8(tvb,2);
   } else {
     /*
      * System or exterior route; the three bytes in the vector are
      * the three high-order bytes, and the low-order byte is 0.
      */
-    addr.addr_bytes[0]=tvb_get_guint8(tvb,0);
-    addr.addr_bytes[1]=tvb_get_guint8(tvb,1);
-    addr.addr_bytes[2]=tvb_get_guint8(tvb,2);
+    addr.addr_bytes[0]=tvb_get_uint8(tvb,0);
+    addr.addr_bytes[1]=tvb_get_uint8(tvb,1);
+    addr.addr_bytes[2]=tvb_get_uint8(tvb,2);
     addr.addr_bytes[3]=0;
   }
 
   set_address(&ip_addr, AT_IPv4, 4, &addr);
   igrp_vektor_tree = proto_tree_add_subtree_format(igrp_vektor_tree, tvb, 0 ,14,
-                                                   ett_igrp_net, NULL, "Entry for network %s", address_to_str(wmem_packet_scope(), &ip_addr));
+                                                   ett_igrp_net, NULL, "Entry for network %s", address_to_str(pinfo->pool, &ip_addr));
   proto_tree_add_ipv4(igrp_vektor_tree, hf_igrp_network, tvb, 0, 3, addr.addr_word);
   proto_tree_add_item(igrp_vektor_tree, hf_igrp_delay, tvb, 3, 3, ENC_BIG_ENDIAN);
   proto_tree_add_item(igrp_vektor_tree, hf_igrp_bandwidth, tvb, 6, 3, ENC_BIG_ENDIAN);
@@ -209,14 +213,14 @@ void proto_register_igrp(void)
     { &hf_igrp_network, { "Network", "igrp.network", FT_IPv4, BASE_NONE, NULL, 0x0, NULL, HFILL }},
     { &hf_igrp_delay, { "Delay", "igrp.delay", FT_UINT24, BASE_DEC, NULL, 0x0, NULL, HFILL }},
     { &hf_igrp_bandwidth, { "Bandwidth", "igrp.bandwidth", FT_UINT24, BASE_DEC, NULL, 0x0, NULL, HFILL }},
-    { &hf_igrp_mtu, { "MTU", "igrp.mtu", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_byte_bytes, 0x0, NULL, HFILL }},
+    { &hf_igrp_mtu, { "MTU", "igrp.mtu", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_byte_bytes), 0x0, NULL, HFILL }},
     { &hf_igrp_reliability, { "Reliability", "igrp.reliability", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
     { &hf_igrp_load, { "Load", "igrp.load", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
     { &hf_igrp_hop_count, { "Hop count", "igrp.hop_count", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
   };
 
   /* Setup protocol subtree array */
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_igrp,
     &ett_igrp_vektor,
     &ett_igrp_net
@@ -231,6 +235,7 @@ void proto_register_igrp(void)
   /* Register the protocol name and description */
   proto_igrp = proto_register_protocol("Cisco Interior Gateway Routing Protocol",
                                        "IGRP", "igrp");
+  igrp_handle = register_dissector("igrp", dissect_igrp, proto_igrp);
 
   /* Required function calls to register the header fields and subtrees used */
   proto_register_field_array(proto_igrp, hf, array_length(hf));
@@ -242,9 +247,6 @@ void proto_register_igrp(void)
 void
 proto_reg_handoff_igrp(void)
 {
-  dissector_handle_t igrp_handle;
-
-  igrp_handle = create_dissector_handle(dissect_igrp, proto_igrp);
   dissector_add_uint("ip.proto", IP_PROTO_IGRP, igrp_handle);
 }
 
@@ -286,7 +288,7 @@ If the Delay is 0xFFFFFF then the network is unreachable
 */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

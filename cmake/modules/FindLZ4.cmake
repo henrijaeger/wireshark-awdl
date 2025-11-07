@@ -11,7 +11,7 @@
 include( FindWSWinLibs )
 FindWSWinLibs( "lz4-.*" "LZ4_HINTS" )
 
-if( NOT WIN32)
+if( NOT USE_REPOSITORY)
   find_package(PkgConfig)
   pkg_search_module(LZ4 lz4 liblz4)
 endif()
@@ -32,8 +32,21 @@ find_library(LZ4_LIBRARY
   /usr/lib
 )
 
+if (LZ4_INCLUDE_DIR)
+  file(STRINGS ${LZ4_INCLUDE_DIR}/lz4.h _lz4_version_lines
+    REGEX "#define[ \t]+LZ4_VERSION_(MAJOR|MINOR|RELEASE)[ \t]+[0-9]+")
+  string(REGEX REPLACE "^.*LZ4_VERSION_MAJOR +\([0-9]+\).*" "\\1" LZ4_VERSION_MAJOR "${_lz4_version_lines}")
+  string(REGEX REPLACE "^.*LZ4_VERSION_MINOR +\([0-9]+\).*" "\\1" LZ4_VERSION_MINOR "${_lz4_version_lines}")
+  string(REGEX REPLACE "^.*LZ4_VERSION_RELEASE +\([0-9]+\).*" "\\1" LZ4_VERSION_RELEASE "${_lz4_version_lines}")
+  set(LZ4_VERSION ${LZ4_VERSION_MAJOR}.${LZ4_VERSION_MINOR}.${LZ4_VERSION_RELEASE})
+  unset(_lz4_version_lines)
+endif()
+
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args( LZ4 DEFAULT_MSG LZ4_INCLUDE_DIR LZ4_LIBRARY )
+find_package_handle_standard_args(LZ4
+  REQUIRED_VARS LZ4_LIBRARY LZ4_INCLUDE_DIR
+  VERSION_VAR LZ4_VERSION
+)
 
 if( LZ4_FOUND )
   include( CheckIncludeFile )
@@ -44,6 +57,7 @@ if( LZ4_FOUND )
 
   cmake_push_check_state()
   set( CMAKE_REQUIRED_INCLUDES ${LZ4_INCLUDE_DIRS} )
+  # lz4frame.h should be present at least in versions >= 1.7.3
   check_include_file( lz4frame.h HAVE_LZ4FRAME_H )
   cmake_pop_check_state()
 
@@ -52,13 +66,19 @@ if( LZ4_FOUND )
       CACHE PATH "Path to LZ4 DLL"
     )
     file( GLOB _lz4_dll RELATIVE "${LZ4_DLL_DIR}"
-      "${LZ4_DLL_DIR}/liblz4*.dll"
+      "${LZ4_DLL_DIR}/lz4*.dll"
     )
     set ( LZ4_DLL ${_lz4_dll}
       # We're storing filenames only. Should we use STRING instead?
       CACHE FILEPATH "LZ4 DLL file name"
     )
-    mark_as_advanced( LZ4_DLL_DIR LZ4_DLL )
+    file( GLOB _lz4_pdb RELATIVE "${LZ4_DLL_DIR}"
+      "${LZ4_DLL_DIR}/lz4*.pdb"
+    )
+    set ( LZ4_PDB ${_lz4_pdb}
+      CACHE FILEPATH "LZ4 PDB file name"
+    )
+    mark_as_advanced( LZ4_DLL_DIR LZ4_DLL LZ4_PDB )
   endif()
 else()
   set( LZ4_INCLUDE_DIRS )

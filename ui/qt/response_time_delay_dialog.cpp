@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "response_time_delay_dialog.h"
 
@@ -16,7 +17,7 @@
 #include <QTreeWidget>
 
 #include <ui/qt/utils/qt_ui_utils.h>
-#include "wireshark_application.h"
+#include "main_application.h"
 
 static QHash<const QString, register_rtd_t *> cfg_str_to_rtd_;
 
@@ -25,17 +26,17 @@ static void
 rtd_init(const char *args, void*) {
     QStringList args_l = QString(args).split(',');
     if (args_l.length() > 1) {
-        QString rtd = QString("%1,%2").arg(args_l[0]).arg(args_l[1]);
+        QString rtd = QStringLiteral("%1,%2").arg(args_l[0]).arg(args_l[1]);
         QString filter;
         if (args_l.length() > 2) {
             filter = QStringList(args_l.mid(2)).join(",");
         }
-        wsApp->emitTapParameterSignal(rtd, filter, NULL);
+        mainApp->emitTapParameterSignal(rtd, filter, NULL);
     }
 }
 }
 
-gboolean register_response_time_delay_tables(const void *, void *value, void*)
+bool register_response_time_delay_tables(const void *, void *value, void*)
 {
     register_rtd_t *rtd = (register_rtd_t*)value;
     const char* short_name = proto_get_protocol_short_name(find_protocol_by_id(get_rtd_proto_id(rtd)));
@@ -49,7 +50,7 @@ gboolean register_response_time_delay_tables(const void *, void *value, void*)
                 rtd_init,
                 ResponseTimeDelayDialog::createRtdDialog);
     g_free(cfg_abbr);
-    return FALSE;
+    return false;
 }
 
 enum {
@@ -200,7 +201,7 @@ void ResponseTimeDelayDialog::tapReset(void *rtdd_ptr)
     ResponseTimeDelayDialog *rtd_dlg = static_cast<ResponseTimeDelayDialog *>(rtdd->user_data);
     if (!rtd_dlg) return;
 
-    reset_rtd_table(&rtdd->stat_table, NULL, NULL);
+    reset_rtd_table(&rtdd->stat_table);
     rtd_dlg->statsTreeWidget()->clear();
     rtd_dlg->addRtdTable(&rtdd->stat_table);
 }
@@ -240,7 +241,7 @@ void ResponseTimeDelayDialog::fillTree()
                           tapReset,
                           get_rtd_packet_func(rtd_),
                           tapDraw)) {
-        free_rtd_table(&rtd_data.stat_table, NULL, NULL);
+        free_rtd_table(&rtd_data.stat_table);
         reject(); // XXX Stay open instead?
         return;
     }
@@ -255,7 +256,7 @@ void ResponseTimeDelayDialog::fillTree()
     statsTreeWidget()->setSortingEnabled(true);
 
     removeTapListeners();
-    free_rtd_table(&rtd_data.stat_table, NULL, NULL);
+    free_rtd_table(&rtd_data.stat_table);
 }
 
 QList<QVariant> ResponseTimeDelayDialog::treeItemData(QTreeWidgetItem *ti) const

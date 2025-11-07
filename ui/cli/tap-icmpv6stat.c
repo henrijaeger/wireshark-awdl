@@ -5,7 +5,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 /* This module provides icmpv6 echo request/reply SRT statistics to tshark.
  * It is only used by tshark and not wireshark
@@ -28,16 +29,18 @@
 #include <epan/stat_tap_ui.h>
 #include <epan/dissectors/packet-icmp.h>
 
+#include <wsutil/cmdarg_err.h>
+
 void register_tap_listener_icmpv6stat(void);
 
 /* used to keep track of the ICMPv6 statistics */
 typedef struct _icmpv6stat_t {
     char *filter;
     GSList *rt_list;
-    guint num_rqsts;
-    guint num_resps;
-    guint min_frame;
-    guint max_frame;
+    unsigned num_rqsts;
+    unsigned num_resps;
+    unsigned min_frame;
+    unsigned max_frame;
     double min_msecs;
     double max_msecs;
     double tot_msecs;
@@ -62,11 +65,11 @@ icmpv6stat_reset(void *tapdata)
 
     g_slist_free(icmpv6stat->rt_list);
     memset(icmpv6stat, 0, sizeof(icmpv6stat_t));
-    icmpv6stat->min_msecs = 1.0 * G_MAXUINT;
+    icmpv6stat->min_msecs = 1.0 * UINT_MAX;
 }
 
 
-static gint compare_doubles(gconstpointer a, gconstpointer b)
+static int compare_doubles(const void *a, const void *b)
 {
     double ad, bd;
 
@@ -100,24 +103,24 @@ static gint compare_doubles(gconstpointer a, gconstpointer b)
  * "icmpv6" tap, the third parameter type is icmp_transaction_t.
  *
  * function returns :
- *  FALSE: no updates, no need to call (*draw) later
- *  TRUE: state has changed, call (*draw) sometime later
+ *  TAP_PACKET_DONT_REDRAW: no updates, no need to call (*draw) later
+ *  TAP_PACKET_REDRAW: state has changed, call (*draw) sometime later
  */
-static gboolean
-icmpv6stat_packet(void *tapdata, packet_info *pinfo _U_, epan_dissect_t *edt _U_, const void *data)
+static tap_packet_status
+icmpv6stat_packet(void *tapdata, packet_info *pinfo _U_, epan_dissect_t *edt _U_, const void *data, tap_flags_t flags _U_)
 {
     icmpv6stat_t *icmpv6stat = (icmpv6stat_t *)tapdata;
     const icmp_transaction_t *trans = (const icmp_transaction_t *)data;
     double resp_time, *rt;
 
     if (trans == NULL)
-        return FALSE;
+        return TAP_PACKET_DONT_REDRAW;
 
     if (trans->resp_frame) {
         resp_time = nstime_to_msec(&trans->resp_time);
         rt = g_new(double, 1);
         if (rt == NULL)
-            return FALSE;
+            return TAP_PACKET_DONT_REDRAW;
         *rt = resp_time;
         icmpv6stat->rt_list = g_slist_prepend(icmpv6stat->rt_list, rt);
         icmpv6stat->num_resps++;
@@ -133,9 +136,9 @@ icmpv6stat_packet(void *tapdata, packet_info *pinfo _U_, epan_dissect_t *edt _U_
     } else if (trans->rqst_frame)
         icmpv6stat->num_rqsts++;
     else
-        return FALSE;
+        return TAP_PACKET_DONT_REDRAW;
 
-    return TRUE;
+    return TAP_PACKET_REDRAW;
 }
 
 
@@ -235,7 +238,7 @@ icmpv6stat_draw(void *tapdata)
             100.0 * lost / icmpv6stat->num_rqsts);
         printf("Minimum   Maximum   Mean      Median    SDeviation     Min Frame Max Frame\n");
         printf("%-10.3f%-10.3f%-10.3f%-10.3f%-10.3f     %-10u%-10u\n",
-            icmpv6stat->min_msecs >= G_MAXUINT ? 0.0 : icmpv6stat->min_msecs,
+            icmpv6stat->min_msecs >= UINT_MAX ? 0.0 : icmpv6stat->min_msecs,
             icmpv6stat->max_msecs, mean, med, sdev,
             icmpv6stat->min_frame, icmpv6stat->max_frame);
     } else {
@@ -265,11 +268,11 @@ icmpv6stat_init(const char *opt_arg, void *userdata _U_)
 
     icmpv6stat = (icmpv6stat_t *)g_try_malloc(sizeof(icmpv6stat_t));
     if (icmpv6stat == NULL) {
-        fprintf(stderr, "tshark: g_try_malloc() fatal error.\n");
+        cmdarg_err("Couldn't register icmpv6,srt tap: Out of memory");
         exit(1);
     }
     memset(icmpv6stat, 0, sizeof(icmpv6stat_t));
-    icmpv6stat->min_msecs = 1.0 * G_MAXUINT;
+    icmpv6stat->min_msecs = 1.0 * UINT_MAX;
 
     icmpv6stat->filter = g_strdup(filter);
 
@@ -284,14 +287,13 @@ icmpv6stat_init(const char *opt_arg, void *userdata _U_)
  */
 
     error_string = register_tap_listener("icmpv6", icmpv6stat, icmpv6stat->filter,
-        TL_REQUIRES_NOTHING, icmpv6stat_reset, icmpv6stat_packet, icmpv6stat_draw);
+        TL_REQUIRES_NOTHING, icmpv6stat_reset, icmpv6stat_packet, icmpv6stat_draw, NULL);
     if (error_string) {
         /* error, we failed to attach to the tap. clean up */
         g_free(icmpv6stat->filter);
         g_free(icmpv6stat);
 
-        fprintf(stderr, "tshark: Couldn't register icmpv6,srt tap: %s\n",
-            error_string->str);
+        cmdarg_err("Couldn't register icmpv6,srt tap: %s", error_string->str);
         g_string_free(error_string, TRUE);
         exit(1);
     }
@@ -311,16 +313,3 @@ register_tap_listener_icmpv6stat(void)
 {
     register_stat_tap_ui(&icmpv6stat_ui, NULL);
 }
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

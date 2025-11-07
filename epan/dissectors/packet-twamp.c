@@ -19,13 +19,15 @@
  *           (not yet implemented)
  * RFC 6038: TWAMP Reflect Octets and Symmetrical Size Features
  *           (not yet implemented)
+ * RFC 8186: Support of the IEEE 1588 Timestamp Format in TWAMP
  */
 
 #include <config.h>
 #include <epan/packet.h>
 #include <epan/conversation.h>
-#include <epan/expert.h>
 #include <epan/proto_data.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 #include "packet-tcp.h"
 
 
@@ -42,6 +44,8 @@ void proto_register_twamp(void);
 #define TWAMP_MODE_AUTHENTICATED    0x2
 #define TWAMP_MODE_ENCRYPTED        0x4
 
+#define TWAMP_ERROR_ESTIMATE_ZBIT   0x4000
+
 enum twamp_control_state {
     CONTROL_STATE_UNKNOWN = 0,
     CONTROL_STATE_GREETING,
@@ -57,24 +61,24 @@ enum twamp_control_state {
 };
 
 typedef struct _twamp_session {
-    guint8 accepted;
+    uint8_t accepted;
     int padding;
-    guint16 sender_port;
-    guint16 receiver_port;
-    guint32 sender_address[4];
-    guint32 receiver_address[4];
-    guint8 ipvn;
+    uint16_t sender_port;
+    uint16_t receiver_port;
+    uint32_t sender_address[4];
+    uint32_t receiver_address[4];
+    uint8_t ipvn;
 } twamp_session_t;
 
 typedef struct twamp_control_packet {
-    guint32 fd;
+    uint32_t fd;
     enum twamp_control_state state;
     conversation_t *conversation;
 } twamp_control_packet_t;
 
 typedef struct twamp_control_transaction {
     enum twamp_control_state last_state;
-    guint32 first_data_frame;
+    uint32_t first_data_frame;
     GSList *sessions;
     proto_tree *tree;
 } twamp_control_transaction_t;
@@ -84,59 +88,63 @@ static dissector_handle_t twamp_test_handle;
 static dissector_handle_t twamp_control_handle;
 
 /* Protocol enabled flags */
-static int proto_owamp_test = -1;
-static int proto_twamp_test = -1;
-static int proto_twamp_control = -1;
-static gint ett_owamp_test = -1;
-static gint ett_twamp_test = -1;
-static gint ett_twamp_control = -1;
-static gint ett_twamp_error_estimate = -1;
+static int proto_owamp_test;
+static int proto_twamp_test;
+static int proto_twamp_control;
+static int ett_owamp_test;
+static int ett_twamp_test;
+static int ett_twamp_control;
+static int ett_twamp_error_estimate;
 
 /* Twamp test fields */
-static int hf_twamp_seq_number = -1;
-static int hf_twamp_sender_timestamp = -1;
-static int hf_twamp_error_estimate = -1;
-static int hf_twamp_mbz1 = -1;
-static int hf_twamp_receive_timestamp = -1;
-static int hf_twamp_sender_seq_number = -1;
-static int hf_twamp_timestamp = -1;
-static int hf_twamp_sender_error_estimate = -1;
-static int hf_twamp_mbz2 = -1;
-static int hf_twamp_sender_ttl = -1;
-static int hf_twamp_padding = -1;
-static int hf_twamp_error_estimate_multiplier = -1;
-static int hf_twamp_error_estimate_scale = -1;
-static int hf_twamp_error_estimate_b14 = -1;
-static int hf_twamp_error_estimate_b15 = -1;
+static int hf_twamp_seq_number;
+static int hf_twamp_sender_timestamp;
+static int hf_twamp_error_estimate;
+static int hf_twamp_mbz1;
+static int hf_twamp_receive_timestamp;
+static int hf_twamp_sender_seq_number;
+static int hf_twamp_timestamp;
+static int hf_twamp_sender_error_estimate;
+static int hf_twamp_mbz2;
+static int hf_twamp_sender_ttl;
+static int hf_twamp_padding;
+static int hf_twamp_error_estimate_multiplier;
+static int hf_twamp_error_estimate_scale;
+static int hf_twamp_error_estimate_b14;
+static int hf_twamp_error_estimate_b15;
 
 /* Twamp control fields */
-static int hf_twamp_control_unused = -1;
-static int hf_twamp_control_command = -1;
-static int hf_twamp_control_modes = -1;
-static int hf_twamp_control_mode = -1;
-static int hf_twamp_control_challenge = -1;
-static int hf_twamp_control_salt   = -1;
-static int hf_twamp_control_count  = -1;
-static int hf_twamp_control_keyid  = -1;
-static int hf_twamp_control_sessionid  = -1;
-static int hf_twamp_control_iv = -1;
-static int hf_twamp_control_ipvn = -1;
-static int hf_twamp_control_start_time = -1;
-static int hf_twamp_control_accept = -1;
-static int hf_twamp_control_timeout = -1;
-static int hf_twamp_control_type_p = -1;
-static int hf_twamp_control_mbz1   = -1;
-static int hf_twamp_control_mbz2   = -1;
-static int hf_twamp_control_hmac   = -1;
-static int hf_twamp_control_num_sessions   = -1;
-static int hf_twamp_control_sender_port    = -1;
-static int hf_twamp_control_server_uptime  = -1;
-static int hf_twamp_control_receiver_port  = -1;
-static int hf_twamp_control_padding_length = -1;
-static int hf_twamp_control_sender_ipv4 = -1;
-static int hf_twamp_control_sender_ipv6 = -1;
-static int hf_twamp_control_receiver_ipv4 = -1;
-static int hf_twamp_control_receiver_ipv6 = -1;
+static int hf_twamp_control_unused;
+static int hf_twamp_control_command;
+static int hf_twamp_control_modes;
+static int hf_twamp_control_mode;
+static int hf_twamp_control_challenge;
+static int hf_twamp_control_salt;
+static int hf_twamp_control_count;
+static int hf_twamp_control_keyid;
+static int hf_twamp_control_sessionid;
+static int hf_twamp_control_iv;
+static int hf_twamp_control_ipvn;
+static int hf_twamp_control_conf_sender;
+static int hf_twamp_control_conf_receiver;
+static int hf_twamp_control_number_of_schedule_slots;
+static int hf_twamp_control_number_of_packets;
+static int hf_twamp_control_start_time;
+static int hf_twamp_control_accept;
+static int hf_twamp_control_timeout;
+static int hf_twamp_control_type_p;
+static int hf_twamp_control_mbz1;
+static int hf_twamp_control_mbz2;
+static int hf_twamp_control_hmac;
+static int hf_twamp_control_num_sessions;
+static int hf_twamp_control_sender_port;
+static int hf_twamp_control_server_uptime;
+static int hf_twamp_control_receiver_port;
+static int hf_twamp_control_padding_length;
+static int hf_twamp_control_sender_ipv4;
+static int hf_twamp_control_sender_ipv6;
+static int hf_twamp_control_receiver_ipv4;
+static int hf_twamp_control_receiver_ipv6;
 
 static const value_string twamp_control_accept_vals[] = {
     { 0, "OK" },
@@ -175,15 +183,15 @@ static const value_string twamp_control_state_vals[] = {
 };
 
 static
-gint find_twamp_session_by_sender_port (gconstpointer element, gconstpointer compared)
+int find_twamp_session_by_sender_port (const void *element, const void *compared)
 {
-    const guint16 *sender_port = (const guint16*) compared;
+    const uint16_t *sender_port = (const uint16_t*) compared;
     const twamp_session_t *session = (const twamp_session_t*) element;
     return !(session->sender_port == *sender_port);
 }
 
 static
-gint find_twamp_session_by_first_accept_waiting (gconstpointer element, gconstpointer dummy _U_)
+int find_twamp_session_by_first_accept_waiting (const void *element, const void *dummy _U_)
 {
     const twamp_session_t *session = (const twamp_session_t*) element;
     if (session->accepted == 0)
@@ -195,34 +203,35 @@ gint find_twamp_session_by_first_accept_waiting (gconstpointer element, gconstpo
 static int
 dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    gint offset = 0;
-    gboolean is_request;
+    int offset = 0;
+    bool is_request;
     proto_item *twamp_tree;
     proto_tree *it;
     conversation_t *conversation;
     twamp_control_transaction_t *ct;
     twamp_control_packet_t *cp;
     twamp_session_t *session = NULL;
-    guint8 accept;
-    guint16 sender_port;
-    guint16 receiver_port;
+    uint8_t accept;
+    uint16_t sender_port;
+    uint16_t receiver_port;
     GSList *list;
     nstime_t ts;
     proto_tree *item;
-    guint32 modes;
-    guint32 type_p;
-    guint8 ipvn;
+    uint32_t modes;
+    uint32_t type_p;
+    uint8_t command_number;
+    uint8_t ipvn;
 
     if (pinfo->destport == TWAMP_CONTROL_PORT) {
-        is_request = TRUE;
+        is_request = true;
     } else {
-        is_request = FALSE;
+        is_request = false;
     }
 
     conversation = find_or_create_conversation(pinfo);
     ct = (twamp_control_transaction_t *) conversation_get_proto_data(conversation, proto_twamp_control);
     if (ct == NULL) {
-        if (is_request == FALSE && tvb_reported_length(tvb) == TWAMP_CONTROL_SERVER_GREETING_LEN) {
+        if (is_request == false && tvb_reported_length(tvb) == TWAMP_CONTROL_SERVER_GREETING_LEN) {
             /* We got server greeting */
             ct = wmem_new0(wmem_file_scope(), twamp_control_transaction_t);
             conversation_add_proto_data(conversation, proto_twamp_control, ct);
@@ -249,13 +258,13 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
             sender_port = tvb_get_ntohs(tvb, 12);
             receiver_port = tvb_get_ntohs(tvb, 14);
             /* try to find session from past visits */
-            if ((list = g_slist_find_custom(ct->sessions, &sender_port,
-                    (GCompareFunc) find_twamp_session_by_sender_port)) == NULL) {
-                session = (twamp_session_t *) g_malloc0(sizeof(twamp_session_t));
+            if (g_slist_find_custom(ct->sessions, &sender_port,
+                    (GCompareFunc) find_twamp_session_by_sender_port) == NULL) {
+                session = g_new0(twamp_session_t, 1);
                 session->sender_port = sender_port;
                 session->receiver_port = receiver_port;
                 session->accepted = 0;
-                ipvn = tvb_get_guint8(tvb, 1) & 0x0F;
+                ipvn = tvb_get_uint8(tvb, 1) & 0x0F;
 
                 if (ipvn == 6) {
                     tvb_get_ipv6(tvb, 16, (struct e_in6_addr*) &session->sender_address);
@@ -280,7 +289,7 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
             }
         } else if (ct->last_state == CONTROL_STATE_REQUEST_SESSION) {
             ct->last_state = CONTROL_STATE_ACCEPT_SESSION;
-            accept = tvb_get_guint8(tvb, 0);
+            accept = tvb_get_uint8(tvb, 0);
             if (accept == TWAMP_SESSION_ACCEPT_OK) {
                 receiver_port = tvb_get_ntohs(tvb, 2);
 
@@ -291,10 +300,10 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
                 session = (twamp_session_t*) list->data;
                 session->receiver_port = receiver_port;
 
-                cp->conversation = find_conversation(pinfo->fd->num, &pinfo->dst, &pinfo->src, ENDPOINT_UDP,
+                cp->conversation = find_conversation(pinfo->fd->num, &pinfo->dst, &pinfo->src, CONVERSATION_UDP,
                         session->sender_port, session->receiver_port, 0);
                 if (cp->conversation == NULL /*|| cp->conversation->dissector_handle != twamp_test_handle*/) {
-                    cp->conversation = conversation_new(pinfo->fd->num, &pinfo->dst, &pinfo->src, ENDPOINT_UDP,
+                    cp->conversation = conversation_new(pinfo->fd->num, &pinfo->dst, &pinfo->src, CONVERSATION_UDP,
                             session->sender_port, session->receiver_port, 0);
                     if (cp->conversation) {
                         /* create conversation specific data for test sessions */
@@ -304,7 +313,19 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
                 }
             }
         } else if (ct->last_state == CONTROL_STATE_ACCEPT_SESSION) {
-            ct->last_state = CONTROL_STATE_START_SESSIONS;
+            /* We shall check the Command Number to determine current CONTROL_STATE_XXX */
+            command_number = tvb_get_uint8(tvb, 0);
+            switch(command_number){
+                case 2: /* Start-Sessions */
+                    ct->last_state = CONTROL_STATE_START_SESSIONS;
+                    break;
+                case 3: /* Stop-Sessions */
+                    ct->last_state = CONTROL_STATE_STOP_SESSIONS;
+                    break;
+                case 5: /* Request-Session */
+                    ct->last_state = CONTROL_STATE_REQUEST_SESSION;
+                    break;
+            }
         } else if (ct->last_state == CONTROL_STATE_START_SESSIONS) {
             ct->last_state = CONTROL_STATE_START_SESSIONS_ACK;
         } else if (ct->last_state == CONTROL_STATE_START_SESSIONS_ACK) {
@@ -320,7 +341,7 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
     it = proto_tree_add_item(tree, proto_twamp_control, tvb, 0, -1, ENC_NA);
     twamp_tree = proto_item_add_subtree(it, ett_twamp_control);
 
-    col_add_fstr(pinfo->cinfo, COL_INFO, "%s", val_to_str_const(cp->state, twamp_control_state_vals, "Unknown"));
+    col_set_str(pinfo->cinfo, COL_INFO, val_to_str_const(cp->state, twamp_control_state_vals, "Unknown"));
 
     switch (cp->state) {
     case CONTROL_STATE_GREETING:
@@ -353,7 +374,7 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
     case CONTROL_STATE_SERVER_START:
         proto_tree_add_item(twamp_tree, hf_twamp_control_mbz1, tvb, offset, 15, ENC_NA);
         offset += 15;
-        accept = tvb_get_guint8(tvb, offset);
+        accept = tvb_get_uint8(tvb, offset);
         proto_tree_add_uint(twamp_tree, hf_twamp_control_accept, tvb, offset, 1, accept);
         col_append_fstr(pinfo->cinfo, COL_INFO, ", (%s%s)",
                 (accept == 0) ? "" : "Error: ", val_to_str(accept, twamp_control_accept_vals, "%u"));
@@ -370,10 +391,22 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
         proto_tree_add_item(twamp_tree, hf_twamp_control_command, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        ipvn = tvb_get_guint8(tvb, offset) & 0x0F;
+        ipvn = tvb_get_uint8(tvb, offset) & 0x0F;
         proto_tree_add_uint(twamp_tree, hf_twamp_control_ipvn, tvb, offset, 1, ipvn);
+        offset += 1;
 
-        offset = 12;
+        proto_tree_add_item(twamp_tree, hf_twamp_control_conf_sender, tvb, offset, 1, ENC_NA);
+        offset += 1;
+
+        proto_tree_add_item(twamp_tree, hf_twamp_control_conf_receiver, tvb, offset, 1, ENC_NA);
+        offset += 1;
+
+        proto_tree_add_item(twamp_tree, hf_twamp_control_number_of_schedule_slots, tvb, offset, 4, ENC_BIG_ENDIAN);
+        offset += 4;
+
+        proto_tree_add_item(twamp_tree, hf_twamp_control_number_of_packets, tvb, offset, 4, ENC_BIG_ENDIAN);
+        offset += 4;
+
         proto_tree_add_item(twamp_tree, hf_twamp_control_sender_port, tvb, offset, 2, ENC_BIG_ENDIAN);
         offset += 2;
         proto_tree_add_item(twamp_tree, hf_twamp_control_receiver_port, tvb, offset, 2, ENC_BIG_ENDIAN);
@@ -412,7 +445,7 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
         break;
 
     case CONTROL_STATE_ACCEPT_SESSION:
-        accept = tvb_get_guint8(tvb, offset);
+        accept = tvb_get_uint8(tvb, offset);
         proto_tree_add_uint(twamp_tree, hf_twamp_control_accept, tvb, offset, 1, accept);
         col_append_fstr(pinfo->cinfo, COL_INFO, ", (%s%s)",
                 (accept == 0) ? "" : "Error: ", val_to_str(accept, twamp_control_accept_vals, "%u"));
@@ -434,7 +467,7 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
         /* offset += 16; */
         break;
     case CONTROL_STATE_START_SESSIONS_ACK:
-        accept = tvb_get_guint8(tvb, offset);
+        accept = tvb_get_uint8(tvb, offset);
         proto_tree_add_uint(twamp_tree, hf_twamp_control_accept, tvb, offset, 1, accept);
         col_append_fstr(pinfo->cinfo, COL_INFO, ", (%s%s)",
                 (accept == 0) ? "" : "Error: ", val_to_str(accept, twamp_control_accept_vals, "%u"));
@@ -467,7 +500,7 @@ dissect_twamp_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
 }
 
 static
-guint get_server_greeting_len(packet_info *pinfo _U_, tvbuff_t *tvb _U_, int offset _U_, void *data _U_)
+unsigned get_server_greeting_len(packet_info *pinfo _U_, tvbuff_t *tvb _U_, int offset _U_, void *data _U_)
 {
     conversation_t *conversation;
     twamp_control_transaction_t *ct;
@@ -486,11 +519,11 @@ static int
 dissect_twamp_server_greeting(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
     /* Try to reassemble server greeting message */
-    tcp_dissect_pdus(tvb, pinfo, tree, TRUE, 0, get_server_greeting_len, dissect_twamp_control, data);
+    tcp_dissect_pdus(tvb, pinfo, tree, true, 0, get_server_greeting_len, dissect_twamp_control, data);
     return tvb_captured_length(tvb);
 }
 
-static const int * twamp_error_estimate_flags[] = {
+static int * const twamp_error_estimate_flags[] = {
     &hf_twamp_error_estimate_b15,
     &hf_twamp_error_estimate_b14,
     &hf_twamp_error_estimate_scale,
@@ -501,6 +534,11 @@ static const int * twamp_error_estimate_flags[] = {
 static const true_false_string tfs_twamp_sbit_tfs = {
     "Synchronized to UTC using an external source",
     "No notion of external synchronization"
+};
+
+static const true_false_string tfs_twamp_zbit_tfs = {
+    "Abbreviated PTP Timestamp (RFC8186)",
+    "Always Zero (RFC5357) or NTP Timestamp (RFC8186)"
 };
 
 static int
@@ -522,7 +560,10 @@ dissect_owamp_test(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
     proto_tree_add_item(owamp_tree, hf_twamp_seq_number, tvb, offset, 4, ENC_BIG_ENDIAN);
     offset += 4;
 
-    proto_tree_add_item(owamp_tree, hf_twamp_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
+    if (tvb_get_ntohs(tvb, offset + 8) & TWAMP_ERROR_ESTIMATE_ZBIT)
+        proto_tree_add_item(owamp_tree, hf_twamp_sender_timestamp, tvb, offset, 8, ENC_TIME_SECS_NSECS | ENC_BIG_ENDIAN);
+    else
+        proto_tree_add_item(owamp_tree, hf_twamp_sender_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
     offset += 8;
 
     /*
@@ -548,7 +589,7 @@ dissect_owamp_test(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
 static int
 dissect_twamp_test(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    gint offset = 0;
+    int offset = 0;
     proto_item *ti = NULL;
     proto_item *twamp_tree = NULL;
     int padding = 0;
@@ -565,7 +606,10 @@ dissect_twamp_test(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
     proto_tree_add_item(twamp_tree, hf_twamp_seq_number, tvb, offset, 4, ENC_BIG_ENDIAN);
     offset += 4;
 
-    proto_tree_add_item(twamp_tree, hf_twamp_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
+    if (tvb_get_ntohs(tvb, offset + 8) & TWAMP_ERROR_ESTIMATE_ZBIT)
+        proto_tree_add_item(twamp_tree, hf_twamp_timestamp, tvb, offset, 8, ENC_TIME_SECS_NSECS | ENC_BIG_ENDIAN);
+    else
+        proto_tree_add_item(twamp_tree, hf_twamp_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
     offset += 8;
 
     /*
@@ -583,16 +627,22 @@ dissect_twamp_test(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
     if (tvb_reported_length(tvb) - offset >= 27) {
         proto_tree_add_item (twamp_tree, hf_twamp_mbz1, tvb, offset, 2, ENC_BIG_ENDIAN);
         offset += 2;
-        proto_tree_add_item(twamp_tree, hf_twamp_receive_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
+        if (tvb_get_ntohs(tvb, offset - 4) & TWAMP_ERROR_ESTIMATE_ZBIT)
+            proto_tree_add_item(twamp_tree, hf_twamp_receive_timestamp, tvb, offset, 8, ENC_TIME_SECS_NSECS | ENC_BIG_ENDIAN);
+        else
+            proto_tree_add_item(twamp_tree, hf_twamp_receive_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
         offset += 8;
 
         proto_tree_add_item (twamp_tree, hf_twamp_sender_seq_number, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
 
-        proto_tree_add_item(twamp_tree, hf_twamp_sender_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
+        if (tvb_get_ntohs(tvb, offset + 8) & TWAMP_ERROR_ESTIMATE_ZBIT)
+            proto_tree_add_item(twamp_tree, hf_twamp_sender_timestamp, tvb, offset, 8, ENC_TIME_SECS_NSECS | ENC_BIG_ENDIAN);
+        else
+            proto_tree_add_item(twamp_tree, hf_twamp_sender_timestamp, tvb, offset, 8, ENC_TIME_NTP | ENC_BIG_ENDIAN);
         offset += 8;
 
-        proto_tree_add_item (twamp_tree, hf_twamp_sender_error_estimate, tvb, offset, 2, ENC_BIG_ENDIAN);
+        proto_tree_add_bitmask(twamp_tree, tvb, offset, hf_twamp_sender_error_estimate, ett_twamp_error_estimate, twamp_error_estimate_flags, ENC_BIG_ENDIAN);
         offset += 2;
         proto_tree_add_item (twamp_tree, hf_twamp_mbz2, tvb, offset, 2, ENC_BIG_ENDIAN);
         offset += 2;
@@ -623,7 +673,7 @@ void proto_register_twamp(void)
          {"Error Estimate", "twamp.test.error_estimate", FT_UINT16,
           BASE_DEC_HEX, NULL, 0x0, NULL, HFILL}},
         {&hf_twamp_mbz1,
-         {"MBZ", "twamp.test.mbz1", FT_UINT8, BASE_DEC_HEX,
+         {"MBZ", "twamp.test.mbz1", FT_UINT16, BASE_DEC_HEX,
           NULL, 0x0, NULL, HFILL}},
         {&hf_twamp_receive_timestamp,
          {"Receive Timestamp", "twamp.test.receive_timestamp", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_LOCAL, NULL, 0x0, NULL, HFILL}},
@@ -636,7 +686,7 @@ void proto_register_twamp(void)
          {"Sender Error Estimate", "twamp.test.sender_error_estimate",
           FT_UINT16, BASE_DEC_HEX, NULL, 0x0, NULL, HFILL}},
         {&hf_twamp_mbz2,
-         {"MBZ", "twamp.test.mbz2", FT_UINT8, BASE_DEC_HEX,
+         {"MBZ", "twamp.test.mbz2", FT_UINT16, BASE_DEC_HEX,
           NULL, 0x0, NULL, HFILL}},
         {&hf_twamp_sender_ttl,
          {"Sender TTL", "twamp.test.sender_ttl", FT_UINT8, BASE_DEC,
@@ -652,13 +702,13 @@ void proto_register_twamp(void)
           NULL, 0x3f00, NULL, HFILL } },
         { &hf_twamp_error_estimate_b14,
           { "Z", "twamp.test.error_estimate.z", FT_BOOLEAN, 16,
-          NULL, 0x4000, NULL, HFILL } },
+          TFS(&tfs_twamp_zbit_tfs), 0x4000, NULL, HFILL } },
         { &hf_twamp_error_estimate_b15,
           { "S", "twamp.test.error_estimate.s", FT_BOOLEAN, 16,
           TFS(&tfs_twamp_sbit_tfs), 0x8000, NULL, HFILL } },
     };
 
-    static gint *ett_twamp_test_arr[] = {
+    static int *ett_twamp_test_arr[] = {
         &ett_owamp_test,
         &ett_twamp_test
     };
@@ -724,7 +774,7 @@ void proto_register_twamp(void)
         },
         {&hf_twamp_control_accept,
             {"Accept", "twamp.control.accept", FT_UINT8, BASE_DEC, VALS(twamp_control_accept_vals), 0x0,
-                "Message acceptence by the other side", HFILL}
+                "Message acceptance by the other side", HFILL}
         },
         {&hf_twamp_control_sender_port,
             {"Sender Port", "twamp.control.sender_port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}
@@ -734,6 +784,18 @@ void proto_register_twamp(void)
         },
         {&hf_twamp_control_ipvn,
             {"IP Version", "twamp.control.ipvn", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}
+        },
+        {&hf_twamp_control_conf_sender,
+            {"Conf-Sender", "twamp.control.conf_sender", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}
+        },
+        {&hf_twamp_control_conf_receiver,
+            {"Conf-Receiver", "twamp.control.conf_receiver", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL}
+        },
+        {&hf_twamp_control_number_of_schedule_slots,
+            {"Number of Schedule Slots", "twamp.control.number_of_schedule_slots", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}
+        },
+        {&hf_twamp_control_number_of_packets,
+            {"Number of Packets", "twamp.control.number_of_packets", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL}
         },
         {&hf_twamp_control_sender_ipv4,
             {"Sender Address", "twamp.control.sender_ipv4", FT_IPv4, BASE_NONE, NULL, 0x0,
@@ -753,17 +815,14 @@ void proto_register_twamp(void)
         }
     };
 
-    static gint *ett_twamp_control_arr[] = {
+    static int *ett_twamp_control_arr[] = {
         &ett_twamp_control,
         &ett_twamp_error_estimate
     };
 
 
     /* Register the protocol */
-    proto_twamp_test = proto_register_protocol(
-        "TwoWay Active Measurement Test Protocol",
-        "TWAMP-Test",
-        "twamp.test");
+    proto_twamp_test = proto_register_protocol("TwoWay Active Measurement Test Protocol", "TWAMP-Test", "twamp.test");
 
     /* Register the field array */
     proto_register_field_array (proto_twamp_test, hf_twamp_test,
@@ -773,11 +832,11 @@ void proto_register_twamp(void)
     proto_register_subtree_array (ett_twamp_test_arr,
                       array_length(ett_twamp_test_arr));
 
+    /* Register the dissector handle */
+    twamp_test_handle = register_dissector("twamp.test", dissect_twamp_test, proto_twamp_test);
+
     /* Register the protocol */
-    proto_twamp_control = proto_register_protocol(
-        "TwoWay Active Measurement Control Protocol",
-        "TWAMP-Control",
-        "twamp.control");
+    proto_twamp_control = proto_register_protocol("TwoWay Active Measurement Control Protocol", "TWAMP-Control", "twamp.control");
 
     /* Register the field array */
     proto_register_field_array (proto_twamp_control, hf_twamp_control,
@@ -787,20 +846,18 @@ void proto_register_twamp(void)
     proto_register_subtree_array (ett_twamp_control_arr,
                       array_length(ett_twamp_control_arr));
 
-    proto_owamp_test = proto_register_protocol(
-        "One-way Active Measurement Protocol",
-        "OWAMP-Test",
-        "owamp.test");
+    /* Register the dissector handle */
+    twamp_control_handle = register_dissector("twamp.control", dissect_twamp_server_greeting, proto_twamp_control);
 
+    /* Register the protocol */
+    proto_owamp_test = proto_register_protocol("One-way Active Measurement Protocol", "OWAMP-Test", "owamp.test");
+
+    /* Register the dissector handle */
+    owamp_test_handle = register_dissector("owamp.test", dissect_owamp_test, proto_owamp_test);
 }
 
 void proto_reg_handoff_twamp(void)
 {
-    twamp_test_handle = create_dissector_handle(dissect_twamp_test, proto_twamp_test);
-
-    owamp_test_handle = create_dissector_handle(dissect_owamp_test, proto_owamp_test);
-
-    twamp_control_handle = create_dissector_handle(dissect_twamp_server_greeting, proto_twamp_control);
     dissector_add_uint("tcp.port", TWAMP_CONTROL_PORT, twamp_control_handle);
 
     dissector_add_for_decode_as("udp.port", twamp_test_handle);

@@ -11,9 +11,10 @@
 
 /*
  * References:
- * https://web.archive.org/web/20171009015219/https://msdn.microsoft.com/en-us/library/cc219643.aspx
- * https://web.archive.org/web/20171223021159/https://msdn.microsoft.com/en-us/library/dd304523.aspx
- * https://web.archive.org/web/20171005092351/https://docs.microsoft.com/en-us/sql/relational-databases/native-client/features/using-multiple-active-result-sets-mars
+ *
+ *    MC-SMP - https://docs.microsoft.com/en-us/openspecs/windows_protocols/mc-smp
+ *    MS-TDS - https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds
+ *    https://docs.microsoft.com/en-us/sql/relational-databases/native-client/features/using-multiple-active-result-sets-mars
  *
  *     0                   1                   2                   3
  *     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -36,28 +37,29 @@
 #include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/decode_as.h>
-
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 #include "packet-tcp.h"
 
 void proto_reg_handoff_smp(void);
 void proto_register_smp(void);
 
-static int proto_smp = -1;
+static int proto_smp;
 
-static int hf_smp_smid = -1;
-static int hf_smp_flags = -1;
-static int hf_smp_flags_syn = -1;
-static int hf_smp_flags_ack = -1;
-static int hf_smp_flags_fin = -1;
-static int hf_smp_flags_data = -1;
-static int hf_smp_sid = -1;
-static int hf_smp_length = -1;
-static int hf_smp_seqnum = -1;
-static int hf_smp_wndw = -1;
-static int hf_smp_data = -1;
+static int hf_smp_smid;
+static int hf_smp_flags;
+static int hf_smp_flags_syn;
+static int hf_smp_flags_ack;
+static int hf_smp_flags_fin;
+static int hf_smp_flags_data;
+static int hf_smp_sid;
+static int hf_smp_length;
+static int hf_smp_seqnum;
+static int hf_smp_wndw;
+static int hf_smp_data;
 
-static gint ett_smp = -1;
-static gint ett_smp_flags = -1;
+static int ett_smp;
+static int ett_smp_flags;
 
 #define SMP_FLAGS_SYN  0x01
 #define SMP_FLAGS_ACK  0x02
@@ -67,27 +69,28 @@ static gint ett_smp_flags = -1;
 #define SMP_MIN_LENGTH 16
 
 static dissector_handle_t tds_handle;
+static dissector_handle_t smp_handle;
 static dissector_table_t smp_payload_table;
 
-static gboolean reassemble_smp = TRUE;
+static bool reassemble_smp = true;
 
-static void smp_prompt(packet_info *pinfo _U_, gchar* result)
+static void smp_prompt(packet_info *pinfo _U_, char* result)
 {
-    g_snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Payload as");
+    snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Payload as");
 }
 
 /* Code to actually dissect the packets */
 static int
-dissect_smp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gboolean tds_payload)
+dissect_smp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bool tds_payload)
 {
-    guint offset = 0;
-    guint remaining_bytes;
+    unsigned offset = 0;
+    unsigned remaining_bytes;
     proto_item *ti;
     proto_tree *smp_tree;
-    guint32 flags, sid, smp_length;
+    uint32_t flags, sid, smp_length;
     tvbuff_t* next_tvb;
     int parsed_bytes;
-    static const int *flag_fields[] = {
+    static int * const flag_fields[] = {
         &hf_smp_flags_syn,
         &hf_smp_flags_ack,
         &hf_smp_flags_fin,
@@ -108,7 +111,7 @@ dissect_smp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gboolean
     offset+=1;
 
     proto_tree_add_bitmask(smp_tree, tvb, offset, hf_smp_flags, ett_smp_flags, flag_fields, ENC_NA);
-    flags = tvb_get_guint8(tvb, offset);
+    flags = tvb_get_uint8(tvb, offset);
     offset += 1;
 
     proto_tree_add_item_ret_uint(smp_tree, hf_smp_sid, tvb, offset, 2, ENC_LITTLE_ENDIAN, &sid);
@@ -139,7 +142,7 @@ dissect_smp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gboolean
         if (tds_payload) {
             parsed_bytes = call_dissector(tds_handle, next_tvb, pinfo, tree);
         } else {
-            parsed_bytes = dissector_try_payload(smp_payload_table, next_tvb, pinfo, tree);
+            parsed_bytes = dissector_try_payload_with_data(smp_payload_table, next_tvb, pinfo, tree, true, NULL);
         }
         if (parsed_bytes <= 0)
         {
@@ -162,7 +165,7 @@ dissect_smp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gboolean
     return offset;
 }
 
-static guint get_smp_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, void *data _U_)
+static unsigned get_smp_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, void *data _U_)
 {
     return tvb_get_letohl(tvb, offset + 4);
 }
@@ -170,12 +173,12 @@ static guint get_smp_pdu_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, 
 static int
 dissect_smp_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    return dissect_smp_common(tvb, pinfo, tree, FALSE);
+    return dissect_smp_common(tvb, pinfo, tree, false);
 }
 
 static int dissect_smp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 {
-    if ((tvb_reported_length(tvb) > 0) && (tvb_get_guint8(tvb, 0) == 0x53)) {
+    if ((tvb_reported_length(tvb) > 0) && (tvb_get_uint8(tvb, 0) == 0x53)) {
         tcp_dissect_pdus(tvb, pinfo, tree, reassemble_smp, SMP_MIN_LENGTH,
                      get_smp_pdu_len, dissect_smp_pdu, data);
 
@@ -188,7 +191,7 @@ static int dissect_smp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
 static int
 dissect_smp_tds(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-    return dissect_smp_common(tvb, pinfo, tree, TRUE);
+    return dissect_smp_common(tvb, pinfo, tree, true);
 }
 
 void
@@ -219,7 +222,7 @@ proto_register_smp(void)
           { "Data", "smp.data", FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }},
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_smp,
         &ett_smp_flags,
     };
@@ -231,8 +234,9 @@ proto_register_smp(void)
     proto_register_field_array(proto_smp, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
     register_dissector("smp_tds", dissect_smp_tds, proto_smp);
+    smp_handle = register_dissector("smp", dissect_smp, proto_smp);
 
-    smp_payload_table = register_decode_as_next_proto(proto_smp, "SMP Payload", "smp.payload", "SMP Payload", smp_prompt);
+    smp_payload_table = register_decode_as_next_proto(proto_smp, "smp.payload", "SMP Payload", smp_prompt);
 
     smp_module = prefs_register_protocol(proto_smp, NULL);
     prefs_register_bool_preference(smp_module, "desegment",
@@ -245,8 +249,6 @@ proto_register_smp(void)
 void
 proto_reg_handoff_smp(void)
 {
-    dissector_handle_t smp_handle;
-    smp_handle = create_dissector_handle(dissect_smp, proto_smp);
     dissector_add_for_decode_as_with_preference("tcp.port", smp_handle);
 
     tds_handle = find_dissector_add_dependency("tds", proto_smp);

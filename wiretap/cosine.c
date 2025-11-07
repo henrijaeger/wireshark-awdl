@@ -10,8 +10,8 @@
  */
 
 #include "config.h"
-#include "wtap-int.h"
 #include "cosine.h"
+#include "wtap-int.h"
 #include "file_wrappers.h"
 
 #include <stdlib.h>
@@ -145,22 +145,26 @@
 #define COSINE_HEADER_LINES_TO_CHECK	200
 #define COSINE_LINE_LENGTH		240
 
-static gboolean empty_line(const gchar *line);
-static gint64 cosine_seek_next_packet(wtap *wth, int *err, gchar **err_info,
+static bool empty_line(const char *line);
+static int64_t cosine_seek_next_packet(wtap *wth, int *err, char **err_info,
 	char *hdr);
-static gboolean cosine_check_file_type(wtap *wth, int *err, gchar **err_info);
-static gboolean cosine_read(wtap *wth, int *err, gchar **err_info,
-	gint64 *data_offset);
-static gboolean cosine_seek_read(wtap *wth, gint64 seek_off,
-	wtap_rec *rec, Buffer *buf, int *err, gchar **err_info);
-static int parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer* buf,
-	char *line, int *err, gchar **err_info);
-static int parse_single_hex_dump_line(char* rec, guint8 *buf,
-	guint byte_offset);
+static bool cosine_check_file_type(wtap *wth, int *err, char **err_info);
+static bool cosine_read(wtap *wth, wtap_rec *rec,
+	int *err, char **err_info, int64_t *data_offset);
+static bool cosine_seek_read(wtap *wth, int64_t seek_off,
+	wtap_rec *rec, int *err, char **err_info);
+static bool parse_cosine_packet(FILE_T fh, wtap_rec *rec,
+	char *line, int *err, char **err_info);
+static int parse_single_hex_dump_line(char* rec, uint8_t *buf,
+	unsigned byte_offset);
 
-/* Returns TRUE if the line appears to be an empty line. Otherwise it
-   returns FALSE. */
-static gboolean empty_line(const gchar *line)
+static int cosine_file_type_subtype = -1;
+
+void register_cosine(void);
+
+/* Returns true if the line appears to be an empty line. Otherwise it
+   returns false. */
+static bool empty_line(const char *line)
 {
 	while (*line) {
 		if (g_ascii_isspace(*line)) {
@@ -171,19 +175,19 @@ static gboolean empty_line(const gchar *line)
 		}
 	}
 	if (*line == '\0')
-		return TRUE;
+		return true;
 	else
-		return FALSE;
+		return false;
 }
 
 /* Seeks to the beginning of the next packet, and returns the
    byte offset. Copy the header line to hdr. Returns -1 on failure,
    and sets "*err" to the error and sets "*err_info" to null or an
    additional error string. */
-static gint64 cosine_seek_next_packet(wtap *wth, int *err, gchar **err_info,
+static int64_t cosine_seek_next_packet(wtap *wth, int *err, char **err_info,
 	char *hdr)
 {
-	gint64 cur_off;
+	int64_t cur_off;
 	char buf[COSINE_LINE_LENGTH];
 
 	while (1) {
@@ -199,7 +203,7 @@ static gint64 cosine_seek_next_packet(wtap *wth, int *err, gchar **err_info,
 		}
 		if (strstr(buf, COSINE_REC_MAGIC_STR1) ||
 		    strstr(buf, COSINE_REC_MAGIC_STR2)) {
-			g_strlcpy(hdr, buf, COSINE_LINE_LENGTH);
+			(void) g_strlcpy(hdr, buf, COSINE_LINE_LENGTH);
 			return cur_off;
 		}
 	}
@@ -209,15 +213,15 @@ static gint64 cosine_seek_next_packet(wtap *wth, int *err, gchar **err_info,
 /* Look through the first part of a file to see if this is
  * a CoSine L2 debug output.
  *
- * Returns TRUE if it is, FALSE if it isn't or if we get an I/O error;
+ * Returns true if it is, false if it isn't or if we get an I/O error;
  * if we get an I/O error, "*err" will be set to a non-zero value and
  * "*err_info" will be set to null or an additional error string.
  */
-static gboolean cosine_check_file_type(wtap *wth, int *err, gchar **err_info)
+static bool cosine_check_file_type(wtap *wth, int *err, char **err_info)
 {
 	char	buf[COSINE_LINE_LENGTH];
-	gsize	reclen;
-	guint	line;
+	size_t	reclen;
+	unsigned	line;
 
 	buf[COSINE_LINE_LENGTH-1] = '\0';
 
@@ -225,7 +229,7 @@ static gboolean cosine_check_file_type(wtap *wth, int *err, gchar **err_info)
 		if (file_gets(buf, COSINE_LINE_LENGTH, wth->fh) == NULL) {
 			/* EOF or error. */
 			*err = file_error(wth->fh, err_info);
-			return FALSE;
+			return false;
 		}
 
 		reclen = strlen(buf);
@@ -235,15 +239,15 @@ static gboolean cosine_check_file_type(wtap *wth, int *err, gchar **err_info)
 
 		if (strstr(buf, COSINE_HDR_MAGIC_STR1) ||
 		    strstr(buf, COSINE_HDR_MAGIC_STR2)) {
-			return TRUE;
+			return true;
 		}
 	}
 	*err = 0;
-	return FALSE;
+	return false;
 }
 
 
-wtap_open_return_val cosine_open(wtap *wth, int *err, gchar **err_info)
+wtap_open_return_val cosine_open(wtap *wth, int *err, char **err_info)
 {
 	/* Look for CoSine header */
 	if (!cosine_check_file_type(wth, err, err_info)) {
@@ -256,54 +260,60 @@ wtap_open_return_val cosine_open(wtap *wth, int *err, gchar **err_info)
 		return WTAP_OPEN_ERROR;
 
 	wth->file_encap = WTAP_ENCAP_COSINE;
-	wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_COSINE;
+	wth->file_type_subtype = cosine_file_type_subtype;
 	wth->snapshot_length = 0; /* not known */
 	wth->subtype_read = cosine_read;
 	wth->subtype_seek_read = cosine_seek_read;
-	wth->file_tsprec = WTAP_TSPREC_CSEC;
+	wth->file_tsprec = WTAP_TSPREC_10_MSEC;
+
+	/*
+	 * Add an IDB; we don't know how many interfaces were
+	 * involved, so we just say one interface, about which
+	 * we only know the link-layer type, snapshot length,
+	 * and time stamp resolution.
+	 */
+	wtap_add_generated_idb(wth);
 
 	return WTAP_OPEN_MINE;
 }
 
 /* Find the next packet and parse it; called from wtap_read(). */
-static gboolean cosine_read(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset)
+static bool cosine_read(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset)
 {
-	gint64	offset;
+	int64_t	offset;
 	char	line[COSINE_LINE_LENGTH];
 
 	/* Find the next packet */
 	offset = cosine_seek_next_packet(wth, err, err_info, line);
 	if (offset < 0)
-		return FALSE;
+		return false;
 	*data_offset = offset;
 
 	/* Parse the header and convert the ASCII hex dump to binary data */
-	return parse_cosine_packet(wth->fh, &wth->rec, wth->rec_data,
-	    line, err, err_info);
+	return parse_cosine_packet(wth->fh, rec, line, err, err_info);
 }
 
 /* Used to read packets in random-access fashion */
-static gboolean
-cosine_seek_read(wtap *wth, gint64 seek_off, wtap_rec *rec,
-	Buffer *buf, int *err, gchar **err_info)
+static bool
+cosine_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
+	int *err, char **err_info)
 {
 	char	line[COSINE_LINE_LENGTH];
 
 	if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
-		return FALSE;
+		return false;
 
 	if (file_gets(line, COSINE_LINE_LENGTH, wth->random_fh) == NULL) {
 		*err = file_error(wth->random_fh, err_info);
 		if (*err == 0) {
 			*err = WTAP_ERR_SHORT_READ;
 		}
-		return FALSE;
+		return false;
 	}
 
 	/* Parse the header and convert the ASCII hex dump to binary data */
-	return parse_cosine_packet(wth->random_fh, rec, buf, line, err,
-	    err_info);
+	return parse_cosine_packet(wth->random_fh, rec, line, err, err_info);
 }
 
 /* Parses a packet record header. There are two possible formats:
@@ -311,18 +321,18 @@ cosine_seek_read(wtap *wth, gint64 seek_off, wtap_rec *rec,
         2002-5-10,20:1:31.4:  l2-tx (FR:3/7/1:1), Length:18, Pro:0, Off:0, Pri:0, RM:0, Err:0 [0x4000, 0x0]
     2) output to PE without date and time
         l2-tx (FR:3/7/1:1), Length:18, Pro:0, Off:0, Pri:0, RM:0, Err:0 [0x4000, 0x0] */
-static gboolean
-parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
-    char *line, int *err, gchar **err_info)
+static bool
+parse_cosine_packet(FILE_T fh, wtap_rec *rec,
+    char *line, int *err, char **err_info)
 {
 	union wtap_pseudo_header *pseudo_header = &rec->rec_header.packet_header.pseudo_header;
 	int	num_items_scanned;
 	int	yy, mm, dd, hr, min, sec, csec, pkt_len;
 	int	pro, off, pri, rm, error;
-	guint	code1, code2;
+	unsigned	code1, code2;
 	char	if_name[COSINE_MAX_IF_NAME_LEN] = "", direction[6] = "";
 	struct	tm tm;
-	guint8 *pd;
+	uint8_t *pd;
 	int	i, hex_lines, n, caplen = 0;
 
 	if (sscanf(line, "%4d-%2d-%2d,%2d:%2d:%2d.%9d:",
@@ -338,7 +348,7 @@ parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
 		if (num_items_scanned != 17) {
 			*err = WTAP_ERR_BAD_FILE;
 			*err_info = g_strdup("cosine: purported control blade line doesn't have code values");
-			return FALSE;
+			return false;
 		}
 	} else {
 		/* appears to be output to PE */
@@ -351,27 +361,28 @@ parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
 		if (num_items_scanned != 10) {
 			*err = WTAP_ERR_BAD_FILE;
 			*err_info = g_strdup("cosine: header line is neither control blade nor PE output");
-			return FALSE;
+			return false;
 		}
 		yy = mm = dd = hr = min = sec = csec = 0;
 	}
 	if (pkt_len < 0) {
 		*err = WTAP_ERR_BAD_FILE;
 		*err_info = g_strdup("cosine: packet header has a negative packet length");
-		return FALSE;
+		return false;
 	}
-	if (pkt_len > WTAP_MAX_PACKET_SIZE_STANDARD) {
+	if ((unsigned)pkt_len > WTAP_MAX_PACKET_SIZE_STANDARD) {
 		/*
 		 * Probably a corrupt capture file; don't blow up trying
 		 * to allocate space for an immensely-large packet.
 		 */
 		*err = WTAP_ERR_BAD_FILE;
-		*err_info = g_strdup_printf("cosine: File has %u-byte packet, bigger than maximum of %u",
-		    pkt_len, WTAP_MAX_PACKET_SIZE_STANDARD);
-		return FALSE;
+		*err_info = ws_strdup_printf("cosine: File has %u-byte packet, bigger than maximum of %u",
+		    (unsigned)pkt_len, WTAP_MAX_PACKET_SIZE_STANDARD);
+		return false;
 	}
 
 	rec->rec_type = REC_TYPE_PACKET;
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
 	tm.tm_year = yy - 1900;
 	tm.tm_mon = mm - 1;
@@ -410,7 +421,7 @@ parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
 	} else if (strncmp(direction, "l2-rx", 5) == 0) {
 		pseudo_header->cosine.direction = COSINE_DIR_RX;
 	}
-	g_strlcpy(pseudo_header->cosine.if_name, if_name,
+	(void) g_strlcpy(pseudo_header->cosine.if_name, if_name,
 		COSINE_MAX_IF_NAME_LEN);
 	pseudo_header->cosine.pro = pro;
 	pseudo_header->cosine.off = off;
@@ -419,8 +430,8 @@ parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
 	pseudo_header->cosine.err = error;
 
 	/* Make sure we have enough room for the packet */
-	ws_buffer_assure_space(buf, pkt_len);
-	pd = ws_buffer_start_ptr(buf);
+	ws_buffer_assure_space(&rec->data, pkt_len);
+	pd = ws_buffer_start_ptr(&rec->data);
 
 	/* Calculate the number of hex dump lines, each
 	 * containing 16 bytes of data */
@@ -432,7 +443,7 @@ parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
 			if (*err == 0) {
 				*err = WTAP_ERR_SHORT_READ;
 			}
-			return FALSE;
+			return false;
 		}
 		if (empty_line(line)) {
 			break;
@@ -440,12 +451,12 @@ parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
 		if ((n = parse_single_hex_dump_line(line, pd, i*16)) == -1) {
 			*err = WTAP_ERR_BAD_FILE;
 			*err_info = g_strdup("cosine: hex dump line doesn't have 16 numbers");
-			return FALSE;
+			return false;
 		}
 		caplen += n;
 	}
 	rec->rec_header.packet_header.caplen = caplen;
-	return TRUE;
+	return true;
 }
 
 /* Take a string representing one line from a hex dump and converts
@@ -454,7 +465,7 @@ parse_cosine_packet(FILE_T fh, wtap_rec *rec, Buffer *buf,
  *
  * Returns number of bytes successfully read, -1 if bad.  */
 static int
-parse_single_hex_dump_line(char* rec, guint8 *buf, guint byte_offset)
+parse_single_hex_dump_line(char* rec, uint8_t *buf, unsigned byte_offset)
 {
 	int num_items_scanned, i;
 	unsigned int bytes[16];
@@ -471,14 +482,39 @@ parse_single_hex_dump_line(char* rec, guint8 *buf, guint byte_offset)
 		num_items_scanned = 16;
 
 	for (i=0; i<num_items_scanned; i++) {
-		buf[byte_offset + i] = (guint8)bytes[i];
+		buf[byte_offset + i] = (uint8_t)bytes[i];
 	}
 
 	return num_items_scanned;
 }
 
+static const struct supported_block_type cosine_blocks_supported[] = {
+	/*
+	 * We support packet blocks, with no comments or other options.
+	 */
+	{ WTAP_BLOCK_PACKET, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info cosine_info = {
+	"CoSine IPSX L2 capture", "cosine", "txt", NULL,
+	false, BLOCKS_SUPPORTED(cosine_blocks_supported),
+	NULL, NULL, NULL
+};
+
+void register_cosine(void)
+{
+	cosine_file_type_subtype = wtap_register_file_type_subtype(&cosine_info);
+
+	/*
+	 * Register name for backwards compatibility with the
+	 * wtap_filetypes table in Lua.
+	 */
+	wtap_register_backwards_compatibility_lua_name("COSINE",
+	    cosine_file_type_subtype);
+}
+
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

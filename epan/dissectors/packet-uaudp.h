@@ -20,6 +20,8 @@
 #define UAUDP_KEEPALIVE_ACK     5
 #define UAUDP_NACK              6
 #define UAUDP_DATA              7
+#define UAUDP_START_SIG        64
+#define UAUDP_START_SIG_ACK    65
 
 #define UAUDP_CONNECT_VERSION           0x00
 #define UAUDP_CONNECT_WINDOW_SIZE       0x01
@@ -43,9 +45,9 @@ typedef enum _e_ua_direction {
 
 /* struct for tap wireshark */
 typedef struct _tap_struct_uaudp {
-	guint opcode;
-	guint expseq; /* expected sequence number */
-	guint sntseq; /* sent sequence number */
+	unsigned opcode;
+	unsigned expseq; /* expected sequence number */
+	unsigned sntseq; /* sent sequence number */
 } tap_struct_uaudp;
 
 #endif /* _PACKET_UAUDP_H_ */

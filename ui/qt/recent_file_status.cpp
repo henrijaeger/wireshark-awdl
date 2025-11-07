@@ -9,10 +9,12 @@
 
 #include "recent_file_status.h"
 
+#include <ui/qt/main_application.h>
+
 RecentFileStatus::RecentFileStatus(const QString filename, QObject *parent) :
     QObject(parent),
     // Force a deep copy.
-    filename_(QString::fromUtf16(filename.utf16()))
+    filename_(QString::fromStdU16String(filename.toStdU16String()))
 {
     // We're a QObject, which means that we emit a destroyed signal,
     // which might happen at the wrong time when automatic deletion is
@@ -20,8 +22,8 @@ RecentFileStatus::RecentFileStatus(const QString filename, QObject *parent) :
     setAutoDelete(false);
     // Qt::QueuedConnection creates a copy of our argument list. This
     // squelches what appears to be a ThreadSanitizer false positive.
-    connect(this, SIGNAL(statusFound(QString, qint64, bool)),
-            parent, SLOT(itemStatusFinished(QString, qint64, bool)), Qt::QueuedConnection);
+    connect(this, &RecentFileStatus::statusFound, qobject_cast<MainApplication *>(parent),
+            &MainApplication::itemStatusFinished, Qt::QueuedConnection);
 }
 
 void RecentFileStatus::run() {
@@ -34,16 +36,3 @@ void RecentFileStatus::run() {
     }
     deleteLater();
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

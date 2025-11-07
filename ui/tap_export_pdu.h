@@ -1,11 +1,13 @@
-/* tap_export_pdu.h
+/** @file
+ *
  * Routines for exporting PDUs to file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __TAP_EXPORT_PDU_H__
 #define __TAP_EXPORT_PDU_H__
@@ -15,8 +17,12 @@ extern "C" {
 #endif /* __cplusplus */
 
 typedef struct _exp_pdu_t {
+    char*        pathname;
     int          pkt_encap;
     wtap_dumper* wdh;
+    GArray* shb_hdrs;
+    wtapng_iface_descriptions_t* idb_inf;
+    uint32_t     framenum;
 } exp_pdu_t;
 
 /**
@@ -36,28 +42,19 @@ char *exp_pdu_pre_open(const char *tap_name, const char *filter,
 * Use the given file descriptor for writing an output file. Can only be called
 * once and exp_pdu_pre_open() must be called before.
 *
-* @return 0 on success or a wtap error code.
+* @param[out] err Will be set to an error code on failure.
+* @param[out] err_info for some errors, a string giving more details of
+* the error
+* @return true on success or false on failure.
 */
-int exp_pdu_open(exp_pdu_t *data, int fd, char *comment);
+bool exp_pdu_open(exp_pdu_t *data, char *pathname, int file_type_subtype,
+    int fd, const char *comment, int *err, char **err_info);
 
 /* Stops the PDUs export. */
-int exp_pdu_close(exp_pdu_t *exp_pdu_tap_data);
+bool exp_pdu_close(exp_pdu_t *exp_pdu_tap_data, int *err, char **err_info);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
 #endif /* __TAP_EXPORT_PDU_H__ */
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

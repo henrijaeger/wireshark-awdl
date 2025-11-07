@@ -1,4 +1,4 @@
-/* mp2t.h
+/** @file
  *
  * ISO/IEC 13818-1 MPEG2-TS file format decoder for the Wiretap library.
  * Written by Weston Schmidt <weston_schmidt@alumni.purdue.edu>
@@ -14,6 +14,6 @@
 #include <glib.h>
 #include "wtap.h"
 
-wtap_open_return_val mp2t_open(wtap *wth, int *err, gchar **err_info);
+wtap_open_return_val mp2t_open(wtap *wth, int *err, char **err_info);
 
 #endif

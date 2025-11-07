@@ -1,4 +1,5 @@
-/* uat_model.h
+/** @file
+ *
  * Data model for UAT records.
  *
  * Copyright 2016 Peter Wu <peter@lekensteyn.nl>
@@ -7,13 +8,13 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef UAT_MODEL_H
 #define UAT_MODEL_H
 
 #include <config.h>
-#include <glib.h>
 
 #include <QAbstractItemModel>
 #include <QList>
@@ -23,7 +24,6 @@
 class UatModel : public QAbstractTableModel
 {
     Q_OBJECT
-
 public:
     UatModel(QObject *parent, uat_t *uat = 0);
     UatModel(QObject *parent, QString tableName);
@@ -40,11 +40,37 @@ public:
     bool insertRows(int row, int count, const QModelIndex &parent = QModelIndex());
     bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex());
 
-    bool copyRow(int dst_row, int src_row);
-    bool moveRow(int src_row, int dst_row);
+    QModelIndex appendEntry(QVariantList row);
 
+    QModelIndex copyRow(QModelIndex original);
+
+    bool moveRow(int src_row, int dst_row);
+    bool moveRows(const QModelIndex &sourceParent, int sourceRow, int count, const QModelIndex &destinationParent, int destinationChild);
+
+    //Drag & drop functionality
+    Qt::DropActions supportedDropActions() const;
+    bool dropMimeData(const QMimeData *data, Qt::DropAction action, int row, int column, const QModelIndex &parent);
+
+    void reloadUat();
     bool hasErrors() const;
     void clearAll();
+
+    /**
+     * If the UAT has changed, save the contents to file and invoke the UAT
+     * post_update_cb.
+     *
+     * @param error An error while saving changes, if any.
+     * @return true if anything changed, false otherwise.
+     */
+    bool applyChanges(QString &error);
+
+    /**
+     * Undo any changes to the UAT.
+     *
+     * @param error An error while restoring the original UAT, if any.
+     * @return true if anything changed, false otherwise.
+     */
+    bool revertChanges(QString &error);
 
     QModelIndex findRowForColumnContent(QVariant columnContent, int columnToCheckAgainst, int role = Qt::DisplayRole);
 
@@ -52,9 +78,11 @@ private:
     bool checkField(int row, int col, char **error) const;
     QList<int> checkRow(int row);
     void loadUat(uat_t * uat = 0);
+    bool moveRowPrivate(int src_row, int dst_row);
 
     epan_uat *uat_;
-    QList<bool> dirty_records;
-    QList<QMap<int, QString> > record_errors;
+    bool applying_;
+    QVector<bool> dirty_records;
+    QVector<QMap<int, QString> > record_errors;
 };
 #endif // UAT_MODEL_H

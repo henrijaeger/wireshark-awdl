@@ -1,4 +1,4 @@
-/* supported_protocols_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -30,26 +30,22 @@ private:
 
     SupportedProtocolsModel* supported_protocols_model_;
     SupportedProtocolsProxyModel* proxyModel_;
+    QTimer *searchLineEditTimer;
+    QString searchLineEditText;
 
     void updateStatistics();
 
 private slots:
     void fillTree();
 
+    /**
+     * Update search results from the searchLineEdit field
+     *
+     * This is performed separately from on_searchLineEdit_textChanged
+     * to support debouncing.
+     */
+    void updateSearchLineEdit();
     void on_searchLineEdit_textChanged(const QString &search_re);
 };
 
 #endif // SUPPORTED_PROTOCOLS_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

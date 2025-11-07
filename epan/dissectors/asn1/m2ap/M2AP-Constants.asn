@@ -1,4 +1,4 @@
--- 3GPP TS 36.443 V14.0.0 (2017-03)
+-- 3GPP TS 36.443 V17.0.1 (2022-04)
 -- **************************************************************
 --
 -- Constant definitions
@@ -58,7 +58,7 @@ maxnoofCellsforMBMS							INTEGER ::= 4096
 
 -- **************************************************************
 --
--- IEs
+-- Ies
 --
 -- **************************************************************
 
@@ -108,5 +108,11 @@ id-SC-PTM-Information														ProtocolIE-ID ::= 45
 id-Modification-PeriodExtended												ProtocolIE-ID ::= 46
 id-Repetition-PeriodExtended												ProtocolIE-ID ::= 47
 id-MCH-Scheduling-PeriodExtended2											ProtocolIE-ID ::= 48
+id-Subcarrier-SpacingMBMS													ProtocolIE-ID ::= 49
+id-SubframeAllocationExtended												ProtocolIE-ID ::= 50
+id-MCCHrelatedBCCH-ExtConfigPerMBSFNArea-Item 								ProtocolIE-ID ::= 51
+id-MCCHrelatedBCCH-ExtConfigPerMBSFNArea									ProtocolIE-ID ::= 52
+id-SubframeAllocationFurtherExtension										ProtocolIE-ID ::= 53
+id-AdditionalConfigParameters												ProtocolIE-ID ::= 54
 
 END

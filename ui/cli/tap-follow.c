@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 /* This module provides udp and tcp follow stream capabilities to tshark.
  * It is only used by tshark and not wireshark.
@@ -19,27 +20,41 @@
 
 #include <glib.h>
 #include <epan/addr_resolv.h>
-#include <epan/charsets.h>
+#include <wsutil/str_util.h>
+#include <wsutil/unicode-utils.h>
 #include <epan/follow.h>
 #include <epan/stat_tap_ui.h>
 #include <epan/tap.h>
+#include <wsutil/ws_assert.h>
 
 void register_tap_listener_follow(void);
+
+/* Show Type */
+typedef enum {
+    SHOW_ASCII,
+    SHOW_CARRAY,
+    SHOW_EBCDIC,
+    SHOW_HEXDUMP,
+    SHOW_RAW,
+    SHOW_CODEC, // Ordered to match UTF-8 combobox index
+    SHOW_YAML
+} show_type_t;
 
 typedef struct _cli_follow_info {
   show_type_t     show_type;
   register_follow_t* follower;
 
   /* range */
-  guint32       chunkMin;
-  guint32       chunkMax;
+  uint32_t      chunkMin;
+  uint32_t      chunkMax;
 
   /* filter */
   int           stream_index;
+  int           sub_stream_index;
   int           port[2];
   address       addr[2];
   union {
-    guint32           addrBuf_v4;
+    uint32_t          addrBuf_v4;
     ws_in6_addr addrBuf_v6;
   }             addrBuf[2];
 } cli_follow_info_t;
@@ -51,6 +66,8 @@ typedef struct _cli_follow_info {
 #define STR_ASCII       ",ascii"
 #define STR_EBCDIC      ",ebcdic"
 #define STR_RAW         ",raw"
+#define STR_CODEC       ",utf-8"
+#define STR_YAML        ",yaml"
 
 WS_NORETURN static void follow_exit(const char *strp)
 {
@@ -66,12 +83,14 @@ static const char * follow_str_type(cli_follow_info_t* cli_follow_info)
   case SHOW_ASCII:      return "ascii";
   case SHOW_EBCDIC:     return "ebcdic";
   case SHOW_RAW:        return "raw";
+  case SHOW_CODEC:      return "utf-8";
+  case SHOW_YAML:       return "yaml";
   default:
-    g_assert_not_reached();
+    ws_assert_not_reached();
     break;
   }
 
-  g_assert_not_reached();
+  ws_assert_not_reached();
 
   return "<unknown-mode>";
 }
@@ -98,12 +117,12 @@ follow_free(follow_info_t *follow_info)
 static const char       bin2hex[] = {'0', '1', '2', '3', '4', '5', '6', '7',
                                      '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
-static void follow_print_hex(const char *prefixp, guint32 offset, void *datap, int len)
+static void follow_print_hex(const char *prefixp, uint32_t offset, void *datap, int len)
 {
   int           ii;
   int           jj;
   int           kk;
-  guint8        val;
+  uint8_t       val;
   char          line[LINE_LEN + 1];
 
   for (ii = 0, jj = 0, kk = 0; ii < len; )
@@ -111,7 +130,7 @@ static void follow_print_hex(const char *prefixp, guint32 offset, void *datap, i
     if ((ii % BYTES_PER_LINE) == 0)
     {
       /* new line */
-      g_snprintf(line, LINE_LEN + 1, "%0*X", OFFSET_LEN, offset);
+      snprintf(line, LINE_LEN + 1, "%0*X", OFFSET_LEN, offset);
       memset(line + HEX_START - OFFSET_SPACE, ' ',
              HEX_LEN + OFFSET_SPACE + HEX_SPACE);
 
@@ -122,7 +141,7 @@ static void follow_print_hex(const char *prefixp, guint32 offset, void *datap, i
       kk = ASCII_START;
     }
 
-    val = ((guint8 *)datap)[ii];
+    val = ((uint8_t *)datap)[ii];
 
     line[jj++] = bin2hex[val >> 4];
     line[jj++] = bin2hex[val & 0xf];
@@ -158,30 +177,52 @@ static void follow_draw(void *contextp)
 
   follow_info_t *follow_info = (follow_info_t*)contextp;
   cli_follow_info_t* cli_follow_info = (cli_follow_info_t*)follow_info->gui_data;
-  gchar             buf[WS_INET6_ADDRSTRLEN];
-  guint32 global_client_pos = 0, global_server_pos = 0;
-  guint32 *global_pos;
-  guint32           ii, jj;
+  char              buf[WS_INET6_ADDRSTRLEN];
+  uint32_t global_client_pos = 0, global_server_pos = 0;
+  uint32_t *global_pos;
+  uint32_t          ii, jj;
   char              *buffer;
+  wmem_strbuf_t     *strbuf;
   GList             *cur;
   follow_record_t   *follow_record;
-  guint             chunk;
+  unsigned          chunk;
+  char              *b64encoded;
+  const uint32_t    base64_raw_len = 57; /* Encodes to 76 bytes, common in RFCs */
 
-  printf("\n%s", separator);
-  printf("Follow: %s,%s\n", proto_get_protocol_filter_name(get_follow_proto_id(cli_follow_info->follower)), follow_str_type(cli_follow_info));
-  printf("Filter: %s\n", follow_info->filter_out_filter);
+  /* Print header */
+  switch (cli_follow_info->show_type)
+  {
+    case SHOW_YAML:
+      printf("peers:\n");
+      printf("  - peer: 0\n");
+      address_to_str_buf(&follow_info->client_ip, buf, sizeof buf);
+      printf("    host: %s\n", buf);
+      printf("    port: %d\n", follow_info->client_port);
+      printf("  - peer: 1\n");
+      address_to_str_buf(&follow_info->server_ip, buf, sizeof buf);
+      printf("    host: %s\n", buf);
+      printf("    port: %d\n", follow_info->server_port);
+      printf("packets:\n");
+      break;
 
-  address_to_str_buf(&follow_info->client_ip, buf, sizeof buf);
-  if (follow_info->client_ip.type == AT_IPv6)
-    printf("Node 0: [%s]:%u\n", buf, follow_info->client_port);
-  else
-    printf("Node 0: %s:%u\n", buf, follow_info->client_port);
+    default:
+      printf("\n%s", separator);
+      printf("Follow: %s,%s\n", proto_get_protocol_filter_name(get_follow_proto_id(cli_follow_info->follower)), follow_str_type(cli_follow_info));
+      printf("Filter: %s\n", follow_info->filter_out_filter);
 
-  address_to_str_buf(&follow_info->server_ip, buf, sizeof buf);
-  if (follow_info->client_ip.type == AT_IPv6)
-    printf("Node 1: [%s]:%u\n", buf, follow_info->server_port);
-  else
-    printf("Node 1: %s:%u\n", buf, follow_info->server_port);
+      address_to_str_buf(&follow_info->client_ip, buf, sizeof buf);
+      if (follow_info->client_ip.type == AT_IPv6)
+        printf("Node 0: [%s]:%u\n", buf, follow_info->client_port);
+      else
+        printf("Node 0: %s:%u\n", buf, follow_info->client_port);
+
+      address_to_str_buf(&follow_info->server_ip, buf, sizeof buf);
+      if (follow_info->server_ip.type == AT_IPv6)
+        printf("Node 1: [%s]:%u\n", buf, follow_info->server_port);
+      else
+        printf("Node 1: %s:%u\n", buf, follow_info->server_port);
+      break;
+  }
 
   for (cur = g_list_last(follow_info->payload), chunk = 1;
        cur != NULL;
@@ -200,9 +241,12 @@ static void follow_draw(void *contextp)
       continue;
     }
 
+    /* Print start of line */
     switch (cli_follow_info->show_type)
     {
     case SHOW_HEXDUMP:
+    case SHOW_YAML:
+    case SHOW_CODEC: /* The transformation to UTF-8 can change the length */
       break;
 
     case SHOW_ASCII:
@@ -216,10 +260,12 @@ static void follow_draw(void *contextp)
         putchar('\t');
       }
       break;
+
     default:
-      g_assert_not_reached();
+      ws_assert_not_reached();
     }
 
+    /* Print data */
     switch (cli_follow_info->show_type)
     {
     case SHOW_HEXDUMP:
@@ -235,6 +281,12 @@ static void follow_draw(void *contextp)
       {
         switch (follow_record->data->data[ii])
         {
+        // XXX: qt/follow_stream_dialog.c sanitize_buffer() also passes
+        // tabs ('\t') through. Should we do that here too?
+        // The Qt code has automatic universal new line handling for reading
+        // so, e.g., \r\n in HTML becomes just \n, but we don't do that here.
+        // (The Qt version doesn't write the file as Text, so all files use
+        // Unix line endings, including on Windows.)
         case '\r':
         case '\n':
           buffer[ii] = follow_record->data->data[ii];
@@ -254,6 +306,20 @@ static void follow_draw(void *contextp)
       g_free(buffer);
       break;
 
+    case SHOW_CODEC:
+      // This does the same as the Show As UTF-8 code in the Qt version
+      // (passing through all legal UTF-8, including control codes and
+      // internal NULs, substituting illegal UTF-8 sequences with
+      // REPLACEMENT CHARACTER, and not handling valid UTF-8 sequences
+      // which are split between unreassembled frames), except for the
+      // end of line terminator issue as above.
+      strbuf = ws_utf8_make_valid_strbuf(NULL, follow_record->data->data, follow_record->data->len);
+      printf("%s%zu\n", follow_record->is_server ? "\t" : "", wmem_strbuf_get_len(strbuf));
+      fwrite(wmem_strbuf_get_str(strbuf), 1, wmem_strbuf_get_len(strbuf), stdout);
+      wmem_strbuf_destroy(strbuf);
+      putchar('\n');
+      break;
+
     case SHOW_RAW:
       buffer = (char *)g_malloc((follow_record->data->len*2)+2);
 
@@ -269,24 +335,50 @@ static void follow_draw(void *contextp)
       g_free(buffer);
       break;
 
+    case SHOW_YAML:
+      printf("  - packet: %d\n", follow_record->packet_num);
+      printf("    peer: %d\n", follow_record->is_server ? 1 : 0);
+      printf("    timestamp: %.9f\n", nstime_to_sec(&follow_record->abs_ts));
+      printf("    data: !!binary |\n");
+      ii = 0;
+      while (ii < follow_record->data->len) {
+          uint32_t len = ii + base64_raw_len < follow_record->data->len
+                ? base64_raw_len
+                : follow_record->data->len - ii;
+          b64encoded = g_base64_encode(&follow_record->data->data[ii], len);
+          printf("      %s\n", b64encoded);
+          g_free(b64encoded);
+          ii += len;
+      }
+      break;
+
     default:
-      g_assert_not_reached();
+      ws_assert_not_reached();
     }
   }
 
-  printf("%s", separator);
+  /* Print footer */
+  switch (cli_follow_info->show_type)
+  {
+    case SHOW_YAML:
+      break;
+
+    default:
+      printf("%s", separator);
+      break;
+  }
 }
 
-static gboolean follow_arg_strncmp(const char **opt_argp, const char *strp)
+static bool follow_arg_strncmp(const char **opt_argp, const char *strp)
 {
   size_t len = strlen(strp);
 
   if (strncmp(*opt_argp, strp, len) == 0)
   {
     *opt_argp += len;
-    return TRUE;
+    return true;
   }
-  return FALSE;
+  return false;
 }
 
 static void
@@ -310,6 +402,14 @@ follow_arg_mode(const char **opt_argp, follow_info_t *follow_info)
   {
     cli_follow_info->show_type = SHOW_RAW;
   }
+  else if (follow_arg_strncmp(opt_argp, STR_CODEC))
+  {
+    cli_follow_info->show_type = SHOW_CODEC;
+  }
+  else if (follow_arg_strncmp(opt_argp, STR_YAML))
+  {
+    cli_follow_info->show_type = SHOW_YAML;
+  }
   else
   {
     follow_exit("Invalid display mode.");
@@ -331,31 +431,39 @@ follow_arg_filter(const char **opt_argp, follow_info_t *follow_info)
   unsigned int  ii;
   char          addr[ADDR_LEN];
   cli_follow_info_t* cli_follow_info = (cli_follow_info_t*)follow_info->gui_data;
-  gboolean is_ipv6;
+  bool is_ipv6;
 
   if (sscanf(*opt_argp, ",%d%n", &cli_follow_info->stream_index, &len) == 1 &&
       ((*opt_argp)[len] == 0 || (*opt_argp)[len] == ','))
   {
     *opt_argp += len;
+
+    /* if it's HTTP2 or QUIC protocol we should read substream id otherwise it's a range parameter from follow_arg_range */
+    if (cli_follow_info->sub_stream_index == -1 && sscanf(*opt_argp, ",%d%n", &cli_follow_info->sub_stream_index, &len) == 1 &&
+        ((*opt_argp)[len] == 0 || (*opt_argp)[len] == ','))
+    {
+      *opt_argp += len;
+      follow_info->substream_id = cli_follow_info->sub_stream_index;
+    }
   }
   else
   {
-    for (ii = 0; ii < sizeof cli_follow_info->addr/sizeof *cli_follow_info->addr; ii++)
+    for (ii = 0; ii < array_length(cli_follow_info->addr); ii++)
     {
       if (sscanf(*opt_argp, ADDRv6_FMT, addr, &cli_follow_info->port[ii], &len) == 2)
       {
-        is_ipv6 = TRUE;
+        is_ipv6 = true;
       }
       else if (sscanf(*opt_argp, ADDRv4_FMT, addr, &cli_follow_info->port[ii], &len) == 2)
       {
-        is_ipv6 = FALSE;
+        is_ipv6 = false;
       }
       else
       {
         follow_exit("Invalid address.");
       }
 
-      if (cli_follow_info->port[ii] <= 0 || cli_follow_info->port[ii] > G_MAXUINT16)
+      if (cli_follow_info->port[ii] <= 0 || cli_follow_info->port[ii] > UINT16_MAX)
       {
         follow_exit("Invalid port.");
       }
@@ -395,7 +503,7 @@ static void follow_arg_range(const char **opt_argp, cli_follow_info_t* cli_follo
   if (**opt_argp == 0)
   {
     cli_follow_info->chunkMin = 1;
-    cli_follow_info->chunkMax = G_MAXUINT32;
+    cli_follow_info->chunkMax = UINT32_MAX;
   }
   else
   {
@@ -437,13 +545,24 @@ static void follow_stream(const char *opt_argp, void *userdata)
   register_follow_t* follower = (register_follow_t*)userdata;
   follow_index_filter_func index_filter;
   follow_address_filter_func address_filter;
+  int proto_id = get_follow_proto_id(follower);
+  const char* proto_filter_name = proto_get_protocol_filter_name(proto_id);
 
   opt_argp += strlen(STR_FOLLOW);
-  opt_argp += strlen(proto_get_protocol_filter_name(get_follow_proto_id(follower)));
+  opt_argp += strlen(proto_filter_name);
 
   cli_follow_info = g_new0(cli_follow_info_t, 1);
+  cli_follow_info->stream_index = -1;
+  /* use second parameter only for followers that have sub streams
+   * (currently HTTP2 or QUIC) */
+  if (get_follow_sub_stream_id_func(follower)) {
+      cli_follow_info->sub_stream_index = -1;
+  } else {
+      cli_follow_info->sub_stream_index = 0;
+  }
   follow_info = g_new0(follow_info_t, 1);
   follow_info->gui_data = cli_follow_info;
+  follow_info->substream_id = SUBSTREAM_UNUSED;
   cli_follow_info->follower = follower;
 
   follow_arg_mode(&opt_argp, follow_info);
@@ -454,8 +573,8 @@ static void follow_stream(const char *opt_argp, void *userdata)
   if (cli_follow_info->stream_index >= 0)
   {
     index_filter = get_follow_index_func(follower);
-    follow_info->filter_out_filter = index_filter(cli_follow_info->stream_index);
-    if (follow_info->filter_out_filter == NULL)
+    follow_info->filter_out_filter = index_filter(cli_follow_info->stream_index, cli_follow_info->sub_stream_index);
+    if (follow_info->filter_out_filter == NULL || cli_follow_info->sub_stream_index < 0)
     {
       follow_exit("Error creating filter for this stream.");
     }
@@ -471,7 +590,7 @@ static void follow_stream(const char *opt_argp, void *userdata)
   }
 
   errp = register_tap_listener(get_follow_tap_string(follower), follow_info, follow_info->filter_out_filter, 0,
-                               NULL, get_follow_tap_handler(follower), follow_draw);
+                               NULL, get_follow_tap_handler(follower), follow_draw, (tap_finish_cb)follow_free);
 
   if (errp != NULL)
   {
@@ -481,12 +600,12 @@ static void follow_stream(const char *opt_argp, void *userdata)
   }
 }
 
-static gboolean
+static bool
 follow_register(const void *key _U_, void *value, void *userdata _U_)
 {
   register_follow_t *follower = (register_follow_t*)value;
   stat_tap_ui follow_ui;
-  gchar *cli_string;
+  char *cli_string;
 
   cli_string = follow_get_stat_tap_string(follower);
   follow_ui.group = REGISTER_STAT_GROUP_GENERIC;
@@ -497,7 +616,7 @@ follow_register(const void *key _U_, void *value, void *userdata _U_)
   follow_ui.params = NULL;
   register_stat_tap_ui(&follow_ui, follower);
   g_free(cli_string);
-  return FALSE;
+  return false;
 }
 
 void
@@ -507,7 +626,7 @@ register_tap_listener_follow(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

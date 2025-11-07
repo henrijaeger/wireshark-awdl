@@ -22,6 +22,7 @@
 #include <epan/prefs.h>
 #include <epan/sctpppids.h>
 #include <epan/expert.h>
+#include <wsutil/array.h>
 
 #include "packet-ber.h"
 #include "packet-per.h"
@@ -45,31 +46,30 @@ void proto_reg_handoff_lcsap(void);
 #include "packet-lcsap-val.h"
 
 /* Initialize the protocol and registered fields */
-static int proto_lcsap  =   -1;
+static int proto_lcsap;
 
-static int hf_lcsap_pos_method = -1;
-static int hf_lcsap_pos_usage = -1;
-static int hf_lcsap_gnss_pos_method = -1;
-static int hf_lcsap_gnss_id = -1;
-static int hf_lcsap_gnss_pos_usage = -1;
+static int hf_lcsap_pos_method;
+static int hf_lcsap_pos_usage;
+static int hf_lcsap_gnss_pos_method;
+static int hf_lcsap_gnss_id;
+static int hf_lcsap_gnss_pos_usage;
 #include "packet-lcsap-hf.c"
 
 /* Initialize the subtree pointers */
-static int ett_lcsap = -1;
-static int ett_lcsap_plmnd_id = -1;
-static int ett_lcsap_imsi = -1;
-static int ett_lcsap_civic_address = -1;
+static int ett_lcsap;
+static int ett_lcsap_plmnd_id;
+static int ett_lcsap_imsi;
+static int ett_lcsap_civic_address;
 
 #include "packet-lcsap-ett.c"
 
-static expert_field ei_lcsap_civic_data_not_xml = EI_INIT;
+static expert_field ei_lcsap_civic_data_not_xml;
 
 /* Global variables */
-static guint32 ProcedureCode;
-static guint32 ProtocolIE_ID;
-static guint32 ProtocolExtensionID;
-static guint32 PayloadType = -1;
-static guint gbl_lcsapSctpPort=SCTP_PORT_LCSAP;
+static uint32_t ProcedureCode;
+static uint32_t ProtocolIE_ID;
+static uint32_t ProtocolExtensionID;
+static uint32_t PayloadType = -1;
 
 /* Dissector handles */
 static dissector_handle_t lcsap_handle;
@@ -231,27 +231,13 @@ dissect_lcsap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U
 void
 proto_reg_handoff_lcsap(void)
 {
-  static gboolean Initialized=FALSE;
-  static guint SctpPort;
-
-  if (!Initialized) {
-    lpp_handle = find_dissector_add_dependency("lpp", proto_lcsap);
-    lppa_handle = find_dissector_add_dependency("lppa", proto_lcsap);
-    xml_handle = find_dissector_add_dependency("xml", proto_lcsap);
-    dissector_add_for_decode_as("sctp.port", lcsap_handle);   /* for "decode-as"  */
-    dissector_add_uint("sctp.ppi", LCS_AP_PAYLOAD_PROTOCOL_ID,   lcsap_handle);
-    Initialized=TRUE;
+  lpp_handle = find_dissector_add_dependency("lpp", proto_lcsap);
+  lppa_handle = find_dissector_add_dependency("lppa", proto_lcsap);
+  xml_handle = find_dissector_add_dependency("xml", proto_lcsap);
+  dissector_add_uint_with_preference("sctp.port", SCTP_PORT_LCSAP, lcsap_handle);
+  dissector_add_uint("sctp.ppi", LCS_AP_PAYLOAD_PROTOCOL_ID,   lcsap_handle);
 #include "packet-lcsap-dis-tab.c"
-  } else {
-    if (SctpPort != 0) {
-      dissector_delete_uint("sctp.port", SctpPort, lcsap_handle);
-    }
-  }
 
-  SctpPort=gbl_lcsapSctpPort;
-  if (SctpPort != 0) {
-    dissector_add_uint("sctp.port", SctpPort, lcsap_handle);
-  }
 }
 
 /*--- proto_register_lcsap -------------------------------------------*/
@@ -290,7 +276,7 @@ void proto_register_lcsap(void) {
   };
 
   /* List of subtrees */
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_lcsap,
     &ett_lcsap_plmnd_id,
     &ett_lcsap_imsi,
@@ -298,12 +284,12 @@ void proto_register_lcsap(void) {
 #include "packet-lcsap-ettarr.c"
  };
 
-  module_t *lcsap_module;
+  /* module_t *lcsap_module; */
   expert_module_t *expert_lcsap;
 
   static ei_register_info ei[] = {
       { &ei_lcsap_civic_data_not_xml,
-      { "lcsap.civic_data_not_xml", PI_PROTOCOL, PI_ERROR, "Shold contain a UTF-8 encoded PIDF - LO XML document as defined in IETF RFC 4119", EXPFILL } },
+      { "lcsap.civic_data_not_xml", PI_PROTOCOL, PI_ERROR, "Should contain a UTF-8 encoded PIDF - LO XML document as defined in IETF RFC 4119", EXPFILL } },
   };
 
 
@@ -326,14 +312,8 @@ void proto_register_lcsap(void) {
   lcsap_proc_sout_dissector_table = register_dissector_table("lcsap.proc.sout", "LCS-AP-ELEMENTARY-PROCEDURE SuccessfulOutcome", proto_lcsap, FT_UINT32, BASE_DEC);
   lcsap_proc_uout_dissector_table = register_dissector_table("lcsap.proc.uout", "LCS-AP-ELEMENTARY-PROCEDURE UnsuccessfulOutcome", proto_lcsap, FT_UINT32, BASE_DEC);
 
-  /* Register configuration options for ports */
-  lcsap_module = prefs_register_protocol(proto_lcsap, proto_reg_handoff_lcsap);
+  /* lcsap_module = prefs_register_protocol(proto_lcsap, NULL); */
 
-  prefs_register_uint_preference(lcsap_module, "sctp.port",
-                                 "LCSAP SCTP Port",
-                                 "Set the SCTP port for LCSAP messages",
-                                 10,
-                                 &gbl_lcsapSctpPort);
 }
 
 /*

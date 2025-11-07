@@ -1,17 +1,16 @@
-/* decode_as_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef DECODE_AS_DIALOG_H
 #define DECODE_AS_DIALOG_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include "cfile.h"
 #include <ui/qt/models/decode_as_model.h>
@@ -46,27 +45,19 @@ private:
     void fillTable();
     void resizeColumns();
 
+public slots:
+    void modelRowsReset();
+
 private slots:
+    void copyFromProfile(QString filename);
     void on_decodeAsTreeView_currentItemChanged(const QModelIndex &current, const QModelIndex &previous);
 
     void on_newToolButton_clicked();
     void on_deleteToolButton_clicked();
     void on_copyToolButton_clicked();
+    void on_clearToolButton_clicked();
 
     void on_buttonBox_clicked(QAbstractButton *button);
 };
 
 #endif // DECODE_AS_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

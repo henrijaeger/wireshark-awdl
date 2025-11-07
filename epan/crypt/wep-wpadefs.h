@@ -67,18 +67,14 @@ extern "C" {
 #define WPA_SSID_MIN_BIT_SIZE  (WPA_SSID_MIN_CHAR_SIZE*8)
 
 /**
- * Let the user enter a raw PSK along with a passphrase + SSID
- */
-#define WPA_PSK_KEY_SIZE 32 /* Fixed size, 32 bytes (256bit) */
-#define WPA_PSK_KEY_CHAR_SIZE (WPA_PSK_KEY_SIZE*2)
-#define WPA_PSK_KEY_BIT_SIZE  (WPA_PSK_KEY_SIZE*8)
-
-/**
  * Prefix definitions for preferences
  */
 #define STRING_KEY_TYPE_WEP "wep"
 #define STRING_KEY_TYPE_WPA_PWD "wpa-pwd"
 #define STRING_KEY_TYPE_WPA_PSK "wpa-psk"
+#define STRING_KEY_TYPE_TK "tk"
+#define STRING_KEY_TYPE_MSK "msk"
+
 
 #ifdef __cplusplus
 }

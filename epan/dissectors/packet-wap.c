@@ -13,9 +13,10 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#include "config.h"
+#define WS_LOG_DOMAIN "packet-wap"
 
-#include <stdio.h>
+#include "config.h"
+#include <wireshark.h>
 
 #include <epan/packet.h>
 #include "packet-wap.h"
@@ -26,46 +27,42 @@
  * value continues into the next byte.
  * The octetCount parameter holds the number of bytes read in order to return
  * the final value. Can be pre-initialised to start at offset+count.
-*/
-guint
-tvb_get_guintvar (tvbuff_t *tvb, guint offset,
-        guint *octetCount, packet_info *pinfo, expert_field *ei)
+ *
+ * XXX This seems to be used exclusively for fetching size values. We should
+ * probably rename this to wap_get_checked_size or something along those lines.
+ */
+#define MAX_WAP_UINTVAR (100 * 1000 * 1000) // Arbitrary. We need a large number that won't overflow a unsigned.
+unsigned
+tvb_get_uintvar (tvbuff_t *tvb, unsigned offset,
+        unsigned *octetCount, packet_info *pinfo, expert_field *ei)
 {
-    guint value   = 0, previous_value;
-    guint octet;
-    guint counter = 0;
+    unsigned value   = 0, previous_value;
+    unsigned octet;
+    unsigned counter = 0;
 
-#ifdef DEBUG
-    fprintf (stderr,
-            "dissect_wap: Starting tvb_get_guintvar at offset %d\n", offset);
-#endif
+    ws_debug("Starting tvb_get_uintvar at offset %d", offset);
 
     do {
-        octet = tvb_get_guint8 (tvb, offset+counter);
+        octet = tvb_get_uint8 (tvb, offset+counter);
 
         counter++;
 
         previous_value = value;
         value <<= 7;  /* Value only exists in 7 of the 8 bits */
         value += (octet & 0x7F);
-        if (value < previous_value) {
+        if (value < previous_value || value > MAX_WAP_UINTVAR) {
             /* overflow; clamp the value at UINT_MAX */
             proto_tree_add_expert(NULL, pinfo, ei, tvb, offset, counter);
-            value = UINT_MAX;
+            value = MAX_WAP_UINTVAR;
+            break;
         }
 
-#ifdef DEBUG
-        fprintf(stderr,
-            "dissect_wap: computing: octet is %d (0x%02x), count=%d, value=%d\n",
+        ws_debug("computing: octet is %d (0x%02x), count=%d, value=%d",
                  octet, octet, counter, value);
-#endif
     } while (octet & 0x80);
 
-#ifdef DEBUG
-    fprintf (stderr,
-            "dissect_wap: Leaving tvb_get_guintvar count=%d, value=%u\n",
+    ws_debug(" Leaving tvb_get_uintvar count=%d, value=%u",
             counter, value);
-#endif
 
     if (octetCount)
         *octetCount = counter;
@@ -74,7 +71,7 @@ tvb_get_guintvar (tvbuff_t *tvb, guint offset,
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

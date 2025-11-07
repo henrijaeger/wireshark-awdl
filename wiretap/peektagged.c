@@ -19,17 +19,17 @@
  */
 
 #include "config.h"
-#include <errno.h>
+#include "peektagged.h"
+
 #include <string.h>
 #include <stdlib.h>
 #include "wtap-int.h"
 #include "file_wrappers.h"
-#include "peektagged.h"
-#include <wsutil/frequency-utils.h>
+#include <wsutil/802_11-utils.h>
 
 /* CREDITS
  *
- * This file decoder could not have been writen without examining
+ * This file decoder could not have been written without examining
  * http://www.varsanofiev.com/inside/airopeekv9.htm, the help from
  * Martin Regner and Guy Harris, and the etherpeek.c file (as it
  * was called before renaming it to peekclassic.c).
@@ -60,9 +60,9 @@
  * by the raw packet data.
  */
 typedef struct peektagged_section_header {
-        gint8   section_id[4];          /* string identifying the section */
-        guint32 section_len;            /* little-endian section length */
-        guint32 section_const;          /* little-endian 0x00000200 */
+        int8_t  section_id[4];          /* string identifying the section */
+        uint32_t section_len;            /* little-endian section length */
+        uint32_t section_const;          /* little-endian 0x00000200 */
 } peektagged_section_header_t;
 
 /*
@@ -106,6 +106,8 @@ typedef struct peektagged_section_header {
  *
  * We're assuming here that the "remote Peek" flags from bug 9586 are
  * the same as the "Peek tagged" flags.
+ *
+ * Are these the same as in "Peek classic"?  The first three are.
  */
 #define FLAGS_CONTROL_FRAME     0x01    /* Frame is a control frame */
 #define FLAGS_HAS_CRC_ERROR     0x02    /* Frame has a CRC error */
@@ -143,21 +145,25 @@ typedef struct peektagged_section_header {
 
 /* 64-bit time in nanoseconds from the (Windows FILETIME) epoch */
 typedef struct peektagged_utime {
-        guint32 upper;
-        guint32 lower;
+        uint32_t upper;
+        uint32_t lower;
 } peektagged_utime;
 
 typedef struct {
-        gboolean        has_fcs;
+        bool            has_fcs;
 } peektagged_t;
 
-static gboolean peektagged_read(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset);
-static gboolean peektagged_seek_read(wtap *wth, gint64 seek_off,
-    wtap_rec *rec, Buffer *buf, int *err, gchar **err_info);
+static bool peektagged_read(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset);
+static bool peektagged_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
+    int *err, char **err_info);
+
+static int peektagged_file_type_subtype = -1;
+
+void register_peektagged(void);
 
 static int wtap_file_read_pattern (wtap *wth, const char *pattern, int *err,
-                                gchar **err_info)
+                                char **err_info)
 {
     int c;
     const char *cp;
@@ -189,7 +195,7 @@ static int wtap_file_read_pattern (wtap *wth, const char *pattern, int *err,
 
 static int wtap_file_read_till_separator (wtap *wth, char *buffer, int buflen,
                                         const char *separators, int *err,
-                                        gchar **err_info)
+                                        char **err_info)
 {
     int c;
     char *cp;
@@ -217,8 +223,8 @@ static int wtap_file_read_till_separator (wtap *wth, char *buffer, int buflen,
 }
 
 
-static int wtap_file_read_number (wtap *wth, guint32 *num, int *err,
-                                gchar **err_info)
+static int wtap_file_read_number (wtap *wth, uint32_t *num, int *err,
+                                char **err_info)
 {
     int ret;
     char str_num[12];
@@ -233,20 +239,20 @@ static int wtap_file_read_number (wtap *wth, guint32 *num, int *err,
         return ret;
     }
     value = strtoul (str_num, &p, 10);
-    if (p == str_num || value > G_MAXUINT32)
+    if (p == str_num || value > UINT32_MAX)
         return 0;
-    *num = (guint32)value;
+    *num = (uint32_t)value;
     return 1;
 }
 
 
-wtap_open_return_val peektagged_open(wtap *wth, int *err, gchar **err_info)
+wtap_open_return_val peektagged_open(wtap *wth, int *err, char **err_info)
 {
     peektagged_section_header_t ap_hdr;
     int ret;
-    guint32 fileVersion = 0;
-    guint32 mediaType;
-    guint32 mediaSubType = 0;
+    uint32_t fileVersion = 0;
+    uint32_t mediaType;
+    uint32_t mediaSubType = 0;
     int file_encap;
     static const int peektagged_encap[] = {
         WTAP_ENCAP_ETHERNET,
@@ -254,7 +260,7 @@ wtap_open_return_val peektagged_open(wtap *wth, int *err, gchar **err_info)
         WTAP_ENCAP_IEEE_802_11_WITH_RADIO,
         WTAP_ENCAP_IEEE_802_11_WITH_RADIO
     };
-    #define NUM_PEEKTAGGED_ENCAPS (sizeof peektagged_encap / sizeof peektagged_encap[0])
+    #define NUM_PEEKTAGGED_ENCAPS array_length(peektagged_encap)
     peektagged_t *peektagged;
 
     if (!wtap_read_bytes(wth->fh, &ap_hdr, (int)sizeof(ap_hdr), err, err_info)) {
@@ -293,7 +299,7 @@ wtap_open_return_val peektagged_open(wtap *wth, int *err, gchar **err_info)
     if (fileVersion != 9) {
         /* We only support version 9. */
         *err = WTAP_ERR_UNSUPPORTED;
-        *err_info = g_strdup_printf("peektagged: version %u unsupported",
+        *err_info = ws_strdup_printf("peektagged: version %u unsupported",
             fileVersion);
         return WTAP_OPEN_ERROR;
     }
@@ -346,7 +352,7 @@ wtap_open_return_val peektagged_open(wtap *wth, int *err, gchar **err_info)
     if (mediaSubType >= NUM_PEEKTAGGED_ENCAPS
         || peektagged_encap[mediaSubType] == WTAP_ENCAP_UNKNOWN) {
         *err = WTAP_ERR_UNSUPPORTED;
-        *err_info = g_strdup_printf("peektagged: network type %u unknown or unsupported",
+        *err_info = ws_strdup_printf("peektagged: network type %u unknown or unsupported",
             mediaSubType);
         return WTAP_OPEN_ERROR;
     }
@@ -369,28 +375,36 @@ wtap_open_return_val peektagged_open(wtap *wth, int *err, gchar **err_info)
      */
     file_encap = peektagged_encap[mediaSubType];
 
-    wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_PEEKTAGGED;
+    wth->file_type_subtype = peektagged_file_type_subtype;
     wth->file_encap = file_encap;
     wth->subtype_read = peektagged_read;
     wth->subtype_seek_read = peektagged_seek_read;
     wth->file_tsprec = WTAP_TSPREC_NSEC;
 
-    peektagged = (peektagged_t *)g_malloc(sizeof(peektagged_t));
+    peektagged = g_new(peektagged_t, 1);
     wth->priv = (void *)peektagged;
     switch (mediaSubType) {
 
     case PEEKTAGGED_NST_ETHERNET:
     case PEEKTAGGED_NST_802_11:
     case PEEKTAGGED_NST_802_11_2:
-        peektagged->has_fcs = FALSE;
+        peektagged->has_fcs = false;
         break;
 
     case PEEKTAGGED_NST_802_11_WITH_FCS:
-        peektagged->has_fcs = TRUE;
+        peektagged->has_fcs = true;
         break;
     }
 
     wth->snapshot_length   = 0; /* not available in header */
+
+    /*
+     * Add an IDB; we don't know how many interfaces were involved,
+     * so we just say one interface, about which we only know
+     * the link-layer type, snapshot length, and time stamp
+     * resolution.
+     */
+    wtap_add_generated_idb(wth);
 
     return WTAP_OPEN_MINE;
 }
@@ -406,34 +420,35 @@ wtap_open_return_val peektagged_open(wtap *wth, int *err, gchar **err_info)
  */
 static int
 peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
-                       Buffer *buf, int *err, gchar **err_info)
+                       int *err, char **err_info)
 {
     peektagged_t *peektagged = (peektagged_t *)wth->priv;
-    gboolean read_a_tag = FALSE;
-    guint8 tag_value[6];
-    guint16 tag;
-    gboolean saw_length = FALSE;
-    guint32 length = 0;
-    guint32 sliceLength = 0;
-    gboolean saw_timestamp_lower = FALSE;
-    gboolean saw_timestamp_upper = FALSE;
+    bool read_a_tag = false;
+    uint8_t tag_value[6];
+    uint16_t tag;
+    bool saw_length = false;
+    uint32_t length = 0;
+    uint32_t sliceLength = 0;
+    bool saw_timestamp_lower = false;
+    bool saw_timestamp_upper = false;
+    bool saw_flags_and_status = false;
     peektagged_utime timestamp;
-    guint32 ext_flags = 0;
-    gboolean saw_data_rate_or_mcs_index = FALSE;
-    guint32 data_rate_or_mcs_index = 0;
-    gint channel;
-    guint frequency;
-    struct ieee_802_11_phdr ieee_802_11;
-    guint i;
+    uint32_t flags_and_status = 0;
+    uint32_t ext_flags = 0;
+    bool saw_data_rate_or_mcs_index = false;
+    uint32_t data_rate_or_mcs_index = 0;
+    int channel;
+    unsigned frequency;
+    struct ieee_802_11_phdr ieee_802_11 = {0};
+    unsigned i;
     int skip_len = 0;
-    guint64 t;
+    uint64_t t;
 
     timestamp.upper = 0;
     timestamp.lower = 0;
-    memset(&ieee_802_11, 0, sizeof ieee_802_11);
     ieee_802_11.fcs_len = -1; /* Unknown */
-    ieee_802_11.decrypted = FALSE;
-    ieee_802_11.datapad = FALSE;
+    ieee_802_11.decrypted = false;
+    ieee_802_11.datapad = false;
     ieee_802_11.phy = PHDR_802_11_PHY_UNKNOWN;
 
     /* Extract the fields from the packet header */
@@ -451,7 +466,7 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
             }
             return -1;
         }
-        read_a_tag = TRUE;
+        read_a_tag = true;
         tag = pletoh16(&tag_value[0]);
         switch (tag) {
 
@@ -462,7 +477,7 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                 return -1;
             }
             length = pletoh32(&tag_value[2]);
-            saw_length = TRUE;
+            saw_length = true;
             break;
 
         case TAG_PEEKTAGGED_TIMESTAMP_LOWER:
@@ -472,7 +487,7 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                 return -1;
             }
             timestamp.lower = pletoh32(&tag_value[2]);
-            saw_timestamp_lower = TRUE;
+            saw_timestamp_lower = true;
             break;
 
         case TAG_PEEKTAGGED_TIMESTAMP_UPPER:
@@ -482,40 +497,41 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                 return -1;
             }
             timestamp.upper = pletoh32(&tag_value[2]);
-            saw_timestamp_upper = TRUE;
+            saw_timestamp_upper = true;
             break;
 
         case TAG_PEEKTAGGED_FLAGS_AND_STATUS:
-            /* XXX - not used yet */
+            saw_flags_and_status = true;
+            flags_and_status = pletoh32(&tag_value[2]);
             break;
 
         case TAG_PEEKTAGGED_CHANNEL:
-            ieee_802_11.has_channel = TRUE;
+            ieee_802_11.has_channel = true;
             ieee_802_11.channel = pletoh32(&tag_value[2]);
             break;
 
         case TAG_PEEKTAGGED_DATA_RATE_OR_MCS_INDEX:
             data_rate_or_mcs_index = pletoh32(&tag_value[2]);
-            saw_data_rate_or_mcs_index = TRUE;
+            saw_data_rate_or_mcs_index = true;
             break;
 
         case TAG_PEEKTAGGED_SIGNAL_PERC:
-            ieee_802_11.has_signal_percent = TRUE;
+            ieee_802_11.has_signal_percent = true;
             ieee_802_11.signal_percent = pletoh32(&tag_value[2]);
             break;
 
         case TAG_PEEKTAGGED_SIGNAL_DBM:
-            ieee_802_11.has_signal_dbm = TRUE;
+            ieee_802_11.has_signal_dbm = true;
             ieee_802_11.signal_dbm = pletoh32(&tag_value[2]);
             break;
 
         case TAG_PEEKTAGGED_NOISE_PERC:
-            ieee_802_11.has_noise_percent = TRUE;
+            ieee_802_11.has_noise_percent = true;
             ieee_802_11.noise_percent = pletoh32(&tag_value[2]);
             break;
 
         case TAG_PEEKTAGGED_NOISE_DBM:
-            ieee_802_11.has_noise_dbm = TRUE;
+            ieee_802_11.has_noise_dbm = true;
             ieee_802_11.noise_dbm = pletoh32(&tag_value[2]);
             break;
 
@@ -528,7 +544,7 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
 
         case TAG_PEEKTAGGED_CENTER_FREQUENCY:
             /* XXX - also seen in an EtherPeek capture; value unknown */
-            ieee_802_11.has_frequency = TRUE;
+            ieee_802_11.has_frequency = true;
             ieee_802_11.frequency = pletoh32(&tag_value[2]);
             break;
 
@@ -611,12 +627,12 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                 switch (ext_flags & EXT_FLAGS_GI) {
 
                 case EXT_FLAG_HALF_GI:
-                    ieee_802_11.phy_info.info_11ac.has_short_gi = TRUE;
+                    ieee_802_11.phy_info.info_11ac.has_short_gi = true;
                     ieee_802_11.phy_info.info_11ac.short_gi = 1;
                     break;
 
                 case EXT_FLAG_FULL_GI:
-                    ieee_802_11.phy_info.info_11ac.has_short_gi = TRUE;
+                    ieee_802_11.phy_info.info_11ac.has_short_gi = true;
                     ieee_802_11.phy_info.info_11ac.short_gi = 0;
                     break;
 
@@ -629,22 +645,22 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                 switch (ext_flags & EXT_FLAGS_BANDWIDTH) {
 
                 case 0:
-                    ieee_802_11.phy_info.info_11n.has_bandwidth = TRUE;
+                    ieee_802_11.phy_info.info_11n.has_bandwidth = true;
                     ieee_802_11.phy_info.info_11n.bandwidth = PHDR_802_11_BANDWIDTH_20_MHZ;
                     break;
 
                 case EXT_FLAG_20_MHZ_LOWER:
-                    ieee_802_11.phy_info.info_11n.has_bandwidth = TRUE;
+                    ieee_802_11.phy_info.info_11n.has_bandwidth = true;
                     ieee_802_11.phy_info.info_11n.bandwidth = PHDR_802_11_BANDWIDTH_20_20L;
                     break;
 
                 case EXT_FLAG_20_MHZ_UPPER:
-                    ieee_802_11.phy_info.info_11n.has_bandwidth = TRUE;
+                    ieee_802_11.phy_info.info_11n.has_bandwidth = true;
                     ieee_802_11.phy_info.info_11n.bandwidth = PHDR_802_11_BANDWIDTH_20_20U;
                     break;
 
                 case EXT_FLAG_40_MHZ:
-                    ieee_802_11.phy_info.info_11n.has_bandwidth = TRUE;
+                    ieee_802_11.phy_info.info_11n.has_bandwidth = true;
                     ieee_802_11.phy_info.info_11n.bandwidth = PHDR_802_11_BANDWIDTH_40_MHZ;
                     break;
 
@@ -656,12 +672,12 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                 switch (ext_flags & EXT_FLAGS_GI) {
 
                 case EXT_FLAG_HALF_GI:
-                    ieee_802_11.phy_info.info_11n.has_short_gi = TRUE;
+                    ieee_802_11.phy_info.info_11n.has_short_gi = true;
                     ieee_802_11.phy_info.info_11n.short_gi = 1;
                     break;
 
                 case EXT_FLAG_FULL_GI:
-                    ieee_802_11.phy_info.info_11n.has_short_gi = TRUE;
+                    ieee_802_11.phy_info.info_11n.has_short_gi = true;
                     ieee_802_11.phy_info.info_11n.short_gi = 0;
                     break;
 
@@ -709,19 +725,26 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
          * to allocate space for an immensely-large packet.
          */
         *err = WTAP_ERR_BAD_FILE;
-        *err_info = g_strdup_printf("peektagged: File has %u-byte packet, bigger than maximum of %u",
+        *err_info = ws_strdup_printf("peektagged: File has %u-byte packet, bigger than maximum of %u",
             sliceLength, WTAP_MAX_PACKET_SIZE_STANDARD);
         return -1;
     }
 
     rec->rec_type = REC_TYPE_PACKET;
+    rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
     rec->rec_header.packet_header.len    = length;
     rec->rec_header.packet_header.caplen = sliceLength;
+    if (saw_flags_and_status) {
+        uint32_t flags = 0;
+        if (flags_and_status & FLAGS_HAS_CRC_ERROR)
+            flags |= PACK_FLAGS_CRC_ERROR;
+        wtap_block_add_uint32_option(rec->block, OPT_PKT_FLAGS, flags);
+    }
 
     /* calculate and fill in packet time stamp */
-    t = (((guint64) timestamp.upper) << 32) + timestamp.lower;
-    if (!nsfiletime_to_nstime(&rec->ts, t)) {
+    t = (((uint64_t) timestamp.upper) << 32) + timestamp.lower;
+    if (!filetime_ns_to_nstime(&rec->ts, t)) {
         *err = WTAP_ERR_BAD_FILE;
         *err_info = g_strdup("peektagged: time stamp outside supported range");
         return -1;
@@ -738,20 +761,64 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                  * XXX - what about 11ac?
                  */
                 if (!(ext_flags & EXT_FLAG_802_11ac)) {
-                    ieee_802_11.phy_info.info_11n.has_mcs_index = TRUE;
+                    ieee_802_11.phy_info.info_11n.has_mcs_index = true;
                     ieee_802_11.phy_info.info_11n.mcs_index = data_rate_or_mcs_index;
                 }
             } else {
                 /* It's a data rate. */
-                ieee_802_11.has_data_rate = TRUE;
+                ieee_802_11.has_data_rate = true;
                 ieee_802_11.data_rate = data_rate_or_mcs_index;
+                if (ieee_802_11.phy == PHDR_802_11_PHY_UNKNOWN) {
+                  /*
+                   * We don't know they PHY; try to guess it based
+                   * on the data rate and channel/center frequency.
+                   */
+                  if (RATE_IS_DSSS(ieee_802_11.data_rate)) {
+                    /* 11b */
+                    ieee_802_11.phy = PHDR_802_11_PHY_11B;
+                    if (saw_flags_and_status) {
+                      ieee_802_11.phy_info.info_11b.has_short_preamble = true;
+                      ieee_802_11.phy_info.info_11b.short_preamble =
+                          (flags_and_status & STATUS_SHORT_PREAMBLE) ? true : false;
+                    } else
+                      ieee_802_11.phy_info.info_11b.has_short_preamble = false;
+                  } else if (RATE_IS_OFDM(ieee_802_11.data_rate)) {
+                    /* 11a or 11g, depending on the band. */
+                    if (ieee_802_11.has_channel) {
+                      if (CHAN_IS_BG(ieee_802_11.channel)) {
+                        /* 11g */
+                        ieee_802_11.phy = PHDR_802_11_PHY_11G;
+                      } else {
+                        /* 11a */
+                        ieee_802_11.phy = PHDR_802_11_PHY_11A;
+                      }
+                    } else if (ieee_802_11.has_frequency) {
+                      if (FREQ_IS_BG(ieee_802_11.frequency)) {
+                        /* 11g */
+                        ieee_802_11.phy = PHDR_802_11_PHY_11G;
+                      } else {
+                        /* 11a */
+                        ieee_802_11.phy = PHDR_802_11_PHY_11A;
+                      }
+                    }
+                    if (ieee_802_11.phy == PHDR_802_11_PHY_11G) {
+                      /* Set 11g metadata */
+                      ieee_802_11.phy_info.info_11g.has_mode = false;
+                    } else if (ieee_802_11.phy == PHDR_802_11_PHY_11A) {
+                      /* Set 11a metadata */
+                      ieee_802_11.phy_info.info_11a.has_channel_type = false;
+                      ieee_802_11.phy_info.info_11a.has_turbo_type = false;
+                    }
+                    /* Otherwise we don't know the PHY */
+                  }
+                }
             }
         }
         if (ieee_802_11.has_frequency && !ieee_802_11.has_channel) {
             /* Frequency, but no channel; try to calculate the channel. */
             channel = ieee80211_mhz_to_chan(ieee_802_11.frequency);
             if (channel != -1) {
-                ieee_802_11.has_channel = TRUE;
+                ieee_802_11.has_channel = true;
                 ieee_802_11.channel = channel;
             }
         } else if (ieee_802_11.has_channel && !ieee_802_11.has_frequency) {
@@ -767,11 +834,11 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
             case PHDR_802_11_PHY_11_DSSS:
             case PHDR_802_11_PHY_11B:
             case PHDR_802_11_PHY_11G:
-                frequency = ieee80211_chan_to_mhz(ieee_802_11.channel, TRUE);
+                frequency = ieee80211_chan_to_mhz(ieee_802_11.channel, true);
                 break;
 
             case PHDR_802_11_PHY_11A:
-                frequency = ieee80211_chan_to_mhz(ieee_802_11.channel, FALSE);
+                frequency = ieee80211_chan_to_mhz(ieee_802_11.channel, false);
                 break;
 
             default:
@@ -780,7 +847,7 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
                 break;
             }
             if (frequency != 0) {
-                ieee_802_11.has_frequency = TRUE;
+                ieee_802_11.has_frequency = true;
                 ieee_802_11.frequency = frequency;
             }
         }
@@ -790,16 +857,16 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
         else {
             if (rec->rec_header.packet_header.len < 4 || rec->rec_header.packet_header.caplen < 4) {
                 *err = WTAP_ERR_BAD_FILE;
-                *err_info = g_strdup_printf("peektagged: 802.11 packet has length < 4");
-                return FALSE;
+                *err_info = ws_strdup_printf("peektagged: 802.11 packet has length < 4");
+                return false;
             }
             rec->rec_header.packet_header.pseudo_header.ieee_802_11.fcs_len = 0;
             rec->rec_header.packet_header.len -= 4;
             rec->rec_header.packet_header.caplen -= 4;
             skip_len = 4;
         }
-        rec->rec_header.packet_header.pseudo_header.ieee_802_11.decrypted = FALSE;
-        rec->rec_header.packet_header.pseudo_header.ieee_802_11.datapad = FALSE;
+        rec->rec_header.packet_header.pseudo_header.ieee_802_11.decrypted = false;
+        rec->rec_header.packet_header.pseudo_header.ieee_802_11.datapad = false;
         break;
 
     case WTAP_ENCAP_ETHERNET:
@@ -809,8 +876,8 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
          */
         if (rec->rec_header.packet_header.len < 4 || rec->rec_header.packet_header.caplen < 4) {
             *err = WTAP_ERR_BAD_FILE;
-            *err_info = g_strdup_printf("peektagged: Ethernet packet has length < 4");
-            return FALSE;
+            *err_info = ws_strdup_printf("peektagged: Ethernet packet has length < 4");
+            return false;
         }
         rec->rec_header.packet_header.pseudo_header.eth.fcs_len = 0;
         rec->rec_header.packet_header.len -= 4;
@@ -820,52 +887,76 @@ peektagged_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
     }
 
     /* Read the packet data. */
-    if (!wtap_read_packet_bytes(fh, buf, rec->rec_header.packet_header.caplen, err, err_info))
+    if (!wtap_read_bytes_buffer(fh, &rec->data, rec->rec_header.packet_header.caplen, err, err_info))
         return -1;
 
     return skip_len;
 }
 
-static gboolean peektagged_read(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset)
+static bool peektagged_read(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset)
 {
     int skip_len;
 
     *data_offset = file_tell(wth->fh);
 
     /* Read the packet. */
-    skip_len = peektagged_read_packet(wth, wth->fh, &wth->rec,
-                                      wth->rec_data, err, err_info);
+    skip_len = peektagged_read_packet(wth, wth->fh, rec, err, err_info);
     if (skip_len == -1)
-        return FALSE;
+        return false;
 
     if (skip_len != 0) {
         /* Skip extra junk at the end of the packet data. */
         if (!wtap_read_bytes(wth->fh, NULL, skip_len, err, err_info))
-            return FALSE;
+            return false;
     }
 
-    return TRUE;
+    return true;
 }
 
-static gboolean
-peektagged_seek_read(wtap *wth, gint64 seek_off,
-    wtap_rec *rec, Buffer *buf, int *err, gchar **err_info)
+static bool
+peektagged_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
+    int *err, char **err_info)
 {
     if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
-        return FALSE;
+        return false;
 
     /* Read the packet. */
-    if (peektagged_read_packet(wth, wth->random_fh, rec, buf, err, err_info) == -1) {
+    if (peektagged_read_packet(wth, wth->random_fh, rec, err, err_info) == -1) {
         if (*err == 0)
             *err = WTAP_ERR_SHORT_READ;
-        return FALSE;
+        return false;
     }
-    return TRUE;
+    return true;
+}
+
+static const struct supported_block_type peektagged_blocks_supported[] = {
+    /*
+     * We support packet blocks, with no comments or other options.
+     */
+    { WTAP_BLOCK_PACKET, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info peektagged_info = {
+    "Savvius tagged", "peektagged", "pkt", "tpc;apc;wpz",
+    false, BLOCKS_SUPPORTED(peektagged_blocks_supported),
+    NULL, NULL, NULL
+};
+
+void register_peektagged(void)
+{
+    peektagged_file_type_subtype = wtap_register_file_type_subtype(&peektagged_info);
+
+    /*
+     * Register name for backwards compatibility with the
+     * wtap_filetypes table in Lua.
+     */
+    wtap_register_backwards_compatibility_lua_name("PEEKTAGGED",
+                                                   peektagged_file_type_subtype);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

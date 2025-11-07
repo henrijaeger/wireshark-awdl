@@ -1,4 +1,5 @@
-/* interface_frame.h
+/** @file
+ *
  * Display of interfaces, including their respective data, and the
  * capability to filter interfaces by type
  *
@@ -6,14 +7,13 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef INTERFACE_FRAME_H
 #define INTERFACE_FRAME_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include <ui/qt/models/info_proxy_model.h>
 #include <ui/qt/models/interface_tree_model.h>
@@ -44,19 +44,23 @@ public:
     void ensureSelectedInterface();
 
 Q_SIGNALS:
-    void showExtcapOptions(QString device_name);
-    void startCapture();
+    void showExtcapOptions(QString device_name, bool startCaptureOnClose);
+    void startCapture(QStringList);
     void itemSelectionChanged();
     void typeSelectionChanged();
 
 public slots:
+#ifdef HAVE_LIBPCAP
+    void scanLocalInterfaces(GList *filter_list = nullptr);
+#endif
     void updateSelectedInterfaces();
     void interfaceListChanged();
     void toggleHiddenInterfaces();
 #ifdef HAVE_PCAP_REMOTE
     void toggleRemoteInterfaces();
 #endif
-    void getPoints(int idx, PointList *pts);
+    void showRunOnFile();
+    void showContextMenu(QPoint pos);
 
 protected:
     void hideEvent(QHideEvent *evt);
@@ -65,12 +69,13 @@ protected:
 private:
 
     void resetInterfaceTreeDisplay();
+    bool haveLocalCapturePermissions() const;
 
     Ui::InterfaceFrame *ui;
 
-    InterfaceSortFilterModel proxyModel;
-    InterfaceTreeModel sourceModel;
-    InfoProxyModel infoModel;
+    InterfaceSortFilterModel proxy_model_;
+    InterfaceTreeModel source_model_;
+    InfoProxyModel info_model_;
 
     QMap<int, QString> ifTypeDescription;
 
@@ -89,19 +94,7 @@ private slots:
     void updateStatistics(void);
     void actionButton_toggled(bool checked);
     void triggeredIfTypeButton();
+    void on_warningLabel_linkActivated(const QString &link);
 };
 
 #endif // INTERFACE_FRAME_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

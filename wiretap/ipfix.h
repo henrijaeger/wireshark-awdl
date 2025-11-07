@@ -1,4 +1,4 @@
-/* ipfix.h
+/** @file
  *
  * Wiretap Library
  * Copyright (c) 2010 by Hadriel Kaplan <hadrielk@yahoo.com>
@@ -13,6 +13,6 @@
 #include "wtap.h"
 #include "ws_symbol_export.h"
 
-wtap_open_return_val ipfix_open(wtap *wth, int *err, gchar **err_info);
+wtap_open_return_val ipfix_open(wtap *wth, int *err, char **err_info);
 
 #endif

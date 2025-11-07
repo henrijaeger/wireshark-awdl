@@ -20,15 +20,17 @@
 void proto_register_moldudp(void);
 void proto_reg_handoff_moldudp(void);
 
+static dissector_handle_t moldudp_handle;
+
 /* Initialize the protocol and registered fields */
-static int proto_moldudp       = -1;
-static int hf_moldudp_session  = -1;
-static int hf_moldudp_sequence = -1;
-static int hf_moldudp_count    = -1;
-static int hf_moldudp_msgblk   = -1;
-static int hf_moldudp_msgseq   = -1;
-static int hf_moldudp_msglen   = -1;
-static int hf_moldudp_msgdata  = -1;
+static int proto_moldudp;
+static int hf_moldudp_session;
+static int hf_moldudp_sequence;
+static int hf_moldudp_count;
+static int hf_moldudp_msgblk;
+static int hf_moldudp_msgseq;
+static int hf_moldudp_msglen;
+static int hf_moldudp_msgdata;
 
 #define MOLDUDP_SESSION_LEN  10
 #define MOLDUDP_SEQUENCE_LEN  4
@@ -38,28 +40,28 @@ static int hf_moldudp_msgdata  = -1;
 #define MOLDUDP_HEARTBEAT 0x0000
 
 /* Initialize the subtree pointers */
-static gint ett_moldudp        = -1;
-static gint ett_moldudp_msgblk = -1;
+static int ett_moldudp;
+static int ett_moldudp_msgblk;
 
-static expert_field ei_moldudp_msglen_invalid = EI_INIT;
-static expert_field ei_moldudp_count_invalid = EI_INIT;
+static expert_field ei_moldudp_msglen_invalid;
+static expert_field ei_moldudp_count_invalid;
 
 static dissector_table_t moldudp_payload_table;
 
-static void moldudp_prompt(packet_info *pinfo _U_, gchar* result)
+static void moldudp_prompt(packet_info *pinfo _U_, char* result)
 {
-    g_snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Payload as");
+    snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Payload as");
 }
 
 /* Code to dissect a message block */
-static guint
+static unsigned
 dissect_moldudp_msgblk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
-        guint offset, guint32 sequence)
+        unsigned offset, uint32_t sequence)
 {
     proto_item *ti;
     proto_tree *blk_tree;
-    guint16     msglen, real_msglen, whole_len;
-    guint       remaining;
+    uint16_t    msglen, real_msglen, whole_len;
+    unsigned    remaining;
     tvbuff_t*   next_tvb;
 
     if (tvb_reported_length(tvb) - offset < MOLDUDP_MSGLEN_LEN)
@@ -90,7 +92,7 @@ dissect_moldudp_msgblk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     ti = proto_tree_add_uint(blk_tree, hf_moldudp_msgseq,
             tvb, offset, 0, sequence);
 
-    PROTO_ITEM_SET_GENERATED(ti);
+    proto_item_set_generated(ti);
 
     ti = proto_tree_add_item(blk_tree, hf_moldudp_msglen,
             tvb, offset, MOLDUDP_MSGLEN_LEN, ENC_LITTLE_ENDIAN);
@@ -106,7 +108,7 @@ dissect_moldudp_msgblk(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     /* Functionality for choosing subdissector is controlled through Decode As as MoldUDP doesn't
        have a unique identifier to determine subdissector */
     next_tvb = tvb_new_subset_length(tvb, offset, real_msglen);
-    if (!dissector_try_payload_new(moldudp_payload_table, next_tvb, pinfo, tree, FALSE, NULL))
+    if (!dissector_try_payload_with_data(moldudp_payload_table, next_tvb, pinfo, tree, false, NULL))
     {
         proto_tree_add_item(blk_tree, hf_moldudp_msgdata,
                 tvb, offset, real_msglen, ENC_NA);
@@ -121,9 +123,9 @@ dissect_moldudp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data 
 {
     proto_item *ti;
     proto_tree *moldudp_tree;
-    guint       offset            = 0;
-    guint16     count, real_count = 0;
-    guint32     sequence;
+    unsigned    offset            = 0;
+    uint16_t    count, real_count = 0;
+    uint32_t    sequence;
 
     /* Check that there's enough data */
     if (tvb_reported_length(tvb) < (MOLDUDP_SESSION_LEN  +
@@ -152,7 +154,7 @@ dissect_moldudp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data 
     moldudp_tree = proto_item_add_subtree(ti, ett_moldudp);
 
     proto_tree_add_item(moldudp_tree, hf_moldudp_session,
-                        tvb, offset, MOLDUDP_SESSION_LEN, ENC_ASCII|ENC_NA);
+                        tvb, offset, MOLDUDP_SESSION_LEN, ENC_ASCII);
     offset += MOLDUDP_SESSION_LEN;
 
     sequence = tvb_get_letohl(tvb, offset);
@@ -220,7 +222,7 @@ proto_register_moldudp(void)
     };
 
     /* Setup protocol subtree array */
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_moldudp,
         &ett_moldudp_msgblk
     };
@@ -241,21 +243,21 @@ proto_register_moldudp(void)
     expert_moldudp = expert_register_protocol(proto_moldudp);
     expert_register_field_array(expert_moldudp, ei, array_length(ei));
 
-    moldudp_payload_table = register_decode_as_next_proto(proto_moldudp, "MoldUDP Payload", "moldudp.payload", "MoldUDP Payload", moldudp_prompt);
+    moldudp_payload_table = register_decode_as_next_proto(proto_moldudp, "moldudp.payload", "MoldUDP Payload", moldudp_prompt);
+
+    /* Register the dissector */
+    moldudp_handle = register_dissector("moldudp", dissect_moldudp, proto_moldudp);
 }
 
 
 void
 proto_reg_handoff_moldudp(void)
 {
-    dissector_handle_t moldudp_handle;
-
-    moldudp_handle = create_dissector_handle(dissect_moldudp, proto_moldudp);
     dissector_add_for_decode_as_with_preference("udp.port", moldudp_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

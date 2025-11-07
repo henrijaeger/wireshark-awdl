@@ -17,18 +17,19 @@
 void proto_register_ipnet(void);
 void proto_reg_handoff_ipnet(void);
 
-static int proto_ipnet   = -1;
-static int hf_version    = -1;
-static int hf_family     = -1;
-static int hf_htype      = -1;
-static int hf_pktlen     = -1;
-static int hf_ifindex    = -1;
-static int hf_grifindex  = -1;
-static int hf_zsrc       = -1;
-static int hf_zdst       = -1;
+static int proto_ipnet;
+static int hf_version;
+static int hf_family;
+static int hf_htype;
+static int hf_pktlen;
+static int hf_ifindex;
+static int hf_grifindex;
+static int hf_zsrc;
+static int hf_zdst;
 
-static gint ett_raw = -1;
+static int ett_raw;
 
+static dissector_handle_t ipnet_handle;
 static dissector_handle_t ip_handle;
 static dissector_handle_t ipv6_handle;
 
@@ -51,8 +52,8 @@ dissect_ipnet(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U
   proto_tree *fh_tree;
   proto_item *ti;
   tvbuff_t *next_tvb;
-  guint32 pktlen;
-  guint8 family;
+  uint32_t pktlen;
+  uint8_t family;
 
   /* load the top pane info. This should be overwritten by
      the next protocol in the stack */
@@ -77,7 +78,7 @@ dissect_ipnet(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U
   pktlen = tvb_get_ntohl(tvb, 4);
   next_tvb = tvb_new_subset_remaining(tvb, tvb_captured_length(tvb) - pktlen);
 
-  family = tvb_get_guint8(tvb, 1);
+  family = tvb_get_uint8(tvb, 1);
   switch (family) {
   case SOLARIS_AF_INET:
     call_dissector(ip_handle, next_tvb, pinfo, tree);
@@ -119,32 +120,30 @@ proto_register_ipnet(void)
     { &hf_zdst,         { "Destination Zone ID",        "ipnet.zdst",
       FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
   };
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_raw,
   };
 
   proto_ipnet = proto_register_protocol("Solaris IPNET", "IPNET", "ipnet");
   proto_register_field_array(proto_ipnet, hf, array_length(hf));
   proto_register_subtree_array(ett, array_length(ett));
+  ipnet_handle = register_dissector("ipnet", dissect_ipnet, proto_ipnet);
 }
 
 void
 proto_reg_handoff_ipnet(void)
 {
-  dissector_handle_t ipnet_handle;
-
   /*
    * Get handles for the IP and IPv6 dissectors.
    */
   ip_handle = find_dissector_add_dependency("ip", proto_ipnet);
   ipv6_handle = find_dissector_add_dependency("ipv6", proto_ipnet);
 
-  ipnet_handle = create_dissector_handle(dissect_ipnet, proto_ipnet);
   dissector_add_uint("wtap_encap", WTAP_ENCAP_IPNET, ipnet_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

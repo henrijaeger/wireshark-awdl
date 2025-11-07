@@ -1,4 +1,5 @@
-/* conv_id.h
+/** @file
+ *
  * conv_id   2011 Robert Bullen
  *
  * Wireshark - Network traffic analyzer
@@ -10,6 +11,8 @@
 
 #ifndef __CONV_ID_H__
 #define __CONV_ID_H__
+
+#include <stdint.h>
 
 /** conv_id_t is a type that can aid in conversation identification. When
  *  included in a "conversation key", whatever that may be, in addition to the
@@ -28,7 +31,7 @@
  *  tcp.stream. If a conv_id_t field is not used, it should be assigned the
  *  value CONV_ID_UNSET.
  */
-typedef guint32 conv_id_t;
-#define CONV_ID_UNSET G_MAXUINT32
+typedef uint32_t conv_id_t;
+#define CONV_ID_UNSET UINT32_MAX
 
 #endif /* __CONV_ID_H__ */

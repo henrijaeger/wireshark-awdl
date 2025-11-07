@@ -1,4 +1,4 @@
-/* crc10-tvb.h
+/** @file
  * Declaration of CRC-10 tvbuff routines
  *
  * Wireshark - Network traffic analyzer
@@ -17,7 +17,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
-WS_DLL_PUBLIC guint16 update_crc10_by_bytes_tvb(guint16 crc10, tvbuff_t *tvb, int offset, int len);
+WS_DLL_PUBLIC uint16_t update_crc10_by_bytes_tvb(uint16_t crc10, tvbuff_t *tvb, int offset, int len);
 
 #ifdef __cplusplus
 }

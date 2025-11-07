@@ -1,17 +1,16 @@
-/* sequence_diagram.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef SEQUENCE_DIAGRAM_H
 #define SEQUENCE_DIAGRAM_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include <epan/address.h>
 
@@ -32,7 +31,7 @@ public:
   struct _seq_analysis_item *value;
 };
 
-typedef QMap<double, WSCPSeqData> WSCPSeqDataMap;
+typedef QMultiMap<double, WSCPSeqData> WSCPSeqDataMap;
 
 class SequenceDiagram : public QCPAbstractPlottable
 {
@@ -52,19 +51,21 @@ public:
 
     // non-property methods:
     struct _seq_analysis_item *itemForPosY(int ypos);
+    bool inComment(QPoint pos) const;
+    QString elidedComment(const QString &text) const;
 
     // reimplemented virtual methods:
     virtual void clearData() { data_->clear(); }
-    virtual double selectTest(const QPointF &pos, bool onlySelectable, QVariant *details=0) const;
+    virtual double selectTest(const QPointF &pos, bool onlySelectable, QVariant *details=0) const Q_DECL_OVERRIDE;
 
 public slots:
     void setSelectedPacket(int selected_packet);
 
 protected:
-    virtual void draw(QCPPainter *painter);
-    virtual void drawLegendIcon(QCPPainter *painter, const QRectF &rect) const;
-    virtual QCPRange getKeyRange(bool &validRange, SignDomain inSignDomain=sdBoth) const;
-    virtual QCPRange getValueRange(bool &validRange, SignDomain inSignDomain=sdBoth) const;
+    virtual void draw(QCPPainter *painter) Q_DECL_OVERRIDE;
+    virtual void drawLegendIcon(QCPPainter *painter, const QRectF &rect) const Q_DECL_OVERRIDE;
+    virtual QCPRange getKeyRange(bool &validRange, QCP::SignDomain inSignDomain=QCP::sdBoth) const Q_DECL_OVERRIDE;
+    virtual QCPRange getValueRange(bool &validRange, QCP::SignDomain inSignDomain=QCP::sdBoth, const QCPRange &inKeyRange = QCPRange()) const Q_DECL_OVERRIDE;
 
 private:
     QCPAxis *key_axis_;
@@ -72,21 +73,8 @@ private:
     QCPAxis *comment_axis_;
     WSCPSeqDataMap *data_;
     struct _seq_analysis_info *sainfo_;
-    guint32 selected_packet_;
+    uint32_t selected_packet_;
     double selected_key_;
 };
 
 #endif // SEQUENCE_DIAGRAM_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

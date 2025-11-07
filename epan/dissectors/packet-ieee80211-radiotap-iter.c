@@ -12,7 +12,9 @@
 #include <errno.h>
 
 #include <epan/packet.h>
+
 #include <wsutil/pint.h>
+#include <wsutil/array.h>
 
 #define le16_to_cpu		GINT16_FROM_LE
 #define le32_to_cpu		GINT32_FROM_LE
@@ -47,9 +49,12 @@ static const struct radiotap_align_size rtap_namespace_sizes[] = {
 	/* [IEEE80211_RADIOTAP_AMPDU_STATUS] = 20 */		{ 4, 8 },
 	/* [IEEE80211_RADIOTAP_VHT] = 21 */			{ 2, 12 },
 	/* [IEEE80211_RADIOTAP_TIMESTAMP] = 22 */		{ 8, 12 },
-	/* [IEEE80211_RADIOTAP_HE] = 23 */                      { 2, 12 },
-	/* [IEEE80211_RADIOTAP_HE_MU] = 24 */			{ 2, 8 },
-
+	/* [IEEE80211_RADIOTAP_HE] = 23 */			{ 2, 12 },
+	/* [IEEE80211_RADIOTAP_HE_MU] = 24 */			{ 2, 12 },
+	/* [IEEE80211_RADIOTAP_HE_MU_USER = 25 notdef */	{ 0, 0 },
+	/* [IEEE80211_RADIOTAP_0_LENGTH_PSDU = 26 */		{ 1, 1 },
+	/* [IEEE80211_RADIOTAP_L_SIG = 27 */			{ 2, 4 },
+	/* [IEEE80211_RADIOTAP_TLV = 28 */                      { 4, 10 },
 	/*
 	 * add more here as they are defined in
 	 * include/net/ieee80211_radiotap.h
@@ -58,7 +63,7 @@ static const struct radiotap_align_size rtap_namespace_sizes[] = {
 
 static const struct ieee80211_radiotap_namespace radiotap_ns = {
 	rtap_namespace_sizes,
-	(int)(sizeof(rtap_namespace_sizes) / sizeof(rtap_namespace_sizes[0])),
+	(int)array_length(rtap_namespace_sizes),
 	0,
 	0
 };
@@ -106,7 +111,7 @@ static const struct ieee80211_radiotap_namespace radiotap_ns = {
  * iterator.this_arg for type "type" safely on all arches.
  *
  * Example code:
- * See Documentation/networking/radiotap-headers.txt
+ * See https://www.kernel.org/doc/Documentation/networking/radiotap-headers.txt
  */
 
 int ieee80211_radiotap_iterator_init(
@@ -114,14 +119,17 @@ int ieee80211_radiotap_iterator_init(
 	struct ieee80211_radiotap_header *radiotap_header,
 	int max_length, const struct ieee80211_radiotap_vendor_namespaces *vns)
 {
+	/* XXX - in Wireshark, we've already checked for this */
 	if (max_length < (int)sizeof(struct ieee80211_radiotap_header))
 		return -EINVAL;
 
 	/* Linux only supports version 0 radiotap format */
+	/* XXX - this is Wireshark, not Linux, and we should report an expert info */
 	if (radiotap_header->it_version)
 		return -EINVAL;
 
 	/* sanity check for allowed length and radiotap length field */
+	/* XXX - in Wireshark, this compares the length against itself. */
 	if (max_length < get_unaligned_le16(&radiotap_header->it_len))
 		return -EINVAL;
 
@@ -129,7 +137,7 @@ int ieee80211_radiotap_iterator_init(
 	iterator->_max_length = get_unaligned_le16(&radiotap_header->it_len);
 	iterator->_arg_index = 0;
 	iterator->_bitmap_shifter = get_unaligned_le32(&radiotap_header->it_present);
-	iterator->_arg = (guint8 *)radiotap_header + sizeof(*radiotap_header);
+	iterator->_arg = (uint8_t *)radiotap_header + sizeof(*radiotap_header);
 	iterator->_reset_on_ext = 0;
 	iterator->_next_ns_data = NULL;
 	iterator->_next_bitmap = &radiotap_header->it_present;
@@ -137,6 +145,7 @@ int ieee80211_radiotap_iterator_init(
 	iterator->_vns = vns;
 	iterator->current_namespace = &radiotap_ns;
 	iterator->is_radiotap_ns = 1;
+	iterator->tlv_mode = 0;
 #ifdef RADIOTAP_SUPPORT_OVERRIDES
 	iterator->n_overrides = 0;
 	iterator->overrides = NULL;
@@ -144,23 +153,31 @@ int ieee80211_radiotap_iterator_init(
 
 	/* find payload start allowing for extended bitmap(s) */
 	if (iterator->_bitmap_shifter & (1U << IEEE80211_RADIOTAP_EXT)) {
-		if (!ITERATOR_VALID(iterator, sizeof(guint32)))
+		/* XXX - we should report an expert info here */
+		if (!ITERATOR_VALID(iterator, sizeof(uint32_t)))
 			return -EINVAL;
 		while (get_unaligned_le32(iterator->_arg) &
 					(1U << IEEE80211_RADIOTAP_EXT)) {
-			iterator->_arg += sizeof(guint32);
+			iterator->_arg += sizeof(uint32_t);
 
 			/*
 			 * check for insanity where the present bitmaps
 			 * keep claiming to extend up to or even beyond the
 			 * stated radiotap header length
 			 */
+			/* XXX - we should report an expert info here */
+			if (!ITERATOR_VALID(iterator, sizeof(uint32_t)))
+				return -EINVAL;
 
-			if (!ITERATOR_VALID(iterator, sizeof(guint32)))
+			/* XXX - we should report an expert info here */
+			if ((get_unaligned_le32(iterator->_arg) &
+					(1U << IEEE80211_RADIOTAP_TLVS)) &&
+			    (get_unaligned_le32(iterator->_arg) &
+					(1U << IEEE80211_RADIOTAP_EXT)))
 				return -EINVAL;
 		}
 
-		iterator->_arg += sizeof(guint32);
+		iterator->_arg += sizeof(uint32_t);
 
 		/*
 		 * no need to check again for blowing past stated radiotap
@@ -177,7 +194,7 @@ int ieee80211_radiotap_iterator_init(
 }
 
 static void find_ns(struct ieee80211_radiotap_iterator *iterator,
-		    guint32 oui, guint8 subns)
+		    uint32_t oui, uint8_t subns)
 {
 	int i;
 
@@ -247,10 +264,50 @@ static int find_override(struct ieee80211_radiotap_iterator *iterator,
 int ieee80211_radiotap_iterator_next(
 	struct ieee80211_radiotap_iterator *iterator)
 {
+	if (iterator->tlv_mode) {
+		struct ieee80211_radiotap_tlv *tlv;
+		uint32_t size;
+
+#define TLV_LEN_ALIGN(x) ((x + 3) & ~3)
+		size = sizeof(*tlv) + TLV_LEN_ALIGN(iterator->this_arg_size);
+
+		/*
+		 * We know that without the alignment padding it was valid, so
+		 * ignore arbitrary padding and return that we finished if no
+		 * further TLV could fit.
+		 */
+		if (!ITERATOR_VALID(iterator, size))
+			return -ENOENT;
+
+		/* move to next entry */
+		iterator->_arg += sizeof(*tlv) + TLV_LEN_ALIGN(iterator->this_arg_size);
+
+return_tlv:
+		/* and check again if we reached the end */
+		if (!ITERATOR_VALID(iterator, 1))
+			return -ENOENT;
+
+		/* if it's not the end but a new TLV won't fit - error out */
+		if (!ITERATOR_VALID(iterator, sizeof(*tlv)))
+			return -EINVAL;
+
+		tlv = (struct ieee80211_radiotap_tlv *)iterator->_arg;
+
+		iterator->this_arg_index = get_unaligned_le16(&tlv->type);
+		iterator->this_arg_size = get_unaligned_le16(&tlv->datalen);
+		iterator->this_arg = tlv->data;
+		iterator->is_radiotap_ns =
+			iterator->this_arg_index != IEEE80211_RADIOTAP_VENDOR_NAMESPACE;
+
+		if (!ITERATOR_VALID(iterator, sizeof(*tlv) + iterator->this_arg_size))
+			return -EINVAL;
+		return 0;
+	}
+
 	while (1) {
 		int hit = 0;
 		int pad, align, size, subns;
-		guint32 oui;
+		uint32_t oui;
 
 		/* if no more EXT bits, that's it */
 		if ((iterator->_arg_index % 32) == IEEE80211_RADIOTAP_EXT &&
@@ -262,6 +319,10 @@ int ieee80211_radiotap_iterator_next(
 
 		/* get alignment/size of data */
 		switch (iterator->_arg_index % 32) {
+		case IEEE80211_RADIOTAP_TLVS:
+			align = 4;
+			size = 0;
+			break;
 		case IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE:
 		case IEEE80211_RADIOTAP_EXT:
 			align = 1;
@@ -288,12 +349,18 @@ int ieee80211_radiotap_iterator_next(
 			}
 			if (!align) {
 				/* skip all subsequent data */
+				int skip_size = IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE - (iterator->_arg_index % 32);
+				/* XXX - we should report an expert info here */
 				if (!iterator->_next_ns_data)
 					return -EINVAL;
 				iterator->_arg = iterator->_next_ns_data;
 				/* give up on this namespace */
 				iterator->current_namespace = NULL;
 				iterator->_next_ns_data = NULL;
+				// Remove 1 because jump to next_entry will also shift bitmap by 1
+				iterator->_bitmap_shifter >>= skip_size - 1;
+				iterator->_arg_index += skip_size - 1;
+				/* XXX - we should report an expert info here */
 				if (!ITERATOR_VALID(iterator, 0))
 					return -EINVAL;
 				goto next_entry;
@@ -321,6 +388,7 @@ int ieee80211_radiotap_iterator_next(
 		if (iterator->_arg_index % 32 == IEEE80211_RADIOTAP_VENDOR_NAMESPACE) {
 			int vnslen;
 
+			/* XXX - we should report an expert info here */
 			if (!ITERATOR_VALID(iterator, size))
 				return -EINVAL;
 
@@ -335,6 +403,9 @@ int ieee80211_radiotap_iterator_next(
 			iterator->_next_ns_data = iterator->_arg + size + vnslen;
 			if (!iterator->current_namespace)
 				size += vnslen;
+		} else if (iterator->_arg_index % 32 == IEEE80211_RADIOTAP_TLVS) {
+			iterator->tlv_mode = 1;
+			goto return_tlv;
 		}
 
 		/*
@@ -354,7 +425,7 @@ int ieee80211_radiotap_iterator_next(
 		 * radiotap section.  We will normally end up equalling this
 		 * max_length on the last arg, never exceeding it.
 		 */
-
+		/* XXX - we should report an expert info here */
 		if (!ITERATOR_VALID(iterator, 0))
 			return -EINVAL;
 
@@ -409,7 +480,7 @@ int ieee80211_radiotap_iterator_next(
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

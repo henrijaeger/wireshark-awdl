@@ -33,31 +33,31 @@
 void proto_register_mpls_y1711(void);
 void proto_reg_handoff_mpls_y1711(void);
 
-static gint proto_mpls_y1711 = -1;
+static int proto_mpls_y1711;
 
-static int hf_mpls_y1711_function_type = -1;
-/* static int hf_mpls_y1711_ttsi = -1; */
-static int hf_mpls_y1711_frequency = -1;
-static int hf_mpls_y1711_defect_type = -1;
-static int hf_mpls_y1711_defect_location = -1;
-static int hf_mpls_y1711_bip16 = -1;
+static int hf_mpls_y1711_function_type;
+/* static int hf_mpls_y1711_ttsi; */
+static int hf_mpls_y1711_frequency;
+static int hf_mpls_y1711_defect_type;
+static int hf_mpls_y1711_defect_location;
+static int hf_mpls_y1711_bip16;
 /* Generated from convert_proto_tree_add_text.pl */
-static int hf_mpls_y1711_lsr_id = -1;
-static int hf_mpls_y1711_lsp_id = -1;
+static int hf_mpls_y1711_lsr_id;
+static int hf_mpls_y1711_lsp_id;
 
-static gint ett_mpls_y1711 = -1;
+static int ett_mpls_y1711;
 
 /* Generated from convert_proto_tree_add_text.pl */
-static expert_field ei_mpls_y1711_padding_not_ff = EI_INIT;
-static expert_field ei_mpls_y1711_reserved_not_zero = EI_INIT;
-static expert_field ei_mpls_y1711_ttsi_not_preset = EI_INIT;
-static expert_field ei_mpls_y1711_minimum_payload = EI_INIT;
-static expert_field ei_mpls_y1711_s_bit_not_one = EI_INIT;
-static expert_field ei_mpls_y1711_no_OAM_alert_label = EI_INIT;
-static expert_field ei_mpls_y1711_exp_bits_not_zero = EI_INIT;
-static expert_field ei_mpls_y1711_ttl_not_one = EI_INIT;
-static expert_field ei_mpls_y1711_padding_not_zero = EI_INIT;
-static expert_field ei_mpls_y1711_unknown_pdu = EI_INIT;
+static expert_field ei_mpls_y1711_padding_not_ff;
+static expert_field ei_mpls_y1711_reserved_not_zero;
+static expert_field ei_mpls_y1711_ttsi_not_preset;
+static expert_field ei_mpls_y1711_minimum_payload;
+static expert_field ei_mpls_y1711_s_bit_not_one;
+static expert_field ei_mpls_y1711_no_OAM_alert_label;
+static expert_field ei_mpls_y1711_exp_bits_not_zero;
+static expert_field ei_mpls_y1711_ttl_not_one;
+static expert_field ei_mpls_y1711_padding_not_zero;
+static expert_field ei_mpls_y1711_unknown_pdu;
 
 static dissector_handle_t mpls_y1711_handle;
 
@@ -107,8 +107,8 @@ dissect_mpls_y1711(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
     int              functype;
     tvbuff_t        *data_tvb;
 
-    static const guint8 allone[]  = { 0xff, 0xff };
-    static const guint8 allzero[] = { 0x00, 0x00, 0x00, 0x00, 0x00,
+    static const uint8_t allone[]  = { 0xff, 0xff };
+    static const uint8_t allzero[] = { 0x00, 0x00, 0x00, 0x00, 0x00,
                                       0x00, 0x00, 0x00, 0x00, 0x00,
                                       0x00, 0x00, 0x00, 0x00, 0x00,
                                       0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -118,7 +118,7 @@ dissect_mpls_y1711(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
         return 0;
     mplsinfo = (struct mplsinfo *)data;
 
-    functype = tvb_get_guint8(tvb, offset);
+    functype = tvb_get_uint8(tvb, offset);
     col_append_fstr(pinfo->cinfo, COL_INFO, " (Y.1711: %s)",
                     (functype == 0x01) ? "CV" :
                     (functype == 0x02) ? "FDI" :
@@ -156,7 +156,7 @@ dissect_mpls_y1711(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
         proto_tree_add_expert(mpls_y1711_tree, pinfo, &ei_mpls_y1711_ttl_not_one, tvb, offset - 1, 1);
 
     /* starting dissection */
-    functype = tvb_get_guint8(tvb, offset);
+    functype = tvb_get_uint8(tvb, offset);
     proto_tree_add_item(mpls_y1711_tree, hf_mpls_y1711_function_type, tvb,
                         offset, 1,
                         ENC_LITTLE_ENDIAN);
@@ -342,7 +342,7 @@ proto_register_mpls_y1711(void)
             &hf_mpls_y1711_defect_location,
             {
                 "Defect Location (AS)", "mpls_y1711.defect_location",
-                FT_UINT32, BASE_DEC, NULL, 0x0, "Defect Location", HFILL
+                FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL
             }
         },
         {
@@ -357,20 +357,20 @@ proto_register_mpls_y1711(void)
       { &hf_mpls_y1711_lsp_id, { "LSP ID", "mpls_y1711.lsp_id", FT_INT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_mpls_y1711
     };
 
     static ei_register_info ei[] = {
         /* Generated from convert_proto_tree_add_text.pl */
-        { &ei_mpls_y1711_minimum_payload, { "mpls_y1711.minimum_payload", PI_MALFORMED, PI_ERROR, "Error: must have a minimum payload length of 44 bytes", EXPFILL }},
-        { &ei_mpls_y1711_no_OAM_alert_label, { "mpls_y1711.no_OAM_alert_label", PI_PROTOCOL, PI_WARN, "Warning: Y.1711 but no OAM alert label (%d) ?!", EXPFILL }},
-        { &ei_mpls_y1711_exp_bits_not_zero, { "mpls_y1711.exp_bits_not_0", PI_PROTOCOL, PI_WARN, "Warning: Exp bits should be 0 for Y.1711", EXPFILL }},
-        { &ei_mpls_y1711_s_bit_not_one, { "mpls_y1711.s_bit_not_1", PI_PROTOCOL, PI_WARN, "Warning: S bit should be 1 for Y.1711", EXPFILL }},
-        { &ei_mpls_y1711_ttl_not_one, { "mpls_y1711.ttl_not_1", PI_PROTOCOL, PI_WARN, "Warning: TTL should be 1 for Y.1711", EXPFILL }},
-        { &ei_mpls_y1711_reserved_not_zero, { "mpls_y1711.reserved_not_zero", PI_PROTOCOL, PI_WARN, "Error: these bytes are reserved and must be 0x00", EXPFILL }},
-        { &ei_mpls_y1711_padding_not_zero, { "mpls_y1711.padding_not_zero", PI_PROTOCOL, PI_WARN, "Error: these bytes are padding and must be 0x00", EXPFILL }},
-        { &ei_mpls_y1711_padding_not_ff, { "mpls_y1711.padding_not_ff", PI_PROTOCOL, PI_WARN, "Error: these bytes are padding and must be 0xFF", EXPFILL }},
+        { &ei_mpls_y1711_minimum_payload, { "mpls_y1711.minimum_payload", PI_MALFORMED, PI_ERROR, "Must have a minimum payload length of 44 bytes", EXPFILL }},
+        { &ei_mpls_y1711_no_OAM_alert_label, { "mpls_y1711.no_OAM_alert_label", PI_PROTOCOL, PI_WARN, "Y.1711 but no OAM alert label", EXPFILL }},
+        { &ei_mpls_y1711_exp_bits_not_zero, { "mpls_y1711.exp_bits_not_0", PI_PROTOCOL, PI_WARN, "Exp bits should be 0", EXPFILL }},
+        { &ei_mpls_y1711_s_bit_not_one, { "mpls_y1711.s_bit_not_1", PI_PROTOCOL, PI_WARN, "S bit should be 1", EXPFILL }},
+        { &ei_mpls_y1711_ttl_not_one, { "mpls_y1711.ttl_not_1", PI_PROTOCOL, PI_WARN, "TTL should be 1", EXPFILL }},
+        { &ei_mpls_y1711_reserved_not_zero, { "mpls_y1711.reserved_not_zero", PI_PROTOCOL, PI_WARN, "These bytes are reserved and must be 0x00", EXPFILL }},
+        { &ei_mpls_y1711_padding_not_zero, { "mpls_y1711.padding_not_zero", PI_PROTOCOL, PI_WARN, "These bytes are padding and must be 0x00", EXPFILL }},
+        { &ei_mpls_y1711_padding_not_ff, { "mpls_y1711.padding_not_ff", PI_PROTOCOL, PI_ERROR, "Error: these bytes are padding and must be 0xFF", EXPFILL }},
         { &ei_mpls_y1711_ttsi_not_preset, { "mpls_y1711.ttsi_not_preset", PI_PROTOCOL, PI_NOTE, "TTSI not preset (optional for FDI/BDI)", EXPFILL }},
         { &ei_mpls_y1711_unknown_pdu, { "mpls_y1711.unknown_pdu", PI_PROTOCOL, PI_WARN, "Unknown MPLS Y.1711 PDU", EXPFILL }},
     };
@@ -397,7 +397,7 @@ proto_reg_handoff_mpls_y1711(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

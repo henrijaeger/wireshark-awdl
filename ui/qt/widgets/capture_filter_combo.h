@@ -1,10 +1,11 @@
-/* capture_filter_combo.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef CAPTURE_FILTER_COMBO_H
 #define CAPTURE_FILTER_COMBO_H
@@ -25,14 +26,14 @@ public:
 
 signals:
     void interfacesChanged();
-    void pushFilterSyntaxStatus(const QString&);
-    void popFilterSyntaxStatus();
     void captureFilterSyntaxChanged(bool valid);
     void startCapture();
 
-public slots:
+protected:
+    virtual bool event(QEvent *event);
 
 private:
+    void updateStyleSheet();
     CaptureFilterEdit *cf_edit_;
 
 private slots:
@@ -41,16 +42,3 @@ private slots:
 };
 
 #endif // CAPTURE_FILTER_COMBO_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

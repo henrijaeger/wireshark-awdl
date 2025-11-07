@@ -1,5 +1,4 @@
-/*
- * sign_ext.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -11,14 +10,18 @@
 #ifndef __WSUTIL_SIGN_EXT_H__
 #define __WSUTIL_SIGN_EXT_H__
 
+#include <inttypes.h>
+
 #include <glib.h>
+
+#include <wsutil/ws_assert.h>
 
 /* sign extension routines */
 
-static inline guint32
-ws_sign_ext32(guint32 val, int no_of_bits)
+static inline uint32_t
+ws_sign_ext32(uint32_t val, int no_of_bits)
 {
-	g_assert (no_of_bits >= 0 && no_of_bits <= 32);
+	ws_assert (no_of_bits >= 0 && no_of_bits <= 32);
 
 	if ((no_of_bits == 0) || (no_of_bits == 32))
 		return val;
@@ -35,10 +38,10 @@ ws_sign_ext32(guint32 val, int no_of_bits)
 	return val;
 }
 
-static inline guint64
-ws_sign_ext64(guint64 val, int no_of_bits)
+static inline uint64_t
+ws_sign_ext64(uint64_t val, int no_of_bits)
 {
-	g_assert (no_of_bits >= 0 && no_of_bits <= 64);
+	ws_assert (no_of_bits >= 0 && no_of_bits <= 64);
 
 	if ((no_of_bits == 0) || (no_of_bits == 64))
 		return val;
@@ -49,19 +52,19 @@ ws_sign_ext64(guint64 val, int no_of_bits)
 	 * the number of bits in the value - 1, and we might get
 	 * compile-time or run-time complaints about that.
 	 */
-	if (val & (G_GUINT64_CONSTANT(1) << (no_of_bits-1)))
-		val |= (G_GUINT64_CONSTANT(0xFFFFFFFFFFFFFFFF) << no_of_bits);
+	if (val & (UINT64_C(1) << (no_of_bits-1)))
+		val |= (UINT64_C(0xFFFFFFFFFFFFFFFF) << no_of_bits);
 
 	return val;
 }
 
 /*
-static inline guint64
-ws_sign_ext64(guint64 val, int no_of_bits)
+static inline uint64_t
+ws_sign_ext64(uint64_t val, int no_of_bits)
 {
-	gint64 sval = (val << (64 - no_of_bits));
+	int64_t sval = (val << (64 - no_of_bits));
 
-	return (guint64) (sval >> (64 - no_of_bits));
+	return (uint64_t) (sval >> (64 - no_of_bits));
 }
 */
 

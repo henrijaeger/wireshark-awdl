@@ -1,4 +1,4 @@
-/* epan_dissect.h
+/** @file
  *
  * Wireshark Protocol Analyzer Library
  *
@@ -10,14 +10,14 @@
 #ifndef EPAN_DISSECT_H
 #define EPAN_DISSECT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
-
 #include "epan.h"
 #include "tvbuff.h"
 #include "proto.h"
 #include "packet_info.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
 
 /* Dissection of a single byte array. Holds tvbuff info as
  * well as proto_tree info. As long as the epan_dissect_t for a byte
@@ -39,7 +39,7 @@ struct epan_dissect {
 #endif /* EPAN_DISSECT_H */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

@@ -95,8 +95,8 @@ static const value_string fc_lctl_rjt_val[] = {
 };
 static value_string_ext fc_lctl_rjt_val_ext = VALUE_STRING_EXT_INIT(fc_lctl_rjt_val);
 
-const gchar *
-fclctl_get_typestr (guint8 linkctl_type, guint8 type)
+const char *
+fclctl_get_typestr (uint8_t linkctl_type, uint8_t type)
 {
     if ((linkctl_type == FC_LCTL_FBSYB) ||
         (linkctl_type == FC_LCTL_FBSYL)) {
@@ -105,17 +105,17 @@ fclctl_get_typestr (guint8 linkctl_type, guint8 type)
     return "";
 }
 
-const gchar *
-fclctl_get_paramstr (guint32 linkctl_type, guint32 param)
+const char *
+fclctl_get_paramstr (wmem_allocator_t *pool, uint32_t linkctl_type, uint32_t param)
 {
     if (linkctl_type == FC_LCTL_PBSY) {
-      return wmem_strdup_printf(wmem_packet_scope(), "%s, %s",
+      return wmem_strdup_printf(pool, "%s, %s",
                  val_to_str (((param & 0xFF000000) >> 24), fc_lctl_pbsy_acode_val, "0x%x"),
                  val_to_str (((param & 0x00FF0000) >> 16), fc_lctl_pbsy_rjt_val, "0x%x"));
     }
     if ((linkctl_type == FC_LCTL_FRJT) ||
              (linkctl_type == FC_LCTL_PRJT)) {
-      return wmem_strdup_printf(wmem_packet_scope(), "%s, %s",
+      return wmem_strdup_printf(pool, "%s, %s",
                  val_to_str (((param & 0xFF000000) >> 24), fc_lctl_rjt_acode_val, "0x%x"),
                  val_to_str_ext (((param & 0x00FF0000) >> 16), &fc_lctl_rjt_val_ext, "%x"));
     }
@@ -123,7 +123,7 @@ fclctl_get_paramstr (guint32 linkctl_type, guint32 param)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

@@ -1,4 +1,4 @@
-/* hcidump.h
+/** @file
  *
  * Copyright (c) 2003 by Marcel Holtmann <marcel@holtmann.org>
  *
@@ -13,6 +13,6 @@
 #include "wtap.h"
 #include "ws_symbol_export.h"
 
-wtap_open_return_val hcidump_open(wtap *wth, int *err, gchar **err_info);
+wtap_open_return_val hcidump_open(wtap *wth, int *err, char **err_info);
 
 #endif

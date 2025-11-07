@@ -14,9 +14,9 @@ IF (MAXMINDDB_INCLUDE_DIRS)
 ENDIF (MAXMINDDB_INCLUDE_DIRS)
 
 INCLUDE(FindWSWinLibs)
-FindWSWinLibs("MaxMindDB-.*" "MAXMINDDB_HINTS")
+FindWSWinLibs("libmaxminddb-.*" "MAXMINDDB_HINTS")
 
-IF (NOT WIN32)
+IF (NOT USE_REPOSITORY)
   find_package(PkgConfig)
   pkg_check_modules(PC_LIBMAXMINDDB QUIET libmaxminddb)
   set(MAXMINDDB_DEFINITIONS ${PC_LIBMAXMINDDB_CFLAGS_OTHER})
@@ -57,13 +57,19 @@ IF(MAXMINDDB_FOUND)
       CACHE PATH "Path to the MaxMindDB DLL"
     )
     file( GLOB _MAXMINDDB_dll RELATIVE "${MAXMINDDB_DLL_DIR}"
-      "${MAXMINDDB_DLL_DIR}/libmaxminddb-*.dll"
+      "${MAXMINDDB_DLL_DIR}/libmaxminddb*.dll"
     )
     set ( MAXMINDDB_DLL ${_MAXMINDDB_dll}
       # We're storing filenames only. Should we use STRING instead?
       CACHE FILEPATH "MaxMindDB DLL file name"
     )
     mark_as_advanced( MAXMINDDB_DLL_DIR MAXMINDDB_DLL )
+  endif()
+  if(MAXMINDDB_INCLUDE_DIR)
+    set(_version_regex "^#define[ \t]+PACKAGE_VERSION[ \t]+\"([^\"]+)\".*")
+    file(STRINGS "${MAXMINDDB_INCLUDE_DIR}/maxminddb.h" MAXMINDDB_VERSION REGEX "${_version_regex}")
+    string(REGEX REPLACE "${_version_regex}" "\\1" MAXMINDDB_VERSION "${MAXMINDDB_VERSION}")
+    unset(_version_regex)
   endif()
 ELSE(MAXMINDDB_FOUND)
   SET(MAXMINDDB_LIBRARIES )

@@ -15,6 +15,8 @@
 
 #include <ui/qt/models/astringlist_list_model.h>
 
+#include <ui/qt/utils/color_utils.h>
+
 AStringListListModel::AStringListListModel(QObject * parent):
 QAbstractTableModel(parent)
 {}
@@ -24,7 +26,7 @@ AStringListListModel::~AStringListListModel() { display_data_.clear(); }
 void AStringListListModel::appendRow(const QStringList & display_strings, const QString & row_tooltip, const QModelIndex &parent)
 {
     QStringList columns = headerColumns();
-    if ( display_strings.count() != columns.count() )
+    if (display_strings.count() != columns.count())
         return;
 
     emit beginInsertRows(parent, rowCount(), rowCount());
@@ -33,28 +35,26 @@ void AStringListListModel::appendRow(const QStringList & display_strings, const 
     emit endInsertRows();
 }
 
-int AStringListListModel::rowCount(const QModelIndex &parent) const
+int AStringListListModel::rowCount(const QModelIndex &) const
 {
-    Q_UNUSED(parent);
-
-    return display_data_.count();
+    return static_cast<int>(display_data_.count());
 }
 
 int AStringListListModel::columnCount(const QModelIndex &parent) const
 {
-    if ( rowCount(parent) == 0 )
+    if (rowCount(parent) == 0)
         return 0;
 
-    return headerColumns().count();
+    return static_cast<int>(headerColumns().count());
 }
 
 QVariant AStringListListModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    if ( orientation == Qt::Vertical )
+    if (orientation == Qt::Vertical)
         return QVariant();
 
     QStringList columns = headerColumns();
-    if ( role == Qt::DisplayRole && section < columns.count() )
+    if (role == Qt::DisplayRole && section < columns.count())
         return QVariant::fromValue(columns[section]);
 
     return QVariant();
@@ -62,17 +62,17 @@ QVariant AStringListListModel::headerData(int section, Qt::Orientation orientati
 
 QVariant AStringListListModel::data(const QModelIndex &index, int role) const
 {
-    if ( ! index.isValid() || index.row() >= rowCount() )
+    if (! index.isValid() || index.row() >= rowCount())
         return QVariant();
 
-    if ( role == Qt::DisplayRole )
+    if (role == Qt::DisplayRole)
     {
         QStringList data = display_data_.at(index.row());
 
-        if ( index.column() < columnCount() )
+        if (index.column() < columnCount())
             return QVariant::fromValue(data.at(index.column()));
     }
-    else if ( role == Qt::ToolTipRole )
+    else if (role == Qt::ToolTipRole)
     {
         QString tooltip = tooltip_data_.at(index.row());
         if (!tooltip.isEmpty()) {
@@ -87,13 +87,21 @@ AStringListListSortFilterProxyModel::AStringListListSortFilterProxyModel(QObject
 : QSortFilterProxyModel(parent)
 {
     filter_ = QString();
-    type_ = FilterByContains;
+    types_[-1] = FilterByContains;
 }
 
 bool AStringListListSortFilterProxyModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
 {
-    QString leftData = sourceModel()->data(left).toStringList().join(",");
-    QString rightData = sourceModel()->data(right).toStringList().join(",");
+    QString leftData = left.data().toString();
+    QString rightData = right.data().toString();
+
+    if (numericColumns_.contains(left.column()) || numericColumns_.contains(right.column()) )
+    {
+        float leftD = leftData.toFloat();
+        float rightD = rightData.toFloat();
+
+        return leftD < rightD;
+    }
 
     return leftData.compare(rightData, sortCaseSensitivity()) < 0;
 }
@@ -104,57 +112,112 @@ void AStringListListSortFilterProxyModel::setFilter(const QString & filter)
     invalidateFilter();
 }
 
-static bool AContainsB(const QString &a, const QString &b, Qt::CaseSensitivity cs)
+static bool AContainsB(const QVariant &a, const QVariant &b, Qt::CaseSensitivity cs)
 {
-    return a.contains(b, cs);
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    if (! a.canConvert<QString>() || ! b.canConvert<QString>())
+#else
+    if (! a.canConvert(QVariant::String) || ! b.canConvert(QVariant::String))
+#endif
+        return false;
+    return a.toString().contains(b.toString(), cs);
 }
 
-static bool AStartsWithB(const QString &a, const QString &b, Qt::CaseSensitivity cs)
+static bool AStartsWithB(const QVariant &a, const QVariant &b, Qt::CaseSensitivity cs)
 {
-    return a.startsWith(b, cs);
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    if (! a.canConvert<QString>() || ! b.canConvert<QString>())
+#else
+    if (! a.canConvert(QVariant::String) || ! b.canConvert(QVariant::String))
+#endif
+        return false;
+    return a.toString().startsWith(b.toString(), cs);
+}
+
+static bool AIsEquivalentToB(const QVariant &a, const QVariant &b, Qt::CaseSensitivity)
+{
+    return a == b;
 }
 
 bool AStringListListSortFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
 {
-    if ( columnsToFilter_.count() == 0 )
+    if (columnsToFilter_.count() == 0)
         return true;
 
     foreach(int column, columnsToFilter_)
     {
-        if ( column >= columnCount() )
+        if (column >= columnCount())
             continue;
 
         QModelIndex chkIdx = sourceModel()->index(sourceRow, column, sourceParent);
-        QString dataString = sourceModel()->data(chkIdx).toString();
+        QString dataString = chkIdx.data().toString();
 
         /* Default is filter by string a contains string b */
-        bool (*compareFunc)(const QString&, const QString&, Qt::CaseSensitivity) = AContainsB;
-        if ( type_ == FilterByStart )
-            compareFunc = AStartsWithB;
+        bool (*compareFunc)(const QVariant&, const QVariant&, Qt::CaseSensitivity) = AContainsB;
+        if (types_.keys().contains(column))
+        {
+            switch (types_.value(column, FilterByContains))
+            {
+            case  FilterByStart:
+                compareFunc = AStartsWithB;
+                break;
+            case  FilterByEquivalent:
+                compareFunc = AIsEquivalentToB;
+                break;
+            case FilterNone:
+                return true;
+            default:
+                compareFunc = AContainsB;
+                break;
+            }
+        }
 
-        if ( compareFunc(dataString, filter_, filterCaseSensitivity()) )
+        if (compareFunc(dataString, filter_, filterCaseSensitivity()))
             return true;
     }
 
     return false;
 }
 
-void AStringListListSortFilterProxyModel::setFilterType(AStringListListFilterType type)
+void AStringListListSortFilterProxyModel::setFilterType(AStringListListFilterType type, int column)
 {
-    if ( type != type_ )
+    if (column >= -1 && column < columnCount())
     {
-        type_ = type;
-        invalidateFilter();
+        if (! types_.keys().contains(column))
+        {
+            types_.insert(column, type);
+            invalidateFilter();
+        }
+        else if (types_.keys().contains(column) && type != types_[column])
+        {
+            types_[column] = type;
+            invalidateFilter();
+        }
     }
 }
 
 void AStringListListSortFilterProxyModel::setColumnToFilter(int column)
 {
-    if ( column < columnCount() && ! columnsToFilter_.contains(column) )
+    if (column < columnCount() && ! columnsToFilter_.contains(column))
     {
         columnsToFilter_.append(column);
         invalidateFilter();
     }
+}
+
+void AStringListListSortFilterProxyModel::setColumnsToFilter(QList<int> columns)
+{
+    bool hasBeenAdded = false;
+
+    foreach (int column, columns) {
+        if (column < columnCount() && ! columnsToFilter_.contains(column)) {
+            columnsToFilter_.append(column);
+            hasBeenAdded = true;
+        }
+    }
+
+    if (hasBeenAdded)
+        invalidateFilter();
 }
 
 void AStringListListSortFilterProxyModel::clearColumnsToFilter()
@@ -163,13 +226,56 @@ void AStringListListSortFilterProxyModel::clearColumnsToFilter()
     invalidateFilter();
 }
 
+void AStringListListSortFilterProxyModel::clearHiddenColumns()
+{
+    hiddenColumns_.clear();
+    invalidateFilter();
+}
+
+void AStringListListSortFilterProxyModel::setColumnToHide(int col)
+{
+    if (! hiddenColumns_.contains(col) && col > -1 && sourceModel() && sourceModel()->columnCount() > col)
+    {
+        hiddenColumns_ << col;
+        invalidateFilter();
+    }
+}
+
+bool AStringListListSortFilterProxyModel::filterAcceptsColumn(int sourceColumn, const QModelIndex &sourceParent) const
+{
+    QModelIndex realIndex = sourceModel()->index(0, sourceColumn, sourceParent);
+
+    if (! realIndex.isValid())
+        return false;
+
+    if (hiddenColumns_.contains(sourceColumn))
+        return false;
+
+    return true;
+}
+
+void AStringListListSortFilterProxyModel::clearNumericColumns()
+{
+    numericColumns_.clear();
+    invalidateFilter();
+}
+
+void AStringListListSortFilterProxyModel::setColumnAsNumeric(int col)
+{
+    if (! numericColumns_.contains(col) && col > -1 && sourceModel() && sourceModel()->columnCount() > col)
+    {
+        numericColumns_ << col;
+        invalidateFilter();
+    }
+}
+
 AStringListListUrlProxyModel::AStringListListUrlProxyModel(QObject * parent):
         QIdentityProxyModel(parent)
 {}
 
 void AStringListListUrlProxyModel::setUrlColumn(int column)
 {
-    if ( column < columnCount() && ! urls_.contains(column) )
+    if (column < columnCount() && ! urls_.contains(column))
         urls_ << column;
 }
 
@@ -182,33 +288,17 @@ QVariant AStringListListUrlProxyModel::data(const QModelIndex &index, int role) 
 {
     QVariant result = QIdentityProxyModel::data(index, role);
 
-    if ( urls_.contains(index.column()) )
+    if (role == Qt::ForegroundRole && urls_.contains(index.column())
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+            && result.canConvert<QBrush>())
+#else
+            && result.canConvert(QVariant::Brush))
+#endif
     {
-        if ( role == Qt::ForegroundRole )
-        {
-            if ( result.canConvert(QVariant::Brush) )
-            {
-                QBrush selected = result.value<QBrush>();
-                selected.setColor(QApplication::palette().link().color());
-                return selected;
-            }
-        } else if ( role == Qt::TextColorRole ) {
-            return QApplication::palette().link().color();
-        }
+        QBrush selected = result.value<QBrush>();
+        selected.setColor(ColorUtils::themeLinkBrush().color());
+        return selected;
     }
 
     return result;
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

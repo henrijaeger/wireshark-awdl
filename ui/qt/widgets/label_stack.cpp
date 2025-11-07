@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <ui/qt/widgets/label_stack.h>
 
@@ -13,7 +14,7 @@
 #include <QMouseEvent>
 #include <QStyleOption>
 
-#include <ui/qt/utils/tango_colors.h>
+#include <ui/qt/utils/color_utils.h>
 
 /* Temporary message timeouts */
 const int temporary_interval_ = 1000;
@@ -31,7 +32,7 @@ LabelStack::LabelStack(QWidget *parent) :
 #endif
     fillLabel();
 
-    connect(&temporary_timer_, SIGNAL(timeout()), this, SLOT(updateTemporaryStatus()));
+    connect(&temporary_timer_, &QTimer::timeout, this, &LabelStack::updateTemporaryStatus);
 }
 
 void LabelStack::setTemporaryContext(const int ctx) {
@@ -54,13 +55,11 @@ void LabelStack::fillLabel() {
     si = labels_.first();
 
     if (si.ctx == temporary_ctx_) {
-        style_sheet += QString(
+        style_sheet += QStringLiteral(
                     "  border-radius: 0.25em;"
-                    "  color: #%1;"
-                    "  background-color: #%2;"
+                    "  background-color: %2;"
                     )
-                .arg(ws_css_warn_text, 6, 16, QChar('0'))
-                .arg(ws_css_warn_background, 6, 16, QChar('0'));
+                .arg(ColorUtils::warningBackground().name());
     }
 
     style_sheet += "}";
@@ -69,9 +68,10 @@ void LabelStack::fillLabel() {
         setStyleSheet(style_sheet);
     }
     setText(si.text);
+    setToolTip(si.tooltip);
 }
 
-void LabelStack::pushText(const QString &text, int ctx) {
+void LabelStack::pushText(const QString &text, int ctx, const QString &tooltip) {
     popText(ctx);
 
     if (ctx == temporary_ctx_) {
@@ -84,6 +84,7 @@ void LabelStack::pushText(const QString &text, int ctx) {
 
     StackItem si;
     si.text = text;
+    si.tooltip = tooltip;
     si.ctx = ctx;
     labels_.prepend(si);
     fillLabel();
@@ -103,8 +104,13 @@ void LabelStack::setShrinkable(bool shrinkable)
 
 void LabelStack::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton)
-        emit mousePressedAt(QPoint(event->globalPos()), Qt::LeftButton);
+    if (event->button() == Qt::LeftButton) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0 ,0)
+        emit mousePressedAt(event->globalPosition().toPoint(), Qt::LeftButton);
+#else
+        emit mousePressedAt(event->globalPos(), Qt::LeftButton);
+#endif
+    }
 }
 
 void LabelStack::mouseReleaseEvent(QMouseEvent *)
@@ -172,16 +178,3 @@ void LabelStack::updateTemporaryStatus() {
         }
     }
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

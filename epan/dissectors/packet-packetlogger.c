@@ -24,29 +24,41 @@ void proto_reg_handoff_packetlogger(void);
 #define PSNAME "PKTLOG"
 #define PFNAME "packetlogger"
 
-static int proto_packetlogger = -1;
+static int proto_packetlogger;
 
-static int hf_type = -1;
-static int hf_info = -1;
-static int hf_syslog = -1;
-static int hf_syslog_process_id = -1;
-static int hf_syslog_message_type = -1;
-static int hf_syslog_process = -1;
-static int hf_syslog_sender = -1;
-static int hf_syslog_subsystem = -1;
-static int hf_syslog_category = -1;
-static int hf_syslog_message = -1;
+static int hf_type;
+static int hf_info;
+static int hf_syslog;
+static int hf_syslog_process_id;
+static int hf_syslog_message_type;
+static int hf_syslog_process;
+static int hf_syslog_sender;
+static int hf_syslog_subsystem;
+static int hf_syslog_category;
+static int hf_syslog_message;
 
-static gint ett_packetlogger = -1;
-static gint ett_syslog = -1;
+static int ett_packetlogger;
+static int ett_syslog;
 
 static dissector_handle_t packetlogger_handle;
 static dissector_table_t hci_h1_table;
 
+/*
+ * Packet types.
+ *
+ * NOTE: if you add a new type here, you MUST also add it to
+ * wiretap/packetlogger.c's list of packet types *AND* to the
+ * packet types it checks for in its "does this look like a
+ * Packetlogger file?" heuristics; otherwise, some valid
+ * Packetlogger files will not be recognize as Packetlogger
+ * files.
+ */
 #define PKT_HCI_COMMAND     0x00
 #define PKT_HCI_EVENT       0x01
 #define PKT_SENT_ACL_DATA   0x02
 #define PKT_RECV_ACL_DATA   0x03
+#define PKT_SENT_SCO_DATA   0x08
+#define PKT_RECV_SCO_DATA   0x09
 #define PKT_LMP_SEND        0x0A
 #define PKT_LMP_RECV        0x0B
 #define PKT_SYSLOG          0xF7
@@ -63,6 +75,8 @@ static const value_string type_vals[] = {
   { PKT_HCI_EVENT,       "HCI Event"       },
   { PKT_SENT_ACL_DATA,   "Sent ACL Data"   },
   { PKT_RECV_ACL_DATA,   "Recv ACL Data"   },
+  { PKT_SENT_SCO_DATA,   "Sent SCO Data"   },
+  { PKT_RECV_SCO_DATA,   "Recv SCO Data"   },
   { PKT_LMP_SEND,        "Sent LMP Data"   },
   { PKT_LMP_RECV,        "Recv LMP Data"   },
   { PKT_SYSLOG,          "Syslog"          },
@@ -76,12 +90,32 @@ static const value_string type_vals[] = {
   { 0, NULL }
 };
 
+static void dissect_bthci_h1(tvbuff_t *tvb, packet_info *pinfo,
+        proto_tree *tree, proto_item *ti, uint8_t pl_type, uint32_t channel,
+        bool sent, bluetooth_data_t *bluetooth_data)
+{
+  struct bthci_phdr  bthci;
+
+  bthci.channel = channel;
+  bthci.sent = sent;
+  pinfo->p2p_dir = sent ? P2P_DIR_SENT : P2P_DIR_RECV;
+
+  bluetooth_data->previous_protocol_data.bthci = &bthci;
+  proto_item_set_len (ti, 1);
+
+  col_add_str (pinfo->cinfo, COL_INFO, val_to_str(pl_type, type_vals, "Unknown 0x%02x"));
+  if (!dissector_try_uint_with_data (hci_h1_table, bthci.channel,
+          tvb, pinfo, tree, true, bluetooth_data)) {
+    call_data_dissector (tvb, pinfo, tree);
+  }
+}
+
 static void dissect_syslog(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
 {
     proto_item *ti = NULL;
     proto_tree *sub_tree = NULL;
-    gint        offset = 0;
-    gint        len;
+    int         offset = 0;
+    int         len;
 
     ti = proto_tree_add_item (tree, hf_syslog, tvb, 0, -1, ENC_NA);
     sub_tree = proto_item_add_subtree (ti, ett_syslog);
@@ -93,24 +127,24 @@ static void dissect_syslog(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
     offset += 1;
 
     len = tvb_strsize (tvb, offset);
-    proto_tree_add_item (sub_tree, hf_syslog_process, tvb, offset, len, ENC_ASCII|ENC_NA);
+    proto_tree_add_item (sub_tree, hf_syslog_process, tvb, offset, len, ENC_ASCII);
     offset += len;
 
     len = tvb_strsize (tvb, offset);
-    proto_tree_add_item (sub_tree, hf_syslog_sender, tvb, offset, len, ENC_ASCII|ENC_NA);
+    proto_tree_add_item (sub_tree, hf_syslog_sender, tvb, offset, len, ENC_ASCII);
     offset += len;
 
     len = tvb_strsize (tvb, offset);
-    proto_tree_add_item (sub_tree, hf_syslog_subsystem, tvb, offset, len, ENC_ASCII|ENC_NA);
+    proto_tree_add_item (sub_tree, hf_syslog_subsystem, tvb, offset, len, ENC_ASCII);
     offset += len;
 
     len = tvb_strsize (tvb, offset);
-    proto_tree_add_item (sub_tree, hf_syslog_category, tvb, offset, len, ENC_ASCII|ENC_NA);
+    proto_tree_add_item (sub_tree, hf_syslog_category, tvb, offset, len, ENC_ASCII);
     offset += len;
 
     len = tvb_strsize (tvb, offset);
-    proto_tree_add_item (sub_tree, hf_syslog_message, tvb, offset, len, ENC_ASCII|ENC_NA);
-    col_add_fstr (pinfo->cinfo, COL_INFO, "%s", tvb_format_stringzpad_wsp (wmem_packet_scope(), tvb, offset, len));
+    proto_tree_add_item (sub_tree, hf_syslog_message, tvb, offset, len, ENC_ASCII);
+    col_add_str (pinfo->cinfo, COL_INFO, tvb_format_stringzpad_wsp (pinfo->pool, tvb, offset, len));
 }
 
 static int dissect_packetlogger(tvbuff_t *tvb, packet_info *pinfo,
@@ -119,10 +153,9 @@ static int dissect_packetlogger(tvbuff_t *tvb, packet_info *pinfo,
   proto_tree        *packetlogger_tree = NULL;
   tvbuff_t          *next_tvb;
   proto_item        *ti = NULL;
-  guint8             pl_type;
-  gint               len;
+  uint8_t            pl_type;
+  int                len;
   bluetooth_data_t  *bluetooth_data;
-  struct bthci_phdr  bthci;
 
   bluetooth_data = (bluetooth_data_t *) data;
 
@@ -132,71 +165,55 @@ static int dissect_packetlogger(tvbuff_t *tvb, packet_info *pinfo,
   ti = proto_tree_add_item (tree, proto_packetlogger, tvb, 0, -1, ENC_NA);
   packetlogger_tree = proto_item_add_subtree (ti, ett_packetlogger);
 
-  pl_type = tvb_get_guint8 (tvb, 0);
+  pl_type = tvb_get_uint8 (tvb, 0);
   proto_tree_add_item (packetlogger_tree, hf_type, tvb, 0, 1, ENC_BIG_ENDIAN);
   proto_item_append_text (ti, " %s", val_to_str (pl_type, type_vals, "Unknown 0x%02x"));
 
   len = tvb_reported_length_remaining (tvb, 1);
   next_tvb = tvb_new_subset_remaining (tvb, 1);
 
-  if (pl_type <= PKT_RECV_ACL_DATA) {
-    /* HCI H1 packages */
-    switch (pl_type) {
-    case PKT_HCI_COMMAND:
-      bthci.channel = BTHCI_CHANNEL_COMMAND;
-      bthci.sent = P2P_DIR_SENT;
-      pinfo->p2p_dir = P2P_DIR_SENT;
-      break;
-    case PKT_HCI_EVENT:
-      bthci.channel = BTHCI_CHANNEL_EVENT;
-      bthci.sent = P2P_DIR_RECV;
-      pinfo->p2p_dir = P2P_DIR_RECV;
-      break;
-    case PKT_SENT_ACL_DATA:
-      bthci.channel = BTHCI_CHANNEL_ACL;
-      bthci.sent = P2P_DIR_SENT;
-      pinfo->p2p_dir = P2P_DIR_SENT;
-      break;
-    case PKT_RECV_ACL_DATA:
-      bthci.channel = BTHCI_CHANNEL_ACL;
-      bthci.sent = P2P_DIR_RECV;
-      pinfo->p2p_dir = P2P_DIR_RECV;
-      break;
-    default:
-      bthci.channel = pl_type;
-      bthci.sent = P2P_DIR_UNKNOWN;
-      pinfo->p2p_dir = P2P_DIR_UNKNOWN;
-      break;
-    }
-    bluetooth_data->previous_protocol_data.bthci = &bthci;
-    proto_item_set_len (ti, 1);
-
-    col_add_fstr (pinfo->cinfo, COL_INFO, "%s", val_to_str(pl_type, type_vals, "Unknown 0x%02x"));
-    if (!dissector_try_uint_new(hci_h1_table, bthci.channel,
-            next_tvb, pinfo, tree, TRUE, bluetooth_data)) {
-      call_data_dissector(next_tvb, pinfo, tree);
-    }
-  } else {
-    /* PacketLogger data */
-    switch (pl_type) {
-    case PKT_SYSLOG:
-      dissect_syslog (next_tvb, pinfo, packetlogger_tree);
-      break;
-    case PKT_KERNEL:
-    case PKT_KERNEL_DEBUG:
-    case PKT_ERROR:
-    case PKT_POWER:
-    case PKT_NOTE:
-    case PKT_CONFIG:
-    case PKT_NEW_CONTROLLER:
-      proto_tree_add_item (packetlogger_tree, hf_info, next_tvb, 0, len, ENC_ASCII|ENC_NA);
-      col_add_fstr (pinfo->cinfo, COL_INFO, "%s", tvb_format_stringzpad_wsp (wmem_packet_scope(), next_tvb, 0, len));
-      break;
-    default:
-      call_data_dissector(next_tvb, pinfo, tree);
-      col_add_fstr (pinfo->cinfo, COL_INFO, "Unknown 0x%02x", pl_type);
-      break;
-    }
+  switch (pl_type) {
+  case PKT_HCI_COMMAND:
+    dissect_bthci_h1 (next_tvb, pinfo, tree, ti, pl_type, BTHCI_CHANNEL_COMMAND,
+            true, bluetooth_data);
+    break;
+  case PKT_HCI_EVENT:
+    dissect_bthci_h1 (next_tvb, pinfo, tree, ti, pl_type, BTHCI_CHANNEL_EVENT,
+            false, bluetooth_data);
+    break;
+  case PKT_SENT_ACL_DATA:
+    dissect_bthci_h1 (next_tvb, pinfo, tree, ti, pl_type, BTHCI_CHANNEL_ACL,
+            true, bluetooth_data);
+    break;
+  case PKT_RECV_ACL_DATA:
+    dissect_bthci_h1 (next_tvb, pinfo, tree, ti, pl_type, BTHCI_CHANNEL_ACL,
+            false, bluetooth_data);
+    break;
+  case PKT_SENT_SCO_DATA:
+    dissect_bthci_h1 (next_tvb, pinfo, tree, ti, pl_type, BTHCI_CHANNEL_SCO,
+            true, bluetooth_data);
+    break;
+  case PKT_RECV_SCO_DATA:
+    dissect_bthci_h1 (next_tvb, pinfo, tree, ti, pl_type, BTHCI_CHANNEL_SCO,
+            false, bluetooth_data);
+    break;
+  case PKT_SYSLOG:
+    dissect_syslog (next_tvb, pinfo, packetlogger_tree);
+    break;
+  case PKT_KERNEL:
+  case PKT_KERNEL_DEBUG:
+  case PKT_ERROR:
+  case PKT_POWER:
+  case PKT_NOTE:
+  case PKT_CONFIG:
+  case PKT_NEW_CONTROLLER:
+    proto_tree_add_item (packetlogger_tree, hf_info, next_tvb, 0, len, ENC_ASCII);
+    col_add_str (pinfo->cinfo, COL_INFO, tvb_format_stringzpad_wsp (pinfo->pool, next_tvb, 0, len));
+    break;
+  default:
+    call_data_dissector(next_tvb, pinfo, tree);
+    col_add_str (pinfo->cinfo, COL_INFO, val_to_str(pl_type, type_vals, "Unknown 0x%02x"));
+    break;
   }
 
   return tvb_captured_length(tvb);
@@ -227,7 +244,7 @@ void proto_register_packetlogger (void)
       { "Message", "packetlogger.syslog.message", FT_STRINGZ, BASE_NONE, NULL, 0, NULL, HFILL } }
   };
 
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_packetlogger,
     &ett_syslog
   };

@@ -1,4 +1,5 @@
-/* tabnav_tree_widget.h
+/** @file
+ *
  * Tree widget with saner tab navigation properties.
  *
  * Copyright 2017 Peter Wu <peter@lekensteyn.nl>
@@ -7,7 +8,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef TABNAV_TREE_WIDGET_H
 #define TABNAV_TREE_WIDGET_H
@@ -21,21 +23,8 @@
  */
 class TabnavTreeWidget : public QTreeWidget
 {
-    Q_OBJECT
 public:
     TabnavTreeWidget(QWidget *parent = 0);
     QModelIndex moveCursor(CursorAction cursorAction, Qt::KeyboardModifiers modifiers);
 };
 #endif // TABNAV_TREE_WIDGET_H
-
-/* * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

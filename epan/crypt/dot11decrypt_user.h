@@ -1,4 +1,4 @@
-/* dot11decrypt_user.h
+/** @file
  *
  * Copyright (c) 2006 CACE Technologies, Davis (California)
  * All rights reserved.
@@ -12,7 +12,8 @@
 /******************************************************************************/
 /*	File includes																					*/
 /*																										*/
-#include "dot11decrypt_interop.h"
+#include <glib.h>
+
 #include "ws_symbol_export.h"
 
 /*																										*/
@@ -29,8 +30,15 @@
 #define	DOT11DECRYPT_KEY_TYPE_WPA_PWD	3
 #define	DOT11DECRYPT_KEY_TYPE_WPA_PSK	4
 #define	DOT11DECRYPT_KEY_TYPE_WPA_PMK	5
-#define	DOT11DECRYPT_KEY_TYPE_TKIP		6
-#define	DOT11DECRYPT_KEY_TYPE_CCMP		7
+#define	DOT11DECRYPT_KEY_TYPE_TK		6
+#define DOT11DECRYPT_KEY_TYPE_MSK		7
+
+#define	DOT11DECRYPT_KEY_TYPE_TKIP		100
+#define	DOT11DECRYPT_KEY_TYPE_CCMP		101
+#define	DOT11DECRYPT_KEY_TYPE_CCMP_256	102
+#define	DOT11DECRYPT_KEY_TYPE_GCMP		103
+#define	DOT11DECRYPT_KEY_TYPE_GCMP_256	104
+#define	DOT11DECRYPT_KEY_TYPE_UNKNOWN   -1
 
 /*	Decryption algorithms fields size definition (bytes)								*/
 #define	DOT11DECRYPT_WEP_KEY_MINLEN		1
@@ -42,7 +50,11 @@
 #define	DOT11DECRYPT_WPA_PASSPHRASE_MAX_LEN	63	/* null-terminated string, the actual length of the storage is 64	*/
 #define	DOT11DECRYPT_WPA_SSID_MIN_LEN			0
 #define	DOT11DECRYPT_WPA_SSID_MAX_LEN			32
-#define	DOT11DECRYPT_WPA_PSK_LEN				32
+#define	DOT11DECRYPT_WPA_PMK_MAX_LEN				48
+#define	DOT11DECRYPT_WPA_PWD_PSK_LEN				32
+#define	DOT11DECRYPT_TK_MAX_LEN					32
+#define DOT11DECRYPT_MSK_MIN_LEN				64
+#define DOT11DECRYPT_MSK_MAX_LEN				128
 /*																										*/
 /*																										*/
 /******************************************************************************/
@@ -60,10 +72,10 @@
  * Struct to store info about a specific decryption key.
  */
 typedef struct {
-    GString    *key;
+    GByteArray *key;
     GByteArray *ssid;
-    guint       bits;
-    guint       type;
+    unsigned    bits;
+    unsigned    type;
 } decryption_key_t;
 
 /**
@@ -78,7 +90,7 @@ typedef struct _DOT11DECRYPT_KEY_ITEM {
 	 * You can use constants DOT11DECRYPT_KEY_TYPE_xxx to indicate the
 	 * key type.
 	 */
-	UINT8 KeyType;
+	uint8_t KeyType;
 
 	/**
 	 * Key data.
@@ -107,7 +119,7 @@ typedef struct _DOT11DECRYPT_KEY_ITEM {
 			 * (10 hex-digits, 5 bytes) for WEP-40 or 104 bits
 			 * (26 hex-digits, 13 bytes) for WEP-104.
 			 */
-			UCHAR WepKey[DOT11DECRYPT_WEP_KEY_MAXLEN];
+			unsigned char WepKey[DOT11DECRYPT_WEP_KEY_MAXLEN];
 			/**
 			 * The length of the WEP key. Acceptable range
 			 * is [DOT11DECRYPT_WEP_KEY_MINLEN;DOT11DECRYPT_WEP_KEY_MAXLEN].
@@ -123,24 +135,46 @@ typedef struct _DOT11DECRYPT_KEY_ITEM {
 		 * calculated.
 		 */
 		struct DOT11DECRYPT_KEY_ITEMDATA_WPA {
-			UCHAR Psk[DOT11DECRYPT_WPA_PSK_LEN];
-			UCHAR Ptk[DOT11DECRYPT_WPA_PTK_LEN];
+			unsigned char Psk[DOT11DECRYPT_WPA_PMK_MAX_LEN];
+			unsigned char Ptk[DOT11DECRYPT_WPA_PTK_MAX_LEN];
+			uint8_t PskLen;
+			uint8_t PtkLen;
+			uint8_t Akm;
+			uint8_t Cipher;
 		} Wpa;
+
 	} KeyData;
+
+	struct DOT11DECRYPT_KEY_ITEMDATA_TK {
+		uint8_t Tk[DOT11DECRYPT_TK_MAX_LEN];
+		uint8_t Len;
+	} Tk;
+
+	struct DOT11DECRYPT_KEY_ITEMDATA_MSK {
+		uint8_t Msk[DOT11DECRYPT_MSK_MAX_LEN];
+		uint8_t Len;
+	} Msk;
 
         struct DOT11DECRYPT_KEY_ITEMDATA_PWD {
                 /**
-                 * The string (null-terminated) value of
-                 * the passphrase.
+                 * The octet string value of the passphrase.
+                 * (The passphrase is technically an opaque octet string, even
+                 * if recommended to be ASCII printable. It could (unlikely)
+                 * even include internal NULs, which a Wireshark user could
+                 * enter into the UAT percent-encoded.)
                  */
-                CHAR Passphrase[DOT11DECRYPT_WPA_PASSPHRASE_MAX_LEN+1];
+                char Passphrase[DOT11DECRYPT_WPA_PASSPHRASE_MAX_LEN];
+                /**
+                 *The length of the passphrase
+                 */
+                size_t PassphraseLen;
                 /**
                  * The value of the SSID (up to
                  * DOT11DECRYPT_WPA_SSID_MAX_LEN octets).
                  * @note
                  * A zero-length SSID indicates broadcast.
                  */
-                CHAR Ssid[DOT11DECRYPT_WPA_SSID_MAX_LEN];
+                char Ssid[DOT11DECRYPT_WPA_SSID_MAX_LEN];
                 /**
                  *The length of the SSID
                  */
@@ -183,24 +217,15 @@ typedef struct _DOT11DECRYPT_KEYS_COLLECTION {
  * - DOT11DECRYPT_KEY_TYPE_WPA_PWD (WPA + plaintext password + "wildcard" SSID or
  * WPA + plaintext password + specific SSID)
  * - DOT11DECRYPT_KEY_TYPE_WPA_PSK (WPA + 256-bit raw key)
+ * @param error [OUT] If not NULL, on failure will be set to point to an
+ *   error message explaining why parsing failed. Must be freed.
  * @return A pointer to a freshly-g_malloc()ed decryption_key_t struct on
  *   success, or NULL on failure.
- * @see get_key_string(), free_key_string()
+ * @see free_key_string()
  */
 WS_DLL_PUBLIC
 decryption_key_t*
-parse_key_string(gchar* key_string, guint8 key_type);
-
-/**
- * Returns a newly allocated string representing the given decryption_key_t
- * struct.
- * @param dk [IN] Pointer to the key to be converted
- * @return A g_malloc()ed string representation of the key
- * @see parse_key_string()
- */
-WS_DLL_PUBLIC
-gchar*
-get_key_string(decryption_key_t* dk);
+parse_key_string(char* key_string, uint8_t key_type, char **error);
 
 /**
  * Releases memory associated with a given decryption_key_t struct.

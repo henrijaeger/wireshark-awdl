@@ -1,10 +1,11 @@
-/* additional_toolbar.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef UI_QT_ADDITIONAL_TOOLBAR_H_
 #define UI_QT_ADDITIONAL_TOOLBAR_H_
@@ -49,7 +50,11 @@ private:
 
 private slots:
     void onButtonClicked();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    void onCheckBoxChecked(Qt::CheckState);
+#else
     void onCheckBoxChecked(int);
+#endif
     void sendTextToCallback();
     void onSelectionInWidgetChanged(int idx);
 
@@ -73,16 +78,3 @@ private:
 };
 
 #endif /* UI_QT_ADDITIONAL_TOOLBAR_H_ */
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

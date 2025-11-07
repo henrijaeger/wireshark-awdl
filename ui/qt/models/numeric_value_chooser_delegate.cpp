@@ -5,7 +5,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -53,18 +54,19 @@ QWidget* NumericValueChooserDelegate::createEditor(QWidget *parent, const QStyle
     editor->setMaximum(_max);
     editor->setWrapping(true);
 
-    connect(editor, SIGNAL(valueChanged(int)), this, SLOT(onValueChanged(int)));
+    connect(editor, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
+            &NumericValueChooserDelegate::onValueChanged);
 
     return editor;
 }
 
 void NumericValueChooserDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const
 {
-    if ( index.isValid() )
+    if (index.isValid())
     {
         bool canConvert = false;
         int val = index.data().toInt(&canConvert);
-        if ( ! canConvert )
+        if (! canConvert)
             val = _default;
 
         QSpinBox * spinBox = qobject_cast<QSpinBox *>(editor);
@@ -76,7 +78,7 @@ void NumericValueChooserDelegate::setEditorData(QWidget *editor, const QModelInd
 
 void NumericValueChooserDelegate::setModelData(QWidget *editor, QAbstractItemModel * model, const QModelIndex &index) const
 {
-    if ( index.isValid() ) {
+    if (index.isValid()) {
         QSpinBox * spinBox = qobject_cast<QSpinBox *>(editor);
         model->setData(index, _default == spinBox->value() ? _defReturn : QVariant::fromValue(spinBox->value()));
     } else {
@@ -89,16 +91,3 @@ void NumericValueChooserDelegate::onValueChanged(int)
     QSpinBox * spinBox = qobject_cast<QSpinBox *>(sender());
     emit commitData(spinBox);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

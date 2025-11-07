@@ -14,7 +14,8 @@
 #include <epan/packet.h>
 #include <epan/prefs.h>
 
-#include "packet-ssl.h"
+#include "packet-tls.h"
+#include "packet-tcp.h"
 
 void proto_reg_handoff_opa_fe(void);
 void proto_register_opa_fe(void);
@@ -22,30 +23,36 @@ void proto_register_opa_fe(void);
 #define OPA_FE_TCP_RANGE "3245-3248" /* Not IANA registered */
 #define OPA_FE_SSL_RANGE "3249-3252"
 
+#define OPA_FE_HEADER_LEN 24
+
 /* Wireshark ID */
-static gint proto_opa_fe = -1;
+static int proto_opa_fe;
 
 /* Variables to hold expansion values between packets */
-static gint ett_fe = -1;
+static int ett_fe;
 
 /* SnC Fields */
-static gint hf_opa_fe_magicnumber = -1;
-static gint hf_opa_fe_length_oob = -1;
-static gint hf_opa_fe_headerversion = -1;
-static gint hf_opa_fe_length = -1;
-static gint hf_opa_fe_Reserved64 = -1;
+static int hf_opa_fe_magicnumber;
+static int hf_opa_fe_length_oob;
+static int hf_opa_fe_headerversion;
+static int hf_opa_fe_length;
+static int hf_opa_fe_Reserved64;
 
 /* Dissector Declarations */
 static dissector_handle_t opa_fe_handle;
 static dissector_handle_t opa_mad_handle;
 
-static range_t *global_fe_ssl_range = NULL;
+static range_t *global_fe_ssl_range;
 
-static range_t *fe_ssl_range = NULL;
+static range_t *fe_ssl_range;
 
-static int dissect_opa_fe(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+static unsigned get_opa_fe_message_len(packet_info *pinfo _U_, tvbuff_t *tvb, int offset, void *data _U_)
 {
-    gint offset = 0;    /* Current Offset */
+    return tvb_get_ntohl(tvb, offset + 4);
+}
+static int dissect_opa_fe_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
+    int offset = 0;    /* Current Offset */
     proto_item *FE_item;
     proto_tree *FE_tree;
 
@@ -54,7 +61,7 @@ static int dissect_opa_fe(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
 
     tree = proto_tree_get_root(tree);
 
-    FE_item = proto_tree_add_item(tree, proto_opa_fe, tvb, offset, 24, ENC_NA);
+    FE_item = proto_tree_add_item(tree, proto_opa_fe, tvb, offset, OPA_FE_HEADER_LEN, ENC_NA);
     FE_tree = proto_item_add_subtree(FE_item, ett_fe);
 
     proto_tree_add_item(FE_tree, hf_opa_fe_magicnumber, tvb, offset, 4, ENC_BIG_ENDIAN);
@@ -73,12 +80,20 @@ static int dissect_opa_fe(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
     return tvb_captured_length(tvb);
 }
 
-static void range_delete_fe_ssl_callback(guint32 port, gpointer ptr _U_)
+static int dissect_opa_fe(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
+    tcp_dissect_pdus(tvb, pinfo, tree, true, OPA_FE_HEADER_LEN,
+        get_opa_fe_message_len, dissect_opa_fe_message, data);
+
+    return tvb_reported_length(tvb);
+}
+
+static void range_delete_fe_ssl_callback(uint32_t port, void *ptr _U_)
 {
     ssl_dissector_delete(port, opa_fe_handle);
 }
 
-static void range_add_fe_ssl_callback(guint32 port, gpointer ptr _U_)
+static void range_add_fe_ssl_callback(uint32_t port, void *ptr _U_)
 {
     ssl_dissector_add(port, opa_fe_handle);
 }
@@ -110,13 +125,11 @@ void proto_register_opa_fe(void)
         }
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_fe
     };
 
-    proto_opa_fe = proto_register_protocol(
-        "Intel Omni-Path FE Header - Omni-Path Fabric Excutive Header",
-        "OPA FE", "opa.fe");
+    proto_opa_fe = proto_register_protocol("Intel Omni-Path FE Header - Omni-Path Fabric Executive Header", "OPA FE", "opa.fe");
     opa_fe_handle = register_dissector("opa.fe", dissect_opa_fe, proto_opa_fe);
 
     proto_register_field_array(proto_opa_fe, hf, array_length(hf));
@@ -124,20 +137,21 @@ void proto_register_opa_fe(void)
 
     opa_fe_module = prefs_register_protocol(proto_opa_fe, proto_reg_handoff_opa_fe);
     range_convert_str(wmem_epan_scope(), &global_fe_ssl_range, OPA_FE_SSL_RANGE, 65535);
-    prefs_register_range_preference(opa_fe_module, "ssl.port", "SSL/TLS Ports",
+    prefs_register_range_preference(opa_fe_module, "tls.port", "SSL/TLS Ports",
         "SSL/TLS Ports range",
         &global_fe_ssl_range, 65535);
+    prefs_register_obsolete_preference(opa_fe_module, "ssl.port");
 }
 
 void proto_reg_handoff_opa_fe(void)
 {
-    static gboolean initialized = FALSE;
+    static bool initialized = false;
 
     if (!initialized)
     {
         opa_mad_handle = find_dissector("opa.mad");
         dissector_add_uint_range_with_preference("tcp.port", OPA_FE_TCP_RANGE, opa_fe_handle);
-        initialized = TRUE;
+        initialized = true;
     }
 
     range_foreach(fe_ssl_range, range_delete_fe_ssl_callback, NULL);

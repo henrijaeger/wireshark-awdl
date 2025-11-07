@@ -1,17 +1,16 @@
-/* tcp_stream_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef TCP_STREAM_DIALOG_H
 #define TCP_STREAM_DIALOG_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include <file.h>
 
@@ -19,6 +18,7 @@
 
 #include "ui/tap-tcp-stream.h"
 
+#include "capture_file.h"
 #include "geometry_state_dialog.h"
 
 #include <ui/qt/widgets/qcustomplot.h>
@@ -28,21 +28,32 @@
 
 namespace Ui {
 class TCPStreamDialog;
+class QCPErrorBarsNotSelectable;
 }
+
+class QCPErrorBarsNotSelectable : public QCPErrorBars
+{
+    Q_OBJECT
+
+public:
+    explicit QCPErrorBarsNotSelectable(QCPAxis *keyAxis, QCPAxis *valueAxis);
+    virtual ~QCPErrorBarsNotSelectable();
+
+    virtual double selectTest(const QPointF &pos, bool onlySelectable, QVariant *details = 0) const Q_DECL_OVERRIDE;
+};
 
 class TCPStreamDialog : public GeometryStateDialog
 {
     Q_OBJECT
 
 public:
-    explicit TCPStreamDialog(QWidget *parent = 0, capture_file *cf = NULL, tcp_graph_type graph_type = GRAPH_TSEQ_TCPTRACE);
+    explicit TCPStreamDialog(QWidget *parent, const CaptureFile &cf, tcp_graph_type graph_type = GRAPH_TSEQ_TCPTRACE);
     ~TCPStreamDialog();
 
 signals:
     void goToPacket(int packet_num);
 
 public slots:
-    void setCaptureFile(capture_file *cf);
     void updateGraph();
 
 protected:
@@ -53,29 +64,34 @@ protected:
 
 private:
     Ui::TCPStreamDialog *ui;
-    capture_file *cap_file_;
-    QMap<double, struct segment *> time_stamp_map_;
+    const CaptureFile &cap_file_;
+    bool file_closed_;
+    bool tapping_;
+    QMultiMap<double, struct segment *> time_stamp_map_;
     double ts_offset_;
     bool ts_origin_conn_;
     QMap<double, struct segment *> sequence_num_map_;
-    double seq_offset_;
+    uint32_t seq_offset_;
     bool seq_origin_zero_;
     struct tcp_graph graph_;
-    QCPPlotTitle *title_;
+    QCPTextElement *title_;
     QString stream_desc_;
     QCPGraph *base_graph_; // Clickable packets
     QCPGraph *tput_graph_;
     QCPGraph *goodput_graph_;
     QCPGraph *seg_graph_;
+    QCPErrorBars *seg_eb_;
     QCPGraph *ack_graph_;
     QCPGraph *sack_graph_;
+    QCPErrorBars *sack_eb_;
     QCPGraph *sack2_graph_;
+    QCPErrorBars *sack2_eb_;
     QCPGraph *rwin_graph_;
     QCPGraph *dup_ack_graph_;
     QCPGraph *zero_win_graph_;
     QCPItemTracer *tracer_;
     QRectF axis_bounds_;
-    guint32 packet_num_;
+    uint32_t packet_num_;
     QTransform y_axis_xfrm_;
     bool mouse_drags_;
     QRubberBand *rubber_band_;
@@ -125,10 +141,12 @@ private:
     QRectF getZoomRanges(QRect zoom_rect);
 
 private slots:
+    void showContextMenu(const QPoint &pos);
     void graphClicked(QMouseEvent *event);
     void axisClicked(QCPAxis *axis, QCPAxis::SelectablePart part, QMouseEvent *event);
     void mouseMoved(QMouseEvent *event);
     void mouseReleased(QMouseEvent *event);
+    void captureEvent(CaptureEvent e);
     void transformYRange(const QCPRange &y_range1);
     void on_buttonBox_accepted();
     void on_graphTypeComboBox_currentIndexChanged(int index);
@@ -142,6 +160,7 @@ private slots:
     void on_dragRadioButton_toggled(bool checked);
     void on_zoomRadioButton_toggled(bool checked);
     void on_bySeqNumberCheckBox_stateChanged(int state);
+    void on_samplingMethodComboBox_currentIndexChanged(int index);
     void on_showSegLengthCheckBox_stateChanged(int state);
     void on_showThroughputCheckBox_stateChanged(int state);
     void on_showGoodputCheckBox_stateChanged(int state);
@@ -179,15 +198,3 @@ private slots:
 
 #endif // TCP_STREAM_DIALOG_H
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

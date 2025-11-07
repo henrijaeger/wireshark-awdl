@@ -1,4 +1,4 @@
-/* rtp_media.h
+/** @file
  *
  * RTP decoding routines for Wireshark.
  * Copied from ui/gtk/rtp_player.c
@@ -9,10 +9,14 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1999 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __RTP_MEDIA_H__
 #define __RTP_MEDIA_H__
+
+#include <glib.h>
+#include <wsutil/wmem/wmem_map.h>
 
 /** @file
  *  "RTP Player" dialog box common routines.
@@ -23,22 +27,22 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#include <glib.h>
-
 /****************************************************************************/
 /* INTERFACE */
 /****************************************************************************/
 
-typedef gint16 SAMPLE;
-#define SAMPLE_MAX G_MAXINT16
-#define SAMPLE_MIN G_MININT16
+typedef int16_t SAMPLE;
+#define SAMPLE_MAX INT16_MAX
+#define SAMPLE_MIN INT16_MIN
+#define SAMPLE_NaN SAMPLE_MIN
+#define SAMPLE_BYTES (sizeof(SAMPLE) / sizeof(char))
 
 /* Defines an RTP packet */
 typedef struct _rtp_packet {
-    guint32 frame_num;      /* Qt only */
+    uint32_t frame_num;      /* Qt only */
     struct _rtp_info *info;	/* the RTP dissected info */
     double arrive_offset;	/* arrive offset time since the beginning of the stream as ms in GTK UI and s in Qt UI */
-    guint8* payload_data;
+    uint8_t* payload_data;
 } rtp_packet_t;
 
 /** Create a new hash table.
@@ -63,16 +67,3 @@ size_t decode_rtp_packet(rtp_packet_t *rp, SAMPLE **out_buff, GHashTable *decode
 #endif /* __cplusplus */
 
 #endif /* __RTP_MEDIA_H__ */
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

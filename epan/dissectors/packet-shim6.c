@@ -6,16 +6,17 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
+ * RFC 5533
+ *
  * SHIM6 support added by Matthijs Mekking <matthijs@NLnetLabs.nl>
  */
 
 #include "config.h"
 
-#include <glib.h>
-
 #include <epan/packet.h>
 #include <epan/expert.h>
-#include <epan/proto_data.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 #include <epan/in_cksum.h>
 #include <epan/ipproto.h>
 
@@ -24,11 +25,13 @@
 void proto_register_shim6(void);
 void proto_reg_handoff_shim6(void);
 
+static dissector_handle_t shim6_handle;
+
 /* SHIM6 header */
 struct ip6_shim {
-    guint8  ip6s_nxt; /* next header */
-    guint8  ip6s_len; /* header extension length */
-    guint8  ip6s_p;   /* P field and first 7 bits of remainder */
+    uint8_t ip6s_nxt; /* next header */
+    uint8_t ip6s_len; /* header extension length */
+    uint8_t ip6s_p;   /* P field and first 7 bits of remainder */
     /* followed by shim6 specific data*/
 };
 
@@ -79,73 +82,62 @@ struct ip6_shim {
 #define SHIM6_REAP_EXPLORING    0x01    /* 0 000 0001 */
 #define SHIM6_REAP_INBOUNDOK    0x02    /* 0 000 0010 */
 
-static int proto_shim6                     = -1;
+static int proto_shim6;
 
-static int hf_shim6_nxt            = -1;
-static int hf_shim6_len            = -1;
-static int hf_shim6_len_oct        = -1;
-static int hf_shim6_p              = -1;
+static int hf_shim6_nxt;
+static int hf_shim6_len;
+static int hf_shim6_len_oct;
+static int hf_shim6_p;
 /* context tag is 49 bits, cannot be used for filter yet */
-static int hf_shim6_ct             = -1;
-static int hf_shim6_type           = -1;
-static int hf_shim6_proto          = -1;
-static int hf_shim6_checksum       = -1;
-static int hf_shim6_checksum_status= -1;
-static int hf_shim6_inonce         = -1; /* also for request nonce */
-static int hf_shim6_rnonce         = -1;
-static int hf_shim6_reserved       = -1;
-static int hf_shim6_reserved2      = -1;
-static int hf_shim6_precvd         = -1;
-static int hf_shim6_psent          = -1;
-static int hf_shim6_psrc           = -1;
-static int hf_shim6_pdst           = -1;
-static int hf_shim6_pnonce         = -1;
-static int hf_shim6_pdata          = -1;
-static int hf_shim6_sulid          = -1;
-static int hf_shim6_rulid          = -1;
-static int hf_shim6_reap           = -1;
-static int hf_shim6_opt_type       = -1;
-static int hf_shim6_opt_len        = -1;
-static int hf_shim6_opt_total_len  = -1;
-static int hf_shim6_opt_loc_verif_methods = -1;
-static int hf_shim6_opt_critical   = -1;
-static int hf_shim6_opt_loclist    = -1;
-static int hf_shim6_locator        = -1;
-static int hf_shim6_loc_flag       = -1;
-static int hf_shim6_loc_prio       = -1;
-static int hf_shim6_loc_weight     = -1;
-static int hf_shim6_opt_locnum     = -1;
-static int hf_shim6_opt_elemlen    = -1;
-static int hf_shim6_opt_fii        = -1;
-static int hf_shim6_validator      = -1;
-static int hf_shim6_cga_parameter_data_structure = -1;
-static int hf_shim6_cga_signature  = -1;
-static int hf_shim6_padding        = -1;
+static int hf_shim6_ct;
+static int hf_shim6_type;
+static int hf_shim6_proto;
+static int hf_shim6_checksum;
+static int hf_shim6_checksum_status;
+static int hf_shim6_inonce; /* also for request nonce */
+static int hf_shim6_rnonce;
+static int hf_shim6_reserved;
+static int hf_shim6_reserved2;
+static int hf_shim6_precvd;
+static int hf_shim6_psent;
+static int hf_shim6_psrc;
+static int hf_shim6_pdst;
+static int hf_shim6_pnonce;
+static int hf_shim6_pdata;
+static int hf_shim6_sulid;
+static int hf_shim6_rulid;
+static int hf_shim6_reap;
+static int hf_shim6_opt_type;
+static int hf_shim6_opt_len;
+static int hf_shim6_opt_total_len;
+static int hf_shim6_opt_loc_verif_methods;
+static int hf_shim6_opt_critical;
+static int hf_shim6_opt_loclist;
+static int hf_shim6_locator;
+static int hf_shim6_loc_flag;
+static int hf_shim6_loc_prio;
+static int hf_shim6_loc_weight;
+static int hf_shim6_opt_locnum;
+static int hf_shim6_opt_elemlen;
+static int hf_shim6_opt_fii;
+static int hf_shim6_validator;
+static int hf_shim6_cga_parameter_data_structure;
+static int hf_shim6_cga_signature;
+static int hf_shim6_padding;
 
-static gint ett_shim6_proto        = -1;
-static gint ett_shim6_option       = -1;
-static gint ett_shim6_locators     = -1;
-static gint ett_shim6_verif_methods = -1;
-static gint ett_shim6_loc_pref     = -1;
-static gint ett_shim6_probes_sent  = -1;
-static gint ett_shim6_probe_sent   = -1;
-static gint ett_shim6_probes_rcvd  = -1;
-static gint ett_shim6_probe_rcvd   = -1;
-static gint ett_shim6_cksum        = -1;
+static int ett_shim6_proto;
+static int ett_shim6_option;
+static int ett_shim6_locators;
+static int ett_shim6_verif_methods;
+static int ett_shim6_loc_pref;
+static int ett_shim6_probes_sent;
+static int ett_shim6_probe_sent;
+static int ett_shim6_probes_rcvd;
+static int ett_shim6_probe_rcvd;
+static int ett_shim6_cksum;
 
-static expert_field ei_shim6_opt_elemlen_invalid = EI_INIT;
-static expert_field ei_shim6_checksum_bad = EI_INIT;
-
-
-
-static guint16
-shim6_checksum(tvbuff_t *tvb, int offset, int len)
-{
-    vec_t cksum_vec[1];
-
-    SET_CKSUM_VEC_TVB(cksum_vec[0], tvb, offset, len);
-    return in_cksum(&cksum_vec[0], 1);
-}
+static expert_field ei_shim6_opt_elemlen_invalid;
+static expert_field ei_shim6_checksum_bad;
 
 static const value_string shimoptvals[] = {
     { SHIM6_OPT_RESPVAL,  "Responder Validator Option" },
@@ -185,16 +177,16 @@ static const value_string shim6_protocol[] = {
 
 
 static void
-dissect_shim6_opt_loclist(proto_tree * opt_tree, tvbuff_t * tvb, gint *offset)
+dissect_shim6_opt_loclist(proto_tree * opt_tree, tvbuff_t * tvb, int *offset)
 {
     proto_tree *subtree;
-    guint       count;
-    guint       optlen;
+    unsigned    count;
+    unsigned    optlen;
 
     proto_tree_add_item(opt_tree, hf_shim6_opt_loclist, tvb, *offset, 4, ENC_BIG_ENDIAN);
     *offset += 4;
 
-    optlen = tvb_get_guint8(tvb, *offset);
+    optlen = tvb_get_uint8(tvb, *offset);
     proto_tree_add_item(opt_tree, hf_shim6_opt_locnum, tvb, *offset, 1, ENC_BIG_ENDIAN);
     *offset += 1;
 
@@ -223,18 +215,18 @@ dissect_shim6_opt_loclist(proto_tree * opt_tree, tvbuff_t * tvb, gint *offset)
 }
 
 static void
-dissect_shim6_opt_loc_pref(proto_tree * opt_tree, tvbuff_t * tvb, gint *offset, gint len, packet_info *pinfo)
+dissect_shim6_opt_loc_pref(proto_tree * opt_tree, tvbuff_t * tvb, int *offset, int len, packet_info *pinfo)
 {
     proto_tree *subtree;
 
-    gint        optlen;
-    gint        count;
+    int         optlen;
+    int         count;
 
 
     proto_tree_add_item(opt_tree, hf_shim6_opt_loclist, tvb, *offset, 4, ENC_BIG_ENDIAN);
     *offset += 4;
 
-    optlen = tvb_get_guint8(tvb, *offset);
+    optlen = tvb_get_uint8(tvb, *offset);
     proto_tree_add_item(opt_tree, hf_shim6_opt_elemlen, tvb, *offset, 1, ENC_BIG_ENDIAN);
 
     if (optlen < 1 || optlen > 3) {
@@ -277,7 +269,7 @@ static int
 dissect_shimopts(tvbuff_t *tvb, int offset, proto_tree *tree, packet_info *pinfo)
 {
     int          len, total_len;
-    gint         padding;
+    int          padding;
     proto_tree  *opt_tree;
     proto_item  *ti;
 
@@ -301,7 +293,7 @@ dissect_shimopts(tvbuff_t *tvb, int offset, proto_tree *tree, packet_info *pinfo
         /* Content Length */
         proto_tree_add_item(opt_tree, hf_shim6_opt_len, tvb, offset + 2, 2, ENC_BIG_ENDIAN);
         ti = proto_tree_add_uint(opt_tree, hf_shim6_opt_total_len, tvb, offset+2, 2, total_len);
-        PROTO_ITEM_SET_GENERATED(ti);
+        proto_item_set_generated(ti);
 
         /* Option Type Specific */
         switch (tvb_get_ntohs(tvb, offset) >> 1)
@@ -352,19 +344,19 @@ dissect_shimopts(tvbuff_t *tvb, int offset, proto_tree *tree, packet_info *pinfo
 }
 
 static void
-dissect_shim6_ct(proto_tree * shim_tree, gint hf_item, tvbuff_t * tvb, gint offset, const guchar * label)
+dissect_shim6_ct(packet_info *pinfo, proto_tree * shim_tree, int hf_item, tvbuff_t * tvb, int offset, const unsigned char * label)
 {
-    guint8  tmp[6];
-    guchar *ct_str;
+    uint8_t tmp[6];
+    unsigned char *ct_str;
 
-    tmp[0] = tvb_get_guint8(tvb, offset++);
-    tmp[1] = tvb_get_guint8(tvb, offset++);
-    tmp[2] = tvb_get_guint8(tvb, offset++);
-    tmp[3] = tvb_get_guint8(tvb, offset++);
-    tmp[4] = tvb_get_guint8(tvb, offset++);
-    tmp[5] = tvb_get_guint8(tvb, offset++);
+    tmp[0] = tvb_get_uint8(tvb, offset++);
+    tmp[1] = tvb_get_uint8(tvb, offset++);
+    tmp[2] = tvb_get_uint8(tvb, offset++);
+    tmp[3] = tvb_get_uint8(tvb, offset++);
+    tmp[4] = tvb_get_uint8(tvb, offset++);
+    tmp[5] = tvb_get_uint8(tvb, offset++);
 
-    ct_str = wmem_strdup_printf(wmem_packet_scope(),
+    ct_str = wmem_strdup_printf(pinfo->pool,
                                 "%s: %02X %02X %02X %02X %02X %02X", label,
                                 tmp[0] & SHIM6_BITMASK_CT, tmp[1], tmp[2],
                                 tmp[3], tmp[4], tmp[5]
@@ -373,15 +365,15 @@ dissect_shim6_ct(proto_tree * shim_tree, gint hf_item, tvbuff_t * tvb, gint offs
 }
 
 static void
-dissect_shim6_probes(proto_tree * shim_tree, tvbuff_t * tvb, gint offset,
-                     const guchar * label, guint nbr_probe,
-                     gboolean probes_rcvd)
+dissect_shim6_probes(proto_tree * shim_tree, tvbuff_t * tvb, int offset,
+                     const unsigned char * label, unsigned nbr_probe,
+                     bool probes_rcvd)
 {
     proto_tree *probes_tree;
     proto_tree *probe_tree;
-    gint        ett_probes;
-    gint        ett_probe;
-    guint       count;
+    int         ett_probes;
+    int         ett_probe;
+    unsigned    count;
 
     if (probes_rcvd) {
         ett_probes = ett_shim6_probes_rcvd;
@@ -411,17 +403,17 @@ dissect_shim6_probes(proto_tree * shim_tree, tvbuff_t * tvb, gint offset,
 
 /* Dissect SHIM6 data: control messages */
 static int
-dissect_shimctrl(tvbuff_t *tvb, gint offset, guint type, proto_tree *shim_tree)
+dissect_shimctrl(packet_info *pinfo, tvbuff_t *tvb, int offset, unsigned type, proto_tree *shim_tree)
 {
-    guint8       tmp;
-    const gchar *sta;
-    guint        probes_sent;
-    guint        probes_rcvd;
+    uint8_t      tmp;
+    const char *sta;
+    unsigned     probes_sent;
+    unsigned     probes_rcvd;
 
     switch (type)
     {
     case SHIM6_TYPE_I1:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
         offset += 6;
         proto_tree_add_item(shim_tree, hf_shim6_inonce, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
@@ -435,7 +427,7 @@ dissect_shimctrl(tvbuff_t *tvb, gint offset, guint type, proto_tree *shim_tree)
         offset += 4;
         break;
     case SHIM6_TYPE_I2:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
         offset += 6;
         proto_tree_add_item(shim_tree, hf_shim6_inonce, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
@@ -445,19 +437,19 @@ dissect_shimctrl(tvbuff_t *tvb, gint offset, guint type, proto_tree *shim_tree)
         offset += 4;
         break;
     case SHIM6_TYPE_R2:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Responder Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Responder Context Tag");
         offset += 6;
         proto_tree_add_item(shim_tree, hf_shim6_inonce, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
         break;
     case SHIM6_TYPE_R1BIS:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Packet Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Packet Context Tag");
         offset += 6;
         proto_tree_add_item(shim_tree, hf_shim6_rnonce, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
         break;
     case SHIM6_TYPE_I2BIS:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
         offset += 6;
         proto_tree_add_item(shim_tree, hf_shim6_inonce, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
@@ -465,27 +457,27 @@ dissect_shimctrl(tvbuff_t *tvb, gint offset, guint type, proto_tree *shim_tree)
         offset += 4;
         proto_tree_add_item(shim_tree, hf_shim6_reserved2, tvb, offset, 6, ENC_NA);
         offset += 6;
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Initiator Context Tag");
         offset += 6;
         break;
     case SHIM6_TYPE_UPD_REQ:
     case SHIM6_TYPE_UPD_ACK:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Receiver Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Receiver Context Tag");
         offset += 6;
         proto_tree_add_item(shim_tree, hf_shim6_rnonce, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
         break;
     case SHIM6_TYPE_KEEPALIVE:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Receiver Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Receiver Context Tag");
         offset += 6;
         proto_tree_add_item(shim_tree, hf_shim6_reserved2, tvb, offset, 4, ENC_NA);
         offset += 4;
         break;
     case SHIM6_TYPE_PROBE:
-        dissect_shim6_ct(shim_tree, hf_shim6_ct, tvb, offset, "Receiver Context Tag");
+        dissect_shim6_ct(pinfo, shim_tree, hf_shim6_ct, tvb, offset, "Receiver Context Tag");
         offset += 6;
 
-        tmp = tvb_get_guint8(tvb, offset);
+        tmp = tvb_get_uint8(tvb, offset);
         probes_sent = tmp & SHIM6_BITMASK_PSENT;
         probes_rcvd = (tmp & SHIM6_BITMASK_PRECVD) >> 4;
         proto_tree_add_item(shim_tree, hf_shim6_psent, tvb,
@@ -494,10 +486,10 @@ dissect_shimctrl(tvbuff_t *tvb, gint offset, guint type, proto_tree *shim_tree)
                             offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        sta = val_to_str_const((tvb_get_guint8(tvb, offset) & SHIM6_BITMASK_STA) >> 6,
+        sta = val_to_str_const((tvb_get_uint8(tvb, offset) & SHIM6_BITMASK_STA) >> 6,
                                shimreapstates, "Unknown REAP State");
         proto_tree_add_uint_format_value(shim_tree, hf_shim6_reap, tvb,
-                                         offset, 1, (tvb_get_guint8(tvb, offset) & SHIM6_BITMASK_STA) >> 6,
+                                         offset, 1, (tvb_get_uint8(tvb, offset) & SHIM6_BITMASK_STA) >> 6,
                                          "%s", sta);
 
         proto_tree_add_item(shim_tree, hf_shim6_reserved2, tvb, offset, 3, ENC_NA);
@@ -506,14 +498,14 @@ dissect_shimctrl(tvbuff_t *tvb, gint offset, guint type, proto_tree *shim_tree)
         /* Probes Sent */
         if (probes_sent) {
             dissect_shim6_probes(shim_tree, tvb, offset, "Probes Sent",
-                                 probes_sent, FALSE);
+                                 probes_sent, false);
             offset += 40 * probes_sent;
         }
 
         /* Probes Received */
         if (probes_rcvd) {
             dissect_shim6_probes(shim_tree, tvb, offset, "Probes Received",
-                                 probes_rcvd, TRUE);
+                                 probes_rcvd, true);
             offset += 40 * probes_rcvd;
         }
         break;
@@ -545,10 +537,10 @@ dissect_shim6(tvbuff_t *tvb, packet_info * pinfo, proto_tree *tree, void* data)
     int              offset = 0, len;
     proto_tree      *shim_tree, *root_tree;
     proto_item      *ti, *ti_len;
-    guint8           tmp[5];
+    uint8_t          tmp[5];
     tvbuff_t        *next_tvb;
 
-    tvb_memcpy(tvb, (guint8 *)&shim, offset, sizeof(shim));
+    tvb_memcpy(tvb, (uint8_t *)&shim, offset, sizeof(shim));
     len = (shim.ip6s_len + 1) << 3;
 
 
@@ -576,8 +568,8 @@ dissect_shim6(tvbuff_t *tvb, packet_info * pinfo, proto_tree *tree, void* data)
     ti_len = proto_tree_add_item(shim_tree, hf_shim6_len, tvb, offset, 1, ENC_BIG_ENDIAN);
     ti = proto_tree_add_uint(shim_tree, hf_shim6_len_oct, tvb, offset, 1, len);
     proto_item_append_text(ti, " bytes");
-    PROTO_ITEM_SET_GENERATED(ti);
-    PROTO_ITEM_SET_HIDDEN(ti);
+    proto_item_set_generated(ti);
+    proto_item_set_hidden(ti);
     proto_item_append_text(ti_len, " (%d bytes)", len);
     offset += 1;
 
@@ -585,11 +577,11 @@ dissect_shim6(tvbuff_t *tvb, packet_info * pinfo, proto_tree *tree, void* data)
     proto_tree_add_item(shim_tree, hf_shim6_p, tvb, offset, 1, ENC_BIG_ENDIAN);
 
     if (shim.ip6s_p & SHIM6_BITMASK_P) {
-        tmp[0] = tvb_get_guint8(tvb, offset+1);
-        tmp[1] = tvb_get_guint8(tvb, offset+2);
-        tmp[2] = tvb_get_guint8(tvb, offset+3);
-        tmp[3] = tvb_get_guint8(tvb, offset+4);
-        tmp[4] = tvb_get_guint8(tvb, offset+5);
+        tmp[0] = tvb_get_uint8(tvb, offset+1);
+        tmp[1] = tvb_get_uint8(tvb, offset+2);
+        tmp[2] = tvb_get_uint8(tvb, offset+3);
+        tmp[3] = tvb_get_uint8(tvb, offset+4);
+        tmp[4] = tvb_get_uint8(tvb, offset+5);
 
         /* Payload Extension Header */
         proto_tree_add_none_format(shim_tree, hf_shim6_ct, tvb,
@@ -598,7 +590,7 @@ dissect_shim6(tvbuff_t *tvb, packet_info * pinfo, proto_tree *tree, void* data)
                                    shim.ip6s_p & SHIM6_BITMASK_CT, tmp[0], tmp[1], tmp[2], tmp[3], tmp[4]);
     } else {
         /* Control Message */
-        guint16 csum;
+        uint16_t csum;
         int advance;
 
         /* Message Type */
@@ -609,7 +601,7 @@ dissect_shim6(tvbuff_t *tvb, packet_info * pinfo, proto_tree *tree, void* data)
         offset++;
 
         /* Checksum */
-        csum = shim6_checksum(tvb, 0, len);
+        csum = ip_checksum_tvb(tvb, 0, len);
         proto_tree_add_checksum(shim_tree, tvb, offset, hf_shim6_checksum, hf_shim6_checksum_status, &ei_shim6_checksum_bad, pinfo, csum,
                                 ENC_BIG_ENDIAN, PROTO_CHECKSUM_VERIFY|PROTO_CHECKSUM_IN_CKSUM);
         if (csum != 0)
@@ -617,7 +609,7 @@ dissect_shim6(tvbuff_t *tvb, packet_info * pinfo, proto_tree *tree, void* data)
         offset += 2;
 
         /* Type specific data */
-        advance = dissect_shimctrl(tvb, offset, shim.ip6s_p & SHIM6_BITMASK_TYPE, shim_tree);
+        advance = dissect_shimctrl(pinfo, tvb, offset, shim.ip6s_p & SHIM6_BITMASK_TYPE, shim_tree);
         offset += advance;
 
         /* Options */
@@ -753,7 +745,7 @@ proto_register_shim6(void)
         { &hf_shim6_opt_critical,
             { "Option Critical Bit", "shim6.opt.critical",
                 FT_BOOLEAN, 8, TFS(&tfs_yes_no), SHIM6_BITMASK_CRITICAL,
-                "TRUE: option is critical, FALSE: option is not critical", HFILL }
+                "true: option is critical, false: option is not critical", HFILL }
         },
         { &hf_shim6_opt_len,
             { "Content Length", "shim6.opt.len",
@@ -832,7 +824,7 @@ proto_register_shim6(void)
         }
     };
 
-    static gint *ett_shim6[] = {
+    static int *ett_shim6[] = {
         &ett_shim6_proto,
         &ett_shim6_option,
         &ett_shim6_locators,
@@ -863,14 +855,12 @@ proto_register_shim6(void)
     proto_register_subtree_array(ett_shim6, array_length(ett_shim6));
     expert_shim6 = expert_register_protocol(proto_shim6);
     expert_register_field_array(expert_shim6, ei_shim6, array_length(ei_shim6));
+    shim6_handle = register_dissector("shim6", dissect_shim6, proto_shim6);
 }
 
 void
 proto_reg_handoff_shim6(void)
 {
-    dissector_handle_t shim6_handle;
-
-    shim6_handle = create_dissector_handle(dissect_shim6, proto_shim6);
     dissector_add_uint("ip.proto", IP_PROTO_SHIM6, shim6_handle);
 }
 

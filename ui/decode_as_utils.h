@@ -1,4 +1,4 @@
-/* decode_as_utils.h
+/** @file
  *
  * "Decode As" UI utility routines.
  *
@@ -28,23 +28,10 @@ extern "C" {
 */
 #define DECODE_AS_ARG_TEMPLATE "<layer_type>==<selector>,<decode_as_protocol>"
 
-gboolean decode_as_command_option(const gchar *cl_param);
+bool decode_as_command_option(const char *cl_param);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
 #endif /* __DECODE_AS_UTILS_H__ */
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

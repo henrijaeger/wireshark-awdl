@@ -24,13 +24,14 @@
  * two files opened at the same time for the same Lua script (due to reload
  * and other such events), the script can't just have one file state.
  */
+#include "config.h"
 
 #include "wslua_file_common.h"
 
 
 /* create and set the wtap->priv private data for the file instance */
 void create_wth_priv(lua_State* L, wtap *wth) {
-    file_priv_t *priv = (file_priv_t*)g_malloc(sizeof(file_priv_t));
+    file_priv_t *priv = g_new(file_priv_t, 1);
 
     if (wth->priv != NULL) {
         g_free(priv);
@@ -107,7 +108,7 @@ void remove_wth_priv(lua_State* L, wtap *wth) {
 
 /* create and set the wtap_dumper->priv private data for the file instance */
 void create_wdh_priv(lua_State* L, wtap_dumper *wdh) {
-    file_priv_t *priv = (file_priv_t*)g_malloc(sizeof(file_priv_t));
+    file_priv_t *priv = g_new(file_priv_t, 1);
 
     if (wdh->priv != NULL) {
         g_free(priv);
@@ -182,7 +183,7 @@ void remove_wdh_priv(lua_State* L, wtap_dumper *wdh) {
 
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

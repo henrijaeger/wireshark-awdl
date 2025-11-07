@@ -26,19 +26,17 @@ add_lex_files(LEX_FILES PLUGIN_FILES
 )
 
 set_source_files_properties(
-	${PLUGIN_FILES}
+	${DISSECTOR_SRC}
 	PROPERTIES
 	COMPILE_FLAGS "${WERROR_COMMON_FLAGS}"
 )
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 register_plugin_files(plugin.c
 	plugin
 	${DISSECTOR_SRC}
 )
 
-add_plugin_library(wimaxasncp epan)
+add_wireshark_plugin_library(wimaxasncp epan)
 
 target_link_libraries(wimaxasncp epan)
 
@@ -49,7 +47,8 @@ CHECKAPI(
 	NAME
 	  wimaxasncp
 	SWITCHES
-	  -g abort -g termoutput -build
+	  --group dissectors-prohibited
+	  --group dissectors-restricted
 	SOURCES
 	  ${DISSECTOR_SRC}
 	  ${DISSECTOR_HEADERS}
@@ -58,7 +57,7 @@ CHECKAPI(
 )
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

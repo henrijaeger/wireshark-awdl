@@ -1,4 +1,4 @@
-/* logcat_text.h
+/** @file
  *
  * Copyright 2014, Michal Orynicz for Tieto Corporation
  *
@@ -22,28 +22,12 @@
 #define THREADTIME_STRING "(\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}) +(\\d+) +(\\d+) ([IVDWEF]) (.*?): (.*)"
 #define LONG_STRING "\\[ (\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}) +(\\d+): *(\\d+) ([IVDWEF])/(.+) ]\\R(.*)"
 
-wtap_open_return_val logcat_text_open(wtap *wth, int *err, gchar **err_info);
-
-gboolean logcat_text_brief_dump_open(wtap_dumper *wdh, int *err);
-gboolean logcat_text_process_dump_open(wtap_dumper *wdh, int *err);
-gboolean logcat_text_tag_dump_open(wtap_dumper *wdh, int *err);
-gboolean logcat_text_time_dump_open(wtap_dumper *wdh, int *err);
-gboolean logcat_text_thread_dump_open(wtap_dumper *wdh, int *err);
-gboolean logcat_text_threadtime_dump_open(wtap_dumper *wdh, int *err);
-gboolean logcat_text_long_dump_open(wtap_dumper *wdh, int *err);
-
-int      logcat_text_brief_dump_can_write_encap(int encap);
-int      logcat_text_tag_dump_can_write_encap(int encap);
-int      logcat_text_process_dump_can_write_encap(int encap);
-int      logcat_text_thread_dump_can_write_encap(int encap);
-int      logcat_text_time_dump_can_write_encap(int encap);
-int      logcat_text_threadtime_dump_can_write_encap(int encap);
-int      logcat_text_long_dump_can_write_encap(int encap);
+wtap_open_return_val logcat_text_open(wtap *wth, int *err, char **err_info);
 
 #endif
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

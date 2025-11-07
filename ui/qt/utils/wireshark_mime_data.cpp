@@ -4,40 +4,25 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <utils/wireshark_mime_data.h>
 
-DisplayFilterMimeData::DisplayFilterMimeData(QString description, QString field, QString filter) :
-QMimeData(),
-description_(description),
-filter_(filter),
-field_(field)
-{}
+const QString WiresharkMimeData::ColoringRulesMimeType = "application/vnd.wireshark.coloringrules";
+const QString WiresharkMimeData::ColumnListMimeType = "application/vnd.wireshark.columnlist";
+const QString WiresharkMimeData::FilterListMimeType = "application/vnd.wireshark.filterlist";
+const QString WiresharkMimeData::DisplayFilterMimeType = "application/vnd.wireshark.displayfilter";
 
-QString DisplayFilterMimeData::description() const
+void WiresharkMimeData::allowPlainText()
 {
-    return description_;
-}
-
-QString DisplayFilterMimeData::filter() const
-{
-    return filter_;
-}
-
-QString DisplayFilterMimeData::field() const
-{
-    return field_;
-}
-
-QString DisplayFilterMimeData::labelText() const
-{
-    return QString("%1\n%2").arg(description_, filter_);
+    setText(labelText());
 }
 
 ToolbarEntryMimeData::ToolbarEntryMimeData(QString element, int pos) :
-    QMimeData(),
+    WiresharkMimeData(),
     element_(element),
+    filter_(QString()),
     pos_(pos)
 {}
 
@@ -48,7 +33,7 @@ QString ToolbarEntryMimeData::element() const
 
 QString ToolbarEntryMimeData::labelText() const
 {
-    return QString("%1").arg(element_);
+    return QStringLiteral("%1").arg(element_);
 }
 
 int ToolbarEntryMimeData::position() const
@@ -56,16 +41,12 @@ int ToolbarEntryMimeData::position() const
     return pos_;
 }
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+void ToolbarEntryMimeData::setFilter(QString text)
+{
+    filter_ = text;
+}
 
+QString ToolbarEntryMimeData::filter() const
+{
+    return filter_;
+}

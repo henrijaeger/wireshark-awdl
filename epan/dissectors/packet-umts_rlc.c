@@ -11,11 +11,15 @@
 
 #include "config.h"
 
-#include <epan/packet.h>
 #include <epan/conversation.h>
+#include <epan/exceptions.h>
 #include <epan/expert.h>
+#include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/proto_data.h>
+#include <epan/show_exception.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 
 #include <wiretap/wtap.h>
 
@@ -36,114 +40,117 @@
 void proto_register_rlc(void);
 void proto_reg_handoff_rlc(void);
 
-int proto_umts_rlc = -1;
+int proto_umts_rlc;
 
 extern int proto_fp;
 
 /* Preference to perform reassembly */
-static gboolean global_rlc_perform_reassemby = TRUE;
+static bool global_rlc_perform_reassemby = true;
 
 /* Preference to expect RLC headers without payloads */
-static gboolean global_rlc_headers_expected = FALSE;
+static bool global_rlc_headers_expected;
 
 /* Preference to expect ONLY ciphered data */
-static gboolean global_rlc_ciphered = FALSE;
+static bool global_rlc_ciphered;
 
 /* Preference to ignore ciphering state reported from RRC */
 /* This is important for captures with deciphered traffic AND the original security RRC messages present*/
-static gboolean global_ignore_rrc_ciphering_indication = FALSE;
+static bool global_ignore_rrc_ciphering_indication;
 
 /* Preference to try deciphering */
-static gboolean global_rlc_try_decipher = FALSE;
+static bool global_rlc_try_decipher;
 
 #ifdef HAVE_UMTS_KASUMI
-static const char *global_rlc_kasumi_key = NULL;
+static const char *global_rlc_kasumi_key;
 #endif
 
 /* LI size preference */
 #define RLC_LI_UPPERLAYER 255 /* LI-size comes from rlc_info struct rather than preference */
-static gint global_rlc_li_size = RLC_LI_UPPERLAYER;
+static int global_rlc_li_size = RLC_LI_UPPERLAYER;
 
 static const enum_val_t li_size_enumvals[] = {
-    {"7 bits", "7 bits", RLC_LI_7BITS},
-    {"15 bits", "15 bits", RLC_LI_15BITS},
-    {"Let upper layers decide", "Let upper layers decide", RLC_LI_UPPERLAYER},
+    {"7", "7 bits", RLC_LI_7BITS},
+    {"15", "15 bits", RLC_LI_15BITS},
+    {"per_upper_layer", "Let upper layers decide", RLC_LI_UPPERLAYER},
     {NULL, NULL, -1}};
 
 /* fields */
-static int hf_rlc_seq = -1;
-static int hf_rlc_ext = -1;
-static int hf_rlc_pad = -1;
-static int hf_rlc_frags = -1;
-static int hf_rlc_frag = -1;
-static int hf_rlc_duplicate_of = -1;
-static int hf_rlc_reassembled_in = -1;
-static int hf_rlc_he = -1;
-static int hf_rlc_dc = -1;
-static int hf_rlc_p = -1;
-static int hf_rlc_li = -1;
-static int hf_rlc_li_value = -1;
-static int hf_rlc_li_ext = -1;
-static int hf_rlc_li_data = -1;
-static int hf_rlc_data = -1;
-static int hf_rlc_ciphered_data = -1;
-static int hf_rlc_ciphered_lis_data = -1;
-static int hf_rlc_ctrl_type = -1;
-static int hf_rlc_r1 = -1;
-static int hf_rlc_rsn = -1;
-static int hf_rlc_hfni = -1;
-static int hf_rlc_sufi = -1;
-static int hf_rlc_sufi_type = -1;
-static int hf_rlc_sufi_lsn = -1;
-static int hf_rlc_sufi_wsn = -1;
-static int hf_rlc_sufi_sn = -1;
-static int hf_rlc_sufi_l = -1;
-static int hf_rlc_sufi_fsn = -1;
-static int hf_rlc_sufi_len = -1;
-static int hf_rlc_sufi_bitmap = -1;
-static int hf_rlc_sufi_cw = -1;
-static int hf_rlc_sufi_n = -1;
-static int hf_rlc_sufi_sn_ack = -1;
-static int hf_rlc_sufi_sn_mrw = -1;
-static int hf_rlc_sufi_poll_sn = -1;
-static int hf_rlc_header_only = -1;
-static int hf_rlc_channel = -1;
-static int hf_rlc_channel_rbid = -1;
-static int hf_rlc_channel_dir = -1;
-static int hf_rlc_channel_ueid = -1;
-static int hf_rlc_sequence_number = -1;
-static int hf_rlc_length = -1;
-static int hf_rlc_bitmap_string = -1;
+static int hf_rlc_seq;
+static int hf_rlc_ext;
+static int hf_rlc_pad;
+static int hf_rlc_reassembled_data;
+static int hf_rlc_frags;
+static int hf_rlc_frag;
+static int hf_rlc_duplicate_of;
+static int hf_rlc_reassembled_in;
+static int hf_rlc_he;
+static int hf_rlc_dc;
+static int hf_rlc_p;
+static int hf_rlc_li;
+static int hf_rlc_li_value;
+static int hf_rlc_li_ext;
+static int hf_rlc_li_data;
+static int hf_rlc_data;
+static int hf_rlc_ciphered_data;
+static int hf_rlc_ciphered_lis_data;
+static int hf_rlc_ctrl_type;
+static int hf_rlc_r1;
+static int hf_rlc_rsn;
+static int hf_rlc_hfni;
+static int hf_rlc_sufi;
+static int hf_rlc_sufi_type;
+static int hf_rlc_sufi_lsn;
+static int hf_rlc_sufi_wsn;
+static int hf_rlc_sufi_sn;
+static int hf_rlc_sufi_l;
+static int hf_rlc_sufi_fsn;
+static int hf_rlc_sufi_len;
+static int hf_rlc_sufi_bitmap;
+static int hf_rlc_sufi_cw;
+static int hf_rlc_sufi_n;
+static int hf_rlc_sufi_sn_ack;
+static int hf_rlc_sufi_sn_mrw;
+static int hf_rlc_sufi_poll_sn;
+static int hf_rlc_header_only;
+static int hf_rlc_channel;
+static int hf_rlc_channel_rbid;
+static int hf_rlc_channel_dir;
+static int hf_rlc_channel_ueid;
+static int hf_rlc_sequence_number;
+static int hf_rlc_length;
+static int hf_rlc_bitmap_string;
 
 /* subtrees */
-static int ett_rlc = -1;
-static int ett_rlc_frag = -1;
-static int ett_rlc_fragments = -1;
-static int ett_rlc_sdu = -1;
-static int ett_rlc_sufi = -1;
-static int ett_rlc_bitmap = -1;
-static int ett_rlc_rlist = -1;
-static int ett_rlc_channel = -1;
+static int ett_rlc;
+static int ett_rlc_frag;
+static int ett_rlc_fragments;
+static int ett_rlc_sdu;
+static int ett_rlc_sufi;
+static int ett_rlc_bitmap;
+static int ett_rlc_rlist;
+static int ett_rlc_channel;
 
-static expert_field ei_rlc_li_reserved = EI_INIT;
-static expert_field ei_rlc_he = EI_INIT;
-static expert_field ei_rlc_li_incorrect_mal = EI_INIT;
-static expert_field ei_rlc_sufi_cw = EI_INIT;
-static expert_field ei_rlc_kasumi_implementation_missing = EI_INIT;
-static expert_field ei_rlc_reassembly_unknown_error = EI_INIT;
-static expert_field ei_rlc_reassembly_lingering_endpoint = EI_INIT;
-static expert_field ei_rlc_sufi_len = EI_INIT;
-static expert_field ei_rlc_reassembly_fail_unfinished_sequence = EI_INIT;
-static expert_field ei_rlc_reassembly_fail_flag_set = EI_INIT;
-static expert_field ei_rlc_sufi_type = EI_INIT;
-static expert_field ei_rlc_reserved_bits_not_zero = EI_INIT;
-static expert_field ei_rlc_ctrl_type = EI_INIT;
-static expert_field ei_rlc_li_incorrect_warn = EI_INIT;
-static expert_field ei_rlc_li_too_many = EI_INIT;
-static expert_field ei_rlc_header_only = EI_INIT;
-static expert_field ei_rlc_ciphered_data = EI_INIT;
-static expert_field ei_rlc_no_per_frame_data = EI_INIT;
-static expert_field ei_rlc_incomplete_sequence = EI_INIT;
+static expert_field ei_rlc_li_reserved;
+static expert_field ei_rlc_he;
+static expert_field ei_rlc_li_incorrect_mal;
+static expert_field ei_rlc_sufi_cw;
+static expert_field ei_rlc_kasumi_implementation_missing;
+static expert_field ei_rlc_reassembly_unknown_error;
+static expert_field ei_rlc_reassembly_lingering_endpoint;
+static expert_field ei_rlc_sufi_len;
+static expert_field ei_rlc_reassembly_fail_unfinished_sequence;
+static expert_field ei_rlc_reassembly_fail_flag_set;
+static expert_field ei_rlc_sufi_type;
+static expert_field ei_rlc_reserved_bits_not_zero;
+static expert_field ei_rlc_ctrl_type;
+static expert_field ei_rlc_li_incorrect_warn;
+static expert_field ei_rlc_li_too_many;
+static expert_field ei_rlc_header_only;
+static expert_field ei_rlc_ciphered_data;
+static expert_field ei_rlc_no_per_frame_data;
+static expert_field ei_rlc_incomplete_sequence;
+static expert_field ei_rlc_unknown_udp_framing_tag;
+static expert_field ei_rlc_missing_udp_framing_tag;
 
 static dissector_handle_t ip_handle;
 static dissector_handle_t rrc_handle;
@@ -223,34 +230,34 @@ static const value_string rlc_sufi_vals[] = {
 };
 
 /* reassembly related data */
-static GHashTable *fragment_table    = NULL; /* table of not yet assembled fragments */
-static GHashTable *endpoints = NULL; /* List of SDU-endpoints */
-static GHashTable *reassembled_table = NULL; /* maps fragment -> complete sdu */
-static GHashTable *sequence_table    = NULL; /* channel -> seq */
-static GHashTable *duplicate_table = NULL; /* duplicates */
+static GHashTable *fragment_table; /* table of not yet assembled fragments */
+static GHashTable *endpoints; /* List of SDU-endpoints */
+static GHashTable *reassembled_table; /* maps fragment -> complete sdu */
+static GHashTable *sequence_table; /* channel -> seq */
+static GHashTable *duplicate_table; /* duplicates */
 
 /* identify an RLC channel, using one of two options:
  *  - via Radio Bearer ID and unique UE ID
  *  - via Radio Bearer ID and (VPI/VCI/CID) + Link ID
  */
 struct rlc_channel {
-    guint32          ueid;
-    guint16          vpi;
-    guint16          vci;
-    guint8           cid;
-    guint16          link;  /* link number */
-    guint8           rbid;  /* radio bearer ID */
-    guint8           dir;   /* direction */
+    uint32_t         ueid;
+    uint16_t         vpi;
+    uint16_t         vci;
+    uint8_t          cid;
+    uint16_t         link;  /* link number */
+    uint8_t          rbid;  /* radio bearer ID */
+    uint8_t          dir;   /* direction */
     enum rlc_li_size li_size;
     enum rlc_mode    mode;
 };
 
 /* used for duplicate detection */
 struct rlc_seq {
-    guint32  frame_num;
+    uint32_t frame_num;
     nstime_t arrival;
-    guint16  seq;
-    guint16  oc;        /* overflow counter, this is not used? */
+    uint16_t seq;
+    uint16_t oc;        /* overflow counter, this is not used? */
 };
 
 struct rlc_seqlist {
@@ -258,26 +265,26 @@ struct rlc_seqlist {
     GList *list;
     /* We will store one seqlist per channel so this is a good place to indicate
      *  whether or not this channel's reassembly has failed or not. */
-    guint fail_packet; /* Equal to packet where fail flag was set or 0 otherwise. */
+    unsigned fail_packet; /* Equal to packet where fail flag was set or 0 otherwise. */
 };
 
 /* fragment representation */
 struct rlc_frag {
-    guint32             frame_num;
+    uint32_t            frame_num;
     struct rlc_channel  ch;
-    guint16             seq;  /* RLC sequence number */
-    guint16             li;   /* LI within current RLC frame */
-    guint16             len;  /* length of fragment data */
-    guint8             *data; /* store fragment data here */
+    uint16_t            seq;  /* RLC sequence number */
+    uint16_t            li;   /* LI within current RLC frame */
+    uint16_t            len;  /* length of fragment data */
+    uint8_t            *data; /* store fragment data here */
 
     struct rlc_frag *next; /* next fragment */
 };
 
 struct rlc_sdu {
     tvbuff_t        *tvb;     /* contains reassembled tvb */
-    guint16          len;     /* total length of reassembled SDU */
-    guint16          fragcnt; /* number of fragments within this SDU */
-    guint8          *data;    /* reassembled data buffer */
+    uint16_t         len;     /* total length of reassembled SDU */
+    uint16_t         fragcnt; /* number of fragments within this SDU */
+    uint8_t         *data;    /* reassembled data buffer */
 
     struct rlc_frag *reassembled_in;
     struct rlc_frag *frags;   /* pointer to list of fragments */
@@ -285,30 +292,30 @@ struct rlc_sdu {
 };
 
 struct rlc_li {
-    guint16     li;   /* original li */
-    guint16     len;  /* length of this data fragment */
-    guint8      ext;  /* extension bit value */
+    uint16_t    li;   /* original li */
+    uint16_t    len;  /* length of this data fragment */
+    uint8_t     ext;  /* extension bit value */
     proto_tree *tree; /* subtree for this LI */
 };
 
 /*** KASUMI related variables and structs ***/
 typedef struct umts_kat_key{    /*Stores 128-bits KASUMI key*/
-    guint64 high;       /*64 MSB*/
-    guint64 low;    /*64 LSB*/
+    uint64_t high;       /*64 MSB*/
+    uint64_t low;    /*64 LSB*/
 }kasumi_key;
 
 
 /*Counter used as input for confidentiality algorithm*/
-static guint32 ps_counter[31][2] ;
-static gboolean counter_init[31][2];
-static guint32 max_counter = 0;
+static uint32_t ps_counter[31][2] ;
+static bool counter_init[31][2];
+static uint32_t max_counter;
 static GTree  * counter_map;    /*Saves the countervalues at first pass through, since they will be update*/
 
 /* hashtable functions for fragment table
  * rlc_channel -> SDU
  */
-static guint
-rlc_channel_hash(gconstpointer key)
+static unsigned
+rlc_channel_hash(const void *key)
 {
     const struct rlc_channel *ch = (const struct rlc_channel *)key;
 
@@ -319,7 +326,7 @@ rlc_channel_hash(gconstpointer key)
 }
 
 static gboolean
-rlc_channel_equal(gconstpointer a, gconstpointer b)
+rlc_channel_equal(const void *a, const void *b)
 {
     const struct rlc_channel *x = (const struct rlc_channel *)a, *y = (const struct rlc_channel *)b;
 
@@ -327,7 +334,7 @@ rlc_channel_equal(gconstpointer a, gconstpointer b)
         return x->ueid == y->ueid &&
             x->rbid == y->rbid &&
             x->mode == y->mode &&
-            x->dir == y->dir ? TRUE : FALSE;
+            x->dir == y->dir ? true : false;
 
     return x->vpi == y->vpi &&
         x->vci == y->vci &&
@@ -335,7 +342,7 @@ rlc_channel_equal(gconstpointer a, gconstpointer b)
         x->rbid == y->rbid &&
         x->mode == y->mode &&
         x->dir == y->dir &&
-        x->link == y->link ? TRUE : FALSE;
+        x->link == y->link ? true : false;
 }
 
 static int
@@ -373,7 +380,7 @@ rlc_channel_create(enum rlc_mode mode, packet_info *pinfo, struct atm_phdr *atm)
     struct rlc_channel *ch;
     int rv;
 
-    ch = (struct rlc_channel *)g_malloc0(sizeof(struct rlc_channel));
+    ch = g_new0(struct rlc_channel, 1);
     rv = rlc_channel_assign(ch, mode, pinfo, atm);
 
     if (rv != 0) {
@@ -386,7 +393,7 @@ rlc_channel_create(enum rlc_mode mode, packet_info *pinfo, struct atm_phdr *atm)
 }
 
 static void
-rlc_channel_delete(gpointer data)
+rlc_channel_delete(void *data)
 {
     g_free(data);
 }
@@ -394,15 +401,15 @@ rlc_channel_delete(gpointer data)
 /* hashtable functions for reassembled table
  * fragment -> SDU
  */
-static guint
-rlc_frag_hash(gconstpointer key)
+static unsigned
+rlc_frag_hash(const void *key)
 {
     const struct rlc_frag *frag = (const struct rlc_frag *)key;
     return (frag->frame_num << 12) | frag->seq;
 }
 
 static gboolean
-rlc_frag_equal(gconstpointer a, gconstpointer b)
+rlc_frag_equal(const void *a, const void *b)
 {
     const struct rlc_frag *x = (const struct rlc_frag *)a;
     const struct rlc_frag *y = (const struct rlc_frag *)b;
@@ -410,7 +417,7 @@ rlc_frag_equal(gconstpointer a, gconstpointer b)
     return rlc_channel_equal(&x->ch, &y->ch) &&
         x->seq == y->seq &&
         x->frame_num == y->frame_num &&
-        x->li == y->li ? TRUE : FALSE;
+        x->li == y->li ? true : false;
 }
 
 static struct rlc_sdu *
@@ -418,23 +425,23 @@ rlc_sdu_create(void)
 {
     struct rlc_sdu *sdu;
 
-    sdu = (struct rlc_sdu *)wmem_alloc0(wmem_file_scope(), sizeof(struct rlc_sdu));
+    sdu = wmem_new0(wmem_file_scope(), struct rlc_sdu);
     return sdu;
 }
 
 static void
-rlc_frag_delete(gpointer data)
+rlc_frag_delete(void *data)
 {
     struct rlc_frag *frag = (struct rlc_frag *)data;
 
     if (frag->data) {
-        g_free(frag->data);
+        wmem_free(wmem_file_scope(), frag->data);
         frag->data = NULL;
     }
 }
 
 static void
-rlc_sdu_frags_delete(gpointer data)
+rlc_sdu_frags_delete(void *data)
 {
     struct rlc_sdu  *sdu = (struct rlc_sdu *)data;
     struct rlc_frag *frag;
@@ -442,7 +449,7 @@ rlc_sdu_frags_delete(gpointer data)
     frag = sdu->frags;
     while (frag) {
         if (frag->data) {
-            g_free(frag->data);
+            wmem_free(wmem_file_scope(), frag->data);
         }
         frag->data = NULL;
         frag = frag->next;
@@ -451,7 +458,7 @@ rlc_sdu_frags_delete(gpointer data)
 
 static int
 rlc_frag_assign(struct rlc_frag *frag, enum rlc_mode mode, packet_info *pinfo,
-        guint16 seq, guint16 li, struct atm_phdr *atm)
+        uint16_t seq, uint16_t li, struct atm_phdr *atm)
 {
     frag->frame_num = pinfo->num;
     frag->seq       = seq;
@@ -465,22 +472,21 @@ rlc_frag_assign(struct rlc_frag *frag, enum rlc_mode mode, packet_info *pinfo,
 
 static int
 rlc_frag_assign_data(struct rlc_frag *frag, tvbuff_t *tvb,
-             guint16 offset, guint16 length)
+             uint16_t offset, uint16_t length)
 {
     frag->len  = length;
-    frag->data = (guint8 *)g_malloc(length);
-    tvb_memcpy(tvb, frag->data, offset, length);
+    frag->data = (uint8_t *)tvb_memdup(wmem_file_scope(), tvb, offset, length);
     return 0;
 }
 
 static struct rlc_frag *
 rlc_frag_create(tvbuff_t *tvb, enum rlc_mode mode, packet_info *pinfo,
-        guint16 offset, guint16 length, guint16 seq, guint16 li,
+        uint16_t offset, uint16_t length, uint16_t seq, uint16_t li,
         struct atm_phdr *atm)
 {
     struct rlc_frag *frag;
 
-    frag = (struct rlc_frag *)wmem_alloc0(wmem_file_scope(), sizeof(struct rlc_frag));
+    frag = wmem_new0(wmem_file_scope(), struct rlc_frag);
     rlc_frag_assign(frag, mode, pinfo, seq, li, atm);
     rlc_frag_assign_data(frag, tvb, offset, length);
 
@@ -488,7 +494,7 @@ rlc_frag_create(tvbuff_t *tvb, enum rlc_mode mode, packet_info *pinfo,
 }
 
 static int
-rlc_cmp_seq(gconstpointer a, gconstpointer b)
+rlc_cmp_seq(const void *a, const void *b)
 {
     const struct rlc_seq *_a = (const struct rlc_seq *)a, *_b = (const struct rlc_seq *)b;
 
@@ -497,7 +503,7 @@ rlc_cmp_seq(gconstpointer a, gconstpointer b)
             0;
 }
 
-static int moduloCompare(guint16 a, guint16 b, guint16 modulus)
+static int moduloCompare(uint16_t a, uint16_t b, uint16_t modulus)
 {
     int ret;
     a = a % modulus;
@@ -514,7 +520,7 @@ static int moduloCompare(guint16 a, guint16 b, guint16 modulus)
     return ret;
 }
 
-static guint16 getChannelSNModulus(struct rlc_channel * ch_lookup)
+static uint16_t getChannelSNModulus(struct rlc_channel * ch_lookup)
 {
     if( RLC_UM == ch_lookup->mode){ /*FIXME: This is a very heuristic way to determine SN bitwidth. */
         return 128;
@@ -528,7 +534,7 @@ static guint16 getChannelSNModulus(struct rlc_channel * ch_lookup)
  * It frees the GList pointed to by the entry.
  */
 static void
-free_sequence_table_entry_data(gpointer data)
+free_sequence_table_entry_data(void *data)
 {
     struct rlc_seqlist *list = (struct rlc_seqlist *)data;
     if (list->list != NULL) {
@@ -538,8 +544,8 @@ free_sequence_table_entry_data(gpointer data)
 }
 
 /** Utility functions used for various comparisons/cleanups in tree **/
-static gint
-rlc_simple_key_cmp(gconstpointer b_ptr, gconstpointer a_ptr, gpointer ignore _U_){
+static int
+rlc_simple_key_cmp(const void *b_ptr, const void *a_ptr, void *ignore _U_){
     if( GPOINTER_TO_INT(a_ptr) > GPOINTER_TO_INT(b_ptr) ){
         return  -1;
     }
@@ -582,16 +588,17 @@ fragment_table_cleanup(void)
 
 /* add the list of fragments for this sdu to 'tree' */
 static void
-tree_add_fragment_list(struct rlc_sdu *sdu, tvbuff_t *tvb, proto_tree *tree)
+tree_add_fragment_list(struct rlc_sdu *sdu, tvbuff_t *tvb,packet_info *pinfo, proto_tree *tree)
 {
     proto_item      *ti;
     proto_tree      *frag_tree;
-    guint16          offset;
+    uint16_t         offset;
     struct rlc_frag *sdufrag;
 
     ti = proto_tree_add_item(tree, hf_rlc_frags, tvb, 0, -1, ENC_NA);
+    proto_item_set_generated(ti);
     frag_tree = proto_item_add_subtree(ti, ett_rlc_fragments);
-    proto_item_append_text(ti, " (%u bytes, %u fragments): ",
+    proto_item_append_text(ti, " (%u bytes, %u fragments) ",
         sdu->len, sdu->fragcnt);
     sdufrag = sdu->frags;
     offset = 0;
@@ -605,9 +612,14 @@ tree_add_fragment_list(struct rlc_sdu *sdu, tvbuff_t *tvb, proto_tree *tree)
                 sdufrag->len, sdufrag->frame_num, "Frame: %u, payload: none (0 bytes) (Seq: %u)",
                 sdufrag->frame_num, sdufrag->seq);
         }
+
+        mark_frame_as_depended_upon(pinfo->fd, sdufrag->frame_num);
+
         offset += sdufrag->len;
         sdufrag = sdufrag->next;
     }
+    ti = proto_tree_add_item(ti, hf_rlc_reassembled_data, tvb, 0, -1, ENC_NA);
+    proto_item_set_generated(ti);
 }
 
 /* add the list of fragments for this sdu to 'tree' */
@@ -616,12 +628,13 @@ tree_add_fragment_list_incomplete(struct rlc_sdu *sdu, tvbuff_t *tvb, proto_tree
 {
     proto_item      *ti;
     proto_tree      *frag_tree;
-    guint16          offset;
+    uint16_t         offset;
     struct rlc_frag *sdufrag;
 
     ti = proto_tree_add_item(tree, hf_rlc_frags, tvb, 0, 0, ENC_NA);
+    proto_item_set_generated(ti);
     frag_tree = proto_item_add_subtree(ti, ett_rlc_fragments);
-    proto_item_append_text(ti, " (%u bytes, %u fragments): ",
+    proto_item_append_text(ti, " (%u bytes, %u fragments) ",
         sdu->len, sdu->fragcnt);
     sdufrag = sdu->frags;
     offset = 0;
@@ -637,6 +650,9 @@ tree_add_fragment_list_incomplete(struct rlc_sdu *sdu, tvbuff_t *tvb, proto_tree
 /* Add the same description to too the two given proto_items */
 static void
 add_description(proto_item *li_ti, proto_item *length_ti,
+                const char *format, ...)  G_GNUC_PRINTF(3, 4);
+static void
+add_description(proto_item *li_ti, proto_item *length_ti,
                 const char *format, ...)
 {
 #define MAX_INFO_BUFFER 256
@@ -645,7 +661,7 @@ add_description(proto_item *li_ti, proto_item *length_ti,
     va_list ap;
 
     va_start(ap, format);
-    g_vsnprintf(info_buffer, MAX_INFO_BUFFER, format, ap);
+    vsnprintf(info_buffer, MAX_INFO_BUFFER, format, ap);
     va_end(ap);
 
     proto_item_append_text(li_ti, " (%s)", info_buffer);
@@ -654,13 +670,13 @@ add_description(proto_item *li_ti, proto_item *length_ti,
 
 /* add information for an LI to 'tree' */
 static proto_tree *
-tree_add_li(enum rlc_mode mode, struct rlc_li *li, guint8 li_idx, guint32 hdr_offs,
-        gboolean li_is_on_2_bytes, tvbuff_t *tvb, proto_tree *tree)
+tree_add_li(enum rlc_mode mode, struct rlc_li *li, uint8_t li_idx, uint32_t hdr_offs,
+        bool li_is_on_2_bytes, tvbuff_t *tvb, proto_tree *tree)
 {
     proto_item *root_ti, *ti;
     proto_tree *li_tree;
-    guint32     li_offs;
-    guint64     length;
+    uint32_t    li_offs;
+    uint64_t    length;
 
     if (!tree) return NULL;
 
@@ -710,7 +726,7 @@ tree_add_li(enum rlc_mode mode, struct rlc_li *li, guint8 li_idx, guint32 hdr_of
                 break;
 
             default:
-                add_description(root_ti, ti, "length=%u", (guint16)length);
+                add_description(root_ti, ti, "length=%u", (uint16_t)length);
                 break;
         }
         proto_tree_add_bits_item(li_tree, hf_rlc_li_ext, tvb, li_offs*8+15, 1, ENC_BIG_ENDIAN);
@@ -749,7 +765,7 @@ tree_add_li(enum rlc_mode mode, struct rlc_li *li, guint8 li_idx, guint32 hdr_of
                 break;
 
             default:
-                add_description(root_ti, ti, "length=%u", (guint16)length);
+                add_description(root_ti, ti, "length=%u", (uint16_t)length);
                 break;
         }
         proto_tree_add_bits_item(li_tree, hf_rlc_li_ext, tvb, li_offs*8+7, 1, ENC_BIG_ENDIAN);
@@ -759,7 +775,7 @@ tree_add_li(enum rlc_mode mode, struct rlc_li *li, guint8 li_idx, guint32 hdr_of
         if (li->li > tvb_reported_length_remaining(tvb, hdr_offs)) return li_tree;
         if (li->len > li->li) return li_tree;
         ti = proto_tree_add_item(li_tree, hf_rlc_li_data, tvb, hdr_offs + li->li - li->len, li->len, ENC_NA);
-        PROTO_ITEM_SET_HIDDEN(ti);
+        proto_item_set_hidden(ti);
     }
 
     return li_tree;
@@ -831,7 +847,7 @@ static void
 reassemble_data(struct rlc_channel *ch, struct rlc_sdu *sdu, struct rlc_frag *frag)
 {
     struct rlc_frag *temp;
-    guint16          offs = 0;
+    uint16_t         offs = 0;
 
     if (!sdu || !ch || !sdu->frags) return;
 
@@ -842,11 +858,13 @@ reassemble_data(struct rlc_channel *ch, struct rlc_sdu *sdu, struct rlc_frag *fr
     else
         sdu->reassembled_in = sdu->last;
 
-    sdu->data = (guint8 *)wmem_alloc(wmem_file_scope(), sdu->len);
+    sdu->data = (uint8_t *)wmem_alloc(wmem_file_scope(), sdu->len);
     temp = sdu->frags;
     while (temp && ((offs + temp->len) <= sdu->len)) {
-        memcpy(sdu->data + offs, temp->data, temp->len);
-        g_free(temp->data);
+        if (temp->data) {
+            memcpy(sdu->data + offs, temp->data, temp->len);
+            wmem_free(wmem_file_scope(), temp->data);
+        }
         temp->data = NULL;
         /* mark this fragment in reassembled table */
         g_hash_table_insert(reassembled_table, temp, sdu);
@@ -877,7 +895,7 @@ printends(GList * list)
 static struct rlc_frag **
 get_frags(packet_info * pinfo, struct rlc_channel * ch_lookup, struct atm_phdr *atm)
 {
-    gpointer value = NULL;
+    void *value = NULL;
     struct rlc_frag ** frags = NULL;
     /* Look for already created frags table */
     if (g_hash_table_lookup_extended(fragment_table, ch_lookup, NULL, &value)) {
@@ -895,7 +913,7 @@ get_frags(packet_info * pinfo, struct rlc_channel * ch_lookup, struct atm_phdr *
 static struct rlc_seqlist *
 get_endlist(packet_info * pinfo, struct rlc_channel * ch_lookup, struct atm_phdr *atm)
 {
-    gpointer value = NULL;
+    void *value = NULL;
     struct rlc_seqlist * endlist = NULL;
     /* If there already exists a frag table for this channel use that one. */
     if (g_hash_table_lookup_extended(endpoints, ch_lookup, NULL, &value)) {
@@ -917,12 +935,12 @@ get_endlist(packet_info * pinfo, struct rlc_channel * ch_lookup, struct atm_phdr
 
 static void
 reassemble_sequence(struct rlc_frag ** frags, struct rlc_seqlist * endlist,
-                    struct rlc_channel * ch_lookup, guint16 start, guint16 end)
+                    struct rlc_channel * ch_lookup, uint16_t start, uint16_t end)
 {
     GList * element = NULL;
     struct rlc_sdu * sdu = rlc_sdu_create();
 
-    guint16 snmod = getChannelSNModulus(ch_lookup);
+    uint16_t snmod = getChannelSNModulus(ch_lookup);
 
     /* Insert fragments into SDU. */
     for (; moduloCompare(start,end,snmod ) <= 0; start = (start+1)%snmod)
@@ -949,14 +967,15 @@ reassemble_sequence(struct rlc_frag ** frags, struct rlc_seqlist * endlist,
 
 /* Reset the specified channel's reassembly data, useful for when a sequence
  * resets on transport channel swap. */
+/* TODO: not currently called */
 void
-rlc_reset_channel(enum rlc_mode mode, guint8 rbid, guint8 dir, guint32 ueid,
+rlc_reset_channel(enum rlc_mode mode, uint8_t rbid, uint8_t dir, uint32_t ueid,
                   struct atm_phdr *atm)
 {
     struct rlc_frag ** frags = NULL;
     struct rlc_seqlist * endlist = NULL;
     struct rlc_channel ch_lookup;
-    guint i;
+    unsigned i;
 
     ch_lookup.mode = mode;
     ch_lookup.rbid = rbid;
@@ -964,14 +983,16 @@ rlc_reset_channel(enum rlc_mode mode, guint8 rbid, guint8 dir, guint32 ueid,
     ch_lookup.ueid = ueid;
     frags = get_frags(NULL, &ch_lookup, atm);
     endlist = get_endlist(NULL, &ch_lookup, atm);
-    DISSECTOR_ASSERT(frags && endlist);
+    if (endlist) {
+        endlist->fail_packet = 0;
+        g_list_free(endlist->list);
+        endlist->list = NULL;
+    }
 
-    endlist->fail_packet = 0;
-    g_list_free(endlist->list);
-    endlist->list = NULL;
-
-    for (i = 0; i < 4096; i++) {
-        frags[i] = NULL;
+    if (frags) {
+        for (i = 0; i < 4096; i++) {
+            frags[i] = NULL;
+        }
     }
 }
 
@@ -980,8 +1001,8 @@ rlc_reset_channel(enum rlc_mode mode, guint8 rbid, guint8 dir, guint32 ueid,
  */
 static struct rlc_frag *
 add_fragment(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
-         proto_tree *tree, guint16 offset, guint16 seq, guint16 num_li,
-         guint16 len, gboolean final, struct atm_phdr *atm)
+         proto_tree *tree, uint16_t offset, uint16_t seq, uint16_t num_li,
+         uint16_t len, bool final, struct atm_phdr *atm)
 {
     struct rlc_channel  ch_lookup;
     struct rlc_frag     frag_lookup, *frag = NULL;
@@ -1021,18 +1042,18 @@ add_fragment(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
     endlist = get_endlist(pinfo, &ch_lookup, atm);
 
     /* If already done reassembly */
-    if (pinfo->fd->flags.visited) {
+    if (PINFO_FD_VISITED(pinfo)) {
         if (tree && len > 0) {
             if (endlist->list && endlist->list->next) {
-                gint16 start = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
-                gint16 end = GPOINTER_TO_INT(endlist->list->next->data);
-                gint16 missing = start;
-                gboolean wecanreasmmore = TRUE;
+                int16_t start = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
+                int16_t end = GPOINTER_TO_INT(endlist->list->next->data);
+                int16_t missing = start;
+                bool wecanreasmmore = true;
 
                 for (; moduloCompare(missing,end,snmod ) <= 0; missing = (missing+1)%snmod)
                 {
                     if (frags[missing] == NULL) {
-                        wecanreasmmore = FALSE;
+                        wecanreasmmore = false;
                         break;
                     }
                 }
@@ -1052,7 +1073,7 @@ add_fragment(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
                 if (endlist->fail_packet != 0 && endlist->fail_packet <= pinfo->num) {
                     proto_tree_add_expert_format(tree, pinfo, &ei_rlc_reassembly_fail_flag_set, tvb, 0, 0, "Did not perform reassembly because fail flag was set in packet %u.", endlist->fail_packet);
                 } else {
-                    gint16 end = GPOINTER_TO_INT(endlist->list->data);
+                    int16_t end = GPOINTER_TO_INT(endlist->list->data);
                     if (end >= 0 && end < snmod && frags[end]) {
                         proto_tree_add_expert_format(tree, pinfo, &ei_rlc_reassembly_lingering_endpoint, tvb, 0, 0, "Did not perform reassembly because of unfinished sequence, found lingering endpoint (%d [packet %d]).", end, frags[end]->frame_num);
                     } else {
@@ -1093,7 +1114,7 @@ add_fragment(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
      * from several PDUs in the same RLC packet. This is if the reassembly is
      * not lagging behind at all because of perfectly ordered sequences. */
     if (endlist->list && num_li != 0) {
-        gint16 first = GPOINTER_TO_INT(endlist->list->data);
+        int16_t first = GPOINTER_TO_INT(endlist->list->data);
         if (seq == first) {
             endlist->list->data = GINT_TO_POINTER(first-1);
         }
@@ -1101,7 +1122,7 @@ add_fragment(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
 
     /* If this is an endpoint */
     if (final) {
-        endlist->list = g_list_append(endlist->list, GINT_TO_POINTER((gint)seq));
+        endlist->list = g_list_append(endlist->list, GINT_TO_POINTER((int)seq));
     }
 
     #if RLC_ADD_FRAGMENT_DEBUG_PRINT
@@ -1110,8 +1131,8 @@ add_fragment(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
 
     /* Try to reassemble SDU. */
     if (endlist->list && endlist->list->next) {
-        gint16 start = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
-        gint16 end = GPOINTER_TO_INT(endlist->list->next->data);
+        int16_t start = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
+        int16_t end = GPOINTER_TO_INT(endlist->list->next->data);
         if (frags[end] == NULL) {
 #if RLC_ADD_FRAGMENT_FAIL_PRINT
             proto_tree_add_debug_text(tree, "frag[end] is null, this is probably because end was a startpoint but because of some error ended up being treated as an endpoint, setting fail flag, start %d, end %d, packet %u\n", start, end, pinfo->num);
@@ -1162,7 +1183,7 @@ is %u. The most recently complete sequence ended in packet %u.", pinfo->num, seq
         start = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
         reassemble_sequence(frags, endlist, &ch_lookup, start, end);
     } else if (endlist->list) {
-        gint16 first = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
+        int16_t first = (GPOINTER_TO_INT(endlist->list->data) + 1) % snmod;
         /* If the distance between the oldest stored endpoint in endlist and
          * this endpoint is too large, set fail flag. */
         if (MIN((first-seq+snmod)%snmod, (seq-first+snmod)%snmod) >= snmod/4) {
@@ -1186,7 +1207,7 @@ too far away from an unfinished sequence with start %u and without end.", pinfo-
  */
 static tvbuff_t *
 get_reassembled_data(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
-             proto_tree *tree, guint16 seq, guint16 num_li,
+             proto_tree *tree, uint16_t seq, uint16_t num_li,
              struct atm_phdr *atm)
 {
     gpointer         orig_frag, orig_sdu;
@@ -1223,25 +1244,25 @@ get_reassembled_data(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo,
 
     /* reassembly happened here, so create the fragment list */
     if (tree && sdu->fragcnt > 1)
-        tree_add_fragment_list(sdu, sdu->tvb, tree);
+        tree_add_fragment_list(sdu, sdu->tvb, pinfo, tree);
 
     return sdu->tvb;
 }
 
 #define RLC_RETRANSMISSION_TIMEOUT 5 /* in seconds */
-static gboolean
-rlc_is_duplicate(enum rlc_mode mode, packet_info *pinfo, guint16 seq,
-         guint32 *original, struct atm_phdr *atm)
+static bool
+rlc_is_duplicate(enum rlc_mode mode, packet_info *pinfo, uint16_t seq,
+         uint32_t *original, struct atm_phdr *atm)
 {
     GList              *element;
     struct rlc_seqlist  lookup, *list;
     struct rlc_seq      seq_item, *seq_new;
-    guint16 snmod;
+    uint16_t snmod;
     nstime_t delta;
-    gboolean is_duplicate,is_unseen;
+    bool is_duplicate,is_unseen;
 
     if (rlc_channel_assign(&lookup.ch, mode, pinfo, atm) == -1)
-        return FALSE;
+        return false;
     list = (struct rlc_seqlist *)g_hash_table_lookup(sequence_table, &lookup.ch);
     if (!list) {
         /* we see this channel for the first time */
@@ -1264,8 +1285,8 @@ rlc_is_duplicate(enum rlc_mode mode, packet_info *pinfo, guint16 seq,
         }
     }
 
-    is_duplicate = FALSE;
-    is_unseen = TRUE;
+    is_duplicate = false;
+    is_unseen = true;
     element = g_list_find_custom(list->list, &seq_item, rlc_cmp_seq);
     while(element) {
         /* Check if this is a different frame (by comparing frame numbers) which arrived less than */
@@ -1279,19 +1300,19 @@ rlc_is_duplicate(enum rlc_mode mode, packet_info *pinfo, guint16 seq,
                     /* Save the frame number where our sequence number was previously seen */
                     *original = seq_new->frame_num;
                 }
-                is_duplicate = TRUE;
+                is_duplicate = true;
             }
         }
         else if (seq_new->frame_num == seq_item.frame_num) {
             /* Check if our frame is already in the list and this is a secondary check.*/
             /* in this case raise a flag so the frame isn't entered more than once to the list */
-            is_unseen = FALSE;
+            is_unseen = false;
         }
         element = g_list_find_custom(element->next, &seq_item, rlc_cmp_seq);
     }
     if(is_unseen) {
         /* Add to list for the first time this frame is checked */
-        seq_new = (struct rlc_seq *)wmem_alloc0(wmem_file_scope(), sizeof(struct rlc_seq));
+        seq_new = wmem_new0(wmem_file_scope(), struct rlc_seq);
         *seq_new = seq_item;
         seq_new->arrival = pinfo->abs_ts;
         list->list = g_list_append(list->list, seq_new); /* insert in order of arrival */
@@ -1303,7 +1324,10 @@ static void
 rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
               packet_info *pinfo, proto_tree *tree)
 {
+    bool is_rrc_payload = true;
+    volatile dissector_handle_t next_dissector = NULL;
     enum rrc_message_type msgtype;
+
     switch (channel) {
         case RLC_UL_CCCH:
             msgtype = RRC_MESSAGE_TYPE_UL_CCCH;
@@ -1312,11 +1336,10 @@ rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
             msgtype = RRC_MESSAGE_TYPE_DL_CCCH;
             break;
         case RLC_DL_CTCH:
+            /* Payload of DL CTCH is BMC*/
+            is_rrc_payload = false;
             msgtype = RRC_MESSAGE_TYPE_INVALID;
-            call_dissector(bmc_handle, tvb, pinfo, tree);
-            /* once the packet has been dissected, protect it from further changes using a 'fence' in the INFO column */
-            col_append_str(pinfo->cinfo, COL_INFO," ");
-            col_set_fence(pinfo->cinfo, COL_INFO);
+            next_dissector = bmc_handle;
             break;
         case RLC_UL_DCCH:
             msgtype = RRC_MESSAGE_TYPE_UL_DCCH;
@@ -1331,17 +1354,18 @@ rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
             msgtype = RRC_MESSAGE_TYPE_BCCH_FACH;
             break;
         case RLC_PS_DTCH:
+            /* Payload of PS DTCH is PDCP or just IP*/
+            is_rrc_payload = false;
             msgtype = RRC_MESSAGE_TYPE_INVALID;
             /* assume transparent PDCP for now */
-            call_dissector(ip_handle, tvb, pinfo, tree);
-            /* once the packet has been dissected, protect it from further changes using a 'fence' in the INFO column */
-            col_append_str(pinfo->cinfo, COL_INFO," ");
-            col_set_fence(pinfo->cinfo, COL_INFO);
+            next_dissector = ip_handle;
             break;
         default:
             return; /* stop dissecting */
     }
-    if (msgtype != RRC_MESSAGE_TYPE_INVALID) {
+
+    if (is_rrc_payload && msgtype != RRC_MESSAGE_TYPE_INVALID) {
+        /* Passing the RRC sub type in the 'rrc_info' struct */
         struct rrc_info *rrcinf;
         fp_info *fpinf;
         fpinf = (fp_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_fp, 0);
@@ -1351,7 +1375,21 @@ rlc_call_subdissector(enum rlc_channel_type channel, tvbuff_t *tvb,
             p_add_proto_data(wmem_file_scope(), pinfo, proto_rrc, 0, rrcinf);
         }
         rrcinf->msgtype[fpinf->cur_tb] = msgtype;
-        call_dissector(rrc_handle, tvb, pinfo, tree);
+        next_dissector = rrc_handle;
+    }
+
+    if(next_dissector != NULL) {
+        TRY {
+            call_dissector(next_dissector, tvb, pinfo, tree);
+        }
+        CATCH_NONFATAL_ERRORS {
+            /*
+             * Sub dissector threw an exception
+             * Show the exception and continue dissecting other SDUs.
+             */
+            show_exception(tvb, pinfo, tree, EXCEPT_CODE, GET_MESSAGE);
+        }
+        ENDTRY;
         /* once the packet has been dissected, protect it from further changes using a 'fence' in the INFO column */
         col_append_str(pinfo->cinfo, COL_INFO," ");
         col_set_fence(pinfo->cinfo, COL_INFO);
@@ -1368,27 +1406,27 @@ add_channel_info(packet_info * pinfo, proto_tree * tree, fp_info * fpinf, rlc_in
     channel_tree = proto_item_add_subtree(item, ett_rlc_channel);
     proto_item_append_text(item, " (rbid: %u, dir: %s, uid: 0x%08x)", rlcinf->rbid[fpinf->cur_tb],
                            val_to_str_const(pinfo->link_dir, rlc_dir_vals, "Unknown"), rlcinf->ueid[fpinf->cur_tb]);
-    PROTO_ITEM_SET_GENERATED(item);
+    proto_item_set_generated(item);
     item = proto_tree_add_uint(channel_tree, hf_rlc_channel_rbid, NULL, 0, 0, rlcinf->rbid[fpinf->cur_tb]);
-    PROTO_ITEM_SET_GENERATED(item);
+    proto_item_set_generated(item);
     item = proto_tree_add_uint(channel_tree, hf_rlc_channel_dir, NULL, 0, 0, pinfo->link_dir);
-    PROTO_ITEM_SET_GENERATED(item);
+    proto_item_set_generated(item);
     item = proto_tree_add_uint(channel_tree, hf_rlc_channel_ueid, NULL, 0, 0, rlcinf->ueid[fpinf->cur_tb]);
-    PROTO_ITEM_SET_GENERATED(item);
+    proto_item_set_generated(item);
 
 }
 
 #ifdef HAVE_UMTS_KASUMI
-static guint8 *
-translate_hex_key(gchar * char_key){
+static uint8_t *
+translate_hex_key(char * char_key){
     int i,j;
-    guint8 * key_in;
+    uint8_t * key_in;
 
-    key_in = wmem_alloc0(wmem_packet_scope(), sizeof(guint8)*16);
+    key_in = wmem_alloc0(pinfo->pool, sizeof(uint8_t)*16);
     j= (int)(strlen(char_key)/2)-1;
     /*Translate "hex-string" into a byte aligned block */
     for(i = (int)strlen(char_key); i> 0; i-=2 ){
-        key_in[j] =  ( (guint8)  (strtol( &char_key[i-2], NULL, 16 ) ));
+        key_in[j] =  ( (uint8_t)  (strtol( &char_key[i-2], NULL, 16 ) ));
         char_key[i-2] = '\0';
         j--;
     }
@@ -1415,20 +1453,20 @@ translate_hex_key(gchar * char_key){
  */
 static tvbuff_t *
 #ifndef HAVE_UMTS_KASUMI
-rlc_decipher_tvb(tvbuff_t *tvb _U_, packet_info *pinfo, guint32 counter _U_,
-                 guint8 rbid _U_, gboolean dir _U_, guint8 header_size _U_) {
+rlc_decipher_tvb(tvbuff_t *tvb _U_, packet_info *pinfo, uint32_t counter _U_,
+                 uint8_t rbid _U_, bool dir _U_, uint8_t header_size _U_) {
     /*Check if we have a KASUMI implementation*/
     expert_add_info(pinfo, NULL, &ei_rlc_kasumi_implementation_missing);
     return NULL;
 #else
-rlc_decipher_tvb(tvbuff_t *tvb, packet_info *pinfo, guint32 counter, guint8 rbid, gboolean dir, guint8 header_size) {
-    guint8* out=NULL,*key_in = NULL;
+rlc_decipher_tvb(tvbuff_t *tvb, packet_info *pinfo, uint32_t counter, uint8_t rbid, bool dir, uint8_t header_size) {
+    uint8_t* out=NULL,*key_in = NULL;
     tvbuff_t *t;
 
     /*Fix the key into a byte block*/
     /*TODO: This should be done in a preferences callback function*/
-    out = wmem_alloc0(wmem_packet_scope(), strlen(global_rlc_kasumi_key)+1);
-    memcpy(out,global_rlc_kasumi_key,strlen(global_rlc_kasumi_key));    /*Copy from prefrence const pointer*/
+    out = wmem_alloc0(pinfo->pool, strlen(global_rlc_kasumi_key)+1);
+    memcpy(out,global_rlc_kasumi_key,strlen(global_rlc_kasumi_key));    /*Copy from preference const pointer*/
     key_in = translate_hex_key(out);    /*Translation*/
 
     /*Location for decrypted data & original RLC header*/
@@ -1450,25 +1488,25 @@ rlc_decipher_tvb(tvbuff_t *tvb, packet_info *pinfo, guint32 counter, guint8 rbid
  *  @param fpinf FP info
  *  @param rlcinf RLC info
  *  @param seq Sequence number of the RLC packet
- *  @return gboolean Returns TRUE if the packet is ciphered and false otherwise
+ *  @return bool Returns true if the packet is ciphered and false otherwise
  */
-static gboolean
-is_ciphered_according_to_rrc(packet_info *pinfo, fp_info *fpinf, rlc_info *rlcinf ,guint16 seq) {
-    gint16              cur_tb;
-    guint32             ueid;
+static bool
+is_ciphered_according_to_rrc(packet_info *pinfo, fp_info *fpinf, rlc_info *rlcinf ,uint16_t seq) {
+    int16_t             cur_tb;
+    uint32_t            ueid;
     rrc_ciphering_info *ciphering_info;
-    guint8              rbid;
-    guint8              direction;
-    guint32             security_mode_frame_num;
-    gint32              ciphering_begin_seq;
+    uint8_t             rbid;
+    uint8_t             direction;
+    uint32_t            security_mode_frame_num;
+    int32_t             ciphering_begin_seq;
 
     if(global_ignore_rrc_ciphering_indication) {
-        return FALSE;
+        return false;
     }
 
     cur_tb = fpinf->cur_tb;
     ueid = rlcinf->ueid[cur_tb];
-    ciphering_info =  (rrc_ciphering_info *)g_tree_lookup(rrc_ciph_info_tree, GINT_TO_POINTER((gint)ueid));
+    ciphering_info =  (rrc_ciphering_info *)g_tree_lookup(rrc_ciph_info_tree, GINT_TO_POINTER((int)ueid));
     if(ciphering_info != NULL) {
         rbid = rlcinf->rbid[cur_tb];
         direction = fpinf->is_uplink ? P2P_DIR_UL : P2P_DIR_DL;
@@ -1479,58 +1517,59 @@ is_ciphered_according_to_rrc(packet_info *pinfo, fp_info *fpinf, rlc_info *rlcin
             /* Making sure the sequence number where ciphering starts makes sense */
             /* TODO: This check is incorrect if the sequence numbers wrap around */
             if(ciphering_begin_seq >= 0 && ciphering_begin_seq <= seq){
-                return TRUE;
+				/* Finally, make sure the encryption algorithm isn't set to UEA0 (no ciphering)*/
+                return ciphering_info->ciphering_algorithm != 0;
             }
         }
     }
-    return FALSE;
+    return false;
 }
 
 /*
  * @param key is created with GINT_TO_POINTER
- * @param value is a pointer to a guint32
- * @param data is a pointer to a guint32
+ * @param value is a pointer to a uint32_t
+ * @param data is a pointer to a uint32_t
  */
 static gboolean
-iter_same(gpointer key, gpointer value, gpointer data) {
+iter_same(void *key, void *value, void *data) {
     /*If true we found the correct frame*/
-    if ((guint32)GPOINTER_TO_INT(key) > *(guint32*)data){
-        *((guint32*)data) = *((guint32*)value);
-        return TRUE;
+    if ((uint32_t)GPOINTER_TO_INT(key) > *(uint32_t*)data){
+        *((uint32_t*)data) = *((uint32_t*)value);
+        return true;
     }
-    *((guint32*)data) = (guint32)GPOINTER_TO_INT(key);
+    *((uint32_t*)data) = (uint32_t)GPOINTER_TO_INT(key);
 
-    return TRUE;
+    return true;
 }
 
 /**
  * Used for looking up and old ciphering counter value in the counter_map tree.
  * @param key is created with GINT_TO_POINTER
- * @param value is pointer to an array of 2 guint32s
- * @param data is a pointer to an array of 3 guint32s
+ * @param value is pointer to an array of 2 uint32_t
+ * @param data is a pointer to an array of 3 uint32_t
  */
 static gboolean
-rlc_find_old_counter(gpointer key, gpointer value, gpointer data) {
+rlc_find_old_counter(void *key, void *value, void *data) {
 
     /*If true we found the correct frame*/
-    if( (guint32)GPOINTER_TO_INT(key) >= ((guint32 *)data)[0] ){
+    if( (uint32_t)GPOINTER_TO_INT(key) >= ((uint32_t *)data)[0] ){
         return TRUE;
     }
     /*Overwrite the data since the previous one wasn't correct*/
-    ((guint32*)data)[1] = ((guint32*)value)[0];
-    ((guint32*)data)[2] = ((guint32*)value)[1];
+    ((uint32_t*)data)[1] = ((uint32_t*)value)[0];
+    ((uint32_t*)data)[2] = ((uint32_t*)value)[1];
 
     return FALSE;
 }
 
 static void
 rlc_decipher(tvbuff_t *tvb, packet_info * pinfo, proto_tree * tree, fp_info * fpinf,
-             rlc_info * rlcinf, guint16 seq, enum rlc_mode mode)
+             rlc_info * rlcinf, uint16_t seq, enum rlc_mode mode)
 {
     rrc_ciphering_info *ciphering_info;
-    guint8 indx, header_size, hfn_shift;
-    gint16 pos;
-    guint8 ext;
+    uint8_t indx, header_size, hfn_shift;
+    int16_t pos;
+    uint8_t ext;
     int ciphered_data_hf;
 
     indx = fpinf->is_uplink ? P2P_DIR_UL : P2P_DIR_DL;
@@ -1544,7 +1583,7 @@ rlc_decipher(tvbuff_t *tvb, packet_info * pinfo, proto_tree * tree, fp_info * fp
     }
 
     /*Ciphering info singled in RRC by securitymodecommands */
-    ciphering_info =  (rrc_ciphering_info *)g_tree_lookup(rrc_ciph_info_tree, GINT_TO_POINTER((gint)rlcinf->ueid[fpinf->cur_tb]));
+    ciphering_info =  (rrc_ciphering_info *)g_tree_lookup(rrc_ciph_info_tree, GINT_TO_POINTER((int)rlcinf->ueid[fpinf->cur_tb]));
 
     /*TODO: This doesn't really work for all packets..*/
     /*Check if we have ciphering info and that this frame is ciphered*/
@@ -1555,11 +1594,11 @@ rlc_decipher(tvbuff_t *tvb, packet_info * pinfo, proto_tree * tree, fp_info * fp
 
         /*Check if this counter has been initialized*/
         if(!counter_init[rlcinf->rbid[pos]][indx] ){
-            guint32 frame_num = pinfo->num;
+            uint32_t frame_num = pinfo->num;
 
             /*Initializes counter*/
-            counter_init[rlcinf->rbid[pos]][0] = TRUE;
-            counter_init[rlcinf->rbid[pos]][1] = TRUE;
+            counter_init[rlcinf->rbid[pos]][0] = true;
+            counter_init[rlcinf->rbid[pos]][1] = true;
             /*Find appropriate start value*/
             g_tree_foreach(ciphering_info->start_ps, (GTraverseFunc)iter_same, &frame_num);
 
@@ -1574,11 +1613,11 @@ rlc_decipher(tvbuff_t *tvb, packet_info * pinfo, proto_tree * tree, fp_info * fp
 
             if(!tree){
                 /*Preserve counter value for next dissection round*/
-                guint32 * ciph;
-                ciph = (guint32 *)g_malloc(sizeof(guint32)*2);
+                uint32_t * ciph;
+                ciph = g_new(uint32_t, 2);
                 ciph[0] = ps_counter[rlcinf->rbid[pos]][0];
                 ciph[1] = ps_counter[rlcinf->rbid[pos]][1];
-                g_tree_insert(counter_map, GINT_TO_POINTER((gint)pinfo->num), ciph);
+                g_tree_insert(counter_map, GINT_TO_POINTER((int)pinfo->num), ciph);
             }
 
         }
@@ -1588,7 +1627,7 @@ rlc_decipher(tvbuff_t *tvb, packet_info * pinfo, proto_tree * tree, fp_info * fp
     /*XXX: Since RBID in umts isn't configured properly..*/
         if(rlcinf->rbid[pos] == 9 ){
             if(tree){
-                guint32 frame_num[3];
+                uint32_t frame_num[3];
                 /*Set frame num we will be "searching" around*/
                 frame_num[0] = pinfo->num;
                 /*Find the correct counter value*/
@@ -1600,7 +1639,7 @@ rlc_decipher(tvbuff_t *tvb, packet_info * pinfo, proto_tree * tree, fp_info * fp
         }else{
             if(tree){
                 /*We need to find the original counter value for second dissection pass*/
-                guint32 frame_num[3];
+                uint32_t frame_num[3];
                 frame_num[0] = pinfo->num;
                 g_tree_foreach(counter_map, (GTraverseFunc)rlc_find_old_counter, &frame_num[0]);
                 t = rlc_decipher_tvb(tvb, pinfo, (frame_num[indx+1] | seq),rlcinf->rbid[pos],!fpinf->is_uplink,header_size);
@@ -1614,18 +1653,18 @@ rlc_decipher(tvbuff_t *tvb, packet_info * pinfo, proto_tree * tree, fp_info * fp
             ps_counter[rlcinf->rbid[pos]][indx] += 1 << hfn_shift;
 
             if(!tree){/*Preserve counter for second packet analysis run*/
-                guint32 * ciph;
-                ciph = (guint32 *)g_malloc(sizeof(guint32)*2);
+                uint32_t * ciph;
+                ciph = g_new(uint32_t, 2);
                 ciph[0] = ps_counter[rlcinf->rbid[pos]][0];
                 ciph[1] = ps_counter[rlcinf->rbid[pos]][1];
-                g_tree_insert(counter_map, GINT_TO_POINTER((gint)pinfo->num+1), ciph);
+                g_tree_insert(counter_map, GINT_TO_POINTER((int)pinfo->num+1), ciph);
             }
         }
 
         /*Unable to decipher the packet*/
         if(t == NULL){
             /* Choosing the right field text ("LIs & Data" or just "Data") based on extension bit / header extension */
-            ext = tvb_get_guint8(tvb, header_size - 1) & 0x01;
+            ext = tvb_get_uint8(tvb, header_size - 1) & 0x01;
             ciphered_data_hf = (ext == 1) ? hf_rlc_ciphered_lis_data : hf_rlc_ciphered_data;
             /* Adding ciphered payload field to tree */
             proto_tree_add_item(tree, ciphered_data_hf, tvb, header_size, -1, ENC_NA);
@@ -1663,14 +1702,14 @@ dissect_rlc_tm(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
 
 
 static void
-rlc_um_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo, proto_tree *tree,
-          proto_tree *top_level, enum rlc_channel_type channel, guint16 seq,
-          struct rlc_li *li, guint16 num_li, gboolean li_is_on_2_bytes,
+rlc_um_reassemble(tvbuff_t *tvb, uint16_t offs, packet_info *pinfo, proto_tree *tree,
+          proto_tree *top_level, enum rlc_channel_type channel, uint16_t seq,
+          struct rlc_li *li, uint16_t num_li, bool li_is_on_2_bytes,
           struct atm_phdr *atm)
 {
-    guint8    i;
-    gboolean  dissected = FALSE;
-    gint      length;
+    uint16_t  i;
+    bool      dissected = false;
+    int       length;
     tvbuff_t *next_tvb  = NULL;
 
     /* perform reassembly now */
@@ -1687,7 +1726,7 @@ rlc_um_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo, proto_tree *tr
             struct rlc_seqlist * endlist = NULL;
             if( -1 != rlc_channel_assign(&ch_lookup, RLC_UM, pinfo, atm ) ){
                 endlist = get_endlist(pinfo, &ch_lookup, atm);
-                endlist->list->data = GINT_TO_POINTER((gint)seq);
+                endlist->list->data = GINT_TO_POINTER((int)seq);
                 endlist->fail_packet=0;
             }
 
@@ -1701,7 +1740,7 @@ rlc_um_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo, proto_tree *tr
                     proto_tree_add_item(tree, hf_rlc_data, tvb, offs, length, ENC_NA);
                 }
                 if (global_rlc_perform_reassemby) {
-                    add_fragment(RLC_UM, tvb, pinfo, li[i].tree, offs, seq, i, length, TRUE, atm);
+                    add_fragment(RLC_UM, tvb, pinfo, li[i].tree, offs, seq, i, length, true, atm);
                     next_tvb = get_reassembled_data(RLC_UM, tvb, pinfo, tree, seq, i, atm);
                 }
                 offs += length;
@@ -1715,12 +1754,12 @@ rlc_um_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo, proto_tree *tr
                 proto_tree_add_item(tree, hf_rlc_data, tvb, offs, li[i].len, ENC_NA);
             }
             if (global_rlc_perform_reassemby) {
-                add_fragment(RLC_UM, tvb, pinfo, li[i].tree, offs, seq, i, li[i].len, TRUE, atm);
+                add_fragment(RLC_UM, tvb, pinfo, li[i].tree, offs, seq, i, li[i].len, true, atm);
                 next_tvb = get_reassembled_data(RLC_UM, tvb, pinfo, tree, seq, i, atm);
             }
         }
         if (next_tvb) {
-            dissected = TRUE;
+            dissected = true;
             rlc_call_subdissector(channel, next_tvb, pinfo, top_level);
             next_tvb = NULL;
         }
@@ -1734,27 +1773,27 @@ rlc_um_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo, proto_tree *tr
         }
         if (global_rlc_perform_reassemby) {
             /* add remaining data as fragment */
-            add_fragment(RLC_UM, tvb, pinfo, tree, offs, seq, i, tvb_captured_length_remaining(tvb, offs), FALSE, atm);
-            if (dissected == FALSE)
+            add_fragment(RLC_UM, tvb, pinfo, tree, offs, seq, i, tvb_captured_length_remaining(tvb, offs), false, atm);
+            if (dissected == false)
                 col_set_str(pinfo->cinfo, COL_INFO, "[RLC UM Fragment]");
         }
     }
-    if (dissected == FALSE)
+    if (dissected == false)
         col_append_fstr(pinfo->cinfo, COL_INFO, "[RLC UM Fragment]  SN=%u", seq);
     else
         if (channel == RLC_UNKNOWN_CH)
             col_append_fstr(pinfo->cinfo, COL_INFO, "[RLC UM Data]  SN=%u", seq);
 }
 
-static gint16
+static int16_t
 rlc_decode_li(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
-          struct rlc_li *li, guint8 max_li, gboolean li_on_2_bytes)
+          struct rlc_li *li, uint8_t max_li, bool li_on_2_bytes)
 {
-    guint32     hdr_len, offs = 0, li_offs;
-    guint8      ext, num_li = 0;
-    guint16     next_bytes, prev_li = 0;
+    uint32_t    hdr_len, offs = 0, li_offs;
+    uint8_t     ext, num_li = 0;
+    uint16_t    next_bytes, prev_li = 0;
     proto_item *malformed;
-    guint16     total_len;
+    uint16_t    total_len;
 
     switch (mode) {
         case RLC_AM:
@@ -1771,23 +1810,23 @@ rlc_decode_li(enum rlc_mode mode, tvbuff_t *tvb, packet_info *pinfo, proto_tree 
     }
     hdr_len = offs;
     /* calculate header length */
-    ext = tvb_get_guint8(tvb, hdr_len++) & 0x01;
+    ext = tvb_get_uint8(tvb, hdr_len++) & 0x01;
     while (ext) {
-        next_bytes = li_on_2_bytes ? tvb_get_ntohs(tvb, hdr_len) : tvb_get_guint8(tvb, hdr_len);
+        next_bytes = li_on_2_bytes ? tvb_get_ntohs(tvb, hdr_len) : tvb_get_uint8(tvb, hdr_len);
         ext = next_bytes & 0x01;
         hdr_len += li_on_2_bytes ? 2 : 1;
     }
     total_len = tvb_captured_length_remaining(tvb, hdr_len);
 
     /* do actual evaluation of LIs */
-    ext = tvb_get_guint8(tvb, offs++) & 0x01;
+    ext = tvb_get_uint8(tvb, offs++) & 0x01;
     li_offs = offs;
     while (ext) {
         if (li_on_2_bytes) {
             next_bytes = tvb_get_ntohs(tvb, offs);
             offs += 2;
         } else {
-            next_bytes = tvb_get_guint8(tvb, offs++);
+            next_bytes = tvb_get_uint8(tvb, offs++);
         }
         ext = next_bytes & 0x01;
         li[num_li].ext = ext;
@@ -1887,20 +1926,21 @@ dissect_rlc_um(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
     struct rlc_li  li[MAX_LI];
     fp_info       *fpinf;
     rlc_info      *rlcinf;
-    guint32        orig_num;
-    guint8         seq;
-    guint8         ext;
-    guint8         next_byte, offs = 0;
-    gint16         cur_tb, num_li  = 0;
-    gboolean       is_truncated, li_is_on_2_bytes;
+    uint32_t       orig_num;
+    uint8_t        seq;
+    uint8_t        ext;
+    uint8_t        next_byte;
+    uint16_t       offs = 0;
+    int16_t        cur_tb, num_li  = 0;
+    bool           is_truncated, li_is_on_2_bytes;
     proto_item    *truncated_ti;
-    gboolean       ciphered_according_to_rrc = FALSE;
-    gboolean       ciphered_flag = FALSE;
-    gboolean       deciphered_flag = FALSE;
+    bool           ciphered_according_to_rrc = false;
+    bool           ciphered_flag = false;
+    bool           deciphered_flag = false;
     int            ciphered_data_hf;
 
 
-    next_byte = tvb_get_guint8(tvb, offs++);
+    next_byte = tvb_get_uint8(tvb, offs++);
     seq = next_byte >> 1;
 
     fpinf = (fp_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_fp, 0);
@@ -1922,7 +1962,7 @@ dissect_rlc_um(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
     }
 
     cur_tb = fpinf->cur_tb;
-    ciphered_according_to_rrc = is_ciphered_according_to_rrc(pinfo, fpinf, rlcinf, (guint16)seq);
+    ciphered_according_to_rrc = is_ciphered_according_to_rrc(pinfo, fpinf, rlcinf, (uint16_t)seq);
     ciphered_flag = rlcinf->ciphered[cur_tb];
     deciphered_flag = rlcinf->deciphered[cur_tb];
     if (((ciphered_according_to_rrc || ciphered_flag) && !deciphered_flag) || global_rlc_ciphered) {
@@ -1930,7 +1970,7 @@ dissect_rlc_um(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
             rlc_decipher(tvb, pinfo, tree, fpinf, rlcinf, seq, RLC_UM);
         }else{
             /* Choosing the right field text ("LIs & Data" or just "Data") based on extension bit */
-            ext = tvb_get_guint8(tvb, 0) & 0x01;
+            ext = tvb_get_uint8(tvb, 0) & 0x01;
             ciphered_data_hf = (ext == 1) ? hf_rlc_ciphered_lis_data : hf_rlc_ciphered_data;
             /* Adding ciphered payload field to tree */
             proto_tree_add_item(tree, ciphered_data_hf, tvb, offs, -1, ENC_NA);
@@ -1942,12 +1982,12 @@ dissect_rlc_um(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
 
     if (global_rlc_li_size == RLC_LI_UPPERLAYER) {
         if (rlcinf->li_size[cur_tb] == RLC_LI_VARIABLE) {
-            li_is_on_2_bytes = (tvb_reported_length(tvb) > 125) ? TRUE : FALSE;
+            li_is_on_2_bytes = (tvb_reported_length(tvb) > 125) ? true : false;
         } else {
-            li_is_on_2_bytes = (rlcinf->li_size[cur_tb] == RLC_LI_15BITS) ? TRUE : FALSE;
+            li_is_on_2_bytes = (rlcinf->li_size[cur_tb] == RLC_LI_15BITS) ? true : false;
         }
     } else { /* Override rlcinf configuration with preference. */
-        li_is_on_2_bytes = (global_rlc_li_size == RLC_LI_15BITS) ? TRUE : FALSE;
+        li_is_on_2_bytes = (global_rlc_li_size == RLC_LI_15BITS) ? true : false;
     }
 
 
@@ -1962,18 +2002,18 @@ dissect_rlc_um(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
         truncated_ti = proto_tree_add_boolean(tree, hf_rlc_header_only, tvb, 0, 0,
                                               is_truncated);
         if (is_truncated) {
-            PROTO_ITEM_SET_GENERATED(truncated_ti);
+            proto_item_set_generated(truncated_ti);
             expert_add_info(pinfo, truncated_ti, &ei_rlc_header_only);
             return;
         } else {
-            PROTO_ITEM_SET_HIDDEN(truncated_ti);
+            proto_item_set_hidden(truncated_ti);
         }
     }
 
     /* do not detect duplicates or reassemble, if prefiltering is done */
     if (pinfo->num == 0) return;
     /* check for duplicates */
-    if (rlc_is_duplicate(RLC_UM, pinfo, seq, &orig_num, atm) == TRUE) {
+    if (rlc_is_duplicate(RLC_UM, pinfo, seq, &orig_num, atm) == true) {
         col_add_fstr(pinfo->cinfo, COL_INFO, "[RLC UM Fragment] [Duplicate]  SN=%u", seq);
         proto_tree_add_uint(tree, hf_rlc_duplicate_of, tvb, 0, 0, orig_num);
         return;
@@ -1982,22 +2022,22 @@ dissect_rlc_um(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
 }
 
 static void
-dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint8 offset)
+dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, uint16_t offset)
 {
-    guint8      sufi_type, bits;
-    guint64     len, sn, wsn, lsn, l;
-    guint16     value, previous_sn;
-    gboolean    isErrorBurstInd;
-    gint        bit_offset, previous_bit_offset;
-    guint       i, j;
+    uint8_t     sufi_type, bits;
+    uint64_t    len, sn, wsn, lsn, l;
+    uint16_t    value, previous_sn;
+    bool        isErrorBurstInd;
+    int         bit_offset, previous_bit_offset;
+    unsigned    i, j;
     proto_tree *sufi_tree, *bitmap_tree, *rlist_tree;
     proto_item *sufi_item, *ti;
     #define BUFF_SIZE 41
-    gchar      *buff                     = NULL;
-    guint8      cw[15];
-    guint8      sufi_start_offset;
-    gboolean    seen_last                = FALSE;
-    guint16     number_of_bitmap_entries = 0;
+    char       *buff                     = NULL;
+    uint8_t     cw[15];
+    uint8_t     sufi_start_offset;
+    bool        seen_last                = false;
+    uint16_t    number_of_bitmap_entries = 0;
 
     bit_offset = offset*8 + 4; /* first SUFI type is always 4 bit shifted */
 
@@ -2012,23 +2052,23 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
         bit_offset += 4;
         switch (sufi_type) {
             case RLC_SUFI_NOMORE:
-                seen_last = TRUE;
+                seen_last = true;
                 break;
             case RLC_SUFI_ACK:
                 proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_lsn, tvb, bit_offset, 12, &lsn, ENC_BIG_ENDIAN);
-                col_append_fstr(pinfo->cinfo, COL_INFO, " LSN=%u", (guint16)lsn);
-                proto_item_append_text(sufi_item, " LSN=%u", (guint16)lsn);
+                col_append_fstr(pinfo->cinfo, COL_INFO, " LSN=%u", (uint16_t)lsn);
+                proto_item_append_text(sufi_item, " LSN=%u", (uint16_t)lsn);
                 bit_offset += 12;
-                seen_last = TRUE;
+                seen_last = true;
                 break;
             case RLC_SUFI_WINDOW:
                 proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_wsn, tvb, bit_offset, 12, &wsn, ENC_BIG_ENDIAN);
-                col_append_fstr(pinfo->cinfo, COL_INFO, " WSN=%u", (guint16)wsn);
+                col_append_fstr(pinfo->cinfo, COL_INFO, " WSN=%u", (uint16_t)wsn);
                 bit_offset += 12;
                 break;
             case RLC_SUFI_LIST:
                 proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_len, tvb, bit_offset, 4, &len, ENC_BIG_ENDIAN);
-                col_append_fstr(pinfo->cinfo, COL_INFO,  " LIST(%u) - ", (guint8)len);
+                col_append_fstr(pinfo->cinfo, COL_INFO,  " LIST(%u) - ", (uint8_t)len);
                 bit_offset += 4;
                 if (len) {
                     while (len) {
@@ -2039,10 +2079,10 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
                         if (l) {
                             proto_item_append_text(ti, " (all consecutive AMD PDUs up to SN %u not correctly received)",
                                                    (unsigned)(sn+l)&0xfff);
-                            col_append_fstr(pinfo->cinfo, COL_INFO,  "%u-%u ", (guint16)sn, (unsigned)(sn+l)&0xfff);
+                            col_append_fstr(pinfo->cinfo, COL_INFO,  "%u-%u ", (uint16_t)sn, (unsigned)(sn+l)&0xfff);
                         }
                         else {
-                            col_append_fstr(pinfo->cinfo, COL_INFO,  "%u ", (guint16)sn);
+                            col_append_fstr(pinfo->cinfo, COL_INFO,  "%u ", (uint16_t)sn);
                         }
                         bit_offset += 4;
                         len--;
@@ -2057,20 +2097,20 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
                 len++; /* bitmap is len + 1 */
                 proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_fsn, tvb, bit_offset, 12, &sn, ENC_BIG_ENDIAN);
                 bit_offset += 12;
-                proto_tree_add_item(sufi_tree, hf_rlc_sufi_bitmap, tvb, bit_offset/8, (gint)len, ENC_NA);
-                bitmap_tree = proto_tree_add_subtree(sufi_tree, tvb, bit_offset/8, (gint)len, ett_rlc_bitmap, &ti, "Decoded bitmap:");
+                proto_tree_add_item(sufi_tree, hf_rlc_sufi_bitmap, tvb, bit_offset/8, (int)len, ENC_NA);
+                bitmap_tree = proto_tree_add_subtree(sufi_tree, tvb, bit_offset/8, (int)len, ett_rlc_bitmap, &ti, "Decoded bitmap:");
                 col_append_str(pinfo->cinfo, COL_INFO, " BITMAP=(");
 
-                buff = (gchar *)wmem_alloc(wmem_packet_scope(), BUFF_SIZE);
+                buff = (char *)wmem_alloc(pinfo->pool, BUFF_SIZE);
                 for (i=0; i<len; i++) {
                     bits = tvb_get_bits8(tvb, bit_offset, 8);
                     for (l=0, j=0; l<8; l++) {
                         if ((bits << l) & 0x80) {
-                            j += g_snprintf(&buff[j], BUFF_SIZE-j, "%4u,", (unsigned)(sn+(8*i)+l)&0xfff);
+                            j += snprintf(&buff[j], BUFF_SIZE-j, "%4u,", (unsigned)(sn+(8*i)+l)&0xfff);
                             col_append_fstr(pinfo->cinfo, COL_INFO, " %u", (unsigned)(sn+(8*i)+l)&0xfff);
                             number_of_bitmap_entries++;
                         } else {
-                            j += g_snprintf(&buff[j], BUFF_SIZE-j, "    ,");
+                            j += snprintf(&buff[j], BUFF_SIZE-j, "    ,");
                         }
                     }
                     proto_tree_add_string_format(bitmap_tree, hf_rlc_bitmap_string, tvb, bit_offset/8, 1, buff, "%s", buff);
@@ -2085,7 +2125,7 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
                 bit_offset += 4;
                 proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_fsn, tvb, bit_offset, 12, &sn, ENC_BIG_ENDIAN);
                 bit_offset += 12;
-                proto_item_append_text(sufi_item, " (%u codewords)", (guint16)len);
+                proto_item_append_text(sufi_item, " (%u codewords)", (uint16_t)len);
 
                 for (i=0; i<len; i++) {
                     ti = proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_cw, tvb, bit_offset, 4, &l, ENC_BIG_ENDIAN);
@@ -2093,18 +2133,18 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
                         proto_item_append_text(ti, " (Error burst indication)");
                     }
                     bit_offset += 4;
-                    cw[i] = (guint8)l;
+                    cw[i] = (uint8_t)l;
                 }
                 if (len && (((cw[len-1] & 0x01) == 0) || (cw[len-1] == 0x01))) {
                     expert_add_info(pinfo, tree, &ei_rlc_sufi_cw);
                 } else {
                     rlist_tree = proto_tree_add_subtree(sufi_tree, tvb, previous_bit_offset/8, (bit_offset-previous_bit_offset)/8, ett_rlc_rlist, NULL, "Decoded list:");
-                    proto_tree_add_uint_format_value(rlist_tree, hf_rlc_sequence_number, tvb, (previous_bit_offset+4)/8, 12/8, (guint32)sn, "%u (AMD PDU not correctly received)", (unsigned)sn);
+                    proto_tree_add_uint_format_value(rlist_tree, hf_rlc_sequence_number, tvb, (previous_bit_offset+4)/8, 12/8, (uint32_t)sn, "%u (AMD PDU not correctly received)", (unsigned)sn);
                     col_append_fstr(pinfo->cinfo, COL_INFO, " RLIST=(%u", (unsigned)sn);
 
-                    for (i=0, isErrorBurstInd=FALSE, j=0, previous_sn=(guint16)sn, value=0; i<len; i++) {
+                    for (i=0, isErrorBurstInd=false, j=0, previous_sn=(uint16_t)sn, value=0; i<len; i++) {
                         if (cw[i] == 0x01) {
-                            isErrorBurstInd = TRUE;
+                            isErrorBurstInd = true;
                         } else {
                             value |= (cw[i] >> 1) << j;
                             j += 3;
@@ -2116,7 +2156,7 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
                                         proto_item_append_text(ti, "  (all consecutive AMD PDUs up to SN %u not correctly received)", previous_sn);
                                         col_append_fstr(pinfo->cinfo, COL_INFO, " ->%u", previous_sn);
                                     }
-                                    isErrorBurstInd = FALSE;
+                                    isErrorBurstInd = false;
                                 } else {
                                     value = (value + previous_sn) & 0xfff;
                                     proto_tree_add_uint_format_value(rlist_tree, hf_rlc_sequence_number, tvb, (previous_bit_offset+16+4*i)/8, 1, value, "%u (AMD PDU not correctly received)",value);
@@ -2136,7 +2176,7 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
                 bit_offset += 4;
                 proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_sn_ack, tvb, bit_offset, 12, &sn, ENC_BIG_ENDIAN);
                 bit_offset += 12;
-                col_append_fstr(pinfo->cinfo, COL_INFO, " SN=%u", (guint16)sn);
+                col_append_fstr(pinfo->cinfo, COL_INFO, " SN=%u", (uint16_t)sn);
                 break;
             case RLC_SUFI_MRW:
                 col_append_str(pinfo->cinfo, COL_INFO, " MRW");
@@ -2145,7 +2185,7 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
                 if (len) {
                     while (len) {
                         proto_tree_add_bits_ret_val(sufi_tree, hf_rlc_sufi_sn_mrw, tvb, bit_offset, 12, &sn, ENC_BIG_ENDIAN);
-                        col_append_fstr(pinfo->cinfo, COL_INFO, " SN=%u", (guint16)sn);
+                        col_append_fstr(pinfo->cinfo, COL_INFO, " SN=%u", (uint16_t)sn);
                         bit_offset += 12;
                         len--;
                     }
@@ -2176,12 +2216,12 @@ dissect_rlc_status(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guin
 static void
 dissect_rlc_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
 {
-    guint8      type, next_byte;
+    uint8_t     type, next_byte;
     proto_item *ti;
-    guint64     r1;
-    guint64     rsn, hfn;
+    uint64_t    r1;
+    uint64_t    rsn, hfn;
 
-    next_byte = tvb_get_guint8(tvb, 0);
+    next_byte = tvb_get_uint8(tvb, 0);
     type = (next_byte >> 4) & 0x07;
 
     ti = proto_tree_add_bits_item(tree, hf_rlc_ctrl_type, tvb, 1, 3, ENC_BIG_ENDIAN);
@@ -2199,7 +2239,7 @@ dissect_rlc_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
                 return;
             }
             proto_tree_add_bits_ret_val(tree, hf_rlc_hfni, tvb, 8, 20, &hfn, ENC_BIG_ENDIAN);
-            col_append_fstr(pinfo->cinfo, COL_INFO, " RSN=%u HFN=%u", (guint16)rsn, (guint32)hfn);
+            col_append_fstr(pinfo->cinfo, COL_INFO, " RSN=%u HFN=%u", (uint16_t)rsn, (uint32_t)hfn);
             break;
         default:
             expert_add_info_format(pinfo, ti, &ei_rlc_ctrl_type, "Invalid RLC AM control type %u", type);
@@ -2208,14 +2248,14 @@ dissect_rlc_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
 }
 
 static void
-rlc_am_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo,
+rlc_am_reassemble(tvbuff_t *tvb, uint16_t offs, packet_info *pinfo,
           proto_tree *tree, proto_tree *top_level,
-          enum rlc_channel_type channel, guint16 seq, gboolean poll_set, struct rlc_li *li,
-          guint16 num_li, gboolean final, gboolean li_is_on_2_bytes,
+          enum rlc_channel_type channel, uint16_t seq, bool poll_set, struct rlc_li *li,
+          uint16_t num_li, bool final, bool li_is_on_2_bytes,
           struct atm_phdr *atm)
 {
-    guint8    i;
-    gboolean  piggyback = FALSE, dissected = FALSE;
+    uint16_t  i;
+    bool      piggyback = false, dissected = false;
     tvbuff_t *next_tvb  = NULL;
 
     struct rlc_channel  ch_lookup;
@@ -2231,7 +2271,7 @@ rlc_am_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo,
     for (i = 0; i < num_li; i++) {
         if ((!li_is_on_2_bytes && (li[i].li == 0x7e)) || (li[i].li == 0x7ffe)) {
             /* piggybacked status */
-            piggyback = TRUE;
+            piggyback = true;
         } else if ((!li_is_on_2_bytes && (li[i].li == 0x7f)) || (li[i].li == 0x7fff)) {
             /* padding, must be last LI */
             if (tvb_reported_length_remaining(tvb, offs) > 0) {
@@ -2240,7 +2280,7 @@ rlc_am_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo,
                 }
                 if (i == 0) {
                     /* Insert empty RLC frag so RLC doesn't miss this seq number. */
-                    add_fragment(RLC_AM, tvb, pinfo, li[i].tree, offs, seq, i, 0, TRUE, atm);
+                    add_fragment(RLC_AM, tvb, pinfo, li[i].tree, offs, seq, i, 0, true, atm);
                 }
             }
             offs += tvb_captured_length_remaining(tvb, offs);
@@ -2249,12 +2289,12 @@ rlc_am_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo,
                 proto_tree_add_item(tree, hf_rlc_data, tvb, offs, li[i].len, ENC_NA);
             }
             if (global_rlc_perform_reassemby) {
-                add_fragment(RLC_AM, tvb, pinfo, li[i].tree, offs, seq, i, li[i].len, TRUE, atm);
+                add_fragment(RLC_AM, tvb, pinfo, li[i].tree, offs, seq, i, li[i].len, true, atm);
                 next_tvb = get_reassembled_data(RLC_AM, tvb, pinfo, tree, seq, i, atm);
             }
         }
         if (next_tvb) {
-            dissected = TRUE;
+            dissected = true;
             rlc_call_subdissector(channel, next_tvb, pinfo, top_level);
             next_tvb = NULL;
         }
@@ -2278,12 +2318,12 @@ rlc_am_reassemble(tvbuff_t *tvb, guint8 offs, packet_info *pinfo,
             }
         }
         if (next_tvb) {
-            dissected = TRUE;
+            dissected = true;
             rlc_call_subdissector(channel, next_tvb, pinfo, top_level);
             next_tvb = NULL;
         }
     }
-    if (dissected == FALSE)
+    if (dissected == false)
         col_append_fstr(pinfo->cinfo, COL_INFO, "[RLC AM Fragment]  SN=%u %s",
                      seq, poll_set ? "(P)" : "");
     else
@@ -2300,24 +2340,24 @@ dissect_rlc_am(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
     struct rlc_li  li[MAX_LI];
     fp_info       *fpinf;
     rlc_info      *rlcinf;
-    guint8         ext, dc;
-    guint8         next_byte, offs = 0;
-    guint32        orig_num        = 0;
-    gint16         num_li          = 0;
-    gint16         cur_tb;
-    guint16        seq;
-    gboolean       is_truncated, li_is_on_2_bytes;
+    uint8_t        ext, dc;
+    uint8_t        next_byte;
+    uint32_t       orig_num        = 0;
+    int16_t        num_li          = 0;
+    int16_t        cur_tb;
+    uint16_t       seq, offs       = 0;
+    bool           is_truncated, li_is_on_2_bytes;
     proto_item    *truncated_ti, *ti;
-    guint64        polling;
-    gboolean       ciphered_according_to_rrc = FALSE;
-    gboolean       ciphered_flag = FALSE;
-    gboolean       deciphered_flag = FALSE;
+    uint64_t       polling;
+    bool           ciphered_according_to_rrc = false;
+    bool           ciphered_flag = false;
+    bool           deciphered_flag = false;
     int            ciphered_data_hf;
 
     fpinf = (fp_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_fp, 0);
     rlcinf = (rlc_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_rlc, 0);
 
-    next_byte = tvb_get_guint8(tvb, offs++);
+    next_byte = tvb_get_uint8(tvb, offs++);
     dc = next_byte >> 7;
     if (tree) {
         if (fpinf && rlcinf) {
@@ -2334,7 +2374,7 @@ dissect_rlc_am(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
 
     seq = next_byte & 0x7f;
     seq <<= 5;
-    next_byte = tvb_get_guint8(tvb, offs++);
+    next_byte = tvb_get_uint8(tvb, offs++);
     seq |= (next_byte >> 3);
 
     ext = next_byte & 0x03;
@@ -2358,7 +2398,7 @@ dissect_rlc_am(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
     /**
      * WARNING DECIPHERING IS HIGHLY EXPERIMENTAL!!!
      * */
-    ciphered_according_to_rrc = is_ciphered_according_to_rrc(pinfo, fpinf, rlcinf, (guint16)seq);
+    ciphered_according_to_rrc = is_ciphered_according_to_rrc(pinfo, fpinf, rlcinf, (uint16_t)seq);
     ciphered_flag = rlcinf->ciphered[cur_tb];
     deciphered_flag = rlcinf->deciphered[cur_tb];
     if (((ciphered_according_to_rrc || ciphered_flag) && !deciphered_flag) || global_rlc_ciphered) {
@@ -2377,12 +2417,12 @@ dissect_rlc_am(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
 
     if (global_rlc_li_size == RLC_LI_UPPERLAYER) {
         if (rlcinf->li_size[cur_tb] == RLC_LI_VARIABLE) {
-            li_is_on_2_bytes = (tvb_reported_length(tvb) > 126) ? TRUE : FALSE;
+            li_is_on_2_bytes = (tvb_reported_length(tvb) > 126) ? true : false;
         } else {
-            li_is_on_2_bytes = (rlcinf->li_size[cur_tb] == RLC_LI_15BITS) ? TRUE : FALSE;
+            li_is_on_2_bytes = (rlcinf->li_size[cur_tb] == RLC_LI_15BITS) ? true : false;
         }
     } else { /* Override rlcinf configuration with preference. */
-        li_is_on_2_bytes = (global_rlc_li_size == RLC_LI_15BITS) ? TRUE : FALSE;
+        li_is_on_2_bytes = (global_rlc_li_size == RLC_LI_15BITS) ? true : false;
     }
 
     num_li = rlc_decode_li(RLC_AM, tvb, pinfo, tree, li, MAX_LI, li_is_on_2_bytes);
@@ -2394,22 +2434,22 @@ dissect_rlc_am(enum rlc_channel_type channel, tvbuff_t *tvb, packet_info *pinfo,
         truncated_ti = proto_tree_add_boolean(tree, hf_rlc_header_only, tvb, 0, 0,
                                               is_truncated);
         if (is_truncated) {
-            PROTO_ITEM_SET_GENERATED(truncated_ti);
+            proto_item_set_generated(truncated_ti);
             expert_add_info(pinfo, truncated_ti, &ei_rlc_header_only);
             return;
         } else {
-            PROTO_ITEM_SET_HIDDEN(truncated_ti);
+            proto_item_set_hidden(truncated_ti);
         }
     }
 
     /* do not detect duplicates or reassemble, if prefiltering is done */
     if (pinfo->num == 0) return;
     /* check for duplicates, but not if already visited */
-    if (pinfo->fd->flags.visited == FALSE && rlc_is_duplicate(RLC_AM, pinfo, seq, &orig_num, atm) == TRUE) {
+    if (!PINFO_FD_VISITED(pinfo) && rlc_is_duplicate(RLC_AM, pinfo, seq, &orig_num, atm) == true) {
         g_hash_table_insert(duplicate_table, GUINT_TO_POINTER(pinfo->num), GUINT_TO_POINTER(orig_num));
         return;
-    } else if (pinfo->fd->flags.visited == TRUE && tree) {
-        gpointer value = g_hash_table_lookup(duplicate_table, GUINT_TO_POINTER(pinfo->num));
+    } else if (PINFO_FD_VISITED(pinfo) && tree) {
+        void *value = g_hash_table_lookup(duplicate_table, GUINT_TO_POINTER(pinfo->num));
         if (value != NULL) {
             col_add_fstr(pinfo->cinfo, COL_INFO, "[RLC AM Fragment] [Duplicate]  SN=%u %s", seq, (polling != 0) ? "(P)" : "");
             proto_tree_add_uint(tree, hf_rlc_duplicate_of, tvb, 0, 0, GPOINTER_TO_UINT(value));
@@ -2641,21 +2681,34 @@ dissect_rlc_dch_unknown(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     return tvb_captured_length(tvb);
 }
 
+static void
+report_heur_error(proto_tree *tree, packet_info *pinfo, expert_field *eiindex,
+                  tvbuff_t *tvb, int start, int length)
+{
+    proto_item *ti;
+    proto_tree *subtree;
+
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "RLC");
+    col_clear(pinfo->cinfo, COL_INFO);
+    ti = proto_tree_add_item(tree, proto_umts_rlc, tvb, 0, -1, ENC_NA);
+    subtree = proto_item_add_subtree(ti, ett_rlc);
+    proto_tree_add_expert(subtree, pinfo, eiindex, tvb, start, length);
+}
 
 /* Heuristic dissector looks for supported framing protocol (see wiki page)  */
-static gboolean
+static bool
 dissect_rlc_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-    gint        offset             = 0;
+    int         offset             = 0;
     fp_info    *fpi;
     rlc_info   *rlci;
     tvbuff_t   *rlc_tvb;
-    guint8      tag                = 0;
-    guint       channelType        = UMTS_CHANNEL_TYPE_UNSPECIFIED;
-    gboolean    fpInfoAlreadySet   = FALSE;
-    gboolean    rlcInfoAlreadySet  = FALSE;
-    gboolean    channelTypePresent = FALSE;
-    gboolean    rlcModePresent     = FALSE;
+    uint8_t     tag                = 0;
+    unsigned    channelType        = UMTS_CHANNEL_TYPE_UNSPECIFIED;
+    bool        fpInfoAlreadySet   = false;
+    bool        rlcInfoAlreadySet  = false;
+    bool        channelTypePresent = false;
+    bool        rlcModePresent     = false;
     proto_item *ti                 = NULL;
     proto_tree *subtree            = NULL;
     struct atm_phdr *atm           = (struct atm_phdr *)data;
@@ -2667,30 +2720,30 @@ dissect_rlc_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
        - conditional header bytes
        - tag for data
        - at least one byte of RLC PDU payload */
-    if (tvb_captured_length_remaining(tvb, offset) < (gint)(strlen(RLC_START_STRING)+2+2)) {
-        return FALSE;
+    if (tvb_captured_length_remaining(tvb, offset) < (int)(strlen(RLC_START_STRING)+2+2)) {
+        return false;
     }
 
     /* OK, compare with signature string */
-    if (tvb_strneql(tvb, offset, RLC_START_STRING, (gint)strlen(RLC_START_STRING)) != 0) {
-        return FALSE;
+    if (tvb_strneql(tvb, offset, RLC_START_STRING, (int)strlen(RLC_START_STRING)) != 0) {
+        return false;
     }
-    offset += (gint)strlen(RLC_START_STRING);
+    offset += (int)strlen(RLC_START_STRING);
 
     /* If redissecting, use previous info struct (if available) */
     fpi = (fp_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_fp, 0);
     if (fpi == NULL) {
         /* Allocate new info struct for this frame */
-        fpi = (fp_info *)wmem_alloc0(wmem_file_scope(), sizeof(fp_info));
+        fpi = wmem_new0(wmem_file_scope(), fp_info);
     } else {
-        fpInfoAlreadySet = TRUE;
+        fpInfoAlreadySet = true;
     }
     rlci = (rlc_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_rlc, 0);
     if (rlci == NULL) {
         /* Allocate new info struct for this frame */
-        rlci = (rlc_info *)wmem_alloc0(wmem_file_scope(), sizeof(rlc_info));
+        rlci = wmem_new0(wmem_file_scope(), rlc_info);
     } else {
-        rlcInfoAlreadySet = TRUE;
+        rlcInfoAlreadySet = true;
     }
 
     /* Setting non-zero UE-ID for RLC reassembly to work, might be
@@ -2700,24 +2753,24 @@ dissect_rlc_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
     /* Read conditional/optional fields */
     while (tag != RLC_PAYLOAD_TAG) {
         /* Process next tag */
-        tag = tvb_get_guint8(tvb, offset++);
+        tag = tvb_get_uint8(tvb, offset++);
         switch (tag) {
             case RLC_CHANNEL_TYPE_TAG:
-                channelType = tvb_get_guint8(tvb, offset);
+                channelType = tvb_get_uint8(tvb, offset);
                 offset++;
-                channelTypePresent = TRUE;
+                channelTypePresent = true;
                 break;
             case RLC_MODE_TAG:
-                rlci->mode[fpi->cur_tb] = tvb_get_guint8(tvb, offset);
+                rlci->mode[fpi->cur_tb] = tvb_get_uint8(tvb, offset);
                 offset++;
-                rlcModePresent = TRUE;
+                rlcModePresent = true;
                 break;
             case RLC_DIRECTION_TAG:
-                if (tvb_get_guint8(tvb, offset) == DIRECTION_UPLINK) {
-                    fpi->is_uplink = TRUE;
+                if (tvb_get_uint8(tvb, offset) == DIRECTION_UPLINK) {
+                    fpi->is_uplink = true;
                     pinfo->link_dir = P2P_DIR_UL;
                 } else {
-                    fpi->is_uplink = FALSE;
+                    fpi->is_uplink = false;
                     pinfo->link_dir = P2P_DIR_DL;
                 }
                 offset++;
@@ -2727,11 +2780,11 @@ dissect_rlc_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
                 offset += 4;
                 break;
             case RLC_RADIO_BEARER_ID_TAG:
-                rlci->rbid[fpi->cur_tb] = tvb_get_guint8(tvb, offset);
+                rlci->rbid[fpi->cur_tb] = tvb_get_uint8(tvb, offset);
                 offset++;
                 break;
             case RLC_LI_SIZE_TAG:
-                rlci->li_size[fpi->cur_tb] = (enum rlc_li_size) tvb_get_guint8(tvb, offset);
+                rlci->li_size[fpi->cur_tb] = (enum rlc_li_size) tvb_get_uint8(tvb, offset);
                 offset++;
                 break;
             case RLC_PAYLOAD_TAG:
@@ -2739,13 +2792,15 @@ dissect_rlc_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
                 continue;
             default:
                 /* It must be a recognised tag */
-                return FALSE;
+                report_heur_error(tree, pinfo, &ei_rlc_unknown_udp_framing_tag, tvb, offset-1, 1);
+                return true;
         }
     }
 
-    if ((channelTypePresent == FALSE) && (rlcModePresent == FALSE)) {
+    if ((channelTypePresent == false) && (rlcModePresent == false)) {
         /* Conditional fields are missing */
-        return FALSE;
+        report_heur_error(tree, pinfo, &ei_rlc_missing_udp_framing_tag, tvb, 0, offset);
+        return true;
     }
 
     /* Store info in packet if needed */
@@ -2803,10 +2858,10 @@ dissect_rlc_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
             break;
         default:
             /* Unknown channel type */
-            return FALSE;
+            return false;
     }
 
-    return TRUE;
+    return true;
 }
 
 void
@@ -2821,7 +2876,7 @@ proto_register_rlc(void)
         },
         { &hf_rlc_ctrl_type,
           { "Control PDU Type", "rlc.ctrl_pdu_type",
-            FT_UINT8, BASE_DEC, VALS(rlc_ctrl_vals), 0, "PDU Type", HFILL }
+            FT_UINT8, BASE_DEC, VALS(rlc_ctrl_vals), 0, NULL, HFILL }
         },
         { &hf_rlc_r1,
           { "Reserved 1", "rlc.r1",
@@ -2855,9 +2910,13 @@ proto_register_rlc(void)
           { "Padding", "rlc.padding",
             FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }
         },
+        { &hf_rlc_reassembled_data,
+          { "Reassembled RLC Data", "rlc.reassembled_data",
+            FT_BYTES, BASE_NONE, NULL, 0, "The reassembled payload", HFILL }
+        },
         { &hf_rlc_frags,
           { "Reassembled Fragments", "rlc.fragments",
-            FT_NONE, BASE_NONE, NULL, 0, "Fragments", HFILL }
+            FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }
         },
         { &hf_rlc_frag,
           { "RLC Fragment", "rlc.fragment",
@@ -2992,7 +3051,7 @@ proto_register_rlc(void)
         },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_rlc,
         &ett_rlc_frag,
         &ett_rlc_fragments,
@@ -3010,7 +3069,7 @@ proto_register_rlc(void)
         { &ei_rlc_kasumi_implementation_missing, { "rlc.kasumi_implementation_missing", PI_UNDECODED, PI_WARN, "Unable to decipher packet since KASUMI implementation is missing.", EXPFILL }},
         { &ei_rlc_li_reserved, { "rlc.li.reserved", PI_PROTOCOL, PI_WARN, "Uses reserved LI", EXPFILL }},
         { &ei_rlc_li_incorrect_warn, { "rlc.li.incorrect", PI_PROTOCOL, PI_WARN, "Incorrect LI value", EXPFILL }},
-        { &ei_rlc_li_incorrect_mal, { "rlc.li.incorrect", PI_MALFORMED, PI_ERROR, "Incorrect LI value 0x%x", EXPFILL }},
+        { &ei_rlc_li_incorrect_mal, { "rlc.li.incorrect", PI_MALFORMED, PI_ERROR, "Incorrect LI value", EXPFILL }},
         { &ei_rlc_li_too_many, { "rlc.li.too_many", PI_MALFORMED, PI_ERROR, "Too many LI entries", EXPFILL }},
         { &ei_rlc_header_only, { "rlc.header_only.expert", PI_SEQUENCE, PI_NOTE, "RLC PDU SDUs have been omitted", EXPFILL }},
         { &ei_rlc_sufi_len, { "rlc.sufi.len.invalid", PI_MALFORMED, PI_ERROR, "Invalid length", EXPFILL }},
@@ -3019,9 +3078,11 @@ proto_register_rlc(void)
         { &ei_rlc_reserved_bits_not_zero, { "rlc.reserved_bits_not_zero", PI_PROTOCOL, PI_WARN, "reserved bits not zero", EXPFILL }},
         { &ei_rlc_ctrl_type, { "rlc.ctrl_pdu_type.invalid", PI_PROTOCOL, PI_WARN, "Invalid RLC AM control type", EXPFILL }},
         { &ei_rlc_he, { "rlc.he.invalid", PI_PROTOCOL, PI_WARN, "Incorrect HE value", EXPFILL }},
-        { &ei_rlc_ciphered_data, { "rlc.ciphered_data", PI_UNDECODED, PI_WARN, "Cannot dissect RLC frame because it is ciphered", EXPFILL }},
+        { &ei_rlc_ciphered_data, { "rlc.ciphered", PI_UNDECODED, PI_WARN, "Cannot dissect RLC frame because it is ciphered", EXPFILL }},
         { &ei_rlc_no_per_frame_data, { "rlc.no_per_frame_data", PI_PROTOCOL, PI_WARN, "Can't dissect RLC frame because no per-frame info was attached!", EXPFILL }},
         { &ei_rlc_incomplete_sequence, { "rlc.incomplete_sequence", PI_MALFORMED, PI_ERROR, "Error: Incomplete sequence", EXPFILL }},
+        { &ei_rlc_unknown_udp_framing_tag, { "rlc.unknown_udp_framing_tag", PI_UNDECODED, PI_WARN, "Unknown UDP framing tag, aborting dissection", EXPFILL }},
+        { &ei_rlc_missing_udp_framing_tag, { "rlc.missing_udp_framing_tag", PI_UNDECODED, PI_WARN, "Missing UDP framing conditional tag, aborting dissection", EXPFILL }}
     };
 
     proto_umts_rlc = proto_register_protocol("Radio Link Control", "RLC", "rlc");
@@ -3087,7 +3148,7 @@ proto_register_rlc(void)
     prefs_register_enum_preference(rlc_module, "li_size",
         "LI size",
         "LI size in bits, either 7 or 15 bit",
-        &global_rlc_li_size, li_size_enumvals, FALSE);
+        &global_rlc_li_size, li_size_enumvals, false);
 
     register_init_routine(fragment_table_init);
     register_cleanup_routine(fragment_table_cleanup);

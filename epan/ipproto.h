@@ -1,4 +1,4 @@
-/* ipproto.h
+/** @file
  * Declarations of IP protocol numbers, and of routines for converting
  * IP protocol numbers into strings.
  *
@@ -13,6 +13,7 @@
 #define __IPPROTO_H__
 
 #include "ws_symbol_export.h"
+#include <epan/value_string.h>
 
 /*
  * IP protocol numbers.
@@ -48,7 +49,7 @@
 #define IP_PROTO_LEAF1          25
 #define IP_PROTO_LEAF2          26
 #define IP_PROTO_RDP            27      /* Reliable Data Protocol - RFC908 */
-#define IP_PROTO_IRT            28      /* Internet Reliable Transation - RFC938 */
+#define IP_PROTO_IRT            28      /* Internet Reliable Transaction - RFC938 */
 #define IP_PROTO_TP             29      /* tp-4 w/ class negotiation - RFC905 */
 #define IP_PROTO_BULK           30      /* Bulk Data Transfer Protocol - RFC969 */
 #define IP_PROTO_MFE_NSP        31      /* MFE Network Services Protocol */
@@ -108,7 +109,7 @@
 #define IP_PROTO_CPHB           73      /* Computer Protocol Heart Beat */
 #define IP_PROTO_WSN            74      /* WANG Span Network */
 #define IP_PROTO_PVP            75      /* Packet Video Protocol */
-#define IP_PROTO_BRSATMON       76      /* Backroon SATNET Monitoring */
+#define IP_PROTO_BRSATMON       76      /* Backroom SATNET Monitoring */
 #define IP_PROTO_SUNND          77      /* SUN ND Protocol - Temporary */
 #define IP_PROTO_WBMON          78      /* Wideband Monitoring */
 #define IP_PROTO_WBEXPAK        79      /* Wideband EXPAK */
@@ -175,6 +176,11 @@
 #define IP_PROTO_SHIM6          140     /* Shim6 Protocol */
 #define IP_PROTO_WESP           141     /* 141 WESP Wrapped Encapsulating Security Payload [RFC5840] */
 #define IP_PROTO_ROHC           142     /* 142 ROHC Robust Header Compression [RFC5858] */
+#define IP_PROTO_ETHERNET       143     /* Ethernet [RFC8986] */
+#define IP_PROTO_AGGFRAG        144     /* AGGFRAG encapsulation payload for ESP */
+#define IP_PROTO_NSH            145     /* Network Service Header */
+#define IP_PROTO_HOMA           146     /* Homa */
+#define IP_PROTO_BIT_EMU        147     /* Bit-stream Emulation */
 #define IP_PROTO_AX4000         173     /* AX/4000 Testblock - non IANA */
 #define IP_PROTO_NCS_HEARTBEAT  224     /* Novell NCS Heartbeat - http://support.novell.com/cgi-bin/search/searchtid.cgi?/10071158.htm */
 

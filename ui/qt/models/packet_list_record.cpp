@@ -4,70 +4,87 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "packet_list_record.h"
 
 #include <file.h>
 
 #include <epan/epan_dissect.h>
-#include <epan/column-info.h>
 #include <epan/column.h>
 #include <epan/conversation.h>
-#include <epan/wmem/wmem.h>
+#include <epan/wmem_scopes.h>
 
 #include <epan/color_filters.h>
 
-#include "frame_tvbuff.h"
+#include <ui/qt/utils/qt_ui_utils.h>
 
 #include <QStringList>
 
-class ColumnTextList : public QList<const char *> {
-public:
-    // Allocate our records using wmem.
-    static void *operator new(size_t size) {
-        return wmem_alloc(wmem_file_scope(), size);
-    }
-
-    static void operator delete(void *) {}
-};
-
+QCache<uint32_t, QStringList> PacketListRecord::col_text_cache_(500);
 QMap<int, int> PacketListRecord::cinfo_column_;
-unsigned PacketListRecord::col_data_ver_ = 1;
+unsigned PacketListRecord::rows_color_ver_ = 1;
 
 PacketListRecord::PacketListRecord(frame_data *frameData) :
-    col_text_(0),
     fdata_(frameData),
     lines_(1),
     line_count_changed_(false),
-    data_ver_(0),
+    color_ver_(0),
     colorized_(false),
-    conv_(NULL)
+    conv_index_(0),
+    read_failed_(false)
 {
 }
 
-void *PacketListRecord::operator new(size_t size)
+PacketListRecord::~PacketListRecord()
 {
-    return wmem_alloc(wmem_file_scope(), size);
+}
+
+void PacketListRecord::ensureColorized(capture_file *cap_file)
+{
+    // packet_list_store.c:packet_list_get_value
+    Q_ASSERT(fdata_);
+
+    if (!cap_file) {
+        return;
+    }
+
+    bool dissect_color = !colorized_ || ( color_ver_ != rows_color_ver_ );
+    if (dissect_color) {
+        /* Dissect columns only if it won't evict anything from cache */
+        bool dissect_columns = col_text_cache_.totalCost() < col_text_cache_.maxCost();
+        dissect(cap_file, dissect_columns, dissect_color);
+    }
 }
 
 // We might want to return a const char * instead. This would keep us from
 // creating excessive QByteArrays, e.g. in PacketListModel::recordLessThan.
-const QByteArray PacketListRecord::columnString(capture_file *cap_file, int column, bool colorized)
+const QString PacketListRecord::columnString(capture_file *cap_file, int column, bool colorized)
 {
     // packet_list_store.c:packet_list_get_value
-    g_assert(fdata_);
+    Q_ASSERT(fdata_);
 
-    if (!cap_file || column < 0 || column > cap_file->cinfo.num_cols) {
-        return QByteArray();
+    if (!cap_file || column < 0 || column >= cap_file->cinfo.num_cols) {
+        return QString();
     }
 
-    bool dissect_color = colorized && !colorized_;
-    if (!col_text_ || column >= col_text_->size() || !col_text_->at(column) || data_ver_ != col_data_ver_ || dissect_color) {
-        dissect(cap_file, dissect_color);
+    //
+    // XXX - do we still need to check the colorization, given that we now
+    // have the ensureColorized() method to ensure that the record is
+    // properly colorized?
+    //
+    bool dissect_color = ( colorized && !colorized_ ) || ( color_ver_ != rows_color_ver_ );
+    QStringList *col_text = nullptr;
+    if (!dissect_color) {
+        col_text = col_text_cache_.object(fdata_->num);
+    }
+    if (col_text == nullptr || column >= col_text->count() || col_text->at(column).isNull()) {
+        dissect(cap_file, true, dissect_color);
+        col_text = col_text_cache_.object(fdata_->num);
     }
 
-    return col_text_->value(column, QByteArray());
+    return col_text ? col_text->at(column) : QString();
 }
 
 void PacketListRecord::resetColumns(column_info *cinfo)
@@ -88,35 +105,30 @@ void PacketListRecord::resetColumns(column_info *cinfo)
     }
 }
 
-void PacketListRecord::resetColorized()
-{
-    colorized_ = false;
-}
-
-void PacketListRecord::dissect(capture_file *cap_file, bool dissect_color)
+void PacketListRecord::dissect(capture_file *cap_file, bool dissect_columns, bool dissect_color)
 {
     // packet_list_store.c:packet_list_dissect_and_cache_record
     epan_dissect_t edt;
     column_info *cinfo = NULL;
-    gboolean create_proto_tree;
-    wtap_rec rec; /* Record metadata */
-    Buffer buf;   /* Record data */
-
-    if (!col_text_) col_text_ = new ColumnTextList;
-    gboolean dissect_columns = col_text_->isEmpty() || data_ver_ != col_data_ver_;
+    bool create_proto_tree;
+    wtap_rec rec; /* Record information */
 
     if (!cap_file) {
         return;
     }
 
-    memset(&rec, 0, sizeof rec);
-
     if (dissect_columns) {
         cinfo = &cap_file->cinfo;
     }
 
-    ws_buffer_init(&buf, 1500);
-    if (!cf_read_record_r(cap_file, fdata_, &rec, &buf)) {
+    wtap_rec_init(&rec, 1514);
+    if (read_failed_) {
+        read_failed_ = !cf_read_record_no_alert(cap_file, fdata_, &rec);
+    } else {
+        read_failed_ = !cf_read_record(cap_file, fdata_, &rec);
+    }
+
+    if (read_failed_) {
         /*
          * Error reading the record.
          *
@@ -128,7 +140,7 @@ void PacketListRecord::dissect(capture_file *cap_file, bool dissect_color)
          * error message.
          */
         if (dissect_columns) {
-            col_fill_in_error(cinfo, fdata_, FALSE, FALSE /* fill_fd_columns */);
+            col_fill_in_error(cinfo, fdata_, false, false /* fill_fd_columns */);
 
             cacheColumnStrings(cinfo);
         }
@@ -136,7 +148,7 @@ void PacketListRecord::dissect(capture_file *cap_file, bool dissect_color)
             fdata_->color_filter = NULL;
             colorized_ = true;
         }
-        ws_buffer_free(&buf);
+        wtap_rec_cleanup(&rec);
         return;    /* error reading the record */
     }
 
@@ -158,12 +170,12 @@ void PacketListRecord::dissect(capture_file *cap_file, bool dissect_color)
 
     epan_dissect_init(&edt, cap_file->epan,
                       create_proto_tree,
-                      FALSE /* proto_tree_visible */);
+                      false /* proto_tree_visible */);
 
     /* Re-color when the coloring rules are changed via the UI. */
     if (dissect_color) {
         color_filters_prime_edt(&edt);
-        fdata_->flags.need_colorize = 1;
+        fdata_->need_colorize = 1;
     }
     if (dissect_columns)
         col_custom_prime_edt(&edt, cinfo);
@@ -172,150 +184,56 @@ void PacketListRecord::dissect(capture_file *cap_file, bool dissect_color)
      * XXX - need to catch an OutOfMemoryError exception and
      * attempt to recover from it.
      */
-    epan_dissect_run(&edt, cap_file->cd_t, &rec,
-                     frame_tvbuff_new_buffer(&cap_file->provider, fdata_, &buf),
-                     fdata_, cinfo);
+    epan_dissect_run(&edt, cap_file->cd_t, &rec, fdata_, cinfo);
 
     if (dissect_columns) {
         /* "Stringify" non frame_data vals */
-        epan_dissect_fill_in_columns(&edt, FALSE, FALSE /* fill_fd_columns */);
+        epan_dissect_fill_in_columns(&edt, false, false /* fill_fd_columns */);
         cacheColumnStrings(cinfo);
     }
 
     if (dissect_color) {
         colorized_ = true;
+        color_ver_ = rows_color_ver_;
     }
-    data_ver_ = col_data_ver_;
 
-    packet_info *pi = &edt.pi;
-    conv_ = find_conversation_pinfo(pi, 0);
+    struct conversation * conv = find_conversation_pinfo_ro(&edt.pi, 0);
+
+    conv_index_ = ! conv ? 0 : conv->conv_index;
 
     epan_dissect_cleanup(&edt);
-    ws_buffer_free(&buf);
+    wtap_rec_cleanup(&rec);
 }
 
-// This assumes only one packet list. We might want to move this to
-// PacketListModel (or replace this with a wmem allocator).
-struct _GStringChunk *PacketListRecord::string_pool_ = g_string_chunk_new(1 * 1024 * 1024);
-void PacketListRecord::clearStringPool()
-{
-    g_string_chunk_clear(string_pool_);
-}
-
-//#define MINIMIZE_STRING_COPYING 1
 void PacketListRecord::cacheColumnStrings(column_info *cinfo)
 {
-    // packet_list_store.c:packet_list_change_record(PacketList *packet_list, PacketListRecord *record, gint col, column_info *cinfo)
+    // packet_list_store.c:packet_list_change_record(PacketList *packet_list, PacketListRecord *record, int col, column_info *cinfo)
     if (!cinfo) {
         return;
     }
 
-    if (col_text_) {
-        col_text_->clear();
-    } else {
-        col_text_ = new ColumnTextList;
-    }
+    QStringList *col_text = new QStringList();
+
     lines_ = 1;
     line_count_changed_ = false;
 
     for (int column = 0; column < cinfo->num_cols; ++column) {
         int col_lines = 1;
 
-#ifdef MINIMIZE_STRING_COPYING
+        QString col_str;
         int text_col = cinfo_column_.value(column, -1);
-
-        /* Column based on frame_data or it already contains a value */
         if (text_col < 0) {
-            col_fill_in_frame_data(fdata_, cinfo, column, FALSE);
-            col_text_->append(cinfo->columns[column].col_data);
-            continue;
+            col_fill_in_frame_data(fdata_, cinfo, column, false);
         }
 
-        switch (cinfo->col_fmt[column]) {
-        case COL_PROTOCOL:
-        case COL_INFO:
-        case COL_IF_DIR:
-        case COL_DCE_CALL:
-        case COL_8021Q_VLAN_ID:
-        case COL_EXPERT:
-        case COL_FREQ_CHAN:
-            if (cinfo->columns[column].col_data && cinfo->columns[column].col_data != cinfo->columns[column].col_buf) {
-                /* This is a constant string, so we don't have to copy it */
-                // XXX - ui/gtk/packet_list_store.c uses G_MAXUSHORT. We don't do proper UTF8
-                // truncation in either case.
-                int col_text_len = MIN(qstrlen(cinfo->col_data[column]) + 1, COL_MAX_INFO_LEN);
-                col_text_->append(QByteArray::fromRawData(cinfo->columns[column].col_data, col_text_len));
-                break;
-            }
-            /* !! FALL-THROUGH!! */
-
-        case COL_DEF_SRC:
-        case COL_RES_SRC:        /* COL_DEF_SRC is currently just like COL_RES_SRC */
-        case COL_UNRES_SRC:
-        case COL_DEF_DL_SRC:
-        case COL_RES_DL_SRC:
-        case COL_UNRES_DL_SRC:
-        case COL_DEF_NET_SRC:
-        case COL_RES_NET_SRC:
-        case COL_UNRES_NET_SRC:
-        case COL_DEF_DST:
-        case COL_RES_DST:        /* COL_DEF_DST is currently just like COL_RES_DST */
-        case COL_UNRES_DST:
-        case COL_DEF_DL_DST:
-        case COL_RES_DL_DST:
-        case COL_UNRES_DL_DST:
-        case COL_DEF_NET_DST:
-        case COL_RES_NET_DST:
-        case COL_UNRES_NET_DST:
-        default:
-            if (!get_column_resolved(column) && cinfo->col_expr.col_expr_val[column]) {
-                /* Use the unresolved value in col_expr_val */
-                // XXX Use QContiguousCache?
-                col_text_->append(cinfo->col_expr.col_expr_val[column]);
-            } else {
-                col_text_->append(cinfo->columns[column].col_data);
-            }
-            break;
-        }
-#else // MINIMIZE_STRING_COPYING
-        const char *col_str;
-        if (!get_column_resolved(column) && cinfo->col_expr.col_expr_val[column]) {
-            /* Use the unresolved value in col_expr_val */
-            col_str = cinfo->col_expr.col_expr_val[column];
-        } else {
-            int text_col = cinfo_column_.value(column, -1);
-
-            if (text_col < 0) {
-                col_fill_in_frame_data(fdata_, cinfo, column, FALSE);
-            }
-            col_str = cinfo->columns[column].col_data;
-        }
-        // g_string_chunk_insert_const manages a hash table of pointers to
-        // strings:
-        // https://git.gnome.org/browse/glib/tree/glib/gstringchunk.c
-        // We might be better off adding the equivalent functionality to
-        // wmem_tree.
-        col_text_->append(g_string_chunk_insert_const(string_pool_, col_str));
-        for (int i = 0; col_str[i]; i++) {
-            if (col_str[i] == '\n') col_lines++;
-        }
+        col_str = QString(get_column_text(cinfo, column));
+        *col_text << col_str;
+        col_lines = static_cast<int>(col_str.count('\n'));
         if (col_lines > lines_) {
             lines_ = col_lines;
             line_count_changed_ = true;
         }
-#endif // MINIMIZE_STRING_COPYING
     }
-}
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+    col_text_cache_.insert(fdata_->num, col_text);
+}

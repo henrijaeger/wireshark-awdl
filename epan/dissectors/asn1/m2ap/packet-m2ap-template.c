@@ -1,6 +1,6 @@
 /* packet-m2ap.c
  * Routines for M2 Application Protocol packet dissection
- * Copyright 2016, Pascal Quantin <pascal.quantin@gmail.com>
+ * Copyright 2016-2023, Pascal Quantin <pascal@wireshark.org>
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Reference: 3GPP TS 36.443 v14.0.0
+ * Reference: 3GPP TS 36.443 v17.0.1
  */
 
 #include "config.h"
@@ -17,6 +17,9 @@
 #include <epan/sctpppids.h>
 #include <epan/asn1.h>
 #include <epan/expert.h>
+#include <epan/proto_data.h>
+#include <epan/unit_strings.h>
+#include <wsutil/array.h>
 
 #include "packet-per.h"
 #include "packet-e212.h"
@@ -34,19 +37,23 @@ void proto_reg_handoff_m2ap(void);
 #include "packet-m2ap-val.h"
 
 /* Initialize the protocol and registered fields */
-static int proto_m2ap = -1;
+static int proto_m2ap;
 
-static int hf_m2ap_IPAddress_v4 = -1;
-static int hf_m2ap_IPAddress_v6 = -1;
+static int hf_m2ap_IPAddress_v4;
+static int hf_m2ap_IPAddress_v6;
 #include "packet-m2ap-hf.c"
 
 /* Initialize the subtree pointers */
-static int ett_m2ap = -1;
-static int ett_m2ap_PLMN_Identity = -1;
-static int ett_m2ap_IPAddress = -1;
+static int ett_m2ap;
+static int ett_m2ap_PLMN_Identity;
+static int ett_m2ap_IPAddress;
 #include "packet-m2ap-ett.c"
 
-static expert_field ei_m2ap_invalid_ip_address_len = EI_INIT;
+static expert_field ei_m2ap_invalid_ip_address_len;
+
+struct m2ap_private_data {
+  e212_number_type_t number_type;
+};
 
 enum{
   INITIATING_MESSAGE,
@@ -55,9 +62,9 @@ enum{
 };
 
 /* Global variables */
-static guint32 ProcedureCode;
-static guint32 ProtocolIE_ID;
-static guint32 message_type;
+static uint32_t ProcedureCode;
+static uint32_t ProtocolIE_ID;
+static uint32_t message_type;
 static dissector_handle_t m2ap_handle;
 
 /* Dissector tables */
@@ -73,36 +80,47 @@ static int dissect_InitiatingMessageValue(tvbuff_t *tvb, packet_info *pinfo, pro
 static int dissect_SuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *);
 static int dissect_UnsuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *);
 
+static struct m2ap_private_data*
+m2ap_get_private_data(packet_info *pinfo)
+{
+  struct m2ap_private_data *m2ap_data = (struct m2ap_private_data*)p_get_proto_data(pinfo->pool, pinfo, proto_m2ap, 0);
+  if (!m2ap_data) {
+    m2ap_data = wmem_new0(pinfo->pool, struct m2ap_private_data);
+    p_add_proto_data(pinfo->pool, pinfo, proto_m2ap, 0, m2ap_data);
+  }
+  return m2ap_data;
+}
+
 #include "packet-m2ap-fn.c"
 
 static int
 dissect_ProtocolIEFieldValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-  return (dissector_try_uint_new(m2ap_ies_dissector_table, ProtocolIE_ID, tvb, pinfo, tree, FALSE, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_uint_with_data(m2ap_ies_dissector_table, ProtocolIE_ID, tvb, pinfo, tree, false, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int
 dissect_ProtocolExtensionFieldExtensionValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-  return (dissector_try_uint_new(m2ap_extension_dissector_table, ProtocolIE_ID, tvb, pinfo, tree, FALSE, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_uint_with_data(m2ap_extension_dissector_table, ProtocolIE_ID, tvb, pinfo, tree, false, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int
 dissect_InitiatingMessageValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-  return (dissector_try_uint_new(m2ap_proc_imsg_dissector_table, ProcedureCode, tvb, pinfo, tree, FALSE, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_uint_with_data(m2ap_proc_imsg_dissector_table, ProcedureCode, tvb, pinfo, tree, false, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int
 dissect_SuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-  return (dissector_try_uint_new(m2ap_proc_sout_dissector_table, ProcedureCode, tvb, pinfo, tree, FALSE, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_uint_with_data(m2ap_proc_sout_dissector_table, ProcedureCode, tvb, pinfo, tree, false, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int
 dissect_UnsuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-  return (dissector_try_uint_new(m2ap_proc_uout_dissector_table, ProcedureCode, tvb, pinfo, tree, FALSE, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_uint_with_data(m2ap_proc_uout_dissector_table, ProcedureCode, tvb, pinfo, tree, false, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 
@@ -144,7 +162,7 @@ proto_register_m2ap(void) {
   };
 
   /* List of subtrees */
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_m2ap,
     &ett_m2ap_PLMN_Identity,
     &ett_m2ap_IPAddress,

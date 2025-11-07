@@ -1,4 +1,4 @@
-/* about_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -33,13 +33,8 @@ public:
     explicit AuthorListModel(QObject * parent = Q_NULLPTR);
     virtual ~AuthorListModel();
 
-    QString acknowledgment() const;
-
 protected:
     virtual QStringList headerColumns() const;
-
-private:
-    QString acknowledgement_;
 
 };
 
@@ -87,32 +82,24 @@ public:
     ~AboutDialog();
 
 protected:
+    virtual bool event(QEvent *event);
     virtual void showEvent(QShowEvent *);
 
 private:
+    void updateWiresharkText();
+
     Ui::AboutDialog *ui;
+    QString script_pattern;
+    QString clipboardInfo;
 
 private slots:
     void urlDoubleClicked(const QModelIndex &);
     void handleCopyMenu(QPoint);
+    void showInFolderActionTriggered();
     void copyActionTriggered(bool row = false);
     void copyRowActionTriggered();
-#ifdef HAVE_LUA
     void on_tblPlugins_doubleClicked(const QModelIndex &index);
-#endif
+    void on_copyToClipboard_clicked();
 };
 
 #endif // ABOUT_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

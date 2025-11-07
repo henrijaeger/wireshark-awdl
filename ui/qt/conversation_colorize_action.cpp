@@ -4,15 +4,14 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "conversation_colorize_action.h"
 
 #include <config.h>
 
-#include <glib.h>
-
-#include "epan/dissector_filters.h"
+#include "epan/conversation_filter.h"
 
 #include <QMenu>
 
@@ -32,15 +31,15 @@ void ConversationAction::setPacketInfo(struct _packet_info *pinfo)
 {
     bool enable = false;
     if (conv_filter_ && pinfo) {
-        enable = conv_filter_->is_filter_valid(pinfo);
+        enable = conv_filter_->is_filter_valid(pinfo, conv_filter_->user_data);
         if (enable) {
-            filter_ba_ = gchar_free_to_qbytearray(conv_filter_->build_filter_string(pinfo));
+            filter_ba_ = gchar_free_to_qbytearray(conv_filter_->build_filter_string(pinfo, conv_filter_->user_data));
         }
     }
     setEnabled(enable);
 
     // If we're the "New Coloring Rule" item, enable or disable our parent menu.
-    QMenu *parent_submenu = qobject_cast<QMenu *>(parentWidget());
+    QMenu *parent_submenu = qobject_cast<QMenu *>(parent());
     if (color_number_ < 0 || !parent_submenu) return;
     parent_submenu->setEnabled(enable);
 }
@@ -55,20 +54,7 @@ bool ConversationAction::isFilterValid(struct _packet_info *pinfo)
 {
     bool valid = false;
     if (conv_filter_ && pinfo) {
-        valid = conv_filter_->is_filter_valid(pinfo);
+        valid = conv_filter_->is_filter_valid(pinfo, conv_filter_->user_data);
     }
     return valid;
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

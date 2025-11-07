@@ -64,68 +64,83 @@
 #include "packet-pn.h"
 
 
-#define F_MESSAGE_TRAILER_4BYTE  4      /* PROFIsafe: Defines the Amount of Bytes for CRC and Status-/Controlbyte */
+#define F_MESSAGE_TRAILER_4BYTE  4      /* PROFIsafe: Defines the Amount of Bytes for CRC and Status-/Controlbyte in PROFIsafe 2.4 */
+#define F_MESSAGE_TRAILER_5BYTE  5      /* PROFIsafe: Defines the Amount of Bytes for CRC and Status-/Controlbyte in PROFIsafe 2.6 */
 #define PN_INPUT_CR              1      /* PROFINET Input Connect Request value */
 #define PN_INPUT_DATADESCRITPION 1      /* PROFINET Input Data Description value */
 
+#define PA_PROFILE_API 0x9700u
 
-static int proto_pn_io_rtc1 = -1;
+static int proto_pn_io_rtc1;
 
 /* General module information */
-static int hf_pn_io_frame_info_type = -1;
-static int hf_pn_io_frame_info_vendor = -1;
-static int hf_pn_io_frame_info_nameofstation = -1;
-static int hf_pn_io_frame_info_gsd_found = -1;
-static int hf_pn_io_frame_info_gsd_error = -1;
-static int hf_pn_io_frame_info_gsd_path = -1;
-static int hf_pn_io_io_data_object = -1;
-static int hf_pn_io_io_data_object_info_module_diff = -1;
-static int hf_pn_io_io_data_object_info_moduleidentnumber = -1;
-static int hf_pn_io_io_data_object_info_submoduleidentnumber = -1;
+static int hf_pn_io_frame_info_type;
+static int hf_pn_io_frame_info_vendor;
+static int hf_pn_io_frame_info_nameofstation;
+static int hf_pn_io_frame_info_gsd_found;
+static int hf_pn_io_frame_info_gsd_error;
+static int hf_pn_io_frame_info_gsd_path;
+static int hf_pn_io_io_data_object;
+static int hf_pn_io_io_data_object_info_module_diff;
+static int hf_pn_io_io_data_object_info_moduleidentnumber;
+static int hf_pn_io_io_data_object_info_submoduleidentnumber;
 
-static int hf_pn_io_iocs = -1;
-static int hf_pn_io_iops = -1;
-static int hf_pn_io_ioxs_extension = -1;
-static int hf_pn_io_ioxs_res14 = -1;
-static int hf_pn_io_ioxs_instance = -1;
-static int hf_pn_io_ioxs_datastate = -1;
+static int hf_pn_io_iocs;
+static int hf_pn_io_iops;
+static int hf_pn_io_ioxs_extension;
+static int hf_pn_io_ioxs_res14;
+static int hf_pn_io_ioxs_instance;
+static int hf_pn_io_ioxs_datastate;
 
 /* PROFIsafe statusbyte and controlbyte */
-static int hf_pn_io_ps_sb = -1;
-static int hf_pn_io_ps_sb_iparOK = -1;
-static int hf_pn_io_ps_sb_DeviceFault = -1;
-static int hf_pn_io_ps_sb_CECRC = -1;
-static int hf_pn_io_ps_sb_WDtimeout = -1;
-static int hf_pn_io_ps_sb_FVactivated = -1;
-static int hf_pn_io_ps_sb_Toggle_d = -1;
-static int hf_pn_io_ps_sb_ConsNr_reset = -1;
-static int hf_pn_io_ps_sb_res = -1;
-static int hf_pn_io_ps_sb_toggelBitChanged = -1;
-static int hf_pn_io_ps_sb_toggelBitChange_slot_nr = -1;
-static int hf_pn_io_ps_sb_toggelBitChange_subslot_nr = -1;
+static int hf_pn_io_ps_sb;
+static int hf_pn_io_ps_sb_iparOK;
+static int hf_pn_io_ps_sb_DeviceFault;
+static int hf_pn_io_ps_sb_CECRC;
+static int hf_pn_io_ps_sb_WDtimeout;
+static int hf_pn_io_ps_sb_FVactivated;
+static int hf_pn_io_ps_sb_Toggle_d;
+static int hf_pn_io_ps_sb_ConsNr_reset;
+static int hf_pn_io_ps_sb_res;
+static int hf_pn_io_ps_sb_toggelBitChanged;
+static int hf_pn_io_ps_sb_toggelBitChange_slot_nr;
+static int hf_pn_io_ps_sb_toggelBitChange_subslot_nr;
 
-static int hf_pn_io_ps_cb = -1;
-static int hf_pn_io_ps_cb_iparEN = -1;
-static int hf_pn_io_ps_cb_OAReq = -1;
-static int hf_pn_io_ps_cb_resetConsNr = -1;
-static int hf_pn_io_ps_cb_useTO2 = -1;
-static int hf_pn_io_ps_cb_activateFV = -1;
-static int hf_pn_io_ps_cb_Toggle_h = -1;
-static int hf_pn_io_ps_cb_Chf_ACK = -1;
-static int hf_pn_io_ps_cb_loopcheck = -1;
-static int hf_pn_io_ps_cb_toggelBitChanged = -1;
-static int hf_pn_io_ps_cb_toggelBitChange_slot_nr = -1;
-static int hf_pn_io_ps_cb_toggelBitChange_subslot_nr = -1;
+static int hf_pn_io_ps_cb;
+static int hf_pn_io_ps_cb_iparEN;
+static int hf_pn_io_ps_cb_OAReq;
+static int hf_pn_io_ps_cb_resetConsNr;
+static int hf_pn_io_ps_cb_useTO2;
+static int hf_pn_io_ps_cb_activateFV;
+static int hf_pn_io_ps_cb_Toggle_h;
+static int hf_pn_io_ps_cb_Chf_ACK;
+static int hf_pn_io_ps_cb_loopcheck;
+static int hf_pn_io_ps_cb_toggelBitChanged;
+static int hf_pn_io_ps_cb_toggelBitChange_slot_nr;
+static int hf_pn_io_ps_cb_toggelBitChange_subslot_nr;
 
 /* PROFIsafe */
-static int hf_pn_io_ps_f_dest_adr = -1;
-static int hf_pn_io_ps_f_data = -1;
+static int hf_pn_io_ps_f_dest_adr;
+static int hf_pn_io_ps_f_data;
 
-static gint ett_pn_io_rtc = -1;
-static gint ett_pn_io_ioxs = -1;
-static gint ett_pn_io_io_data_object = -1;
+/* PA Profile 4.02 */
+static int hf_pn_pa_profile_status;
+static int hf_pn_pa_profile_status_quality;
+static int hf_pn_pa_profile_status_substatus_bad;
+static int hf_pn_pa_profile_status_substatus_uncertain;
+static int hf_pn_pa_profile_status_substatus_good;
+static int hf_pn_pa_profile_status_update_event;
+static int hf_pn_pa_profile_status_simulate;
+static int hf_pn_pa_profile_value_8bit;
+static int hf_pn_pa_profile_value_16bit;
+static int hf_pn_pa_profile_value_float;
 
-static expert_field ei_pn_io_too_many_data_objects = EI_INIT;
+static int ett_pn_io_rtc;
+static int ett_pn_io_ioxs;
+static int ett_pn_io_io_data_object;
+static int ett_pn_pa_profile_status;
+
+static expert_field ei_pn_io_too_many_data_objects;
 
 static const value_string pn_io_ioxs_extension[] = {
     { 0x00 /*  0*/, "No IOxS octet follows" },
@@ -147,8 +162,55 @@ static const value_string pn_io_ioxs_datastate[] = {
     { 0, NULL }
 };
 
+static const value_string pn_pa_profile_status_quality[] = {
+    { 0x00 /*  0*/, "BAD" },
+    { 0x01 /*  1*/, "UNCERTAIN" },
+    { 0x02 /*  2*/, "GOOD" },
+    { 0, NULL }
+};
 
-static const int *ps_sb_fields[] = {
+static const value_string pn_pa_profile_status_substatus_bad[] = {
+    { 0x0, "Non specific" },
+    { 0x2, "Not connected" },
+    { 0x8, "Passivated" },
+    { 0x9, "Maintenance alarm, more diagnosis" },
+    { 0xA, "Process related, no maintenance" },
+    { 0xF, "Function check, value not usable" },
+    { 0, NULL }
+};
+
+static const value_string pn_pa_profile_status_substatus_uncertain[] = {
+    { 0x2, "Substitute set" },
+    { 0x3, "Initial value" },
+    { 0xA, "Maintenance demanded" },
+    { 0xE, "Process related, no maintenance" },
+    { 0, NULL }
+};
+
+static const value_string pn_pa_profile_status_substatus_good[] = {
+    { 0x0, "Good" },
+    { 0x7, "Local override" },
+    { 0x8, "Initial fail safe" },
+    { 0x9, "Maintenance required" },
+    { 0xA, "Maintenance demanded" },
+    { 0xF, "Function check" },
+    { 0, NULL }
+};
+
+static const value_string pn_pa_profile_status_update_event[] = {
+    { 0x0, "No event" },
+    { 0x1, "Update event" },
+    { 0, NULL }
+};
+
+static const value_string pn_pa_profile_status_simulate[] = {
+    { 0x0, "Simulation off" },
+    { 0x1, "Simulation active" },
+    { 0, NULL }
+};
+
+
+static int * const ps_sb_fields[] = {
     &hf_pn_io_ps_sb_res,
     &hf_pn_io_ps_sb_ConsNr_reset,
     &hf_pn_io_ps_sb_Toggle_d,
@@ -160,7 +222,7 @@ static const int *ps_sb_fields[] = {
     NULL
 };
 
-static const int *ps_cb_fields[] = {
+static int * const ps_cb_fields[] = {
     &hf_pn_io_ps_cb_loopcheck,
     &hf_pn_io_ps_cb_Chf_ACK,
     &hf_pn_io_ps_cb_Toggle_h,
@@ -172,7 +234,7 @@ static const int *ps_cb_fields[] = {
     NULL
 };
 
-static const int *ioxs_fields[] = {
+static int * const ioxs_fields[] = {
     &hf_pn_io_ioxs_datastate,
     &hf_pn_io_ioxs_instance,
     &hf_pn_io_ioxs_res14,
@@ -180,18 +242,29 @@ static const int *ioxs_fields[] = {
     NULL
 };
 
+/*
+static int * const pa_profile_status_fields[] = {
+    &hf_pn_pa_profile_status_quality,
+    &hf_pn_pa_profile_status_substatus_bad,
+    &hf_pn_pa_profile_status_substatus_uncertain,
+    &hf_pn_pa_profile_status_substatus_good,
+    &hf_pn_pa_profile_status_update_event,
+    &hf_pn_pa_profile_status_simulate,
+    NULL
+};
+*/
 
 /* Dissector for PROFIsafe Status Byte */
 static int
 dissect_pn_io_ps_SB(tvbuff_t *tvb, int offset,
-packet_info *pinfo _U_, proto_tree *tree, guint8 *drep _U_, int hfindex, const int **fields)
+packet_info *pinfo _U_, proto_tree *tree, uint8_t *drep _U_, int hfindex, int * const *fields)
 {
 
     if (tree) {
-        guint8     u8StatusByte;
+        uint8_t    u8StatusByte;
         proto_item *sb_item;
 
-        u8StatusByte = tvb_get_guint8(tvb, offset);
+        u8StatusByte = tvb_get_uint8(tvb, offset);
 
         /* Add Status Byte subtree */
         sb_item = proto_tree_add_bitmask_with_flags(tree, tvb, offset, hfindex, ett_pn_io_ioxs, fields,
@@ -206,14 +279,14 @@ packet_info *pinfo _U_, proto_tree *tree, guint8 *drep _U_, int hfindex, const i
 /* Dissector for PROFIsafe Control Byte */
 static int
 dissect_pn_io_ps_CB(tvbuff_t *tvb, int offset,
-packet_info *pinfo _U_, proto_tree *tree, guint8 *drep _U_, int hfindex, const int **fields)
+packet_info *pinfo _U_, proto_tree *tree, uint8_t *drep _U_, int hfindex, int * const *fields)
 {
 
     if (tree) {
-        guint8     u8ControlByte;
+        uint8_t    u8ControlByte;
         proto_item *cb_item;
 
-        u8ControlByte = tvb_get_guint8(tvb, offset);
+        u8ControlByte = tvb_get_uint8(tvb, offset);
 
         /* Add Status Byte subtree */
         cb_item = proto_tree_add_bitmask_with_flags(tree, tvb, offset, hfindex, ett_pn_io_ioxs, fields,
@@ -229,14 +302,14 @@ packet_info *pinfo _U_, proto_tree *tree, guint8 *drep _U_, int hfindex, const i
 /* Dissector for IOCS (As each IOCS stands for a specific Slot & Subslot) */
 static int
 dissect_PNIO_IOCS(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *tree,
-            guint8 *drep _U_, int hfindex, guint16 slotNr, guint16 subSlotNr, const int **fields)
+            uint8_t *drep _U_, int hfindex, uint16_t slotNr, uint16_t subSlotNr, int * const *fields)
 {
 
     if (tree) {
-        guint8      u8IOxS;
+        uint8_t     u8IOxS;
         proto_item *ioxs_item;
 
-        u8IOxS = tvb_get_guint8(tvb, offset);
+        u8IOxS = tvb_get_uint8(tvb, offset);
 
         /* Add ioxs subtree */
         ioxs_item = proto_tree_add_bitmask_with_flags(tree, tvb, offset, hfindex,
@@ -256,14 +329,14 @@ dissect_PNIO_IOCS(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree 
 /* dissect the IOxS (IOCS, IOPS) field */
 static int
 dissect_PNIO_IOxS(tvbuff_t *tvb, int offset,
-packet_info *pinfo _U_, proto_tree *tree, guint8 *drep _U_, int hfindex, const int **fields)
+packet_info *pinfo _U_, proto_tree *tree, uint8_t *drep _U_, int hfindex, int * const *fields)
 {
 
     if (tree) {
-        guint8     u8IOxS;
+        uint8_t    u8IOxS;
         proto_item *ioxs_item;
 
-        u8IOxS = tvb_get_guint8(tvb, offset);
+        u8IOxS = tvb_get_uint8(tvb, offset);
 
         /* Add ioxs subtree */
         ioxs_item = proto_tree_add_bitmask_with_flags(tree, tvb, offset, hfindex,
@@ -278,20 +351,20 @@ packet_info *pinfo _U_, proto_tree *tree, guint8 *drep _U_, int hfindex, const i
 }
 
 
-/* Universel dissector for flexibel PROFIsafe Data 8 to 64 Bits */
+/* Universal dissector for flexibel PROFIsafe Data 8 to 64 Bits */
 static int
-dissect_pn_io_ps_uint(tvbuff_t *tvb, gint offset, packet_info *pinfo _U_,
-    proto_tree *tree, guint8 *drep,
-int hfindex, guint8 bytelength, guint64 *pdata)
+dissect_pn_io_ps_uint(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
+    proto_tree *tree, uint8_t *drep,
+int hfindex, uint8_t bytelength, uint64_t *pdata)
 {
-    guint64  data;
-    gboolean generalDissection;
+    uint64_t data;
+    bool generalDissection;
 
-    generalDissection = FALSE;
+    generalDissection = false;
 
     switch (bytelength) {
     case 1:     /* 8 Bit Safety IO Data */
-        data = tvb_get_guint8(tvb, offset);
+        data = tvb_get_uint8(tvb, offset);
         if (pdata)
             *pdata = data;
         break;
@@ -340,11 +413,11 @@ int hfindex, guint8 bytelength, guint64 *pdata)
 
     default:    /* Safety IO Data is too big to save it into one variable */
         dissect_pn_user_data(tvb, offset, pinfo, tree, bytelength, "Safety IO Data");
-        generalDissection = TRUE;
+        generalDissection = true;
         break;
     }
 
-    if (tree && generalDissection == FALSE) {
+    if (tree && generalDissection == false) {
         proto_tree_add_item(tree, hfindex, tvb, offset, bytelength, DREP_ENC_INTEGER(drep));
     }
 
@@ -355,37 +428,40 @@ int hfindex, guint8 bytelength, guint64 *pdata)
 /* dissect a PN-IO RTC1 Cyclic Service Data Unit */
 int
 dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
-    packet_info *pinfo, proto_tree *tree, guint8 *drep _U_)
+    packet_info *pinfo, proto_tree *tree, uint8_t *drep _U_, uint16_t frameid)
 {
     proto_tree  *data_tree = NULL;
 
-    /* Count & offset for comparation of the arrays */
-    guint16     frameOffset;
-    guint32     objectCounter;
-    gboolean    inputFlag;
-    gboolean    outputFlag;
-    gboolean    psInfoText;     /* Used to display only once per frame the info text "PROFIsafe Device" */
+    /* Count & offset for comparison of the arrays */
+    uint16_t    frameOffset;
+    uint32_t    objectCounter;
+    bool        inputFlag;
+    bool        outputFlag;
+    bool        psInfoText;     /* Used to display only once per frame the info text "PROFIsafe Device" */
 
     proto_item *data_item;
     proto_item *IODataObject_item;
+#ifdef HAVE_LIBXML2
     proto_item *IODataObject_item_info;
+#endif
     proto_tree *IODataObject_tree;
     proto_item *ModuleID_item;
     proto_item *ModuleDiff_item;
 
     wmem_strbuf_t *moduleName;
 
-    guint8  toggleBitSb;
-    guint8  toggleBitCb;
-    guint64 f_data;
+    uint8_t toggleBitSb;
+    uint8_t toggleBitCb;
+    uint64_t f_data;
 
-    guint8  statusbyte;
-    guint8  controlbyte;
+    uint8_t statusbyte;
+    uint8_t controlbyte;
+    uint8_t safety_io_data_length;
 
-    guint16 number_io_data_objects_input_cr;
-    guint16 number_iocs_input_cr;
-    guint16 number_io_data_objects_output_cr;
-    guint16 number_iocs_output_cr;
+    uint16_t number_io_data_objects_input_cr;
+    uint16_t number_iocs_input_cr;
+    uint16_t number_io_data_objects_output_cr;
+    uint16_t number_iocs_output_cr;
 
     conversation_t    *conversation;
     stationInfo       *station_info = NULL;
@@ -398,13 +474,17 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
     /* Initial */
     frameOffset = 0;
     f_data = 0;
-    inputFlag = FALSE;
-    outputFlag = FALSE;
-    psInfoText = FALSE;
+    inputFlag = false;
+    outputFlag = false;
+    psInfoText = false;
     number_io_data_objects_input_cr = 0;
     number_iocs_input_cr = 0;
     number_io_data_objects_output_cr = 0;
     number_iocs_output_cr = 0;
+
+    wmem_list_frame_t  *aruuid_frame;
+    ARUUIDFrame        *current_aruuid_frame = NULL;
+    uint32_t            current_aruuid = 0;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "PNIO");            /* set protocol name */
 
@@ -413,39 +493,65 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
     data_tree = proto_item_add_subtree(data_item, ett_pn_io_rtc);
 
     /* dissect_dcerpc_uint16(tvb, offset, pinfo, data_tree, drep, hf_pn_io_packedframe_SFCRC, &u16SFCRC); */
-    if (!(dissect_CSF_SDU_heur(tvb, pinfo, data_tree, NULL) == FALSE))
+    if (dissect_CSF_SDU_heur(tvb, pinfo, data_tree, NULL))
         return(tvb_captured_length(tvb));
 
     /* Only dissect cyclic RTC1 frames, if PN Connect Request has been read */
-    conversation = find_conversation(pinfo->num, &pinfo->dl_src, &pinfo->dl_dst, ENDPOINT_NONE, 0, 0, 0);
+    conversation = find_conversation(pinfo->num, &pinfo->dl_src, &pinfo->dl_dst, CONVERSATION_NONE, 0, 0, 0);
 
     /* Detect input data package and output data package */
     if (conversation != NULL) {
-        station_info = (stationInfo*)conversation_get_proto_data(conversation, proto_pn_dcp);
+        if (aruuid_frame_setup_list != NULL) {
+            for (aruuid_frame = wmem_list_tail(aruuid_frame_setup_list); aruuid_frame != NULL; aruuid_frame = wmem_list_frame_prev(aruuid_frame)) {
+                current_aruuid_frame = (ARUUIDFrame*)wmem_list_frame_data(aruuid_frame);
+                /* There are prerequisites to dissect RTC frame data */
+                /* Current station info must be found before RTC frame dissection starts */
+                /* if RTC frame has setup frame and setup frame number is less than RTC frame number AND if RTC frame has release frame and release frame number is greater than RTC frame number */
+                /* if RTC frame has setup frame and setup frame number is less than RTC frame number AND RTC frame does not have release frame yet! */
+                /* then, get AR UUID of current station info */
+                if ((current_aruuid_frame->setupframe && current_aruuid_frame->setupframe < pinfo->num) &&
+                   ((current_aruuid_frame->releaseframe && current_aruuid_frame->releaseframe > pinfo->num) ||
+                    !current_aruuid_frame->releaseframe)) {
+                    if (current_aruuid_frame->inputframe == frameid) {
+                        current_aruuid = current_aruuid_frame->aruuid.data1;
+                        break;
+                    }
+                    else if (current_aruuid_frame->outputframe == frameid) {
+                        current_aruuid = current_aruuid_frame->aruuid.data1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        station_info = (stationInfo*)conversation_get_proto_data(conversation, current_aruuid);
+
         if (station_info != NULL) {
-            if (pnio_ps_selection == TRUE) {
+            pn_find_dcp_station_info(station_info, conversation);
+
+            if (pnio_ps_selection == true) {
                 col_set_str(pinfo->cinfo, COL_PROTOCOL, "PNIO_PS");    /* set PROFISsafe protocol name */
             }
 
             if (addresses_equal(&(pinfo->src), conversation_key_addr1(conversation->key_ptr)) && addresses_equal(&(pinfo->dst), conversation_key_addr2(conversation->key_ptr))) {
-                inputFlag = TRUE;
-                outputFlag = FALSE;
-                number_io_data_objects_input_cr = station_info->ioDataObjectNr;
-                number_iocs_input_cr = station_info->iocsNr;
+                inputFlag = true;
+                outputFlag = false;
+                number_io_data_objects_input_cr = station_info->ioDataObjectNr_in;
+                number_iocs_input_cr = station_info->iocsNr_in;
             }
 
             if (addresses_equal(&(pinfo->dst), conversation_key_addr1(conversation->key_ptr)) && addresses_equal(&(pinfo->src), conversation_key_addr2(conversation->key_ptr))) {
-                outputFlag = TRUE;
-                inputFlag = FALSE;
-                number_io_data_objects_output_cr = station_info->ioDataObjectNr;
-                number_iocs_output_cr = station_info->iocsNr;
+                outputFlag = true;
+                inputFlag = false;
+                number_io_data_objects_output_cr = station_info->ioDataObjectNr_out;
+                number_iocs_output_cr = station_info->iocsNr_out;
             }
         }
     }
 
     /* ------- Input (PNIO) / Response (PNIO_PS) Frame Handling ------- */
     if (inputFlag) {
-        if (pnio_ps_selection == TRUE) {
+        if (pnio_ps_selection == true) {
             proto_tree_add_string_format_value(data_tree, hf_pn_io_frame_info_type, tvb,
                 offset, 0, "Response", "Response Frame (IO_Device -> IO_Controller)");
         }
@@ -464,11 +570,12 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                     0, station_info->nameofstation, "\"%s\"", station_info->nameofstation);
             }
 
-            if (station_info->gsdPathLength == TRUE) {      /* given path isn't too long for the array */
-                if (station_info->gsdFound == TRUE) {       /* found a GSD-file */
+#ifdef HAVE_LIBXML2
+            if (station_info->gsdPathLength == true) {      /* given path isn't too long for the array */
+                if (station_info->gsdFound == true) {       /* found a GSD-file */
                     if (station_info->gsdLocation != NULL) {
-                        IODataObject_item_info = proto_tree_add_item(data_tree, hf_pn_io_frame_info_gsd_found, tvb, offset, 0, ENC_NA);
-                        proto_item_append_text(IODataObject_item_info, ": \"%s\"", station_info->gsdLocation);
+                        IODataObject_item_info = proto_tree_add_string(data_tree, hf_pn_io_frame_info_gsd_found, tvb, offset, 0, station_info->gsdLocation);
+                        proto_item_set_generated(IODataObject_item_info);
                     }
                 }
                 else {
@@ -482,11 +589,14 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                 IODataObject_item_info = proto_tree_add_item(data_tree, hf_pn_io_frame_info_gsd_path, tvb, offset, 0, ENC_NA);
                 proto_item_append_text(IODataObject_item_info, " Please check your GSD-file networkpath. (No Path configured)");
             }
+#else /* HAVE_LIBXML2 */
+            proto_tree_add_none_format(data_tree, hf_pn_io_frame_info_gsd_error, tvb, offset, 0, "This copy of Wireshark was built without support for reading GSDML files.");
+#endif /* HAVE_LIBXML2 */
         }
 
         /* ---- Input IOData-/IOCS-Object Handling ---- */
         objectCounter = number_io_data_objects_input_cr + number_iocs_input_cr;
-        if (objectCounter > (guint)tvb_reported_length_remaining(tvb, offset)) {
+        if (objectCounter > (unsigned)tvb_reported_length_remaining(tvb, offset)) {
             expert_add_info_format(pinfo, data_item, &ei_pn_io_too_many_data_objects, "Too many data objects: %d", objectCounter);
             return(tvb_captured_length(tvb));
         }
@@ -516,35 +626,41 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                         proto_tree_add_uint(IODataObject_tree, hf_pn_io_io_data_object_info_submoduleidentnumber, tvb, 0, 0, io_data_object->subModuleIdentNr);
 
                         /* PROFIsafe Supported Inputmodule handling */
-                        if (io_data_object->profisafeSupported == TRUE && pnio_ps_selection == TRUE) {
-                            if (io_data_object->profisafeSupported == TRUE && psInfoText == FALSE) {
+                        if (io_data_object->profisafeSupported == true && pnio_ps_selection == true) {
+                            if (io_data_object->profisafeSupported == true && psInfoText == false) {
                                 /* Only add one information string per device to the infotext */
                                 col_append_str(pinfo->cinfo, COL_INFO, ", PROFIsafe Device");    /* Add string to wireshark infotext */
-                                psInfoText = TRUE;
+                                psInfoText = true;
                             }
 
                             proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_f_dest_adr, tvb, 0, 0, io_data_object->f_dest_adr);
 
                             /* Get Safety IO Data */
-                            if ((io_data_object->length - F_MESSAGE_TRAILER_4BYTE) > 0) {
+                            if (io_data_object->f_crc_seed == false) {
+                                safety_io_data_length = io_data_object->length - F_MESSAGE_TRAILER_4BYTE;
+                            } else {
+                                safety_io_data_length = io_data_object->length - F_MESSAGE_TRAILER_5BYTE;
+                            }
+
+                            if (safety_io_data_length > 0) {
                                 offset = dissect_pn_io_ps_uint(tvb, offset, pinfo, IODataObject_tree, drep, hf_pn_io_ps_f_data,
-                                    (io_data_object->length - F_MESSAGE_TRAILER_4BYTE), &f_data);
+                                    safety_io_data_length, &f_data);
                             }
 
                             /* ---- Check for new PNIO data using togglebit ---- */
-                            statusbyte = tvb_get_guint8(tvb, offset);
+                            statusbyte = tvb_get_uint8(tvb, offset);
                             toggleBitSb = statusbyte & 0x20;     /* get ToggleBit of StatusByte */
 
                             if (io_data_object->lastToggleBit != toggleBitSb) {    /* ToggleBit has changed --> new Data incoming */
                                 /* Special Filter for ToggleBit within Statusbyte */
                                 ModuleID_item = proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_sb_toggelBitChanged, tvb, offset, 0, toggleBitSb);
-                                PROTO_ITEM_SET_HIDDEN(ModuleID_item);
+                                proto_item_set_hidden(ModuleID_item);
 
                                 ModuleID_item = proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_sb_toggelBitChange_slot_nr, tvb, offset, 0, io_data_object->slotNr);
-                                PROTO_ITEM_SET_HIDDEN(ModuleID_item);
+                                proto_item_set_hidden(ModuleID_item);
 
                                 ModuleID_item = proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_sb_toggelBitChange_subslot_nr, tvb, offset, 0, io_data_object->subSlotNr);
-                                PROTO_ITEM_SET_HIDDEN(ModuleID_item);
+                                proto_item_set_hidden(ModuleID_item);
                             }
 
                             offset = dissect_pn_io_ps_SB(tvb, offset, pinfo, IODataObject_tree, drep, hf_pn_io_ps_sb, ps_sb_fields);
@@ -556,10 +672,17 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
 
                         else {
                             /* Module is not PROFIsafe supported */
-                            offset = dissect_pn_user_data(tvb, offset, pinfo, IODataObject_tree, io_data_object->length, "IO Data");
+                            if (io_data_object->api == PA_PROFILE_API)
+                            {
+                                offset = dissect_pn_pa_profile_data(tvb, offset, pinfo, IODataObject_tree, io_data_object->length, "IO Data");
+                            }
+                            else
+                            {
+                                offset = dissect_pn_user_data(tvb, offset, pinfo, IODataObject_tree, io_data_object->length, "IO Data");
+                            }
                         }
 
-                        if (io_data_object->discardIOXS == FALSE) {
+                        if (io_data_object->discardIOXS == false) {
                             offset = dissect_PNIO_IOxS(tvb, offset, pinfo, IODataObject_tree, drep, hf_pn_io_iops, ioxs_fields);
                             proto_item_set_len(IODataObject_item, io_data_object->length + 1);     /* Length = Databytes + IOXS Byte */
                         }
@@ -574,13 +697,13 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                         /* ModuleIdentNr appears not only once in GSD-file -> set module name more generally */
                         if (io_data_object->amountInGSDML > 1) {    /* if ModuleIdentNr only appears once in GSD-file, use the found GSD-file-ModuleName, else ... */
                             if (io_data_object->slotNr == 0) {
-                                moduleName = wmem_strbuf_new(wmem_packet_scope(), "Headstation");
+                                moduleName = wmem_strbuf_new(pinfo->pool, "Headstation");
                             }
                             else {
-                                moduleName = wmem_strbuf_new(wmem_packet_scope(), "Module");
+                                moduleName = wmem_strbuf_new(pinfo->pool, "Module");
                             }
 
-                            if (io_data_object->profisafeSupported == TRUE) {
+                            if (io_data_object->profisafeSupported == true) {
                                 /* PROFIsafe */
                                 if (io_data_object->length >= 5) {        /* 5 due to 3 CRC bytes &  1 status byte & (at least) 1 data byte */
                                     wmem_strbuf_append(moduleName, ", DI");
@@ -605,14 +728,14 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                         proto_item_append_text(IODataObject_item, " ModuleName: \"%s\"", io_data_object->moduleNameStr);
 
                         /* emphasize the PROFIsafe supported Modul */
-                        if (io_data_object->profisafeSupported == TRUE && pnio_ps_selection == TRUE) {
+                        if (io_data_object->profisafeSupported == true && pnio_ps_selection == true) {
                             (proto_item_append_text(IODataObject_item, " (PROFIsafe Module)"));
                         }
 
 
                         /* Set frameOffset to its new value, to find the next object */
                         frameOffset = frameOffset + io_data_object->length;  /* frameOffset = current value + data bytes */
-                        if (io_data_object->discardIOXS == FALSE) {
+                        if (io_data_object->discardIOXS == false) {
                             frameOffset = frameOffset + 1;      /* frameOffset = current value + iops byte */
                         }
                     }
@@ -642,7 +765,7 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
 
     /* ----- Output (PNIO) / Request (PNIO_PS) Frame Handling ------ */
     else if (outputFlag) {
-        if (pnio_ps_selection == TRUE) {
+        if (pnio_ps_selection == true) {
             proto_tree_add_string_format_value(data_tree, hf_pn_io_frame_info_type, tvb,
                 offset, 0, "Request", "Request Frame (IO_Controller -> IO_Device)");
         }
@@ -661,11 +784,12 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                     0, station_info->nameofstation, "\"%s\"", station_info->nameofstation);
             }
 
-            if (station_info->gsdPathLength == TRUE) {      /* given path isn't too long for the array */
-                if (station_info->gsdFound == TRUE) {       /* found a GSD-file */
+#ifdef HAVE_LIBXML2
+            if (station_info->gsdPathLength == true) {      /* given path isn't too long for the array */
+                if (station_info->gsdFound == true) {       /* found a GSD-file */
                     if (station_info->gsdLocation != NULL) {
-                        IODataObject_item_info = proto_tree_add_item(data_tree, hf_pn_io_frame_info_gsd_found, tvb, offset, 0, ENC_NA);
-                        proto_item_append_text(IODataObject_item_info, ": \"%s\"", station_info->gsdLocation);
+                        IODataObject_item_info = proto_tree_add_string(data_tree, hf_pn_io_frame_info_gsd_found, tvb, offset, 0, station_info->gsdLocation);
+                        proto_item_set_generated(IODataObject_item_info);
                     }
                 }
                 else {
@@ -679,11 +803,14 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                 IODataObject_item_info = proto_tree_add_item(data_tree, hf_pn_io_frame_info_gsd_path, tvb, offset, 0, ENC_NA);
                 proto_item_append_text(IODataObject_item_info, " Please check your GSD-file networkpath. (No Path configured)");
             }
+#else /* HAVE_LIBXML2 */
+            proto_tree_add_none_format(data_tree, hf_pn_io_frame_info_gsd_error, tvb, offset, 0, "This copy of Wireshark was built without support for reading GSDML files.");
+#endif /* HAVE_LIBXML2 */
         }
 
         /* ---- Output IOData-/IOCS-Object Handling ---- */
         objectCounter = number_io_data_objects_output_cr + number_iocs_output_cr;
-        if (objectCounter > (guint)tvb_reported_length_remaining(tvb, offset)) {
+        if (objectCounter > (unsigned)tvb_reported_length_remaining(tvb, offset)) {
             expert_add_info_format(pinfo, data_item, &ei_pn_io_too_many_data_objects, "Too many data objects: %d", objectCounter);
             return(tvb_captured_length(tvb));
         }
@@ -711,35 +838,41 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                         proto_tree_add_uint(IODataObject_tree, hf_pn_io_io_data_object_info_moduleidentnumber, tvb, 0, 0, io_data_object->moduleIdentNr);
                         proto_tree_add_uint(IODataObject_tree, hf_pn_io_io_data_object_info_submoduleidentnumber, tvb, 0, 0, io_data_object->subModuleIdentNr);
 
-                        if (io_data_object->profisafeSupported == TRUE && pnio_ps_selection == TRUE) {
-                            if (io_data_object->profisafeSupported == TRUE && psInfoText == FALSE) {
+                        if (io_data_object->profisafeSupported == true && pnio_ps_selection == true) {
+                            if (io_data_object->profisafeSupported == true && psInfoText == false) {
                                 /* Only add one information string per device to the infotext */
                                 col_append_str(pinfo->cinfo, COL_INFO, ", PROFIsafe Device");    /* Add string to wireshark infotext */
-                                psInfoText = TRUE;
+                                psInfoText = true;
                             }
 
                             proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_f_dest_adr, tvb, 0, 0, io_data_object->f_dest_adr);
 
                             /* Get Safety IO Data */
-                            if ((io_data_object->length - F_MESSAGE_TRAILER_4BYTE) > 0) {
+                            if (io_data_object->f_crc_seed == false) {
+                                safety_io_data_length = io_data_object->length - F_MESSAGE_TRAILER_4BYTE;
+                            } else {
+                                safety_io_data_length = io_data_object->length - F_MESSAGE_TRAILER_5BYTE;
+                            }
+
+                            if (safety_io_data_length > 0) {
                                 offset = dissect_pn_io_ps_uint(tvb, offset, pinfo, IODataObject_tree, drep, hf_pn_io_ps_f_data,
-                                    (io_data_object->length - F_MESSAGE_TRAILER_4BYTE), &f_data);
+                                    safety_io_data_length, &f_data);
                             }
 
                             /* ---- Check for new PNIO data using togglebit ---- */
-                            controlbyte = tvb_get_guint8(tvb, offset);
+                            controlbyte = tvb_get_uint8(tvb, offset);
                             toggleBitCb = controlbyte & 0x20;               /* get ToggleBit of Controlbyte */
 
                             if (io_data_object->lastToggleBit != toggleBitCb) {   /* ToggleBit has changed --> new Data incoming */
                                 /* Special Filter for ToggleBit within Controlbyte */
                                 ModuleID_item = proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_cb_toggelBitChanged, tvb, offset, 0, toggleBitCb);
-                                PROTO_ITEM_SET_HIDDEN(ModuleID_item);
+                                proto_item_set_hidden(ModuleID_item);
 
                                 ModuleID_item = proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_cb_toggelBitChange_slot_nr, tvb, offset, 0, io_data_object->slotNr);
-                                PROTO_ITEM_SET_HIDDEN(ModuleID_item);
+                                proto_item_set_hidden(ModuleID_item);
 
                                 ModuleID_item = proto_tree_add_uint(IODataObject_tree, hf_pn_io_ps_cb_toggelBitChange_subslot_nr, tvb, offset, 0, io_data_object->subSlotNr);
-                                PROTO_ITEM_SET_HIDDEN(ModuleID_item);
+                                proto_item_set_hidden(ModuleID_item);
                             }
 
                             offset = dissect_pn_io_ps_CB(tvb, offset, pinfo, IODataObject_tree, drep, hf_pn_io_ps_cb, ps_cb_fields);
@@ -750,10 +883,17 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                         }    /* End of PROFIsafe Module Handling */
                         else {
                             /* Module is not PROFIsafe supported */
-                            offset = dissect_pn_user_data(tvb, offset, pinfo, IODataObject_tree, io_data_object->length, "IO Data");
+                            if (io_data_object->api == PA_PROFILE_API)
+                            {
+                                offset = dissect_pn_pa_profile_data(tvb, offset, pinfo, IODataObject_tree, io_data_object->length, "IO Data");
+                            }
+                            else
+                            {
+                                offset = dissect_pn_user_data(tvb, offset, pinfo, IODataObject_tree, io_data_object->length, "IO Data");
+                            }
                         }
 
-                        if (io_data_object->discardIOXS == FALSE) {
+                        if (io_data_object->discardIOXS == false) {
                             offset = dissect_PNIO_IOxS(tvb, offset, pinfo, IODataObject_tree, drep, hf_pn_io_iops, ioxs_fields);
                             proto_item_set_len(IODataObject_item, io_data_object->length + 1);        /* Length = Databytes + IOXS Byte */
                         }
@@ -768,13 +908,13 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                         /* ModuleIdentNr appears not only once in GSD-file -> set module name more generally */
                         if (io_data_object->amountInGSDML > 1) {    /* if ModuleIdentNr only appears once in GSD-file, use the found GSD-file-ModuleName, else ... */
                             if (io_data_object->slotNr == 0) {
-                                moduleName = wmem_strbuf_new(wmem_packet_scope(), "Headstation");
+                                moduleName = wmem_strbuf_new(pinfo->pool, "Headstation");
                             }
                             else {
-                                moduleName = wmem_strbuf_new(wmem_packet_scope(), "Module");
+                                moduleName = wmem_strbuf_new(pinfo->pool, "Module");
                             }
 
-                            if (io_data_object->profisafeSupported == TRUE) {
+                            if (io_data_object->profisafeSupported == true) {
                                 /* PROFIsafe */
                                 if (io_data_object->length >= 5) {        /* 5 due to 3 CRC bytes &  1 status byte & (at least) 1 data byte */
                                     wmem_strbuf_append(moduleName, ", DO");
@@ -799,13 +939,13 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
                         proto_item_append_text(IODataObject_item, " ModuleName: \"%s\"", io_data_object->moduleNameStr);
 
                         /* emphasize the PROFIsafe supported Modul */
-                        if (io_data_object->profisafeSupported == TRUE && pnio_ps_selection == TRUE) {
+                        if (io_data_object->profisafeSupported == true && pnio_ps_selection == true) {
                             proto_item_append_text(IODataObject_item, " (PROFIsafe Module)");
                         }
 
                         /* Set frameOffset to its new value, to find the next object */
                         frameOffset = frameOffset + io_data_object->length; /* frameOffset = current value + data bytes */
-                        if (io_data_object->discardIOXS == FALSE) {
+                        if (io_data_object->discardIOXS == false) {
                             frameOffset = frameOffset + 1;      /* frameOffset = current value + iops byte */
                         }
                     }
@@ -836,6 +976,90 @@ dissect_PNIO_C_SDU_RTC1(tvbuff_t *tvb, int offset,
     return offset;
 }
 
+
+/* dissect the PA Profile status field */
+static int
+dissect_pn_pa_profile_status(tvbuff_t *tvb, int offset,
+                             packet_info *pinfo _U_, proto_tree *tree, int hfindex)
+{
+
+    if (tree) {
+        uint8_t     u8status;
+        uint8_t     quality;
+        proto_item *status_item;
+        proto_tree *status_tree;
+        const char* quality_name = NULL;
+
+        u8status = tvb_get_uint8(tvb, offset);
+        quality = (u8status >> 6u) & 0x3u;
+
+        /* add status subtree */
+        status_item = proto_tree_add_uint(tree, hfindex, tvb, offset, 1, u8status);
+
+        quality_name = try_val_to_str(quality, pn_pa_profile_status_quality);
+
+        proto_item_append_text(status_item,
+                               " (%s)",
+                               (quality_name != NULL) ? quality_name : "invalid");
+
+        status_tree = proto_item_add_subtree(status_item, ett_pn_pa_profile_status);
+
+        proto_tree_add_item(status_tree, hf_pn_pa_profile_status_quality, tvb, offset, 1, ENC_NA);
+
+        switch(quality)
+        {
+            case 0:
+                proto_tree_add_item(status_tree, hf_pn_pa_profile_status_substatus_bad, tvb, offset, 1, ENC_NA);
+                break;
+            case 1:
+                proto_tree_add_item(status_tree, hf_pn_pa_profile_status_substatus_uncertain, tvb, offset, 1, ENC_NA);
+                break;
+            case 2:
+                proto_tree_add_item(status_tree, hf_pn_pa_profile_status_substatus_good, tvb, offset, 1, ENC_NA);
+                break;
+            default:
+                break;
+        }
+        proto_tree_add_item(status_tree, hf_pn_pa_profile_status_update_event, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(status_tree, hf_pn_pa_profile_status_simulate,     tvb, offset, 1, ENC_NA);
+    }
+
+    return offset + 1;
+}
+
+int
+dissect_pn_pa_profile_data(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
+                          proto_tree *tree, uint32_t length, const char *text)
+{
+    (void)text;
+    /*
+        All PA Profile submodules carry an 8-bit "status" plus the real data, which
+        currently is a float, an 8-bit integer or a 16-bit integer.
+        So we will have either 2, 3 or 5 bytes.
+    */
+    if (length == 2u)
+    {
+        proto_tree_add_item(tree, hf_pn_pa_profile_value_8bit, tvb, offset, 1, ENC_BIG_ENDIAN);
+        dissect_pn_pa_profile_status(tvb, offset+1, pinfo, tree, hf_pn_pa_profile_status);
+    }
+    else if (length == 3u)
+    {
+        proto_tree_add_item(tree, hf_pn_pa_profile_value_16bit, tvb, offset, 2, ENC_BIG_ENDIAN);
+        dissect_pn_pa_profile_status(tvb, offset+2, pinfo, tree, hf_pn_pa_profile_status);
+    }
+    else if (length == 5u)
+    {
+        proto_tree_add_item(tree, hf_pn_pa_profile_value_float, tvb, offset, 4, ENC_BIG_ENDIAN);
+        dissect_pn_pa_profile_status(tvb, offset+4, pinfo, tree, hf_pn_pa_profile_status);
+    }
+    else
+    {
+        /* Delegate to standard user data if unknown */
+        (void)dissect_pn_user_data(tvb, offset, pinfo, tree, length, "IO Data");
+    }
+
+    return offset + length;
+}
 
 void
 init_pn_io_rtc1(int proto)
@@ -878,7 +1102,7 @@ init_pn_io_rtc1(int proto)
         },
         { &hf_pn_io_frame_info_gsd_found,
             { "GSD-file found", "pn_io.frame_info.gsd_found",
-            FT_NONE, BASE_NONE, NULL, 0x0,
+            FT_STRING, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_pn_io_frame_info_gsd_error,
@@ -930,7 +1154,7 @@ init_pn_io_rtc1(int proto)
         },
         { &hf_pn_io_ps_sb_toggelBitChanged,
             { "Status Byte", "pn_io.ps.sb.toggle_d_changed",
-            FT_UINT8, BASE_DEC, NULL, 0x00,
+            FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_pn_io_ps_sb_toggelBitChange_slot_nr,
@@ -950,7 +1174,7 @@ init_pn_io_rtc1(int proto)
         },
         { &hf_pn_io_ps_cb_toggelBitChanged,
             { "Control Byte", "pn_io.ps.cb.toggle_h_changed",
-            FT_UINT8, BASE_DEC, NULL, 0x00,
+            FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_pn_io_ps_cb_toggelBitChange_slot_nr,
@@ -1055,12 +1279,63 @@ init_pn_io_rtc1(int proto)
             FT_UINT64, BASE_HEX, NULL, 0x0,
             NULL, HFILL }
         },
+        { &hf_pn_pa_profile_status,
+            { "Status", "pn_io.pa.status",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_status_quality,
+            { "Quality", "pn_io.pa.status.quality",
+            FT_UINT8, BASE_HEX, VALS(pn_pa_profile_status_quality), 0xC0,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_status_substatus_bad,
+            { "Substatus", "pn_io.pa.status.substatus",
+            FT_UINT8, BASE_HEX, VALS(pn_pa_profile_status_substatus_bad), 0x3C,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_status_substatus_uncertain,
+            { "Substatus", "pn_io.pa.status.substatus",
+            FT_UINT8, BASE_HEX, VALS(pn_pa_profile_status_substatus_uncertain), 0x3C,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_status_substatus_good,
+            { "Substatus", "pn_io.pa.status.substatus",
+            FT_UINT8, BASE_HEX, VALS(pn_pa_profile_status_substatus_good), 0x3C,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_status_update_event,
+            { "Update Event", "pn_io.pa.status.update",
+            FT_UINT8, BASE_HEX, VALS(pn_pa_profile_status_update_event), 0x02,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_status_simulate,
+            { "Simulate", "pn_io.pa.status.simulate",
+            FT_UINT8, BASE_HEX, VALS(pn_pa_profile_status_simulate), 0x01,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_value_8bit,
+            { "Value", "pn_io.pa.value",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_value_16bit,
+            { "Value", "pn_io.pa.value",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_pn_pa_profile_value_float,
+            { "Value", "pn_io.pa.value.float",
+            FT_FLOAT, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_pn_io_rtc,
         &ett_pn_io_ioxs,
-        &ett_pn_io_io_data_object
+        &ett_pn_io_io_data_object,
+        &ett_pn_pa_profile_status
     };
 
     static ei_register_info ei[] = {
@@ -1078,7 +1353,7 @@ init_pn_io_rtc1(int proto)
 
 
 /*
-* Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+* Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 *
 * Local variables:
 * c-basic-offset: 4

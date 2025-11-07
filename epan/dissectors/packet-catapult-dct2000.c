@@ -10,14 +10,14 @@
 
 #include "config.h"
 
-#include <stdio.h>
+#include <stdio.h>      /* for sscanf() */
 
 #include <epan/packet.h>
-#include <epan/conversation.h>
 #include <epan/expert.h>
 #include <epan/prefs.h>
 #include <epan/addr_resolv.h>
 #include <epan/proto_data.h>
+#include <epan/tfs.h>
 
 #include <wsutil/strtoi.h>
 
@@ -29,103 +29,124 @@
 #include "packet-rlc-lte.h"
 #include "packet-pdcp-lte.h"
 
+#include "packet-mac-nr.h"
+#include "packet-pdcp-nr.h"
+
 void proto_reg_handoff_catapult_dct2000(void);
 void proto_register_catapult_dct2000(void);
 
 /* Protocol and registered fields. */
-static int proto_catapult_dct2000 = -1;
+static int proto_catapult_dct2000;
 
-static int hf_catapult_dct2000_context = -1;
-static int hf_catapult_dct2000_port_number = -1;
-static int hf_catapult_dct2000_timestamp = -1;
-static int hf_catapult_dct2000_protocol = -1;
-static int hf_catapult_dct2000_variant = -1;
-static int hf_catapult_dct2000_outhdr = -1;
-static int hf_catapult_dct2000_direction = -1;
-static int hf_catapult_dct2000_encap = -1;
-static int hf_catapult_dct2000_unparsed_data = -1;
-static int hf_catapult_dct2000_comment = -1;
-static int hf_catapult_dct2000_sprint = -1;
-static int hf_catapult_dct2000_error_comment = -1;
-static int hf_catapult_dct2000_tty = -1;
-static int hf_catapult_dct2000_tty_line = -1;
-static int hf_catapult_dct2000_dissected_length = -1;
+static int hf_catapult_dct2000_context;
+static int hf_catapult_dct2000_port_number;
+static int hf_catapult_dct2000_timestamp;
+static int hf_catapult_dct2000_protocol;
+static int hf_catapult_dct2000_variant;
+static int hf_catapult_dct2000_outhdr;
+static int hf_catapult_dct2000_direction;
+static int hf_catapult_dct2000_encap;
+static int hf_catapult_dct2000_unparsed_data;
+static int hf_catapult_dct2000_comment;
+static int hf_catapult_dct2000_sprint;
+static int hf_catapult_dct2000_error_comment;
+static int hf_catapult_dct2000_tty;
+static int hf_catapult_dct2000_tty_line;
+static int hf_catapult_dct2000_dissected_length;
 
-static int hf_catapult_dct2000_ipprim_addresses = -1;
-static int hf_catapult_dct2000_ipprim_src_addr_v4 = -1;
-static int hf_catapult_dct2000_ipprim_src_addr_v6 = -1;
-static int hf_catapult_dct2000_ipprim_dst_addr_v4 = -1;
-static int hf_catapult_dct2000_ipprim_dst_addr_v6 = -1;
-static int hf_catapult_dct2000_ipprim_addr_v4 = -1;
-static int hf_catapult_dct2000_ipprim_addr_v6 = -1;
-static int hf_catapult_dct2000_ipprim_udp_src_port = -1;
-static int hf_catapult_dct2000_ipprim_udp_dst_port = -1;
-static int hf_catapult_dct2000_ipprim_udp_port = -1;
-static int hf_catapult_dct2000_ipprim_tcp_src_port = -1;
-static int hf_catapult_dct2000_ipprim_tcp_dst_port = -1;
-static int hf_catapult_dct2000_ipprim_tcp_port = -1;
-static int hf_catapult_dct2000_ipprim_conn_id = -1;
+static int hf_catapult_dct2000_ipprim_addresses;
+static int hf_catapult_dct2000_ipprim_src_addr_v4;
+static int hf_catapult_dct2000_ipprim_src_addr_v6;
+static int hf_catapult_dct2000_ipprim_dst_addr_v4;
+static int hf_catapult_dct2000_ipprim_dst_addr_v6;
+static int hf_catapult_dct2000_ipprim_addr_v4;
+static int hf_catapult_dct2000_ipprim_addr_v6;
+static int hf_catapult_dct2000_ipprim_udp_src_port;
+static int hf_catapult_dct2000_ipprim_udp_dst_port;
+static int hf_catapult_dct2000_ipprim_udp_port;
+static int hf_catapult_dct2000_ipprim_tcp_src_port;
+static int hf_catapult_dct2000_ipprim_tcp_dst_port;
+static int hf_catapult_dct2000_ipprim_tcp_port;
+static int hf_catapult_dct2000_ipprim_conn_id;
 
-static int hf_catapult_dct2000_sctpprim_addresses = -1;
-static int hf_catapult_dct2000_sctpprim_dst_addr_v4 = -1;
-static int hf_catapult_dct2000_sctpprim_dst_addr_v6 = -1;
-static int hf_catapult_dct2000_sctpprim_addr_v4 = -1;
-static int hf_catapult_dct2000_sctpprim_addr_v6 = -1;
-static int hf_catapult_dct2000_sctpprim_dst_port = -1;
+static int hf_catapult_dct2000_sctpprim_addresses;
+static int hf_catapult_dct2000_sctpprim_dst_addr_v4;
+static int hf_catapult_dct2000_sctpprim_dst_addr_v6;
+static int hf_catapult_dct2000_sctpprim_addr_v4;
+static int hf_catapult_dct2000_sctpprim_addr_v6;
+static int hf_catapult_dct2000_sctpprim_dst_port;
 
-static int hf_catapult_dct2000_lte_ueid = -1;
-static int hf_catapult_dct2000_lte_srbid = -1;
-static int hf_catapult_dct2000_lte_drbid = -1;
-static int hf_catapult_dct2000_lte_cellid = -1;
-static int hf_catapult_dct2000_lte_bcch_transport = -1;
-static int hf_catapult_dct2000_lte_rlc_op = -1;
-static int hf_catapult_dct2000_lte_rlc_channel_type = -1;
-static int hf_catapult_dct2000_lte_rlc_mui = -1;
-static int hf_catapult_dct2000_lte_rlc_cnf = -1;
-static int hf_catapult_dct2000_lte_rlc_discard_req = -1;
+static int hf_catapult_dct2000_ueid;
+static int hf_catapult_dct2000_srbid;
+static int hf_catapult_dct2000_drbid;
+static int hf_catapult_dct2000_cellid;
+static int hf_catapult_dct2000_bcch_transport;
+static int hf_catapult_dct2000_rlc_op;
+static int hf_catapult_dct2000_rlc_channel_type;
+static int hf_catapult_dct2000_rlc_mui;
+static int hf_catapult_dct2000_rlc_cnf;
+static int hf_catapult_dct2000_rlc_discard_req;
+static int hf_catapult_dct2000_carrier_type;
+static int hf_catapult_dct2000_cell_group;
+static int hf_catapult_dct2000_carrier_id;
 
-static int hf_catapult_dct2000_lte_ccpri_opcode = -1;
-static int hf_catapult_dct2000_lte_ccpri_status = -1;
-static int hf_catapult_dct2000_lte_ccpri_channel = -1;
+static int hf_catapult_dct2000_security_mode_params;
+static int hf_catapult_dct2000_uplink_sec_mode;
+static int hf_catapult_dct2000_downlink_sec_mode;
+static int hf_catapult_dct2000_ciphering_algorithm;
+static int hf_catapult_dct2000_ciphering_key;
+static int hf_catapult_dct2000_integrity_algorithm;
+static int hf_catapult_dct2000_integrity_key;
 
-static int hf_catapult_dct2000_lte_nas_rrc_opcode = -1;
-static int hf_catapult_dct2000_lte_nas_rrc_establish_cause = -1;
-static int hf_catapult_dct2000_lte_nas_rrc_priority = -1;
-static int hf_catapult_dct2000_lte_nas_rrc_release_cause = -1;
+static int hf_catapult_dct2000_lte_ccpri_opcode;
+static int hf_catapult_dct2000_lte_ccpri_status;
+static int hf_catapult_dct2000_lte_ccpri_channel;
 
+static int hf_catapult_dct2000_lte_nas_rrc_opcode;
+static int hf_catapult_dct2000_lte_nas_rrc_establish_cause;
+static int hf_catapult_dct2000_lte_nas_rrc_priority;
+static int hf_catapult_dct2000_lte_nas_rrc_release_cause;
+
+static int hf_catapult_dct2000_nr_nas_s1ap_opcode;
 
 /* UMTS RLC fields */
-static int hf_catapult_dct2000_ueid = -1;
-static int hf_catapult_dct2000_rbid = -1;
-static int hf_catapult_dct2000_ccch_id = -1;
-static int hf_catapult_dct2000_no_crc_error = -1;
-static int hf_catapult_dct2000_crc_error = -1;
-static int hf_catapult_dct2000_clear_tx_buffer = -1;
-static int hf_catapult_dct2000_buffer_occupancy = -1;
-static int hf_catapult_dct2000_pdu_size = -1;
-static int hf_catapult_dct2000_ueid_type = -1;
-static int hf_catapult_dct2000_tx_priority = -1;
-static int hf_catapult_dct2000_last_in_seg_set = -1;
-static int hf_catapult_dct2000_rx_timing_deviation = -1;
-static int hf_catapult_dct2000_transport_channel_type = -1;
-static int hf_catapult_dct2000_no_padding_bits = -1;
+static int hf_catapult_dct2000_rbid;
+static int hf_catapult_dct2000_ccch_id;
+static int hf_catapult_dct2000_no_crc_error;
+static int hf_catapult_dct2000_crc_error;
+static int hf_catapult_dct2000_clear_tx_buffer;
+static int hf_catapult_dct2000_buffer_occupancy;
+static int hf_catapult_dct2000_pdu_size;
+static int hf_catapult_dct2000_ueid_type;
+static int hf_catapult_dct2000_tx_priority;
+static int hf_catapult_dct2000_last_in_seg_set;
+static int hf_catapult_dct2000_rx_timing_deviation;
+static int hf_catapult_dct2000_transport_channel_type;
+static int hf_catapult_dct2000_no_padding_bits;
+
+static int hf_catapult_dct2000_rawtraffic_interface;
+static int hf_catapult_dct2000_rawtraffic_direction;
+static int hf_catapult_dct2000_rawtraffic_pdu;
+
 
 /* Variables used for preferences */
-static gboolean catapult_dct2000_try_ipprim_heuristic = TRUE;
-static gboolean catapult_dct2000_try_sctpprim_heuristic = TRUE;
-static gboolean catapult_dct2000_dissect_lte_rrc = TRUE;
-static gboolean catapult_dct2000_dissect_lte_s1ap = TRUE;
-static gboolean catapult_dct2000_dissect_mac_lte_oob_messages = TRUE;
+static bool catapult_dct2000_try_ipprim_heuristic = true;
+static bool catapult_dct2000_try_sctpprim_heuristic = true;
+static bool catapult_dct2000_dissect_lte_rrc = true;
+static bool catapult_dct2000_dissect_mac_lte_oob_messages = true;
+static bool catapult_dct2000_dissect_old_protocol_names;
+static bool catapult_dct2000_use_protocol_name_as_dissector_name;
 
 /* Protocol subtree. */
-static int ett_catapult_dct2000 = -1;
-static int ett_catapult_dct2000_ipprim = -1;
-static int ett_catapult_dct2000_sctpprim = -1;
-static int ett_catapult_dct2000_tty = -1;
+static int ett_catapult_dct2000;
+static int ett_catapult_dct2000_ipprim;
+static int ett_catapult_dct2000_sctpprim;
+static int ett_catapult_dct2000_tty;
+static int ett_catapult_dct2000_security_mode_params;
 
-static expert_field ei_catapult_dct2000_lte_ccpri_status_error = EI_INIT;
-static expert_field ei_catapult_dct2000_error_comment_expert = EI_INIT;
-static expert_field ei_catapult_dct2000_string_invalid = EI_INIT;
+static expert_field ei_catapult_dct2000_lte_ccpri_status_error;
+static expert_field ei_catapult_dct2000_error_comment_expert;
+static expert_field ei_catapult_dct2000_string_invalid;
 
 static const value_string direction_vals[] = {
     { 0,   "Sent" },
@@ -194,12 +215,6 @@ static const value_string ccpri_opcode_vals[] = {
     { 0,             NULL}
 };
 
-static const value_string ccpri_status_vals[] = {
-    { 0,     "OK"},
-    { 1,     "ERROR"},
-    { 0,     NULL}
-};
-
 static const value_string rlc_rbid_vals[] = {
     { 1,     "DCH1"},
     { 2,     "DCH2"},
@@ -234,12 +249,6 @@ static const value_string ueid_type_vals[] = {
     { 0,     NULL}
 };
 
-static const value_string tx_priority_vals[] = {
-    { 0,     "Normal"},
-    { 1,     "High"},
-    { 0,     NULL}
-};
-
 static const value_string transport_channel_type_vals[] = {
     { 1,     "RACH"},
     { 2,     "FACH"},
@@ -267,6 +276,54 @@ static const value_string lte_nas_rrc_opcode_vals[] = {
 };
 
 
+#define NAS_S1AP_DATA_REQ       0x00
+#define NAS_S1AP_DATA_IND       0x01
+
+static const value_string nas_s1ap_opcode_vals[] = {
+    { NAS_S1AP_DATA_REQ,        "Data-Req"},
+    { NAS_S1AP_DATA_IND,        "Data-Ind"},
+    { 0,     NULL}
+};
+
+
+/* Distinguish between similar 4G or 5G protocols */
+enum LTE_or_NR {
+    LTE,
+    NR
+};
+
+static const value_string carrier_type_vals[] = {
+    { 0,        "LTE"},
+    { 1,        "CatM"},
+    { 2,        "NBIoT"},
+    { 3,        "NR"},
+    { 0,     NULL}
+};
+
+
+static const value_string security_mode_vals[] = {
+    { 0,        "None"},
+    { 1,        "Integrity only"},
+    { 2,        "Ciphering and Integrity"},
+    { 0,     NULL}
+};
+
+static const value_string ciphering_algorithm_vals[] = {
+    { 0,        "EEA0"},
+    { 1,        "EEA1"},
+    { 2,        "EEA2"},
+    { 3,        "EEA3"},
+    { 0,     NULL}
+};
+
+static const value_string integrity_algorithm_vals[] = {
+    { 0,        "EIA0"},
+    { 1,        "EIA1"},
+    { 2,        "EIA2"},
+    { 3,        "EIA3"},
+    { 0,     NULL}
+};
+
 
 #define MAX_OUTHDR_VALUES 32
 
@@ -276,33 +333,38 @@ extern int proto_umts_rlc;
 extern int proto_rlc_lte;
 extern int proto_pdcp_lte;
 
+
 static dissector_handle_t mac_lte_handle;
 static dissector_handle_t rlc_lte_handle;
 static dissector_handle_t pdcp_lte_handle;
 static dissector_handle_t catapult_dct2000_handle;
+static dissector_handle_t nrup_handle;
+
+static dissector_handle_t mac_nr_handle;
+
+static dissector_handle_t eth_handle;
 
 static dissector_handle_t look_for_dissector(const char *protocol_name);
-static guint parse_outhdr_string(const guchar *outhdr_string, gint outhdr_length, guint *outhdr_values);
+static unsigned parse_outhdr_string(const unsigned char *outhdr_string, int outhdr_length, unsigned *outhdr_values);
 
-static void attach_fp_info(packet_info *pinfo, gboolean received,
+static void attach_fp_info(packet_info *pinfo, bool received,
                            const char *protocol_name, int variant,
-                           guint *outhdr_values, guint outhdr_values_found);
-static void attach_rlc_info(packet_info *pinfo, guint32 urnti, guint8 rbid,
-                            gboolean is_sent, guint *outhdr_values,
-                            guint outhdr_values_found);
+                           unsigned *outhdr_values, unsigned outhdr_values_found);
+static void attach_rlc_info(packet_info *pinfo, uint32_t urnti, uint8_t rbid,
+                            bool is_sent, unsigned *outhdr_values,
+                            unsigned outhdr_values_found);
 
-static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values,
-                                guint outhdr_values_found);
-static void attach_rlc_lte_info(packet_info *pinfo, guint *outhdr_values,
-                                guint outhdr_values_found);
-static void attach_pdcp_lte_info(packet_info *pinfo, guint *outhdr_values,
-                                 guint outhdr_values_found);
-
+static void attach_mac_lte_info(packet_info *pinfo, unsigned *outhdr_values,
+                                unsigned outhdr_values_found);
+static void attach_rlc_lte_info(packet_info *pinfo, unsigned *outhdr_values,
+                                unsigned outhdr_values_found);
+static void attach_pdcp_lte_info(packet_info *pinfo, unsigned *outhdr_values,
+                                 unsigned outhdr_values_found);
 
 
 /* Return the number of bytes used to encode the length field
    (we're not interested in the length value itself) */
-static int skipASNLength(guint8 value)
+static int skipASNLength(uint8_t value)
 {
     if ((value & 0x80) == 0)
     {
@@ -317,18 +379,18 @@ static int skipASNLength(guint8 value)
 
 /* Look for the protocol data within an ipprim packet.
    Only set *data_offset if data field found. */
-static gboolean find_ipprim_data_offset(tvbuff_t *tvb, int *data_offset, guint8 direction,
-                                        guint32 *source_addr_offset, guint8 *source_addr_length,
-                                        guint32 *dest_addr_offset,   guint8 *dest_addr_length,
-                                        guint32 *source_port_offset, guint32 *dest_port_offset,
+static bool find_ipprim_data_offset(tvbuff_t *tvb, int *data_offset, uint8_t direction,
+                                        uint32_t *source_addr_offset, uint8_t *source_addr_length,
+                                        uint32_t *dest_addr_offset,   uint8_t *dest_addr_length,
+                                        uint32_t *source_port_offset, uint32_t *dest_port_offset,
                                         port_type *type_of_port,
-                                        guint16 *conn_id_offset)
+                                        uint16_t *conn_id_offset)
 {
-    guint8 length;
+    uint8_t length;
     int    offset = *data_offset;
 
     /* Get the ipprim command code. */
-    guint8 tag = tvb_get_guint8(tvb, offset++);
+    uint8_t tag = tvb_get_uint8(tvb, offset++);
 
     /* Only accept UDP or TCP data request or indication */
     switch (tag) {
@@ -341,24 +403,24 @@ static gboolean find_ipprim_data_offset(tvbuff_t *tvb, int *data_offset, guint8 
             *type_of_port = PT_TCP;
             break;
         default:
-            return FALSE;
+            return false;
     }
 
     /* Skip any other TLC fields before reach payload */
     while (tvb_reported_length_remaining(tvb, offset) > 2) {
         /* Look at next tag */
-        tag = tvb_get_guint8(tvb, offset++);
+        tag = tvb_get_uint8(tvb, offset++);
 
         /* Is this the data payload we're expecting? */
         if (((tag == 0x34) && (*type_of_port == PT_UDP)) ||
             ((tag == 0x48) && (*type_of_port == PT_TCP))) {
 
             *data_offset = offset;
-            return TRUE;
+            return true;
         }
         else {
             /* Read length in next byte */
-            length = tvb_get_guint8(tvb, offset++);
+            length = tvb_get_uint8(tvb, offset++);
 
             if (tag == 0x31 && length >=4) {
                 /* Remote IP address */
@@ -420,24 +482,24 @@ static gboolean find_ipprim_data_offset(tvbuff_t *tvb, int *data_offset, guint8 
     }
 
     /* No data found... */
-    return FALSE;
+    return false;
 }
 
 
 
 /* Look for the protocol data within an sctpprim (variant 1 or 2...) packet.
    Only set *data_offset if data field found. */
-static gboolean find_sctpprim_variant1_data_offset(tvbuff_t *tvb, int *data_offset,
-                                                   guint32 *dest_addr_offset,
-                                                   guint16 *dest_addr_length,
-                                                   guint32 *dest_port_offset)
+static bool find_sctpprim_variant1_data_offset(tvbuff_t *tvb, int *data_offset,
+                                                   uint32_t *dest_addr_offset,
+                                                   uint16_t *dest_addr_length,
+                                                   uint32_t *dest_port_offset)
 {
     int offset = *data_offset;
 
     /* Get the sctpprim command code. */
-    guint8 first_tag = tvb_get_guint8(tvb, offset++);
-    guint8 tag;
-    guint8 first_length_byte;
+    uint8_t first_tag = tvb_get_uint8(tvb, offset++);
+    uint8_t tag;
+    uint8_t first_length_byte;
 
     /* Only accept interested in data requests or indications */
     switch (first_tag) {
@@ -445,21 +507,21 @@ static gboolean find_sctpprim_variant1_data_offset(tvbuff_t *tvb, int *data_offs
         case 0x62:  /* data indication */
             break;
         default:
-            return FALSE;
+            return false;
     }
 
-    first_length_byte = tvb_get_guint8(tvb, offset);
+    first_length_byte = tvb_get_uint8(tvb, offset);
     offset += skipASNLength(first_length_byte);
 
     /* Skip any other fields before reach payload */
     while (tvb_reported_length_remaining(tvb, offset) > 2) {
         /* Look at next tag */
-        tag = tvb_get_guint8(tvb, offset++);
+        tag = tvb_get_uint8(tvb, offset++);
 
         /* Is this the data payload we're expecting? */
         if (tag == 0x19) {
             *data_offset = offset;
-            return TRUE;
+            return true;
         }
         else {
             /* Skip length field */
@@ -489,35 +551,35 @@ static gboolean find_sctpprim_variant1_data_offset(tvbuff_t *tvb, int *data_offs
 
                 default:
                     /* Fail if not a known header field */
-                    return FALSE;
+                    return false;
             }
         }
     }
 
     /* No data found... */
-    return FALSE;
+    return false;
 }
 
 /* Look for the protocol data within an sctpprim (variant 3) packet.
    Return value indicates whether this header found.
    Only set *data_offset if data field found. */
-static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offset,
-                                                   guint32 *dest_addr_offset,
-                                                   guint16 *dest_addr_length,
-                                                   guint32 *dest_port_offset)
+static bool find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offset,
+                                                   uint32_t *dest_addr_offset,
+                                                   uint16_t *dest_addr_length,
+                                                   uint32_t *dest_port_offset)
 {
-    guint16 tag    = 0;
-    guint16 length = 0;
+    uint16_t tag    = 0;
+    uint16_t length = 0;
     int     offset = *data_offset;
 
     /* Get the sctpprim (2 byte) command code. */
-    guint16 top_tag = tvb_get_ntohs(tvb, offset);
+    uint16_t top_tag = tvb_get_ntohs(tvb, offset);
     offset += 2;
 
     /* Only interested in data requests or indications */
     if ((top_tag != 0x0400) &&  /* SendDataReq */
        (top_tag != 0x6200)) {  /* DataInd */
-        return FALSE;
+        return false;
     }
 
     /* Overall length field is next 2 bytes */
@@ -538,7 +600,7 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
         /* Destination address should follow - check tag */
         tag = tvb_get_ntohs(tvb, offset);
         if (tag != 0x0900) {
-            return FALSE;
+            return false;
         }
         else {
             /* Skip tag */
@@ -548,7 +610,7 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
             length = tvb_get_ntohs(tvb, offset) / 2;
             if ((length != 4) && (length != 16))
             {
-                return FALSE;
+                return false;
             }
             offset += 2;
 
@@ -564,7 +626,7 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
             offset += (4 + 2 + 2 + 4);
         }
         else {
-            return FALSE;
+            return false;
         }
 
         /* Data should now be here */
@@ -576,10 +638,10 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
 
             /* Data is here!!! */
             *data_offset = offset;
-            return TRUE;
+            return true;
         }
         else {
-            return FALSE;
+            return false;
         }
     }
 
@@ -589,7 +651,7 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
         /* AssociateId should follow - check tag */
         tag = tvb_get_ntohs(tvb, offset);
         if (tag != 0x2400) {
-            return FALSE;
+            return false;
         }
         else {
             /* Skip tag */
@@ -610,7 +672,7 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
                     /* Length field */
                     length = tvb_get_ntohs(tvb, offset) / 2;
                     if ((length != 4) && (length != 16)) {
-                        return FALSE;
+                        return false;
                     }
                     offset += 2;
 
@@ -627,13 +689,12 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
                     break;
 
                 case 0x0d00:   /* StreamNum */
-                    *dest_port_offset = offset;
                     offset += 2;
                     break;
 
 
                 default:
-                    return FALSE;
+                    return false;
             }
 
             /* Get the next tag */
@@ -644,7 +705,7 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
 
         /* Mandatory payload type */
         if (tag != 0x0c00) {
-            return FALSE;
+            return false;
         }
         length = tvb_get_ntohs(tvb, offset) / 2;
         offset += 2;
@@ -673,10 +734,10 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
 
             /* Data is here!!! */
             *data_offset = offset;
-            return TRUE;
+            return true;
         }
         else {
-            return FALSE;
+            return false;
         }
     }
 }
@@ -686,21 +747,21 @@ static gboolean find_sctpprim_variant3_data_offset(tvbuff_t *tvb, int *data_offs
    - parsing the primitive header
    - passing those values + outhdeader to dissector
    - calling the UMTS RLC dissector */
-static void dissect_rlc_umts(tvbuff_t *tvb, gint offset,
+static void dissect_rlc_umts(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *tree,
-                             gboolean is_sent, guint *outhdr_values,
-                             guint outhdr_values_found)
+                             bool is_sent, unsigned *outhdr_values,
+                             unsigned outhdr_values_found)
 {
-    guint8              tag;
-    gboolean            ueid_set        = FALSE, rbid_set=FALSE;
-    guint32             ueid            = 0;
-    guint8              rbid            = 0;
-    guint8              length;
+    uint8_t             tag;
+    bool                ueid_set        = false, rbid_set=false;
+    uint32_t            ueid            = 0;
+    uint8_t             rbid            = 0;
+    uint8_t             length;
     tvbuff_t           *rlc_tvb;
     dissector_handle_t  rlc_umts_handle = 0;
 
     /* Top-level opcode */
-    tag = tvb_get_guint8(tvb, offset++);
+    tag = tvb_get_uint8(tvb, offset++);
     switch (tag) {
         case 0xc0:    /* mac data request */
         case 0xc1:    /* mac data indication */
@@ -713,20 +774,21 @@ static void dissect_rlc_umts(tvbuff_t *tvb, gint offset,
 
     /* Keep going until reach data tag or end of frame */
     while ((tag != 0x41) && tvb_reported_length_remaining(tvb, offset)) { /* i.e. Data */
-        tag = tvb_get_guint8(tvb, offset++);
+        tag = tvb_get_uint8(tvb, offset++);
         switch (tag) {
             case 0x72:  /* UE Id */
                 ueid = tvb_get_ntohl(tvb, offset);
-                proto_tree_add_item(tree, hf_catapult_dct2000_ueid, tvb, offset, 4, ENC_BIG_ENDIAN);
-                offset += 4;
-                ueid_set = TRUE;
+                offset += 2;
+                proto_tree_add_item(tree, hf_catapult_dct2000_ueid, tvb, offset, 2, ENC_BIG_ENDIAN);
+                offset += 2;
+                ueid_set = true;
                 break;
             case 0xa2:  /* RBID */
                 offset++;  /* skip length */
-                rbid = tvb_get_guint8(tvb, offset);
+                rbid = tvb_get_uint8(tvb, offset);
                 proto_tree_add_item(tree, hf_catapult_dct2000_rbid, tvb, offset, 1, ENC_BIG_ENDIAN);
                 offset++;
-                rbid_set = TRUE;
+                rbid_set = true;
                 break;
             case 0x22:  /* CCCH-id setting rbid to CCCH! */
                 offset++;  /* skip length */
@@ -745,12 +807,12 @@ static void dissect_rlc_umts(tvbuff_t *tvb, gint offset,
                 break;
 
             case 0x41:  /* Data !!! */
-                offset += skipASNLength(tvb_get_guint8(tvb, offset));
+                offset += skipASNLength(tvb_get_uint8(tvb, offset));
                 break;
 
             default:
                 /* For other fields, just skip length and following data */
-                length = tvb_get_guint8(tvb, offset++);
+                length = tvb_get_uint8(tvb, offset++);
                 switch (tag) {
                     case 0x42:   /* Buffer Occupancy */
                         proto_tree_add_item(tree, hf_catapult_dct2000_buffer_occupancy, tvb, offset, length, ENC_BIG_ENDIAN);
@@ -821,33 +883,44 @@ static void dissect_rlc_umts(tvbuff_t *tvb, gint offset,
     }
 }
 
-
-
-/* Dissect an RRC LTE frame by first parsing the header entries then passing
-   the data to the RRC dissector, according to direction and channel type.
-   TODO: factor out common code between this function and dissect_pdcp_lte() */
-static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
-                            packet_info *pinfo, proto_tree *tree)
+static char* get_key(tvbuff_t*tvb, int offset)
 {
-    guint8              tag;
+    static char key[33];
+    for (int n=0; n < 16; n++) {
+        snprintf(&key[n*2], 33-(n*2), "%02x", tvb_get_uint8(tvb, offset+n));
+    }
+    return key;
+}
+
+
+/* Dissect an RRC LTE or NR frame by first parsing the header entries then passing
+   the data to the RRC dissector, according to direction and channel type. */
+static void dissect_rrc_lte_nr(tvbuff_t *tvb, int offset,
+                               packet_info *pinfo, proto_tree *tree,
+                               enum LTE_or_NR lte_or_nr)
+{
+    uint8_t             opcode, tag;
     dissector_handle_t  protocol_handle = 0;
-    gboolean            isUplink        = FALSE;
+    bool                isUplink        = false;
     LogicalChannelType  logicalChannelType;
-    guint16             cell_id;
-    guint8              bcch_transport  = 0;
+    uint16_t            cell_id;
+    uint8_t             bcch_transport  = 0;
+    uint32_t            ueid = 0;
     tvbuff_t           *rrc_tvb;
 
     /* Top-level opcode */
-    tag = tvb_get_guint8(tvb, offset++);
-    switch (tag) {
+    opcode = tvb_get_uint8(tvb, offset++);
+    switch (opcode) {
         case 0x00:    /* Data_Req_UE */
+        case 0x05:    /* Data_Req_UE_SM */
         case 0x04:    /* Data_Ind_eNodeB */
-            isUplink = TRUE;
+            isUplink = true;
             break;
 
         case 0x02:    /* Data_Req_eNodeB */
         case 0x03:    /* Data_Ind_UE */
-            isUplink = FALSE;
+        case 0x07:    /* Data_Ind_UE_SM */
+            isUplink = false;
             break;
 
         default:
@@ -856,41 +929,41 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
     }
 
     /* Skip length */
-    offset += skipASNLength(tvb_get_guint8(tvb, offset));
+    offset += skipASNLength(tvb_get_uint8(tvb, offset));
 
     /* Get next tag */
-    tag = tvb_get_guint8(tvb, offset++);
+    tag = tvb_get_uint8(tvb, offset++);
     switch (tag) {
         case 0x12:    /* UE_Id_LCId */
-
+        {
             /* Dedicated channel info */
 
-            /* Length will fit in one byte here */
+            /* Skip length */
             offset++;
 
             logicalChannelType = Channel_DCCH;
 
             /* UEId */
-            proto_tree_add_item(tree, hf_catapult_dct2000_lte_ueid, tvb, offset, 2, ENC_BIG_ENDIAN);
+            proto_tree_add_item_ret_uint(tree, hf_catapult_dct2000_ueid, tvb, offset, 2, ENC_BIG_ENDIAN, &ueid);
             offset += 2;
 
             /* Get tag of channel type */
-            tag = tvb_get_guint8(tvb, offset++);
+            tag = tvb_get_uint8(tvb, offset++);
 
             switch (tag) {
                 case 0:
                     offset++;
                     col_append_fstr(pinfo->cinfo, COL_INFO, " SRB:%u",
-                                    tvb_get_guint8(tvb, offset));
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_srbid,
+                                    tvb_get_uint8(tvb, offset));
+                    proto_tree_add_item(tree, hf_catapult_dct2000_srbid,
                                         tvb, offset, 1, ENC_BIG_ENDIAN);
                     offset++;
                     break;
                 case 1:
                     offset++;
                     col_append_fstr(pinfo->cinfo, COL_INFO, " DRB:%u",
-                                    tvb_get_guint8(tvb, offset));
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_drbid,
+                                    tvb_get_uint8(tvb, offset));
+                    proto_tree_add_item(tree, hf_catapult_dct2000_drbid,
                                         tvb, offset, 1, ENC_BIG_ENDIAN);
                     offset++;
                     break;
@@ -899,7 +972,9 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
                     /* Unexpected channel type */
                     return;
             }
+
             break;
+        }
 
         case 0x1a:     /* Cell_LCId */
 
@@ -909,15 +984,15 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
             offset++;
 
             /* Cell-id */
-            proto_tree_add_item(tree, hf_catapult_dct2000_lte_cellid,
+            proto_tree_add_item(tree, hf_catapult_dct2000_cellid,
                                 tvb, offset, 2, ENC_BIG_ENDIAN);
             cell_id = tvb_get_ntohs(tvb, offset);
             offset += 2;
 
             /* Logical channel type */
-            proto_tree_add_item(tree, hf_catapult_dct2000_lte_rlc_channel_type,
+            proto_tree_add_item(tree, hf_catapult_dct2000_rlc_channel_type,
                                 tvb, offset, 1, ENC_BIG_ENDIAN);
-            logicalChannelType = (LogicalChannelType)tvb_get_guint8(tvb, offset);
+            logicalChannelType = (LogicalChannelType)tvb_get_uint8(tvb, offset);
             offset++;
 
             /* Won't be seen if RRC decoder is called... */
@@ -933,8 +1008,8 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
                     offset++;
 
                     /* Transport channel type */
-                    bcch_transport = tvb_get_guint8(tvb, offset);
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_bcch_transport,
+                    bcch_transport = tvb_get_uint8(tvb, offset);
+                    proto_tree_add_item(tree, hf_catapult_dct2000_bcch_transport,
                                         tvb, offset, 1, ENC_BIG_ENDIAN);
                     offset++;
                     break;
@@ -944,7 +1019,7 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
                     offset++;
 
                     /* UEId */
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_ueid,
+                    proto_tree_add_item(tree, hf_catapult_dct2000_ueid,
                                         tvb, offset, 2, ENC_BIG_ENDIAN);
                     offset += 2;
                     break;
@@ -959,14 +1034,145 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
             return;
     }
 
-    /* Data tag should follow */
-    tag = tvb_get_guint8(tvb, offset++);
+    /* Optional Carrier Id */
+    if (tvb_get_uint8(tvb, offset)==0x1e) {
+        offset += 2;  /* tag + len of 1 */
+        proto_tree_add_item(tree, hf_catapult_dct2000_carrier_id,
+                            tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset++;
+    }
+
+    /* Optional Carrier Type */
+    if (tvb_get_uint8(tvb, offset)==0x20) {
+        offset += 2;
+        proto_tree_add_item(tree, hf_catapult_dct2000_carrier_type,
+                            tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset++;
+    }
+
+    /* Optional Cell Group */
+    if (tvb_get_uint8(tvb, offset)==0x22) {
+        offset += 2;
+        proto_tree_add_item(tree, hf_catapult_dct2000_cell_group,
+                            tvb, offset, 1, ENC_BIG_ENDIAN);
+        offset++;
+    }
+
+    if (opcode == 0x07) {
+        /* Data_Ind_UE_SM - 1 byte MAC */
+        offset++;
+    }
+    else if (opcode == 0x05) {
+        /* Data_Req_UE_SM - SecurityMode Params */
+        /* N.B. DRB keys do not get configured here.. */
+        offset++;  /* tag */
+        uint8_t len = tvb_get_uint8(tvb, offset++); /* length */
+
+        /* Uplink Sec Mode */
+        proto_item *sc_ti;
+        proto_tree *sc_tree;
+        sc_ti = proto_tree_add_item(tree, hf_catapult_dct2000_security_mode_params, tvb, offset, len, ENC_NA);
+        sc_tree = proto_item_add_subtree(sc_ti, ett_catapult_dct2000_security_mode_params);
+
+        uint32_t uplink_sec_mode;
+        proto_tree_add_item_ret_uint(sc_tree, hf_catapult_dct2000_uplink_sec_mode,
+                                     tvb, offset++, 1, ENC_BIG_ENDIAN, &uplink_sec_mode);
+
+        /* Downlink Sec Mode */
+        uint32_t downlink_sec_mode;
+        proto_tree_add_item_ret_uint(sc_tree, hf_catapult_dct2000_downlink_sec_mode,
+                                     tvb, offset++, 1, ENC_BIG_ENDIAN, &downlink_sec_mode);
+
+        if (len > 2) {
+            offset++;  /* tag Should be 0x21 */
+            offset++; /* len */
+
+            tag = tvb_get_uint8(tvb, offset++);
+            if (tag == 0x25) {
+                /* Cell Group Id */
+                offset++;
+                proto_tree_add_item(sc_tree, hf_catapult_dct2000_cell_group,
+                                    tvb, offset, 1, ENC_BIG_ENDIAN);
+            }
+
+            /* Optional cryptParams */
+            if (tag == 0x2) {
+                uint32_t cipher_algorithm;
+
+                len = tvb_get_uint8(tvb, offset++);
+
+                /* Cipher algorithm (required) */
+                offset += 2; /* Skip tag and length */
+                proto_tree_add_item_ret_uint(sc_tree, hf_catapult_dct2000_ciphering_algorithm,
+                                             tvb, offset++, 1, ENC_BIG_ENDIAN, &cipher_algorithm);
+
+                /* Ciphering key (optional) */
+                if (len > 3) {
+                    /* Skip tag and length */
+                    offset += 2;
+                    proto_tree_add_item(sc_tree, hf_catapult_dct2000_ciphering_key,
+                                        tvb, offset, 16, ENC_NA);
+                    char *key = get_key(tvb, offset);
+
+                    if (!PINFO_FD_VISITED(pinfo)) {
+                        if (lte_or_nr == NR) {
+                            set_pdcp_nr_rrc_ciphering_key(ueid, key, pinfo->num);
+                        }
+                        else {
+                            set_pdcp_lte_rrc_ciphering_key(ueid, key, pinfo->num);
+                        }
+                    }
+                    offset += 16;
+                }
+            }
+            else {
+                offset--;
+            }
+
+            /* Now should be Auth params (required) */
+            uint32_t integrity_algorithm;
+            /* Skip tag */
+            offset++;
+
+            len = tvb_get_uint8(tvb, offset++);
+
+            /* Integrity algorithm (required) */
+            offset += 2; /* Skip tag and length */
+            proto_tree_add_item_ret_uint(sc_tree, hf_catapult_dct2000_integrity_algorithm,
+                                         tvb, offset++, 1, ENC_BIG_ENDIAN, &integrity_algorithm);
+
+            /* Integrity key (optional */
+            if (len > 3) {
+                /* Skip tag and length */
+                offset += 2;
+                proto_tree_add_item(sc_tree, hf_catapult_dct2000_integrity_key,
+                                    tvb, offset, 16, ENC_NA);
+                char *key = get_key(tvb, offset);
+
+                if (!PINFO_FD_VISITED(pinfo)) {
+                    if (lte_or_nr == NR) {
+                        set_pdcp_nr_rrc_integrity_key(ueid, key, pinfo->num);
+                    }
+                    else {
+                        set_pdcp_lte_rrc_integrity_key(ueid, key, pinfo->num);
+                    }
+                }
+                offset += 16;
+            }
+        }
+    }
+
+    /* Optional data tag may follow */
+    if (!tvb_reported_length_remaining(tvb, offset)) {
+        return;
+    }
+    tag = tvb_get_uint8(tvb, offset++);
     if (tag != 0xaa) {
         return;
     }
 
     /* Skip length */
-    offset += skipASNLength(tvb_get_guint8(tvb, offset));
+    offset += skipASNLength(tvb_get_uint8(tvb, offset));
 
     /* Look up dissector handle corresponding to direction and channel type */
     if (isUplink) {
@@ -974,10 +1180,26 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
         /* Uplink channel types */
         switch (logicalChannelType) {
             case Channel_DCCH:
-                protocol_handle = find_dissector("lte_rrc.ul_dcch");
+                if (lte_or_nr == LTE) {
+                    protocol_handle = find_dissector("lte_rrc.ul_dcch");
+                }
+                else {
+                    protocol_handle = find_dissector("nr-rrc.ul.dcch");
+                }
                 break;
             case Channel_CCCH:
-                protocol_handle = find_dissector("lte_rrc.ul_ccch");
+                if (lte_or_nr == LTE) {
+                    protocol_handle = find_dissector("lte_rrc.ul_ccch");
+                }
+                else {
+                    if (tvb_captured_length_remaining(tvb, offset) == 6) {
+                        protocol_handle = find_dissector("nr-rrc.ul.ccch");
+                    }
+                    else {
+                        /* Should be 8 bytes.. */
+                        protocol_handle = find_dissector("nr-rrc.ul.ccch1");
+                    }
+                }
                 break;
 
             default:
@@ -989,20 +1211,45 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
         /* Downlink channel types */
         switch (logicalChannelType) {
             case Channel_DCCH:
-                protocol_handle = find_dissector("lte_rrc.dl_dcch");
+                if (lte_or_nr == LTE) {
+                    protocol_handle = find_dissector("lte_rrc.dl_dcch");
+                }
+                else {
+                    protocol_handle = find_dissector("nr-rrc.dl.dcch");
+                }
                 break;
             case Channel_CCCH:
-                protocol_handle = find_dissector("lte_rrc.dl_ccch");
+                if (lte_or_nr == LTE) {
+                    protocol_handle = find_dissector("lte_rrc.dl_ccch");
+                }
+                else {
+                    protocol_handle = find_dissector("nr-rrc.dl.ccch");
+                }
                 break;
             case Channel_PCCH:
-                protocol_handle = find_dissector("lte_rrc.pcch");
+                if (lte_or_nr == LTE) {
+                    protocol_handle = find_dissector("lte_rrc.pcch");
+                }
+                else {
+                    protocol_handle = find_dissector("nr-rrc.pcch");
+                }
                 break;
             case Channel_BCCH:
                 if (bcch_transport == 1) {
-                    protocol_handle = find_dissector("lte_rrc.bcch_bch");
+                    if (lte_or_nr == LTE) {
+                        protocol_handle = find_dissector("lte_rrc.bcch_bch");
+                    }
+                    else {
+                        protocol_handle = find_dissector("nr-rrc.bcch.bch");
+                    }
                 }
                 else {
-                    protocol_handle = find_dissector("lte_rrc.bcch_dl_sch");
+                    if (lte_or_nr == LTE) {
+                        protocol_handle = find_dissector("lte_rrc.bcch_dl_sch");
+                    }
+                    else {
+                        protocol_handle = find_dissector("nr-rrc.bcch.dl.sch");
+                    }
                 }
                 break;
 
@@ -1014,6 +1261,18 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
 
     /* Send to RRC dissector, if got here, have sub-dissector and some data left */
     if ((protocol_handle != NULL) && (tvb_reported_length_remaining(tvb, offset) > 0)) {
+
+        /* Set MAC-NR info for this PDU.  Needed so that UEId can be found for this frame,
+         * as used by MAC/RLC/PDCP configuration from RRC dissector */
+        if (ueid) {
+            struct mac_nr_info *p_mac_nr_info;
+            p_mac_nr_info = wmem_new0(wmem_file_scope(), struct mac_nr_info);
+            p_mac_nr_info->ueid = ueid;
+            p_mac_nr_info->direction = (isUplink) ? DIRECTION_UPLINK : DIRECTION_DOWNLINK;
+            /* Store info in packet */
+            set_mac_nr_proto_data(pinfo, p_mac_nr_info);
+        }
+
         rrc_tvb = tvb_new_subset_remaining(tvb, offset);
         call_dissector_only(protocol_handle, rrc_tvb, pinfo, tree, NULL);
     }
@@ -1027,31 +1286,31 @@ static void dissect_rrc_lte(tvbuff_t *tvb, gint offset,
    "C" in "CCPRI"?  And why is the LAPB dissector involved here?  The CPRI
    spec just speaks of HDLC; LAPB is certainly a HDLC-based protocol, but
    that doesn't mean every HDLC-based protocol is LAPB. */
-static void dissect_ccpri_lte(tvbuff_t *tvb, gint offset,
+static void dissect_ccpri_lte(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree)
 {
-    guint8              opcode;
-    guint8              tag;
+    uint8_t             opcode;
+    uint8_t             tag;
     tvbuff_t           *ccpri_tvb;
     dissector_handle_t  protocol_handle = 0;
-    guint16             length;
+    uint16_t            length;
 
     /* Top-level opcode */
     proto_tree_add_item(tree, hf_catapult_dct2000_lte_ccpri_opcode, tvb, offset, 1, ENC_BIG_ENDIAN);
-    opcode = tvb_get_guint8(tvb, offset++);
+    opcode = tvb_get_uint8(tvb, offset++);
 
     /* Skip 2-byte length field */
     offset += 2;
 
     /* Cell-id */
-    proto_tree_add_item(tree, hf_catapult_dct2000_lte_cellid,
+    proto_tree_add_item(tree, hf_catapult_dct2000_cellid,
                         tvb, offset, 2, ENC_BIG_ENDIAN);
     offset += 2;
 
     /* Status (ind only) */
     if (opcode == 2) {
         proto_item *ti;
-        guint8 status = tvb_get_guint8(tvb, offset);
+        uint8_t status = tvb_get_uint8(tvb, offset);
         ti = proto_tree_add_item(tree, hf_catapult_dct2000_lte_ccpri_status,
                                  tvb, offset, 1, ENC_BIG_ENDIAN);
         offset++;
@@ -1068,7 +1327,7 @@ static void dissect_ccpri_lte(tvbuff_t *tvb, gint offset,
     offset++;
 
     /* Data tag must follow */
-    tag = tvb_get_guint8(tvb, offset++);
+    tag = tvb_get_uint8(tvb, offset++);
     if (tag != 2) {
         return;
     }
@@ -1094,15 +1353,15 @@ static void dissect_ccpri_lte(tvbuff_t *tvb, gint offset,
 
 /* Dissect a PDCP LTE frame by first parsing the RLCPrim header then passing
    the data to the PDCP LTE dissector */
-static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
+static void dissect_pdcp_lte(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *tree)
 {
-    guint8                opcode;
-    guint8                tag;
-    struct pdcp_lte_info *p_pdcp_lte_info = NULL;
+    uint8_t               opcode;
+    uint8_t               tag;
+    struct pdcp_lte_info *p_pdcp_lte_info;
     tvbuff_t             *pdcp_lte_tvb;
-    guint16               ueid;
-    guint8                channelId;
+    uint16_t              ueid;
+    uint8_t               channelId;
 
     /* Look this up so can update channel info */
     p_pdcp_lte_info = (struct pdcp_lte_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_pdcp_lte, 0);
@@ -1112,9 +1371,9 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
     }
 
     /* Top-level opcode */
-    opcode = tvb_get_guint8(tvb, offset);
+    opcode = tvb_get_uint8(tvb, offset);
     if (tree) {
-        proto_tree_add_item(tree, hf_catapult_dct2000_lte_rlc_op, tvb, offset, 1, ENC_BIG_ENDIAN);
+        proto_tree_add_item(tree, hf_catapult_dct2000_rlc_op, tvb, offset, 1, ENC_BIG_ENDIAN);
     }
     offset++;
 
@@ -1142,7 +1401,7 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
         case RLC_TR_DATA_IND:
 
             /* Get next tag */
-            tag = tvb_get_guint8(tvb, offset++);
+            tag = tvb_get_uint8(tvb, offset++);
             switch (tag) {
                 case 0x10:    /* UE_Id_LCId */
 
@@ -1155,31 +1414,31 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
 
                     /* UEId */
                     ueid = tvb_get_ntohs(tvb, offset);
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_ueid, tvb, offset, 2, ENC_BIG_ENDIAN);
+                    proto_tree_add_item(tree, hf_catapult_dct2000_ueid, tvb, offset, 2, ENC_BIG_ENDIAN);
                     col_append_fstr(pinfo->cinfo, COL_INFO,
                                     " UEId=%u", ueid);
                     p_pdcp_lte_info->ueid = ueid;
                     offset += 2;
 
                     /* Get tag of channel type */
-                    tag = tvb_get_guint8(tvb, offset++);
+                    tag = tvb_get_uint8(tvb, offset++);
 
                     switch (tag) {
                         case 0:
                             offset++;
-                            channelId = tvb_get_guint8(tvb, offset);
+                            channelId = tvb_get_uint8(tvb, offset);
                             col_append_fstr(pinfo->cinfo, COL_INFO, " SRB:%u",
                                             channelId);
-                            proto_tree_add_item(tree, hf_catapult_dct2000_lte_srbid,
+                            proto_tree_add_item(tree, hf_catapult_dct2000_srbid,
                                                 tvb, offset++, 1, ENC_BIG_ENDIAN);
                             p_pdcp_lte_info->channelId = channelId;
                             break;
                         case 1:
                             offset++;
-                            channelId = tvb_get_guint8(tvb, offset);
+                            channelId = tvb_get_uint8(tvb, offset);
                             col_append_fstr(pinfo->cinfo, COL_INFO, " DRB:%u",
                                             channelId);
-                            proto_tree_add_item(tree, hf_catapult_dct2000_lte_drbid,
+                            proto_tree_add_item(tree, hf_catapult_dct2000_drbid,
                                                 tvb, offset++, 1, ENC_BIG_ENDIAN);
                             p_pdcp_lte_info->channelId = channelId;
                             break;
@@ -1198,14 +1457,14 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
                     offset++;
 
                     /* Cell-id */
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_cellid,
+                    proto_tree_add_item(tree, hf_catapult_dct2000_cellid,
                                         tvb, offset, 2, ENC_BIG_ENDIAN);
                     offset += 2;
 
                     /* Logical channel type */
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_rlc_channel_type,
+                    proto_tree_add_item(tree, hf_catapult_dct2000_rlc_channel_type,
                                         tvb, offset, 1, ENC_BIG_ENDIAN);
-                    p_pdcp_lte_info->channelType = (LogicalChannelType)tvb_get_guint8(tvb, offset++);
+                    p_pdcp_lte_info->channelType = (LogicalChannelType)tvb_get_uint8(tvb, offset++);
                     col_append_fstr(pinfo->cinfo, COL_INFO, " %s",
                                     val_to_str_const(p_pdcp_lte_info->channelType, rlc_logical_channel_vals,
                                                      "UNKNOWN-CHANNEL"));
@@ -1216,8 +1475,8 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
                             offset++;
 
                             /* Transport channel type */
-                            p_pdcp_lte_info->BCCHTransport = (BCCHTransportType)tvb_get_guint8(tvb, offset);
-                            proto_tree_add_item(tree, hf_catapult_dct2000_lte_bcch_transport,
+                            p_pdcp_lte_info->BCCHTransport = (BCCHTransportType)tvb_get_uint8(tvb, offset);
+                            proto_tree_add_item(tree, hf_catapult_dct2000_bcch_transport,
                                                 tvb, offset, 1, ENC_BIG_ENDIAN);
                             offset++;
                             break;
@@ -1227,7 +1486,7 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
                             offset++;
 
                             /* UEId */
-                            proto_tree_add_item(tree, hf_catapult_dct2000_lte_ueid,
+                            proto_tree_add_item(tree, hf_catapult_dct2000_ueid,
                                                 tvb, offset, 2, ENC_BIG_ENDIAN);
                             ueid = tvb_get_ntohs(tvb, offset);
                             offset += 2;
@@ -1246,19 +1505,19 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
             }
 
             /* Other optional fields may follow */
-            tag = tvb_get_guint8(tvb, offset++);
+            tag = tvb_get_uint8(tvb, offset++);
             while ((tag != 0x41) && (tvb_reported_length_remaining(tvb, offset) > 2)) {
 
                 if (tag == 0x35) {
                     /* This is MUI */
                     offset++;
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_rlc_mui,
+                    proto_tree_add_item(tree, hf_catapult_dct2000_rlc_mui,
                                         tvb, offset, 2, ENC_BIG_ENDIAN);
                     offset += 2;
 
                     /* CNF follows MUI in AM */
                     if ((opcode == RLC_AM_DATA_REQ) || (opcode == RLC_AM_DATA_IND)) {
-                        proto_tree_add_item(tree, hf_catapult_dct2000_lte_rlc_cnf,
+                        proto_tree_add_item(tree, hf_catapult_dct2000_rlc_cnf,
                                                tvb, offset, 1, ENC_NA);
                         offset++;
                     }
@@ -1266,12 +1525,12 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
                 else if (tag == 0x45) {
                     /* Discard Req */
                     offset++;
-                    proto_tree_add_item(tree, hf_catapult_dct2000_lte_rlc_discard_req,
+                    proto_tree_add_item(tree, hf_catapult_dct2000_rlc_discard_req,
                                            tvb, offset, 1, ENC_NA);
                     offset++;
                 }
 
-                tag = tvb_get_guint8(tvb, offset++);
+                tag = tvb_get_uint8(tvb, offset++);
             }
 
 
@@ -1297,91 +1556,92 @@ static void dissect_pdcp_lte(tvbuff_t *tvb, gint offset,
    This includes exact matches and prefixes (e.g. "diameter_rx" -> "diameter") */
 static dissector_handle_t look_for_dissector(const char *protocol_name)
 {
-    /* Use known aliases and protocol name prefixes */
-    if (strcmp(protocol_name, "tbcp") == 0) {
-        return find_dissector("rtcp");
-    }
-    else
     if (strncmp(protocol_name, "diameter", strlen("diameter")) == 0) {
         return find_dissector("diameter");
     }
     else
-    if ((strcmp(protocol_name, "xcap_caps") == 0) ||
-        (strcmp(protocol_name, "soap") == 0) ||
-        (strcmp(protocol_name, "mm1") == 0) ||
-        (strcmp(protocol_name, "mm3") == 0) ||
-        (strcmp(protocol_name, "mm7") == 0)) {
-
-        return find_dissector("http");
+    if (strncmp(protocol_name, "gtpv2_r", 7) == 0) {
+        return find_dissector("gtpv2");
     }
     else
-    if ((strncmp(protocol_name, "fp_r", 4) == 0) ||
-        (strcmp(protocol_name, "fpiur_r5") == 0)) {
-
-        return find_dissector("fp");
-    }
-    else
-    if (strncmp(protocol_name, "iuup_rtp_r", strlen("iuup_rtp_r")) == 0) {
-        return find_dissector("rtp");
-    }
-    else
-    if (strcmp(protocol_name, "sipt") == 0) {
-        return find_dissector("sip");
-    }
-    else
-    if (strncmp(protocol_name, "nbap_sctp", strlen("nbap_sctp")) == 0) {
-        return find_dissector("nbap");
-    }
-    else
-    if (strncmp(protocol_name, "gtp", strlen("gtp")) == 0) {
-        return find_dissector("gtp");
-    }
-    else
-    if (strcmp(protocol_name, "dhcpv4") == 0) {
-        return find_dissector("bootp");
-    }
-    else
-    if (strcmp(protocol_name, "wimax") == 0) {
-        return find_dissector("wimaxasncp");
-    }
-    else
-    if (strncmp(protocol_name, "sabp", strlen("sabp")) == 0) {
-        return find_dissector("sabp");
-    }
-    else
-    if (strcmp(protocol_name, "wtp") == 0) {
-        return find_dissector("wtp-udp");
-    }
-    else
-    /* Only match with s1ap if preference turned on */
-    if (catapult_dct2000_dissect_lte_s1ap &&
-        strncmp(protocol_name, "s1ap", strlen("s1ap")) == 0) {
-
+    if (strncmp(protocol_name, "s1ap", 4) == 0) {
         return find_dissector("s1ap");
     }
     else
-    /* Always try lookup for now */
-    if ((strncmp(protocol_name, "x2ap_r8_lte", strlen("x2ap_r8_lte")) == 0) ||
-        (strncmp(protocol_name, "x2ap_r9_lte", strlen("x2ap_r9_lte")) == 0)) {
-
+    if (strncmp(protocol_name, "x2ap_r", 6) == 0) {
         return find_dissector("x2ap");
     }
     else
-    if ((strcmp(protocol_name, "gtpv2_r8_lte") == 0) ||
-        (strcmp(protocol_name, "gtpv2_r9_lte") == 0)) {
-        return find_dissector("gtpv2");
+    if (strncmp(protocol_name, "xnap_r1", 7) == 0) {
+        return find_dissector("xnap");
+    }
+    else
+    if (strncmp(protocol_name, "ngap_r1", 7) == 0) {
+        return find_dissector("ngap");
     }
 
+    /* Only check really old names to convert if preference is checked */
+    else if (catapult_dct2000_dissect_old_protocol_names) {
+        /* Use known aliases and protocol name prefixes */
+        if (strcmp(protocol_name, "tbcp") == 0) {
+            return find_dissector("rtcp");
+        }
+        else
+        if ((strcmp(protocol_name, "xcap_caps") == 0) ||
+            (strcmp(protocol_name, "soap") == 0) ||
+            (strcmp(protocol_name, "mm1") == 0) ||
+            (strcmp(protocol_name, "mm3") == 0) ||
+            (strcmp(protocol_name, "mm7") == 0)) {
+
+             return find_dissector("http");
+        }
+        else
+        if ((strncmp(protocol_name, "fp_r", 4) == 0) ||
+            (strcmp(protocol_name, "fpiur_r5") == 0)) {
+
+            return find_dissector("fp");
+        }
+        else
+        if (strncmp(protocol_name, "iuup_rtp_r", strlen("iuup_rtp_r")) == 0) {
+            return find_dissector("rtp");
+        }
+        else
+        if (strcmp(protocol_name, "sipt") == 0) {
+            return find_dissector("sip");
+        }
+        else
+        if (strncmp(protocol_name, "nbap_sctp", strlen("nbap_sctp")) == 0) {
+            return find_dissector("nbap");
+        }
+        else
+        if (strcmp(protocol_name, "dhcpv4") == 0) {
+            return find_dissector("dhcp");
+        }
+        else
+        if (strcmp(protocol_name, "wimax") == 0) {
+            return find_dissector("wimaxasncp");
+        }
+        else
+        if (strncmp(protocol_name, "sabp", strlen("sabp")) == 0) {
+            return find_dissector("sabp");
+        }
+        else
+        if (strcmp(protocol_name, "wtp") == 0) {
+            return find_dissector("wtp-udp");
+        }
+        else
+        if (strncmp(protocol_name, "gtp", strlen("gtp")) == 0) {
+            return find_dissector("gtp");
+        }
+    }
 
     /* Try for an exact match */
-    else {
-        return find_dissector(protocol_name);
-    }
+    return find_dissector(protocol_name);
 }
 
 
 /* Populate outhdr_values array with numbers found in outhdr_string */
-static guint parse_outhdr_string(const guchar *outhdr_string, gint outhdr_string_len, guint *outhdr_values)
+static unsigned parse_outhdr_string(const unsigned char *outhdr_string, int outhdr_string_len, unsigned *outhdr_values)
 {
     int   n                 = 0;
     int   outhdr_values_found;
@@ -1389,12 +1649,12 @@ static guint parse_outhdr_string(const guchar *outhdr_string, gint outhdr_string
     /* Populate values array */
     for (outhdr_values_found=0; outhdr_values_found < MAX_OUTHDR_VALUES; ) {
 
-        guint  digit_array[MAX_OUTHDR_VALUES];
-        guint  number_digits = 0;
+        unsigned  digit_array[MAX_OUTHDR_VALUES];
+        unsigned  number_digits = 0;
 
-        guint   number = 0;
-        guint   multiplier = 1;
-        guint   d;
+        unsigned   number = 0;
+        unsigned   multiplier = 1;
+        unsigned   d;
 
         /* Find digits */
         for ( ; (n < outhdr_string_len) && (number_digits < MAX_OUTHDR_VALUES); n++) {
@@ -1428,14 +1688,14 @@ static guint parse_outhdr_string(const guchar *outhdr_string, gint outhdr_string
 
 /* Fill in an FP packet info struct and attach it to the packet for the FP
    dissector to use */
-static void attach_fp_info(packet_info *pinfo, gboolean received,
+static void attach_fp_info(packet_info *pinfo, bool received,
                            const char *protocol_name, int variant,
-                           guint *outhdr_values, guint outhdr_values_found)
+                           unsigned *outhdr_values, unsigned outhdr_values_found)
 {
-    guint i = 0;
+    unsigned i = 0;
     int   chan;
-    guint tf_start, num_chans_start;
-    gint  node_type;
+    unsigned tf_start, num_chans_start;
+    int   node_type;
     int   calculated_variant;
 
     /* Only need to set info once per session. */
@@ -1657,9 +1917,9 @@ static void attach_fp_info(packet_info *pinfo, gboolean received,
 
 /* Fill in an RLC packet info struct and attach it to the packet for the RLC
    dissector to use */
-static void attach_rlc_info(packet_info *pinfo, guint32 urnti, guint8 rbid,
-                            gboolean is_sent, guint *outhdr_values,
-                            guint outhdr_values_found)
+static void attach_rlc_info(packet_info *pinfo, uint32_t urnti, uint8_t rbid,
+                            bool is_sent, unsigned *outhdr_values,
+                            unsigned outhdr_values_found)
 {
     /* Only need to set info once per session. */
     struct fp_info  *p_fp_info;
@@ -1684,10 +1944,10 @@ static void attach_rlc_info(packet_info *pinfo, guint32 urnti, guint8 rbid,
     p_rlc_info->ueid[0] = urnti;
 
     /* ciphered (off by default) */
-    p_rlc_info->ciphered[0] = FALSE;
+    p_rlc_info->ciphered[0] = false;
 
     /* deciphered (off by default) */
-    p_rlc_info->deciphered[0] = FALSE;
+    p_rlc_info->deciphered[0] = false;
 
     /* Mode. */
     switch (outhdr_values[1]) {
@@ -1702,11 +1962,11 @@ static void attach_rlc_info(packet_info *pinfo, guint32 urnti, guint8 rbid,
             break;
         case 4:
             p_rlc_info->mode[0] = RLC_UM;
-            p_rlc_info->ciphered[0] = TRUE;
+            p_rlc_info->ciphered[0] = true;
             break;
         case 5:
             p_rlc_info->mode[0] = RLC_AM;
-            p_rlc_info->ciphered[0] = TRUE;
+            p_rlc_info->ciphered[0] = true;
             break;
         default:
             return;
@@ -1733,7 +1993,7 @@ static void attach_rlc_info(packet_info *pinfo, guint32 urnti, guint8 rbid,
 
 /* Fill in a MAC LTE packet info struct and attach it to the packet for that
    dissector to use */
-static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values, guint outhdr_values_found)
+static void attach_mac_lte_info(packet_info *pinfo, unsigned *outhdr_values, unsigned outhdr_values_found)
 {
     struct mac_lte_info *p_mac_lte_info;
     unsigned int         i = 0;
@@ -1748,19 +2008,20 @@ static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values, guint 
     p_mac_lte_info = wmem_new0(wmem_file_scope(), struct mac_lte_info);
 
     /* Populate the struct from outhdr values */
-    p_mac_lte_info->crcStatusValid = FALSE;  /* not set yet */
+    p_mac_lte_info->crcStatusValid = false;  /* not set yet */
 
     p_mac_lte_info->radioType = outhdr_values[i++] + 1;        // 1
     p_mac_lte_info->rntiType = outhdr_values[i++];             // 2
     p_mac_lte_info->direction = outhdr_values[i++];            // 3
-    /* Set these extra PHY present flags to FALSE by default */
+    /* Set these extra PHY present flags to false by default */
     if (p_mac_lte_info->direction == DIRECTION_UPLINK) {
-        p_mac_lte_info->detailed_phy_info.ul_info.present = FALSE;
+        p_mac_lte_info->detailed_phy_info.ul_info.present = false;
     }
     else {
-        p_mac_lte_info->detailed_phy_info.dl_info.present = FALSE;
+        p_mac_lte_info->detailed_phy_info.dl_info.present = false;
     }
 
+    p_mac_lte_info->sfnSfInfoPresent = true;
     p_mac_lte_info->subframeNumber = outhdr_values[i++];       // 4
     p_mac_lte_info->isPredefinedData = outhdr_values[i++];     // 5
     p_mac_lte_info->rnti = outhdr_values[i++];                 // 6
@@ -1773,7 +2034,7 @@ static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values, guint 
     if (outhdr_values_found == 10) {
         /* CRC only valid for Downlink */
         if (p_mac_lte_info->direction == DIRECTION_DOWNLINK) {
-            p_mac_lte_info->crcStatusValid = TRUE;
+            p_mac_lte_info->crcStatusValid = true;
             p_mac_lte_info->crcStatus = (mac_lte_crc_status)outhdr_values[i++]; // 10
         }
         else {
@@ -1795,7 +2056,7 @@ static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values, guint 
             p_mac_lte_info->dl_retx = (outhdr_values[i++]) ? dl_retx_yes : dl_retx_no;  // 16
 
             p_mac_lte_info->detailed_phy_info.dl_info.resource_block_length = outhdr_values[i++]; // 17
-            p_mac_lte_info->crcStatusValid = TRUE;                                                // 18
+            p_mac_lte_info->crcStatusValid = true;                                                // 18
             p_mac_lte_info->crcStatus = (mac_lte_crc_status)outhdr_values[i++];
             if (outhdr_values_found > 18) {
                 p_mac_lte_info->detailed_phy_info.dl_info.harq_id = outhdr_values[i++];    // 19
@@ -1817,14 +2078,14 @@ static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values, guint 
 
             /* TODO: delete if won't see this special case anymore? */
             if (outhdr_values_found == 16) {
-                p_mac_lte_info->subframeNumberOfGrantPresent = TRUE;
+                p_mac_lte_info->subframeNumberOfGrantPresent = true;
                 p_mac_lte_info->subframeNumberOfGrant = outhdr_values[i++];   // 16
             }
             if (outhdr_values_found > 16) {
                 p_mac_lte_info->detailed_phy_info.ul_info.harq_id = outhdr_values[i++]; // 16
                 p_mac_lte_info->detailed_phy_info.ul_info.ndi = outhdr_values[i++];     // 17
 
-                p_mac_lte_info->subframeNumberOfGrantPresent = TRUE;
+                p_mac_lte_info->subframeNumberOfGrantPresent = true;
                 p_mac_lte_info->subframeNumberOfGrant = outhdr_values[i++];             // 18
             }
         }
@@ -1843,7 +2104,7 @@ static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values, guint 
 
     if (p_mac_lte_info->direction == DIRECTION_UPLINK) {
         /* R10 parameter not set yet */
-        p_mac_lte_info->isExtendedBSRSizes = FALSE;
+        p_mac_lte_info->isExtendedBSRSizes = false;
     }
 
     if (i < outhdr_values_found) {
@@ -1867,8 +2128,8 @@ static void attach_mac_lte_info(packet_info *pinfo, guint *outhdr_values, guint 
 
 /* Fill in a RLC LTE packet info struct and attach it to the packet for that
    dissector to use */
-static void attach_rlc_lte_info(packet_info *pinfo, guint *outhdr_values,
-                                guint outhdr_values_found _U_)
+static void attach_rlc_lte_info(packet_info *pinfo, unsigned *outhdr_values,
+                                unsigned outhdr_values_found _U_)
 {
     struct rlc_lte_info *p_rlc_lte_info;
     unsigned int         i = 0;
@@ -1897,8 +2158,8 @@ static void attach_rlc_lte_info(packet_info *pinfo, guint *outhdr_values,
 
 /* Fill in a PDCP LTE packet info struct and attach it to the packet for the PDCP LTE
    dissector to use */
-static void attach_pdcp_lte_info(packet_info *pinfo, guint *outhdr_values,
-                                 guint outhdr_values_found _U_)
+static void attach_pdcp_lte_info(packet_info *pinfo, unsigned *outhdr_values,
+                                 unsigned outhdr_values_found _U_)
 {
     struct pdcp_lte_info *p_pdcp_lte_info;
     unsigned int          i = 0;
@@ -1938,7 +2199,7 @@ static void attach_pdcp_lte_info(packet_info *pinfo, guint *outhdr_values,
 /* Attempt to show tty (raw character messages) as text lines. */
 static void dissect_tty_lines(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset)
 {
-    gint        next_offset;
+    int         next_offset;
     proto_tree *tty_tree;
     proto_item *ti;
     int         lines = 0;
@@ -1953,7 +2214,7 @@ static void dissect_tty_lines(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
         int linelen = tvb_find_line_end_unquoted(tvb, offset, -1, &next_offset);
 
         /* Extract & add the string. */
-        char *string = (char*)tvb_get_string_enc(wmem_packet_scope(), tvb, offset, linelen, ENC_ASCII);
+        char *string = (char*)tvb_get_string_enc(pinfo->pool, tvb, offset, linelen, ENC_ASCII);
         if (g_ascii_isprint(string[0])) {
             /* If the first byte of the string is printable ASCII treat as string... */
             proto_tree_add_string_format(tty_tree, hf_catapult_dct2000_tty_line,
@@ -1967,14 +2228,14 @@ static void dissect_tty_lines(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
             char *hex_string;
             int tty_string_length = tvb_reported_length_remaining(tvb, offset);
             int hex_string_length = 1+(2*tty_string_length)+1;
-            hex_string = (char *)wmem_alloc(wmem_packet_scope(), hex_string_length);
+            hex_string = (char *)wmem_alloc(pinfo->pool, hex_string_length);
 
-            idx = g_snprintf(hex_string, hex_string_length, "$");
+            idx = snprintf(hex_string, hex_string_length, "$");
 
             /* Write hex out to new string */
             for (n=0; n < tty_string_length; n++) {
-                idx += g_snprintf(hex_string+idx, 3, "%02x",
-                                  tvb_get_guint8(tvb, offset+n));
+                idx += snprintf(hex_string+idx, 3, "%02x",
+                                  tvb_get_uint8(tvb, offset+n));
             }
             string = hex_string;
         }
@@ -2002,15 +2263,14 @@ static void dissect_tty_lines(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
 static void check_for_oob_mac_lte_events(packet_info *pinfo, tvbuff_t *tvb, proto_tree *tree,
                                          const char *string)
 {
-    guint                number_of_ues;
-    guint                ueids[MAX_SRs];
-    guint                rntis[MAX_SRs];
-    guint                rapid;
-    guint                rach_attempt_number;
-    guint                temp;
+    unsigned             number_of_ues;
+    unsigned             ueids[MAX_SRs];
+    unsigned             rntis[MAX_SRs];
+    unsigned             rapid;
+    unsigned             rach_attempt_number;
+    unsigned             temp;
     mac_lte_oob_event    oob_event;
     struct mac_lte_info *p_mac_lte_info;
-    guint16              n;
 
     /* Current strings of interest begin with ">> ", so if don't see, avoid sscanf() calls. */
     if (strncmp(string, ">> ", 3) != 0) {
@@ -2039,7 +2299,7 @@ static void check_for_oob_mac_lte_events(packet_info *pinfo, tvbuff_t *tvb, prot
         if (number_of_ues > 1) {
             current_position = string;
 
-            for (n=1; n < number_of_ues; n++) {
+            for (unsigned n=1; n < number_of_ues; n++) {
 
                 /* Find the start of the next entry */
                 current_position = strstr(current_position, "] ");
@@ -2086,7 +2346,7 @@ static void check_for_oob_mac_lte_events(packet_info *pinfo, tvbuff_t *tvb, prot
             p_mac_lte_info->direction = DIRECTION_UPLINK;
            break;
         case ltemac_send_sr:
-            for (n=0; n < number_of_ues; n++) {
+            for (unsigned n=0; n < number_of_ues; n++) {
                 p_mac_lte_info->oob_ueid[n] = ueids[n];
                 p_mac_lte_info->oob_rnti[n] = rntis[n];
             }
@@ -2101,6 +2361,7 @@ static void check_for_oob_mac_lte_events(packet_info *pinfo, tvbuff_t *tvb, prot
     }
 
     p_mac_lte_info->radioType = FDD_RADIO; /* TODO: will be the same as rest of log... */
+    p_mac_lte_info->sfnSfInfoPresent = false;  /* We don't have this */
     p_mac_lte_info->oob_event = oob_event;
 
     /* Store info in packet */
@@ -2108,6 +2369,21 @@ static void check_for_oob_mac_lte_events(packet_info *pinfo, tvbuff_t *tvb, prot
 
     /* Call MAC dissector */
     call_dissector_only(mac_lte_handle, tvb, pinfo, tree, NULL);
+}
+
+static uint8_t
+hex_from_char(char c)
+{
+    if ((c >= '0') && (c <= '9')) {
+        return c - '0';
+    }
+
+    if ((c >= 'a') && (c <= 'f')) {
+        return 0x0a + (c - 'a');
+    }
+
+    /* Not a valid hex string character */
+    return 0xff;
 }
 
 
@@ -2119,19 +2395,19 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 {
     proto_tree         *dct2000_tree = NULL;
     proto_item         *ti           = NULL;
-    gint                offset       = 0;
-    gint                context_length;
+    int                 offset       = 0;
+    int                 context_length;
     const char         *context_name;
-    guint8              port_number;
-    gint                protocol_length;
-    gint                timestamp_length;
+    uint8_t             port_number;
+    int                 protocol_length;
+    int                 timestamp_length;
     const char         *timestamp_string;
-    gint                variant_length;
+    int                 variant_length;
     const char         *variant_string;
-    guint32             variant;
-    gint                outhdr_length;
+    uint32_t            variant;
+    int                 outhdr_length;
     const char         *outhdr_string;
-    guint8              direction;
+    uint8_t             direction;
     tvbuff_t           *next_tvb;
     int                 encap;
     dissector_handle_t  protocol_handle = 0;
@@ -2139,9 +2415,9 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     void               *protocol_data = 0;
     int                 sub_dissector_result = 0;
     const char         *protocol_name;
-    gboolean            is_comment, is_sprint = FALSE;
-    guint               outhdr_values[MAX_OUTHDR_VALUES];
-    guint               outhdr_values_found;
+    bool                is_comment, is_sprint = false;
+    unsigned            outhdr_values[MAX_OUTHDR_VALUES];
+    unsigned            outhdr_values_found;
 
     /* Set Protocol */
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "DCT2000");
@@ -2160,15 +2436,15 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     /* by the wiretap module                                             */
 
     /* Context Name */
-    context_name = tvb_get_const_stringz(tvb, offset, &context_length);
+    context_name = tvb_get_stringz_enc(pinfo->pool, tvb, offset, &context_length, ENC_ASCII);
     if (dct2000_tree) {
-        proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_context, tvb,
-                            offset, context_length, ENC_ASCII|ENC_NA);
+        proto_tree_add_string(dct2000_tree, hf_catapult_dct2000_context, tvb,
+                            offset, context_length, context_name);
     }
     offset += context_length;
 
     /* Context port number */
-    port_number = tvb_get_guint8(tvb, offset);
+    port_number = tvb_get_uint8(tvb, offset);
     if (dct2000_tree) {
         proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_port_number, tvb,
                             offset, 1, ENC_BIG_ENDIAN);
@@ -2176,7 +2452,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     offset++;
 
     /* Timestamp in file */
-    timestamp_string = tvb_get_const_stringz(tvb, offset, &timestamp_length);
+    timestamp_string = tvb_get_stringz_enc(pinfo->pool, tvb, offset, &timestamp_length, ENC_ASCII);
     if (dct2000_tree) {
         /* g_ascii_strtod(timestamp_string, NULL)) is much simpler, but *very* slow..
            There will be seconds, a dot, and 4 decimal places.
@@ -2209,10 +2485,10 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 
 
     /* DCT2000 protocol name */
-    protocol_name = tvb_get_const_stringz(tvb, offset, &protocol_length);
+    protocol_name = tvb_get_stringz_enc(pinfo->pool, tvb, offset, &protocol_length, ENC_ASCII);
     if (dct2000_tree) {
-        proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_protocol, tvb,
-                            offset, protocol_length, ENC_ASCII|ENC_NA);
+        proto_tree_add_string(dct2000_tree, hf_catapult_dct2000_protocol, tvb,
+                            offset, protocol_length, protocol_name);
     }
     is_comment = (strcmp(protocol_name, "comment") == 0);
     if (!is_comment) {
@@ -2222,24 +2498,24 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 
 
     /* Protocol Variant */
-    variant_string = tvb_get_const_stringz(tvb, offset, &variant_length);
+    variant_string = tvb_get_stringz_enc(pinfo->pool, tvb, offset, &variant_length, ENC_ASCII);
     if (!is_comment && !is_sprint) {
-        proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_variant, tvb,
-                            offset, variant_length, ENC_ASCII|ENC_NA);
+        proto_tree_add_string(dct2000_tree, hf_catapult_dct2000_variant, tvb,
+                            offset, variant_length, variant_string);
     }
     offset += variant_length;
 
     /* Outhdr (shown as string) */
-    outhdr_string = tvb_get_const_stringz(tvb, offset, &outhdr_length);
+    outhdr_string = tvb_get_stringz_enc(pinfo->pool, tvb, offset, &outhdr_length, ENC_ASCII);
     if (!is_comment && !is_sprint && (outhdr_length > 1)) {
-        proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_outhdr, tvb,
-                            offset, outhdr_length, ENC_ASCII|ENC_NA);
+        proto_tree_add_string(dct2000_tree, hf_catapult_dct2000_outhdr, tvb,
+                            offset, outhdr_length, outhdr_string);
     }
     offset += outhdr_length;
 
 
     /* Direction */
-    direction = tvb_get_guint8(tvb, offset);
+    direction = tvb_get_uint8(tvb, offset);
     if (dct2000_tree) {
         proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_direction, tvb,
                             offset, 1, ENC_BIG_ENDIAN);
@@ -2250,7 +2526,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
     if (!is_comment && !is_sprint) {
         proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_encap, tvb, offset, 1, ENC_BIG_ENDIAN);
     }
-    encap = tvb_get_guint8(tvb, offset);
+    encap = tvb_get_uint8(tvb, offset);
     offset++;
 
     /* Add useful details to protocol tree label */
@@ -2322,12 +2598,13 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
         attach_pdcp_lte_info(pinfo, outhdr_values, outhdr_values_found);
     }
 
-
     else if ((strcmp(protocol_name, "nas_rrc_r8_lte") == 0) ||
              (strcmp(protocol_name, "nas_rrc_r9_lte") == 0) ||
-             (strcmp(protocol_name, "nas_rrc_r10_lte") == 0)) {
-        gboolean nas_body_found = TRUE;
-        guint8 opcode = tvb_get_guint8(tvb, offset);
+             (strcmp(protocol_name, "nas_rrc_r10_lte") == 0) ||
+             (strcmp(protocol_name, "nas_rrc_r13_lte") == 0) ||
+             (strcmp(protocol_name, "nas_rrc_r15_5gnr") == 0)) {
+        bool nas_body_found = true;
+        uint8_t opcode = tvb_get_uint8(tvb, offset);
         proto_tree_add_item(tree, hf_catapult_dct2000_lte_nas_rrc_opcode,
                             tvb, offset++, 1, ENC_BIG_ENDIAN);
 
@@ -2339,7 +2616,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                 /* UEId */
                 offset++; /* tag */
                 offset += 2; /* 2 wasted bytes of UEId*/
-                proto_tree_add_item(tree, hf_catapult_dct2000_lte_ueid,
+                proto_tree_add_item(tree, hf_catapult_dct2000_ueid,
                                     tvb, offset, 2, ENC_BIG_ENDIAN);
                 offset += 2;
                 break;
@@ -2347,7 +2624,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                 /* UEId */
                 offset++; /* tag */
                 offset += 2; /* 2 wasted bytes of UEId*/
-                proto_tree_add_item(tree, hf_catapult_dct2000_lte_ueid,
+                proto_tree_add_item(tree, hf_catapult_dct2000_ueid,
                                     tvb, offset, 2, ENC_BIG_ENDIAN);
                 offset += 2;
 
@@ -2365,7 +2642,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                 /* UEId */
                 offset++; /* tag */
                 offset += 2; /* 2 wasted bytes of UEId*/
-                proto_tree_add_item(tree, hf_catapult_dct2000_lte_ueid,
+                proto_tree_add_item(tree, hf_catapult_dct2000_ueid,
                                     tvb, offset, 2, ENC_BIG_ENDIAN);
                 offset += 2;
 
@@ -2376,16 +2653,52 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                 break;
 
             default:
-                nas_body_found = FALSE;
+                nas_body_found = false;
                 break;
         }
 
-        /* Look up dissector if if looks right */
+        /* Look up dissector if it looks right */
         if (nas_body_found) {
             offset += 2;  /* L3 tag + len */
-            protocol_handle = find_dissector("nas-eps");
+            if (strcmp(protocol_name, "nas_rrc_r15_5gnr") == 0) {
+                protocol_handle = find_dissector("nas-5gs");
+            }
+            else {
+                protocol_handle = find_dissector("nas-eps");
+            }
         }
     }
+
+    /* NR NAS for S1AP */
+    else if (strcmp(protocol_name, "nas_s1ap_r15_5gnr") == 0) {
+        uint8_t opcode = tvb_get_uint8(tvb, offset);
+        if (opcode <= NAS_S1AP_DATA_IND) {
+            /* Opcode tag (only interested in ones that carry NAS PDU) */
+            proto_tree_add_item(tree, hf_catapult_dct2000_nr_nas_s1ap_opcode,
+                                tvb, offset++, 1, ENC_BIG_ENDIAN);
+
+            /* Skip overall length */
+            offset += skipASNLength(tvb_get_uint8(tvb, offset));
+
+            /* UE Id. Skip tag and fixed length */
+            offset += 2;
+            proto_tree_add_item(tree, hf_catapult_dct2000_ueid,
+                                tvb, offset, 4, ENC_BIG_ENDIAN);
+            offset += 4;
+
+            /* NAS PDU tag is 2 bytes */
+            uint16_t data_tag = tvb_get_ntohs(tvb, offset);
+            if (data_tag == 0x0021) {
+                offset += 2;
+                /* Also skip length */
+                offset += 2;
+                protocol_handle = find_dissector("nas-5gs");
+
+                /* N.B. Ignoring some optional fields after the NAS PDU */
+            }
+        }
+    }
+
 
     /* Note that the first item of pinfo->pseudo_header->dct2000 will contain
        the pseudo-header needed (in some cases) by the Wireshark dissector that
@@ -2413,10 +2726,10 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                 /* Add PDCP thread info as generated fields */
                 ti = proto_tree_add_uint(dct2000_tree, hf_catapult_dct2000_lte_ueid, tvb, 0, 0,
                                          pinfo->pseudo_header->dct2000.inner_pseudo_header.pdcp.ueid);
-                PROTO_ITEM_SET_GENERATED(ti);
+                proto_item_set_generated(ti);
                 ti = proto_tree_add_uint(dct2000_tree, hf_catapult_dct2000_lte_drbid, tvb, 0, 0,
                                          pinfo->pseudo_header->dct2000.inner_pseudo_header.pdcp.drbid);
-                PROTO_ITEM_SET_GENERATED(ti);
+                proto_item_set_generated(ti);
             }
 #endif
             break;
@@ -2424,8 +2737,14 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
             protocol_handle = find_dissector("eth_withoutfcs");
             break;
         case WTAP_ENCAP_ISDN:
-            protocol_handle = find_dissector("lapd");
-            pinfo->p2p_dir = pinfo->pseudo_header->isdn.uton;
+            /*
+             * XXX - if the file can handle B-channel traffic as well
+             * as D-channel traffic, have the libwiretap code fill
+             * in the channel, and call the ISDN dissector rather
+             * than the LAPD-with-pseudoheader dissector.
+             */
+            protocol_handle = find_dissector("lapd-phdr");
+            protocol_data = &pinfo->pseudo_header->dct2000.inner_pseudo_header.isdn;
             break;
         case WTAP_ENCAP_ATM_PDUS_UNTRUNCATED:
             protocol_handle = find_dissector("atm_untruncated");
@@ -2535,11 +2854,11 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
             if (strcmp(protocol_name, "comment") == 0) {
                 /* Extract & add the string. */
                 proto_item *string_ti;
-                const guint8 *string;
+                const uint8_t *string;
 
                 /* Show comment string */
                 string_ti = proto_tree_add_item_ret_string(dct2000_tree, hf_catapult_dct2000_comment, tvb,
-                                                offset, tvb_reported_length_remaining(tvb, offset), ENC_ASCII|ENC_NA, wmem_packet_scope(), &string);
+                                                offset, tvb_reported_length_remaining(tvb, offset), ENC_ASCII|ENC_NA, pinfo->pool, &string);
                 col_append_str(pinfo->cinfo, COL_INFO, string);
 
                 if (catapult_dct2000_dissect_mac_lte_oob_messages) {
@@ -2551,9 +2870,206 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                 if (strncmp(string, ">> ERR", 6) == 0) {
                     proto_item *error_ti = proto_tree_add_item(dct2000_tree, hf_catapult_dct2000_error_comment, tvb,
                                                                offset, -1, ENC_NA);
-                    PROTO_ITEM_SET_GENERATED(error_ti);
+                    proto_item_set_generated(error_ti);
                     expert_add_info_format(pinfo, string_ti, &ei_catapult_dct2000_error_comment_expert,
                                           "%s", string);
+                }
+
+
+                /* Look for logged MAC-NR PDU */
+                /* Example contents would be:
+                    $Debug  - NRMAC PDU: direction=0 rntiType=3 rnti=8495 ueid=1 SN=0 SFN=0 length=22 $40111212121212121212121212121212121212121212
+                */
+                int dir, rntiType, rnti, ueid, sn, sfn, length;
+
+                if ((sscanf(string, "L1_App: NRMAC PDU: direction=%d rntiType=%d rnti=%d ueid=%d SN=%d  SFN=%d length=%d $",
+                            &dir, &rntiType, &rnti, &ueid, &sn, &sfn, &length) == 7) ||
+                    (sscanf(string, "NRMAC PDU: direction=%d rntiType=%d rnti=%d ueid=%d SN=%d  SFN=%d length=%d $",
+                            &dir, &rntiType, &rnti, &ueid, &sn, &sfn, &length) == 7))
+                {
+                    struct mac_nr_info *p_mac_nr_info;
+
+                    /* Only need to set info once per session? */
+                    /* p_mac_nr_info = get_mac_nr_proto_data(pinfo); */
+
+                    /* Allocate & zero struct */
+                    p_mac_nr_info = wmem_new0(wmem_file_scope(), struct mac_nr_info);
+
+                    /* Populate the struct from outhdr values */
+                    p_mac_nr_info->radioType = FDD_RADIO;
+
+                    /* Map internal RNTI type -> Wireshark #defines from packet-mac-nr.h */
+                    switch (rntiType) {
+                        case 2:
+                            p_mac_nr_info->rntiType = P_RNTI;
+                            break;
+                        case 3:
+                            p_mac_nr_info->rntiType = RA_RNTI;
+                            break;
+                        case 4:
+                            p_mac_nr_info->rntiType = C_RNTI; /* temp C-RNTI */
+                            break;
+                        case 5:
+                            p_mac_nr_info->rntiType = C_RNTI;
+                            break;
+                        case 6:
+                            p_mac_nr_info->rntiType = MSGB_RNTI;
+                            break;
+                        default:
+                            p_mac_nr_info->rntiType = NO_RNTI;
+                            break;
+                    }
+
+                    p_mac_nr_info->direction = dir;
+                    p_mac_nr_info->rnti = rnti;
+                    // 0xFFFF trumps logged rntiType...
+                    if (rnti == 65535) {
+                        p_mac_nr_info->rntiType = SI_RNTI;
+                    }
+                    p_mac_nr_info->ueid = ueid;
+
+                    p_mac_nr_info->phr_type2_othercell = false;
+
+                    p_mac_nr_info->length = length;
+
+                    /* Always present. TODO: miss out if both zero? */
+                    p_mac_nr_info->sfnSlotInfoPresent = true;
+                    p_mac_nr_info->sysframeNumber = sfn;
+                    p_mac_nr_info->slotNumber = sn;  /* only right if mu==0, but don't know SCS */
+
+                    /* Store info in packet */
+                    set_mac_nr_proto_data(pinfo, p_mac_nr_info);
+
+                    /* Payload is from $ to end of string */
+                    int data_offset = 0;
+                    for (unsigned int n=0; n < strlen(string); n++) {
+                        if (string[n] == '$') {
+                            data_offset = n;
+                            break;
+                        }
+                    }
+
+                    /* Convert data to hex. */
+                    char *mac_data = (char *)wmem_alloc(pinfo->pool, 2 + (strlen(string)-data_offset)/2);
+                    int idx, m;
+                    for (idx=0, m=data_offset+1; string[m] != '\0'; m+=2, idx++) {
+                        mac_data[idx] = (hex_from_char(string[m]) << 4) + hex_from_char(string[m+1]);
+                    }
+
+                    /* Create tvb */
+                    tvbuff_t *mac_nr_tvb = tvb_new_real_data(mac_data, idx, idx);
+                    add_new_data_source(pinfo, mac_nr_tvb, "MAC-NR Payload");
+                    /* Call the dissector! */
+                    call_dissector_only(mac_nr_handle, mac_nr_tvb, pinfo, tree, NULL);
+                }
+
+                /* Look for logged NRUP PDU */
+                const char *nrup_pattern = "NRUP PDU: ";
+                char *start = strstr(string, nrup_pattern);
+                if (start) {
+                    int off = 0;
+
+                    while (start[off] && start[off] != '$') {
+                        off++;
+                    }
+
+                    const char *payload = &start[off+1];
+
+                    /* Pad out to nearest 4 bytes if necessary. */
+                    /* Convert data to hex. */
+                    #define MAX_NRUP_DATA_LENGTH 200
+                    static uint8_t nrup_data[MAX_NRUP_DATA_LENGTH];
+                    int idx, m;
+
+                    /* The rest (or all) is data! */
+                    length = (int)strlen(payload) / 2;
+                    for (m=0, idx=0; payload[m] != '\0' && idx < MAX_NRUP_DATA_LENGTH-4; m+=2, idx++) {
+                        nrup_data[idx] = (hex_from_char(payload[m]) << 4) + hex_from_char(payload[m+1]);
+                    }
+                    /* Pad out to nearest 4 bytes if necessary. */
+                    if (length % 4 != 0) {
+                        for (int p=length % 4; p < 4; p++) {
+                            nrup_data[length++] = '\0';
+                        }
+                    }
+
+                    /* Create separate NRUP tvb */
+                    tvbuff_t *nrup_tvb = tvb_new_real_data(nrup_data, length, length);
+                    add_new_data_source(pinfo, nrup_tvb, "NRUP Payload");
+
+                    /* Call the dissector! */
+                    call_dissector_only(nrup_handle, nrup_tvb, pinfo, tree, NULL);
+                }
+
+                /* Read key info from formatted lines */
+                /* e.g. NRPDCP: RRCPRIM:ueId=   1;setThreadAuthKey: RRC id=1 alg 2 key: 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 */
+                if (strstr(string, "setThreadAuthKey:")) {
+                    unsigned ue_id, id, alg;
+                    if (!PINFO_FD_VISITED(pinfo) && sscanf(string, "NRPDCP: RRCPRIM:ueId=   %u;setThreadAuthKey: RRC id=%u alg %u key: ", &ue_id, &id, &alg) == 3) {
+                        char *key = g_strdup(strstr(string, "key: ")+5);
+                        set_pdcp_nr_rrc_integrity_key(ue_id, key, pinfo->num);
+                        g_free(key);
+                    }
+                    else if (!PINFO_FD_VISITED(pinfo) && sscanf(string, "NRPDCP: RRCPRIM:ueId=   %u;setThreadAuthKey: UP id=%u alg %u key: ", &ue_id, &id, &alg) == 3) {
+                        char *key = g_strdup(strstr(string, "key: ")+5);
+                        set_pdcp_nr_up_integrity_key(ue_id, key, pinfo->num);
+                        g_free(key);
+                    }
+                }
+                else if (strstr(string, "setThreadCryptKey:")) {
+                    unsigned ue_id, id, alg;
+                    if (!PINFO_FD_VISITED(pinfo) && sscanf(string, "NRPDCP: RRCPRIM:ueId=   %u;setThreadCryptKey: RRC id=%u alg %u key: ", &ue_id, &id, &alg) == 3) {
+                        char *key = g_strdup(strstr(string, "key: ")+5);
+                        set_pdcp_nr_rrc_ciphering_key(ue_id, key, pinfo->num);
+                        g_free(key);
+                    }
+                    else if (!PINFO_FD_VISITED(pinfo) && sscanf(string, "NRPDCP: RRCPRIM:ueId=   %u;setThreadCryptKey: UP id=%u alg %u key: ", &ue_id, &id, &alg) == 3) {
+                        char *key = g_strdup(strstr(string, "key: ")+5);
+                        set_pdcp_nr_up_ciphering_key(ue_id, key, pinfo->num);
+                        g_free(key);
+                    }
+                }
+
+                /* 'raw' (ethernet) frames logged as text comments */
+                int raw_interface;
+                char raw_direction;
+                if (sscanf(string, "RawTraffic: Interface: %d %c $",
+                           &raw_interface, &raw_direction) == 2)
+                {
+                    /* Interface */
+                    proto_tree_add_uint(tree, hf_catapult_dct2000_rawtraffic_interface,
+                                        tvb, 0, 0, raw_interface);
+
+                    /* Direction */
+                    proto_tree_add_uint(tree, hf_catapult_dct2000_rawtraffic_direction,
+                                        tvb, 0, 0, raw_direction == 'r');
+
+                    /* Payload is from $ to end of string */
+                    int data_offset = 0;
+                    for (unsigned int n=0; n < strlen(string); n++) {
+                        if (string[n] == '$') {
+                            data_offset = n;
+                            break;
+                        }
+                    }
+
+                    /* Convert data to hex. */
+                    static uint8_t eth_data[36000];
+                    int idx, m;
+                    for (idx=0, m=data_offset+1; idx<36000 && string[m] != '\0'; m+=2, idx++) {
+                        eth_data[idx] = (hex_from_char(string[m]) << 4) + hex_from_char(string[m+1]);
+                    }
+
+                    /* Create tvb */
+                    tvbuff_t *raw_traffic_tvb = tvb_new_real_data(eth_data, idx, idx);
+                    add_new_data_source(pinfo, raw_traffic_tvb, "Raw-Traffic Payload");
+
+                    /* PDU */
+                    proto_tree_add_item(tree, hf_catapult_dct2000_rawtraffic_pdu, raw_traffic_tvb,
+                                        0, tvb_reported_length(raw_traffic_tvb), ENC_NA);
+
+                    /* Call the dissector! */
+                   call_dissector_only(eth_handle, raw_traffic_tvb, pinfo, tree, NULL);
                 }
 
                 return tvb_captured_length(tvb);
@@ -2562,28 +3078,39 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
             else
             if (strcmp(protocol_name, "sprint") == 0) {
                 /* Extract & add the string. */
-                const guint8 *string;
+                const uint8_t *string;
 
                 /* Show sprint string */
                 proto_tree_add_item_ret_string(dct2000_tree, hf_catapult_dct2000_sprint, tvb,
-                                                offset, tvb_reported_length_remaining(tvb, offset), ENC_ASCII|ENC_NA, wmem_packet_scope(), &string);
+                                                offset, tvb_reported_length_remaining(tvb, offset), ENC_ASCII|ENC_NA, pinfo->pool, &string);
                 col_append_str(pinfo->cinfo, COL_INFO, string);
 
                 return tvb_captured_length(tvb);
             }
 
-
+            /* RRC (LTE or NR).
+               Dissect proprietary header, then pass remainder
+               to RRC dissector (depending upon direction and channel type) */
             else
             if (catapult_dct2000_dissect_lte_rrc &&
                 ((strcmp(protocol_name, "rrc_r8_lte") == 0) ||
                  (strcmp(protocol_name, "rrcpdcpprim_r8_lte") == 0) ||
                  (strcmp(protocol_name, "rrc_r9_lte") == 0) ||
                  (strcmp(protocol_name, "rrcpdcpprim_r9_lte") == 0) ||
-                 (strcmp(protocol_name, "rrc_r10_lte") == 0))) {
+                 (strcmp(protocol_name, "rrc_r10_lte") == 0) ||
+                 (strcmp(protocol_name, "rrc_r11_lte") == 0) ||
+                 (strcmp(protocol_name, "rrc_r12_lte") == 0) ||
+                 (strcmp(protocol_name, "rrc_r13_lte") == 0) ||
+                 (strcmp(protocol_name, "rrc_r15_lte") == 0) ||
+                 (strcmp(protocol_name, "rrc_r16_lte") == 0) ||
+                 (strcmp(protocol_name, "rrcpdcpprim_r15_lte") == 0))) {
 
-                /* Dissect proprietary header, then pass remainder
-                   to RRC (depending upon direction and channel type) */
-                dissect_rrc_lte(tvb, offset, pinfo, tree);
+                dissect_rrc_lte_nr(tvb, offset, pinfo, tree, LTE);
+                return tvb_captured_length(tvb);
+            }
+            else if ((strcmp(protocol_name, "rrc_r15_5g") == 0) ||
+                     (strcmp(protocol_name, "rrc_r16_5g") == 0)) {
+                dissect_rrc_lte_nr(tvb, offset, pinfo, tree, NR);
                 return tvb_captured_length(tvb);
             }
 
@@ -2602,17 +3129,15 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
             */
 
             if (!protocol_handle && catapult_dct2000_try_ipprim_heuristic) {
-                guint32      source_addr_offset = 0, dest_addr_offset = 0;
-                guint8       source_addr_length = 0, dest_addr_length = 0;
-                guint32      source_port_offset = 0, dest_port_offset = 0;
+                uint32_t     source_addr_offset = 0, dest_addr_offset = 0;
+                uint8_t      source_addr_length = 0, dest_addr_length = 0;
+                uint32_t     source_port_offset = 0, dest_port_offset = 0;
                 port_type    type_of_port = PT_NONE;
-                guint16      conn_id_offset = 0;
+                uint16_t     conn_id_offset = 0;
                 int          offset_before_ipprim_header = offset;
 
-                /* Will give up if couldn't match protocol anyway... */
-                heur_protocol_handle = look_for_dissector(protocol_name);
-                if ((heur_protocol_handle != 0) &&
-                    find_ipprim_data_offset(tvb, &offset, direction,
+                /* For ipprim, want to show ipprim header even if can't find dissector to call for payload.. */
+                if (find_ipprim_data_offset(tvb, &offset, direction,
                                             &source_addr_offset, &source_addr_length,
                                             &dest_addr_offset, &dest_addr_length,
                                             &source_port_offset, &dest_port_offset,
@@ -2633,6 +3158,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 
 
                     /* Will use this dissector then. */
+                    heur_protocol_handle = look_for_dissector(protocol_name);
                     protocol_handle = heur_protocol_handle;
 
                     /* Add address parameters to tree */
@@ -2695,7 +3221,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                                                           hf_catapult_dct2000_ipprim_addr_v6,
                                                       tvb, source_addr_offset, source_addr_length,
                                                       ENC_NA);
-                        PROTO_ITEM_SET_HIDDEN(addr_ti);
+                        proto_item_set_hidden(addr_ti);
                     }
                     if (source_port_offset != 0) {
                         proto_item *port_ti;
@@ -2712,7 +3238,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                                                           hf_catapult_dct2000_ipprim_udp_port :
                                                           hf_catapult_dct2000_ipprim_tcp_port,
                                                       tvb, source_port_offset, 2, ENC_BIG_ENDIAN);
-                        PROTO_ITEM_SET_HIDDEN(port_ti);
+                        proto_item_set_hidden(port_ti);
                     }
                     if (dest_addr_offset != 0) {
                         proto_item *addr_ti;
@@ -2735,7 +3261,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                                                           hf_catapult_dct2000_ipprim_addr_v6,
                                                       tvb, dest_addr_offset, dest_addr_length,
                                                       ENC_NA);
-                        PROTO_ITEM_SET_HIDDEN(addr_ti);
+                        proto_item_set_hidden(addr_ti);
                     }
                     if (dest_port_offset != 0) {
                         proto_item *port_ti;
@@ -2752,7 +3278,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                                                           hf_catapult_dct2000_ipprim_udp_port :
                                                           hf_catapult_dct2000_ipprim_tcp_port,
                                                       tvb, dest_port_offset, 2, ENC_BIG_ENDIAN);
-                        PROTO_ITEM_SET_HIDDEN(port_ti);
+                        proto_item_set_hidden(port_ti);
                     }
                     if (conn_id_offset != 0) {
                         proto_tree_add_item(ipprim_tree,
@@ -2784,9 +3310,9 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 
             /* Try SCTP Prim heuristic if configured to */
             if (!protocol_handle && catapult_dct2000_try_sctpprim_heuristic) {
-                guint32      dest_addr_offset = 0;
-                guint16      dest_addr_length = 0;
-                guint32      dest_port_offset = 0;
+                uint32_t     dest_addr_offset = 0;
+                uint16_t     dest_addr_length = 0;
+                uint32_t     dest_port_offset = 0;
                 int          offset_before_sctpprim_header = offset;
 
                 heur_protocol_handle = look_for_dissector(protocol_name);
@@ -2844,7 +3370,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                                                           hf_catapult_dct2000_sctpprim_addr_v6,
                                                       tvb, dest_addr_offset, dest_addr_length,
                                                       ENC_NA);
-                        PROTO_ITEM_SET_HIDDEN(addr_ti);
+                        proto_item_set_hidden(addr_ti);
                     }
 
                     if (dest_port_offset != 0) {
@@ -2860,16 +3386,23 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                 }
             }
 
-            /* Last chance: is there a (private) registered protocol of the form
+            /* Next chance: is there a (private) registered protocol of the form
                "dct2000.protocol" ? */
             if (protocol_handle == 0) {
                 /* TODO: only look inside if a preference enabled? */
                 char dotted_protocol_name[128];
-                /* N.B. avoiding g_snprintf(), which was slow */
-                g_strlcpy(dotted_protocol_name, "dct2000.", 128);
-                g_strlcpy(dotted_protocol_name+8, protocol_name, 128-8);
+                /* N.B. avoiding snprintf(), which was slow */
+                (void) g_strlcpy(dotted_protocol_name, "dct2000.", 128);
+                (void) g_strlcpy(dotted_protocol_name+8, protocol_name, 128-8);
                 protocol_handle = find_dissector(dotted_protocol_name);
             }
+
+            /* Last resort: Allow any PDU to be dissected if the protocol matches with
+               a dissector name */
+            if ( !protocol_handle && catapult_dct2000_use_protocol_name_as_dissector_name) {
+                protocol_handle = find_dissector(protocol_name);
+            }
+
 
             break;
 
@@ -2916,7 +3449,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
             proto_item *ti_local = proto_tree_add_uint(dct2000_tree,
                                                  hf_catapult_dct2000_dissected_length,
                                                  tvb, 0, 0, tvb_reported_length(tvb)-offset);
-            PROTO_ITEM_SET_GENERATED(ti_local);
+            proto_item_set_generated(ti_local);
         }
     }
 
@@ -2935,6 +3468,11 @@ void proto_reg_handoff_catapult_dct2000(void)
     mac_lte_handle = find_dissector("mac-lte");
     rlc_lte_handle = find_dissector("rlc-lte");
     pdcp_lte_handle = find_dissector("pdcp-lte");
+
+    mac_nr_handle = find_dissector("mac-nr");
+    nrup_handle = find_dissector("nrup");
+    eth_handle = find_dissector("eth_withoutfcs");
+    nrup_handle = find_dissector("nrup");
 }
 
 /****************************************/
@@ -3158,64 +3696,125 @@ void proto_register_catapult_dct2000(void)
             }
         },
 
-        { &hf_catapult_dct2000_lte_ueid,
+        { &hf_catapult_dct2000_ueid,
             { "UE Id",
-              "dct2000.lte.ueid", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.ueid", FT_UINT32, BASE_DEC, NULL, 0x0,
               "User Equipment Identifier", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_srbid,
+        { &hf_catapult_dct2000_srbid,
             { "srbid",
-              "dct2000.lte.srbid", FT_UINT8, BASE_DEC, NULL, 0x0,
+              "dct2000.srbid", FT_UINT8, BASE_DEC, NULL, 0x0,
               "Signalling Radio Bearer Identifier", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_drbid,
+        { &hf_catapult_dct2000_drbid,
             { "drbid",
-              "dct2000.lte.drbid", FT_UINT8, BASE_DEC, NULL, 0x0,
+              "dct2000.drbid", FT_UINT8, BASE_DEC, NULL, 0x0,
               "Data Radio Bearer Identifier", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_cellid,
+        { &hf_catapult_dct2000_cellid,
             { "Cell-Id",
-              "dct2000.lte.cellid", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.cellid", FT_UINT16, BASE_DEC, NULL, 0x0,
               "Cell Identifier", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_bcch_transport,
+        { &hf_catapult_dct2000_bcch_transport,
             { "BCCH Transport",
-              "dct2000.lte.bcch-transport", FT_UINT16, BASE_DEC, VALS(bcch_transport_vals), 0x0,
+              "dct2000.bcch-transport", FT_UINT16, BASE_DEC, VALS(bcch_transport_vals), 0x0,
               "BCCH Transport Channel", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_rlc_op,
+        { &hf_catapult_dct2000_rlc_op,
             { "RLC Op",
-              "dct2000.lte.rlc-op", FT_UINT8, BASE_DEC, VALS(rlc_op_vals), 0x0,
+              "dct2000.rlc-op", FT_UINT8, BASE_DEC, VALS(rlc_op_vals), 0x0,
               "RLC top-level op", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_rlc_channel_type,
+        { &hf_catapult_dct2000_rlc_channel_type,
             { "RLC Logical Channel Type",
-              "dct2000.lte.rlc-logchan-type", FT_UINT8, BASE_DEC, VALS(rlc_logical_channel_vals), 0x0,
+              "dct2000.rlc-logchan-type", FT_UINT8, BASE_DEC, VALS(rlc_logical_channel_vals), 0x0,
               NULL, HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_rlc_mui,
+        { &hf_catapult_dct2000_rlc_mui,
             { "MUI",
-              "dct2000.lte.rlc-mui", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.rlc-mui", FT_UINT16, BASE_DEC, NULL, 0x0,
               "RLC MUI", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_rlc_cnf,
+        { &hf_catapult_dct2000_rlc_cnf,
             { "CNF",
-              "dct2000.lte.rlc-cnf", FT_BOOLEAN, BASE_NONE, TFS(&tfs_yes_no), 0x0,
+              "dct2000.rlc-cnf", FT_BOOLEAN, BASE_NONE, TFS(&tfs_yes_no), 0x0,
               "RLC CNF", HFILL
             }
         },
-        { &hf_catapult_dct2000_lte_rlc_discard_req,
+        { &hf_catapult_dct2000_rlc_discard_req,
             { "Discard Req",
-              "dct2000.lte.rlc-discard-req", FT_BOOLEAN, BASE_NONE, TFS(&tfs_yes_no), 0x0,
+              "dct2000.rlc-discard-req", FT_BOOLEAN, BASE_NONE, TFS(&tfs_yes_no), 0x0,
               "RLC Discard Req", HFILL
+            }
+        },
+        { &hf_catapult_dct2000_carrier_type,
+            { "Carrier Type",
+              "dct2000.carrier-type", FT_UINT8, BASE_DEC, VALS(carrier_type_vals), 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_cell_group,
+            { "Cell Group",
+              "dct2000.cell-group", FT_UINT8, BASE_DEC, NULL, 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_carrier_id,
+            { "Carrier Id",
+              "dct2000.carrier-id", FT_UINT8, BASE_DEC, NULL, 0x0,
+              NULL, HFILL
+            }
+        },
+
+        { &hf_catapult_dct2000_security_mode_params,
+            { "Security Mode Params",
+              "dct2000.security-mode-params", FT_NONE, BASE_NONE, NULL, 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_uplink_sec_mode,
+            { "Uplink Security Mode",
+              "dct2000.uplink-security-mode", FT_UINT8, BASE_DEC, VALS(security_mode_vals), 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_downlink_sec_mode,
+            { "Downlink Security Mode",
+              "dct2000.downlink-security-mode", FT_UINT8, BASE_DEC, VALS(security_mode_vals), 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_ciphering_algorithm,
+            { "Ciphering Algorithm",
+              "dct2000.ciphering-algorithm", FT_UINT8, BASE_DEC, VALS(ciphering_algorithm_vals), 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_ciphering_key,
+            { "Ciphering Key",
+              "dct2000.ciphering-key", FT_BYTES, BASE_NONE, NULL, 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_integrity_algorithm,
+            { "Integrity Algorithm",
+              "dct2000.integrity-algorithm", FT_UINT8, BASE_DEC, VALS(integrity_algorithm_vals), 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_integrity_key,
+            { "Integrity Key",
+              "dct2000.integrity-key", FT_BYTES, BASE_NONE, NULL, 0x0,
+              NULL, HFILL
             }
         },
 
@@ -3227,7 +3826,7 @@ void proto_register_catapult_dct2000(void)
         },
         { &hf_catapult_dct2000_lte_ccpri_status,
             { "Status",
-              "dct2000.lte.ccpri.status", FT_UINT8, BASE_DEC, VALS(ccpri_status_vals), 0x0,
+              "dct2000.lte.ccpri.status", FT_BOOLEAN, BASE_NONE, TFS(&tfs_error_ok), 0x0,
               NULL, HFILL
             }
         },
@@ -3262,14 +3861,13 @@ void proto_register_catapult_dct2000(void)
               NULL, HFILL
             }
         },
-
-
-        { &hf_catapult_dct2000_ueid,
-            { "UE Id",
-              "dct2000.ueid", FT_UINT32, BASE_DEC, NULL, 0x0,
-              "User Equipment Identifier", HFILL
+        { &hf_catapult_dct2000_nr_nas_s1ap_opcode,
+            { "NAS S1AP Opcode",
+              "dct2000.nas-s1ap.opcode", FT_UINT8, BASE_DEC, VALS(nas_s1ap_opcode_vals), 0x0,
+              NULL, HFILL
             }
         },
+
         { &hf_catapult_dct2000_rbid,
             { "Channel",
               "dct2000.rbid", FT_UINT8, BASE_DEC | BASE_EXT_STRING, &rlc_rbid_vals_ext, 0x0,
@@ -3320,7 +3918,7 @@ void proto_register_catapult_dct2000(void)
         },
         { &hf_catapult_dct2000_tx_priority,
             { "Tx Priority",
-              "dct2000.tx-priority", FT_UINT8, BASE_DEC, VALS(tx_priority_vals), 0x0,
+              "dct2000.tx-priority", FT_BOOLEAN, BASE_NONE, TFS(&tfs_high_normal), 0x0,
               NULL, HFILL
             }
         },
@@ -3349,14 +3947,33 @@ void proto_register_catapult_dct2000(void)
             }
         },
 
+        { &hf_catapult_dct2000_rawtraffic_interface,
+            { "Interface",
+              "dct2000.rawtraffic.interface", FT_UINT8, BASE_DEC, NULL, 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_rawtraffic_direction,
+            { "Direction",
+              "dct2000.rawtraffic.direction", FT_UINT8, BASE_DEC, VALS(direction_vals), 0x0,
+              NULL, HFILL
+            }
+        },
+        { &hf_catapult_dct2000_rawtraffic_pdu,
+            { "PDU",
+              "dct2000.rawtraffic.pdu", FT_BYTES, BASE_NONE, NULL, 0x0,
+              NULL, HFILL
+            }
+        }
     };
 
-    static gint *ett[] =
+    static int *ett[] =
     {
         &ett_catapult_dct2000,
         &ett_catapult_dct2000_ipprim,
         &ett_catapult_dct2000_sctpprim,
-        &ett_catapult_dct2000_tty
+        &ett_catapult_dct2000_tty,
+        &ett_catapult_dct2000_security_mode_params
     };
 
     static ei_register_info ei[] = {
@@ -3386,6 +4003,7 @@ void proto_register_catapult_dct2000(void)
     /* This preference no longer supported (introduces linkage dependency between
        dissectors and wiretap) */
     prefs_register_obsolete_preference(catapult_dct2000_module, "board_ports_only");
+    prefs_register_obsolete_preference(catapult_dct2000_module, "decode_lte_s1ap");
 
     /* Determines whether for not-handled protocols we should try to parse it if:
        - it looks like it's embedded in an ipprim message, AND
@@ -3417,14 +4035,6 @@ void proto_register_catapult_dct2000(void)
                                    "that also call the LTE RRC dissector",
                                    &catapult_dct2000_dissect_lte_rrc);
 
-    /* Determines whether LTE S1AP messages should be dissected */
-    prefs_register_bool_preference(catapult_dct2000_module, "decode_lte_s1ap",
-                                   "Attempt to decode LTE S1AP frames",
-                                   "When set, attempt to decode LTE S1AP frames. "
-                                   "Note that this won't affect other protocols "
-                                   "that also call the LTE S1AP dissector",
-                                   &catapult_dct2000_dissect_lte_s1ap);
-
     /* Determines whether out-of-band messages should dissected */
     prefs_register_bool_preference(catapult_dct2000_module, "decode_mac_lte_oob_messages",
                                    "Look for out-of-band LTE MAC events messages in comments",
@@ -3432,10 +4042,27 @@ void proto_register_catapult_dct2000(void)
                                    "specific events.  This may be quite slow, so should "
                                    "be disabled if LTE MAC is not being analysed",
                                    &catapult_dct2000_dissect_mac_lte_oob_messages);
+
+    /* Whether old protocol names conversions should be checked */
+    prefs_register_bool_preference(catapult_dct2000_module, "convert_old_protocol_names",
+                                   "Convert old protocol names to wireshark dissector names",
+                                   "When set, look for some older protocol names so that"
+                                   "they may be matched with wireshark dissectors.",
+                                   &catapult_dct2000_dissect_old_protocol_names);
+
+    /* Determines if the protocol field in the DCT2000 shall be used to lookup for dissector */
+    prefs_register_bool_preference(catapult_dct2000_module, "use_protocol_name_as_dissector_name",
+                                   "Look for a dissector using the protocol name in the "
+                                   "DCT2000 record",
+                                   "When set, if there is a Wireshark dissector matching "
+                                   "the protocol name, it will parse the PDU using "
+                                   "that dissector. This may be slow, so should be "
+                                   "disabled unless you are using this feature.",
+                                   &catapult_dct2000_use_protocol_name_as_dissector_name);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

@@ -6,86 +6,30 @@
  */
 
 #include "config.h"
+#include "json.h"
 
 #include <string.h>
 
 #include "wtap-int.h"
 #include "file_wrappers.h"
 
-#include "json.h"
-#include <wsutil/wsjsmn.h>
+#include <wsutil/wsjson.h>
 
-static gboolean json_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
-    Buffer *buf, int *err, gchar **err_info)
+/* Maximum size of json file. */
+#define MAX_FILE_SIZE  (50*1024*1024)
+
+static int json_file_type_subtype = -1;
+
+void register_json(void);
+
+wtap_open_return_val json_open(wtap *wth, int *err, char **err_info)
 {
-    gint64 file_size;
-    int packet_size;
-
-    if ((file_size = wtap_file_size(wth, err)) == -1)
-        return FALSE;
-
-    if (file_size > MAX_FILE_SIZE) {
-        /*
-         * Don't blow up trying to allocate space for an
-         * immensely-large file.
-         */
-        *err = WTAP_ERR_BAD_FILE;
-        *err_info = g_strdup_printf("mime_file: File has %" G_GINT64_MODIFIER "d-byte packet, bigger than maximum of %u",
-            file_size, MAX_FILE_SIZE);
-        return FALSE;
-    }
-    packet_size = (int)file_size;
-
-    rec->rec_type = REC_TYPE_PACKET;
-    rec->presence_flags = 0; /* yes, we have no bananas^Wtime stamp */
-
-    rec->rec_header.packet_header.caplen = packet_size;
-    rec->rec_header.packet_header.len = packet_size;
-
-    rec->ts.secs = 0;
-    rec->ts.nsecs = 0;
-
-    return wtap_read_packet_bytes(fh, buf, packet_size, err, err_info);
-}
-
-static gboolean json_seek_read(wtap *wth, gint64 seek_off, wtap_rec *rec, Buffer *buf,
-    int *err, gchar **err_info)
-{
-    /* there is only one packet */
-    if (seek_off > 0) {
-        *err = 0;
-        return FALSE;
-    }
-
-    if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
-        return FALSE;
-
-    return json_read_file(wth, wth->random_fh, rec, buf, err, err_info);
-}
-
-static gboolean json_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
-{
-    gint64 offset;
-
-    *err = 0;
-
-    offset = file_tell(wth->fh);
-
-    /* there is only ever one packet */
-    if (offset != 0)
-        return FALSE;
-
-    *data_offset = offset;
-
-    return json_read_file(wth, wth->fh, &wth->rec, wth->rec_data, err, err_info);
-}
-
-wtap_open_return_val json_open(wtap *wth, int *err, gchar **err_info)
-{
-    guint8* filebuf;
+    uint8_t* filebuf;
     int bytes_read;
 
-    filebuf = (guint8*)g_malloc0(MAX_FILE_SIZE);
+    /* XXX checking the full file contents might be a bit expensive, maybe
+     * resort to simpler heuristics like '{' or '[' (with some other chars)? */
+    filebuf = (uint8_t*)g_malloc0(MAX_FILE_SIZE);
     if (!filebuf)
         return WTAP_OPEN_ERROR;
 
@@ -102,7 +46,14 @@ wtap_open_return_val json_open(wtap *wth, int *err, gchar **err_info)
         return WTAP_OPEN_NOT_MINE;
     }
 
-    if (jsmn_is_json(filebuf, bytes_read) == FALSE) {
+    /* We could reduce the maximum size to read and accept if the parser
+     * returns JSMN_ERROR_PART (i.e., only fail on JSMN_ERROR_INVAL as we
+     * shouldn't get JSMN_ERROR_NOMEM if tokens is NULL.) That way we
+     * could handle bigger files without testing the entire file.
+     * packet-json shows excess unparsed data at the end with the
+     * data-text-lines dissector.
+     */
+    if (json_parse_len(filebuf, bytes_read, NULL, 0) < 0) {
         g_free(filebuf);
         return WTAP_OPEN_NOT_MINE;
     }
@@ -112,19 +63,46 @@ wtap_open_return_val json_open(wtap *wth, int *err, gchar **err_info)
         return WTAP_OPEN_ERROR;
     }
 
-    wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_JSON;
+    wth->file_type_subtype = json_file_type_subtype;
     wth->file_encap = WTAP_ENCAP_JSON;
     wth->file_tsprec = WTAP_TSPREC_SEC;
-    wth->subtype_read = json_read;
-    wth->subtype_seek_read = json_seek_read;
+    wth->subtype_read = wtap_full_file_read;
+    wth->subtype_seek_read = wtap_full_file_seek_read;
     wth->snapshot_length = 0;
 
     g_free(filebuf);
     return WTAP_OPEN_MINE;
 }
 
+static const struct supported_block_type json_blocks_supported[] = {
+    /*
+     * This is a file format that we dissect, so we provide only one
+     * "packet" with the file's contents, and don't support any
+     * options.
+     */
+    { WTAP_BLOCK_PACKET, ONE_BLOCK_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info json_info = {
+    "JavaScript Object Notation", "json", "json", NULL,
+    false, BLOCKS_SUPPORTED(json_blocks_supported),
+    NULL, NULL, NULL
+};
+
+void register_json(void)
+{
+    json_file_type_subtype = wtap_register_file_type_subtype(&json_info);
+
+    /*
+     * Register name for backwards compatibility with the
+     * wtap_filetypes table in Lua.
+     */
+    wtap_register_backwards_compatibility_lua_name("JSON",
+                                                   json_file_type_subtype);
+}
+
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

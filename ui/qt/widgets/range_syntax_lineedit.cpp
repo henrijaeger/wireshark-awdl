@@ -16,7 +16,7 @@ RangeSyntaxLineEdit::RangeSyntaxLineEdit(QWidget *parent)
     : SyntaxLineEdit(parent),
     maxRange_(0xFFFFFFFF)
 {
-    connect(this, SIGNAL(textChanged(QString)), this, SLOT(checkRange(QString)));
+    connect(this, &RangeSyntaxLineEdit::textChanged, this, &RangeSyntaxLineEdit::checkRange);
 }
 
 void RangeSyntaxLineEdit::setMaxRange(unsigned int max)
@@ -41,17 +41,3 @@ void RangeSyntaxLineEdit::checkRange(QString range)
         setSyntaxState(SyntaxLineEdit::Invalid);
     }
 }
-
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

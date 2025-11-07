@@ -1,4 +1,4 @@
-/* rtp_pt.h
+/** @file
  * Defines RTP payload types
  *
  * Wireshark - Network traffic analyzer
@@ -11,12 +11,12 @@
 #ifndef __RTP_PT_H__
 #define __RTP_PT_H__
 
+#include <epan/value_string.h>
+#include "ws_symbol_export.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
-
-#include <epan/value_string.h>
-#include "ws_symbol_export.h"
 
 /*
  * RTP Payload types
@@ -99,7 +99,7 @@ WS_DLL_PUBLIC value_string_ext rtp_payload_type_short_vals_ext;
 #endif
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

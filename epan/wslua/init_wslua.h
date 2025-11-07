@@ -1,5 +1,4 @@
-/*
- * init_wslua.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -11,15 +10,14 @@
 #ifndef __INIT_WSLUA_H__
 #define __INIT_WSLUA_H__
 
+#include "ws_symbol_export.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-#include "epan/register.h"
-#include "ws_symbol_export.h"
-
 WS_DLL_PUBLIC int wslua_count_plugins(void);
-WS_DLL_PUBLIC void wslua_reload_plugins (register_cb cb, gpointer client_data);
+WS_DLL_PUBLIC void wslua_reload_plugins (register_cb cb, void *client_data);
 
 typedef void (*wslua_plugin_description_callback)(const char *, const char *,
                                                   const char *, const char *,

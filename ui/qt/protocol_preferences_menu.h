@@ -1,4 +1,4 @@
-/* protocol_preferences_menu.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -12,28 +12,28 @@
 
 #include <QMenu>
 
-struct _protocol;
-struct pref_module;
-struct preference;
+#include <epan/proto.h>
+#include <epan/prefs.h>
 
 class ProtocolPreferencesMenu : public QMenu
 {
     Q_OBJECT
 
 public:
-    ProtocolPreferencesMenu();
+    ProtocolPreferencesMenu(QWidget *parent = nullptr);
+    ProtocolPreferencesMenu(const QString &title, const QString &module_name, QWidget *parent = nullptr);
 
     void setModule(const QString module_name);
-    void addMenuItem(struct preference *pref);
+    void addMenuItem(pref_t *pref);
 
 signals:
     void showProtocolPreferences(const QString module_name);
-    void editProtocolPreference(struct preference *pref, struct pref_module *module);
+    void editProtocolPreference(pref_t *pref, module_t *module);
 
 private:
     QString module_name_;
-    struct pref_module *module_;
-    struct _protocol *protocol_;
+    module_t *module_;
+    protocol_t *protocol_;
 
 private slots:
     void disableProtocolTriggered();
@@ -42,19 +42,7 @@ private slots:
     void boolPreferenceTriggered();
     void enumPreferenceTriggered();
     void uatPreferenceTriggered();
+    void enumCustomTCPOverridePreferenceTriggered();
 };
 
 #endif // __PROTOCOL_PREFERENCES_MENU_H__
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

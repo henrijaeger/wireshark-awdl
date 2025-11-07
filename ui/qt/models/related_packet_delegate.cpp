@@ -4,15 +4,29 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <ui/qt/models/related_packet_delegate.h>
 #include "packet_list_record.h"
 
+#include <ui/qt/main_application.h>
+
 #include <ui/qt/utils/color_utils.h>
+
+#include <ui/qt/main_window.h>
 
 #include <QApplication>
 #include <QPainter>
+
+typedef enum {
+    CT_NONE,        // Not within the selected conversation.
+    CT_STARTING,    // First packet in a conversation.
+    CT_CONTINUING,  // Part of the selected conversation.
+    CT_BYPASSING,   // *Not* part of the selected conversation.
+    CT_ENDING,      // Last packet in a conversation.
+    CT_NUM_TYPES,
+} ct_conversation_trace_type_t;
 
 // To do:
 // - Add other frame types and symbols. If `tshark -G fields | grep FT_FRAMENUM`
@@ -33,29 +47,49 @@ RelatedPacketDelegate::RelatedPacketDelegate(QWidget *parent) :
     clear();
 }
 
+void RelatedPacketDelegate::initStyleOption(QStyleOptionViewItem *option,
+                                         const QModelIndex &index) const
+{
+    QStyledItemDelegate::initStyleOption(option, index);
+    // The decoration needs a height of at least one in order for it to
+    // properly affect the sizeHint for the width, but a nonzero decoration
+    // height always increases the hint for the height as well by at least 2,
+    // to "prevent icons from overlapping" according to Qt:
+    // https://github.com/qt/qtbase/blob/a0e0425a107aebf8727673505ea2376400b54b07/src/widgets/styles/qcommonstyle.cpp#L5027
+#if 0
+    option->features |= QStyleOptionViewItem::HasDecoration;
+    option->decorationSize.setHeight(1);
+    option->decorationSize.setWidth(option->fontMetrics.height());
+#endif
+}
+
 void RelatedPacketDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
                               const QModelIndex &index) const
 {
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    QStyleOptionViewItemV4 option_vi = option;
-#else
+
+    /* This prevents the drawing of related objects, if multiple lines are being selected */
+    if (mainApp && mainApp->mainWindow())
+    {
+        MainWindow * mw = mainApp->mainWindow();
+        if (mw && mw->hasSelection())
+        {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+    }
+
     QStyleOptionViewItem option_vi = option;
-#endif
-    QStyledItemDelegate::initStyleOption(&option_vi, index);
+    initStyleOption(&option_vi, index);
+    option_vi.features |= QStyleOptionViewItem::HasDecoration;
+    option_vi.decorationSize.setHeight(1);
+    option_vi.decorationSize.setWidth(option.fontMetrics.height());
     int em_w = option_vi.fontMetrics.height();
     int en_w = (em_w + 1) / 2;
     int line_w = (option_vi.fontMetrics.lineWidth());
 
-#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    option_vi.features |= QStyleOptionViewItemV4::HasDecoration;
-#else
-    option_vi.features |= QStyleOptionViewItem::HasDecoration;
-#endif
-    option_vi.decorationSize.setHeight(1);
-    option_vi.decorationSize.setWidth(em_w);
     QStyledItemDelegate::paint(painter, option_vi, index);
 
-    guint32 setup_frame = 0, last_frame = 0;
+    uint32_t setup_frame = 0, last_frame = 0;
     if (conv_) {
         setup_frame = (int) conv_->setup_frame;
         last_frame = (int) conv_->last_frame;
@@ -65,6 +99,21 @@ void RelatedPacketDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     PacketListRecord *record = static_cast<PacketListRecord*>(index.internalPointer());
     if (!record || (fd = record->frameData()) == NULL) {
         return;
+    }
+
+    ct_conversation_trace_type_t conversation_trace_type = CT_NONE;
+    ft_framenum_type_t related_frame_type =
+        related_frames_.contains(fd->num) ? related_frames_[fd->num] : FT_FRAMENUM_NUM_TYPES;
+
+    if (setup_frame > 0 && last_frame > 0 && setup_frame != last_frame) {
+        if (fd->num == setup_frame) {
+            conversation_trace_type = CT_STARTING;
+        } else if (fd->num > setup_frame && fd->num < last_frame) {
+            conversation_trace_type =
+                conv_->conv_index == record->conversation() ?  CT_CONTINUING : CT_BYPASSING;
+        } else if (fd->num == last_frame) {
+            conversation_trace_type = CT_ENDING;
+        }
     }
 
     painter->save();
@@ -80,6 +129,11 @@ void RelatedPacketDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     QColor fg;
     if (cg == QPalette::Normal && !(option_vi.state & QStyle::State_Active))
         cg = QPalette::Inactive;
+#if !defined(Q_OS_WIN)
+    if (option_vi.state & QStyle::State_MouseOver) {
+        fg = QApplication::palette().text().color();
+    } else
+#endif
     if (option_vi.state & QStyle::State_Selected) {
         fg = option_vi.palette.color(cg, QPalette::HighlightedText);
     } else {
@@ -113,39 +167,73 @@ void RelatedPacketDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     // Vertical line. Lower and upper half for the start and end of the
     // conversation respectively, solid for conversation member, dashed
     // for other packets in the start-end range.
-    if (setup_frame > 0 && last_frame > 0 && setup_frame != last_frame) {
-        if (fd->num == setup_frame) {
-            QPoint start_line[] = {
-                QPoint(en_w - 1, height / 2),
-                QPoint(0, height / 2),
-                QPoint(0, height)
-            };
-            painter->drawPolyline(start_line, 3);
-        } else if (fd->num > setup_frame && fd->num < last_frame) {
-            painter->save();
-            if (conv_ != record->conversation()) {
-                QPen other_pen(line_pen);
-                other_pen.setStyle(Qt::DashLine);
-                painter->setPen(other_pen);
-            }
-            painter->drawLine(0, 0, 0, height);
-            painter->restore();
-        } else if (fd->num == last_frame) {
-            QPoint end_line[] = {
-                QPoint(en_w - 1, height / 2),
-                QPoint(0, height / 2),
-                QPoint(0, 0)
-            };
-            painter->drawPolyline(end_line, 3);
+    switch (conversation_trace_type) {
+    case CT_STARTING:
+    {
+        QPoint start_line[] = {
+            QPoint(en_w - 1, height / 2),
+            QPoint(0, height / 2),
+            QPoint(0, height)
+        };
+        painter->drawPolyline(start_line, 3);
+        break;
+    }
+    case CT_CONTINUING:
+    case CT_BYPASSING:
+    {
+        painter->save();
+        if (conversation_trace_type == CT_BYPASSING) {
+            // Dashed line as we bypass packets not part of the conv.
+            QPen other_pen(line_pen);
+            other_pen.setStyle(Qt::DashLine);
+            painter->setPen(other_pen);
         }
+
+            // analysis overriding mark (three horizontal lines)
+            if(fd->tcp_snd_manual_analysis) {
+                int wbound = (en_w - 1) / 2;
+
+                painter->drawLine(-wbound, 1, wbound, 1);
+                painter->drawLine(-wbound, height / 2, wbound, height / 2);
+                painter->drawLine(-wbound, height - 2, wbound, height - 2);
+            }
+
+        painter->drawLine(0, 0, 0, height);
+        painter->restore();
+        break;
+    }
+    case CT_ENDING:
+    {
+        QPoint end_line[] = {
+            QPoint(en_w - 1, height / 2),
+            QPoint(0, height / 2),
+            QPoint(0, 0)
+        };
+        painter->drawPolyline(end_line, 3);
+            /* analysis overriding on the last packet of the conversation,
+             * we mark it with an additional horizontal line only.
+             * See issue 10725 for example.
+             */
+            // analysis overriding mark (three horizontal lines)
+            if(fd->tcp_snd_manual_analysis) {
+                int wbound = (en_w - 1) / 2;
+
+                painter->drawLine(-wbound, 1, wbound, 1);
+                painter->drawLine(-wbound, height / 2, wbound, height / 2);
+            }
+
+        break;
+    }
+    default:
+        break;
     }
 
     // Related packet indicator. Rightward arrow for requests, leftward
     // arrow for responses, circle for others.
     // XXX These are comically oversized when we have multi-line rows.
-    if (related_frames_.contains(fd->num)) {
+    if (related_frame_type != FT_FRAMENUM_NUM_TYPES) {
         painter->setBrush(fg);
-        switch (related_frames_[fd->num]) {
+        switch (related_frame_type) {
         // Request and response arrows are moved forward one pixel in order to
         // maximize white space between the heads and the conversation line.
         case FT_FRAMENUM_REQUEST:
@@ -204,9 +292,30 @@ void RelatedPacketDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
 }
 
 QSize RelatedPacketDelegate::sizeHint(const QStyleOptionViewItem &option,
-                                  const QModelIndex &index) const {
-    return QSize(option.fontMetrics.height() + QStyledItemDelegate::sizeHint(option, index).width(),
-                 QStyledItemDelegate::sizeHint(option, index).height());
+                                  const QModelIndex &index) const
+{
+    QStyleOptionViewItem option_vi = option;
+    initStyleOption(&option_vi, index);
+
+    QSize hintNoDecoration = QStyledItemDelegate::sizeHint(option_vi, index);
+    /* This prevents the sizeHint for the delegate if multiple lines are being selected
+     * XXX - Do we want that? If a user resizes the columns while doing multi-select,
+     * that will mean resizing to a smaller width (without space for the symbols.)
+     * But multi-select is a transient state. */
+    if (mainApp && mainApp->mainWindow())
+    {
+        MainWindow * mw = mainApp->mainWindow();
+        if (mw && mw->selectedRows().count() > 1)
+            return hintNoDecoration;
+    }
+
+    /* Some styles put extra space between a decoration and the contents.
+     * Make sure the QStyleOptionViewItem reflects the decoration. */
+    option_vi.features |= QStyleOptionViewItem::HasDecoration;
+    option_vi.decorationSize.setHeight(1);
+    option_vi.decorationSize.setWidth(option.fontMetrics.height());
+    QSize hint = QStyledItemDelegate::sizeHint(option_vi, index);
+    return QSize(hint.width(), hintNoDecoration.height());
 }
 
 void RelatedPacketDelegate::drawArrow(QPainter *painter, const QPoint tail, const QPoint head, int head_size) const
@@ -258,9 +367,25 @@ void RelatedPacketDelegate::clear()
     conv_ = NULL;
 }
 
+void RelatedPacketDelegate::setCurrentFrame(uint32_t current_frame)
+ {
+    current_frame_ = current_frame;
+    foreach (ft_framenum_type_t framenum_type, related_frames_) {
+        addRelatedFrame(-1, framenum_type); /* No need to check if this element belongs to the hash... */
+    }
+ }
+
 void RelatedPacketDelegate::addRelatedFrame(int frame_num, ft_framenum_type_t framenum_type)
 {
-    related_frames_[frame_num] = framenum_type;
+    // A frame might be related to the current frame in several different
+    // ways, especially at different layers (e.g., the frame that is ACKed
+    // the TCP layer might have a request/response relationship at a later
+    // layer.) This takes the last match. We might want to have some ordering
+    // of precedence (generic FT_FRAMENUM_NONE is less interesting than other
+    // types?) or even use a bitmask and try to draw more than one symbol.
+    if (frame_num != -1)
+        related_frames_[frame_num] = framenum_type;
+
     // Last match wins. Last match might not make sense, however.
     if (current_frame_ > 0) {
         switch (framenum_type) {
@@ -280,16 +405,3 @@ void RelatedPacketDelegate::setConversation(conversation *conv)
 {
     conv_ = conv;
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -1,4 +1,5 @@
-/* color.h
+/** @file
+ *
  * Definitions for colors
  *
  * Wireshark - Network traffic analyzer
@@ -14,13 +15,15 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#include <inttypes.h>
+
 /*
  * Data structure holding RGB value for a color, 16 bits per channel.
  */
 typedef struct {
-    guint16 red;
-    guint16 green;
-    guint16 blue;
+    uint16_t red;
+    uint16_t green;
+    uint16_t blue;
 } color_t;
 
 /*
@@ -41,7 +44,7 @@ color_t_to_rgb(const color_t *color) {
 #endif
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

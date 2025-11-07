@@ -4,46 +4,42 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
-
-#include <glib.h>
 
 #include <epan/prefs.h>
 #include <epan/proto.h>
 #include <epan/dfilter/dfilter.h>
-#include <epan/column-info.h>
+#include <epan/column.h>
+
+#include <wsutil/utf8_entities.h>
 
 #include <ui/qt/widgets/syntax_line_edit.h>
 
+#include <ui/qt/utils/qt_ui_utils.h>
 #include <ui/qt/utils/color_utils.h>
+#include <ui/qt/utils/stock_icon.h>
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QCompleter>
 #include <QKeyEvent>
+#include <QPainter>
 #include <QScrollBar>
 #include <QStringListModel>
+#include <QStyleOptionFrame>
 #include <limits>
-
-// To do:
-// - Add indicator icons for syntax states to make things more clear for
-//   color blind people?
 
 const int max_completion_items_ = 20;
 
 SyntaxLineEdit::SyntaxLineEdit(QWidget *parent) :
     QLineEdit(parent),
     completer_(NULL),
-    completion_model_(NULL)
+    completion_model_(NULL),
+    completion_enabled_(false)
 {
-    // Try to matche QLineEdit's placeholder text color (which sets the
-    // alpha channel to 50%, which doesn't work in style sheets).
-    // Setting the foreground color lets us avoid yet another background
-    // color preference and should hopefully make things easier to
-    // distinguish for color blind folk.
-    busy_fg_ = ColorUtils::alphaBlend(palette().text(), palette().base(), 0.5);
-
     setSyntaxState();
     setMaxLength(std::numeric_limits<quint32>::max());
 }
@@ -65,55 +61,103 @@ void SyntaxLineEdit::setCompleter(QCompleter *c)
     // Completion items are not guaranteed to be sorted (recent filters +
     // fields), so no setModelSorting.
     completer_->setMaxVisibleItems(max_completion_items_);
-    QObject::connect(completer_, SIGNAL(activated(QString)),
-                     this, SLOT(insertFieldCompletion(QString)));
+    QObject::connect(completer_, static_cast<void (QCompleter::*)(const QString &)>(&QCompleter::activated),
+                     this, &SyntaxLineEdit::insertFieldCompletion);
+
+    // Auto-completion is turned on.
+    completion_enabled_ = true;
+}
+
+void SyntaxLineEdit::allowCompletion(bool enabled)
+{
+    completion_enabled_ = enabled;
 }
 
 void SyntaxLineEdit::setSyntaxState(SyntaxState state) {
     syntax_state_ = state;
-    state_style_sheet_ = QString(
+
+    // XXX Should we drop the background colors here in favor of ::paintEvent below?
+    QColor valid_bg = ColorUtils::fromColorT(&prefs.gui_text_valid);
+    QColor valid_fg = ColorUtils::contrastingTextColor(valid_bg);
+    QColor invalid_bg = ColorUtils::fromColorT(&prefs.gui_text_invalid);
+    QColor invalid_fg = ColorUtils::contrastingTextColor(invalid_bg);
+    QColor deprecated_bg = ColorUtils::fromColorT(&prefs.gui_text_deprecated);
+    QColor deprecated_fg = ColorUtils::contrastingTextColor(deprecated_bg);
+
+    // Try to match QLineEdit's placeholder text color (which sets the
+    // alpha channel to 50%, which doesn't work in style sheets).
+    // Setting the foreground color lets us avoid yet another background
+    // color preference and should hopefully make things easier to
+    // distinguish for color blind folk.
+    QColor busy_fg = ColorUtils::alphaBlend(QApplication::palette().text(), QApplication::palette().base(), 0.5);
+
+    state_style_sheet_ = QStringLiteral(
             "SyntaxLineEdit[syntaxState=\"%1\"] {"
-            "  color: %5;"
-            "  background-color: %7;"
-            "}"
-
-            "SyntaxLineEdit[syntaxState=\"%2\"] {"
-            "  color: %5;"
-            "  background-color: %8;"
-            "}"
-
-            "SyntaxLineEdit[syntaxState=\"%3\"] {"
-            "  color: %5;"
-            "  background-color: %9;"
+            "  color: %2;"
+            "  background-color: %3;"
             "}"
 
             "SyntaxLineEdit[syntaxState=\"%4\"] {"
-            "  color: %10;"
+            "  color: %5;"
             "  background-color: %6;"
+            "}"
+
+            "SyntaxLineEdit[syntaxState=\"%7\"] {"
+            "  color: %8;"
+            "  background-color: %9;"
+            "}"
+
+            "SyntaxLineEdit[syntaxState=\"%10\"] {"
+            "  color: %11;"
+            "  background-color: %12;"
             "}"
             )
 
-            // CSS selectors
+            // CSS selector, foreground, background
             .arg(Valid)
+            .arg(valid_fg.name())
+            .arg(valid_bg.name())
+
             .arg(Invalid)
+            .arg(invalid_fg.name())
+            .arg(invalid_bg.name())
+
             .arg(Deprecated)
+            .arg(deprecated_fg.name())
+            .arg(deprecated_bg.name())
+
             .arg(Busy)
-
-            // Normal foreground / background
-            .arg("palette(text)")
-            .arg("palette(base)")
-
-            // Special foreground / background
-            .arg(ColorUtils::fromColorT(&prefs.gui_text_valid).name())
-            .arg(ColorUtils::fromColorT(&prefs.gui_text_invalid).name())
-            .arg(ColorUtils::fromColorT(&prefs.gui_text_deprecated).name())
-            .arg(busy_fg_.name())
+            .arg(busy_fg.name())
+            .arg(palette().base().color().name())
             ;
     setStyleSheet(style_sheet_);
 }
 
-QString SyntaxLineEdit::syntaxErrorMessage() {
+QString SyntaxLineEdit::syntaxErrorMessage()
+{
     return syntax_error_message_;
+}
+
+QString SyntaxLineEdit::syntaxErrorMessageFull()
+{
+    return syntax_error_message_full_;
+}
+
+QString SyntaxLineEdit::createSyntaxErrorMessageFull(
+                                const QString &filter, const QString &err_msg,
+                                qsizetype loc_start, size_t loc_length)
+{
+    QString msg = tr("Invalid filter: %1").arg(err_msg);
+
+    if (loc_start >= 0 && loc_length >= 1) {
+        // Add underlined location
+        msg = QStringLiteral("<p>%1<pre>  %2\n  %3^%4</pre></p>")
+            .arg(msg)
+            .arg(filter)
+            .arg(QString(' ').repeated(static_cast<int>(loc_start)))
+            .arg(QString('~').repeated(static_cast<int>(loc_length) - 1));
+    }
+    return msg;
 }
 
 QString SyntaxLineEdit::styleSheet() const {
@@ -143,38 +187,60 @@ void SyntaxLineEdit::insertFilter(const QString &filter)
     insert(padded_filter);
 }
 
-void SyntaxLineEdit::checkDisplayFilter(QString filter)
+bool SyntaxLineEdit::checkDisplayFilter(QString filter)
 {
+    if (!completion_enabled_) {
+        return false;
+    }
+
     if (filter.isEmpty()) {
         setSyntaxState(SyntaxLineEdit::Empty);
-        return;
+        return true;
     }
 
     dfilter_t *dfp = NULL;
-    gchar *err_msg;
-    if (dfilter_compile(filter.toUtf8().constData(), &dfp, &err_msg)) {
+    df_error_t *df_err = NULL;
+    if (dfilter_compile(filter.toUtf8().constData(), &dfp, &df_err)) {
+        GSList *warn;
         GPtrArray *depr = NULL;
-        if (dfp) {
-            depr = dfilter_deprecated_tokens(dfp);
-        }
-        if (depr) {
+        if (dfp != NULL && (warn = dfilter_get_warnings(dfp)) != NULL) {
+            // FIXME Need to use a different state or rename ::Deprecated
+            setSyntaxState(SyntaxLineEdit::Deprecated);
+            /*
+            * We're being lazy and only printing the first warning.
+            * Would it be better to print all of them?
+            */
+            syntax_error_message_  = QString(static_cast<char *>(warn->data));
+        } else if (dfp != NULL && (depr = dfilter_deprecated_tokens(dfp)) != NULL) {
             // You keep using that word. I do not think it means what you think it means.
+            // Possible alternatives: ::Troubled, or ::Problematic maybe?
             setSyntaxState(SyntaxLineEdit::Deprecated);
             /*
              * We're being lazy and only printing the first "problem" token.
              * Would it be better to print all of them?
              */
-            syntax_error_message_ = tr("\"%1\" may have unexpected results (see the User's Guide)")
-                    .arg((const char *) g_ptr_array_index(depr, 0));
+            QString token((const char *)g_ptr_array_index(depr, 0));
+            char *token_str = qstring_strdup(token.section('.', 0, 0));
+            header_field_info *hfi = proto_registrar_get_byalias(token_str);
+            if (hfi)
+                syntax_error_message_ = tr("\"%1\" is deprecated in favour of \"%2\". "
+                                           "See Help section 6.4.8 for details.").arg(token_str).arg(hfi->abbrev);
+            else
+                // The token_str is the message.
+                syntax_error_message_ = tr("%1").arg(token_str);
+            g_free(token_str);
         } else {
             setSyntaxState(SyntaxLineEdit::Valid);
         }
     } else {
         setSyntaxState(SyntaxLineEdit::Invalid);
-        syntax_error_message_ = QString::fromUtf8(err_msg);
-        g_free(err_msg);
+        syntax_error_message_ = QString::fromUtf8(df_err->msg);
+        syntax_error_message_full_ = createSyntaxErrorMessageFull(filter, syntax_error_message_, df_err->loc.col_start, df_err->loc.col_len);
+        df_error_free(&df_err);
     }
     dfilter_free(dfp);
+
+    return true;
 }
 
 void SyntaxLineEdit::checkFieldName(QString field)
@@ -199,10 +265,23 @@ void SyntaxLineEdit::checkCustomColumn(QString fields)
         return;
     }
 
-    gchar **splitted_fields = g_regex_split_simple(COL_CUSTOM_PRIME_REGEX,
-                fields.toUtf8().constData(), G_REGEX_ANCHORED, G_REGEX_MATCH_ANCHORED);
+#if 0
+    // XXX - Eventually, if the operator we split on is something not supported
+    // in the filter expression syntax (so that we can distinguish multifield
+    // concatenation of column strings from a logical OR), we would split and
+    // then check each split result as a valid display filter.
+    // For now, any expression that is a valid display filter should work.
+    //
+    // We also, for the custom columns, want some of the extra completion
+    // information from DisplayFilterEdit (like the display filter functions),
+    // without all of its integration into the main app, but not every user
+    // of FieldFilterEdit wants that, so perhaps we eventually should have
+    // another class.
+    char **splitted_fields = g_regex_split_simple(COL_CUSTOM_PRIME_REGEX,
+                fields.toUtf8().constData(), (GRegexCompileFlags) G_REGEX_RAW,
+                (GRegexMatchFlags) 0);
 
-    for (guint i = 0; i < g_strv_length(splitted_fields); i++) {
+    for (unsigned i = 0; i < g_strv_length(splitted_fields); i++) {
         if (splitted_fields[i] && *splitted_fields[i]) {
             if (proto_check_field_name(splitted_fields[i]) != 0) {
                 setSyntaxState(SyntaxLineEdit::Invalid);
@@ -212,6 +291,7 @@ void SyntaxLineEdit::checkCustomColumn(QString fields)
         }
     }
     g_strfreev(splitted_fields);
+#endif
 
     checkDisplayFilter(fields);
 }
@@ -289,6 +369,7 @@ void SyntaxLineEdit::completionKeyPressEvent(QKeyEvent *event)
         switch (event->key()) {
         case Qt::Key_Enter:
         case Qt::Key_Return:
+            break;
         case Qt::Key_Tab:
             focusNextChild();
             break;
@@ -304,7 +385,7 @@ void SyntaxLineEdit::completionKeyPressEvent(QKeyEvent *event)
     // ...otherwise process the key ourselves.
     SyntaxLineEdit::keyPressEvent(event);
 
-    if (!completer_ || !completion_model_) return;
+    if (!completion_enabled_ || !completer_ || !completion_model_ || !prefs.gui_autocomplete_filter) return;
 
     // Do nothing on bare shift.
     if ((event->modifiers() & Qt::ShiftModifier) && event->text().isEmpty()) return;
@@ -314,10 +395,9 @@ void SyntaxLineEdit::completionKeyPressEvent(QKeyEvent *event)
         return;
     }
 
-    QPoint token_coords(getTokenUnderCursor());
-
-    QString token_word = text().mid(token_coords.x(), token_coords.y());
-    buildCompletionList(token_word);
+    QStringList sentence(splitLineUnderCursor());
+    Q_ASSERT(sentence.size() == 2);     // (preamble, token)
+    buildCompletionList(sentence[1] /* token */, sentence[0] /* preamble */);
 
     if (completion_model_->stringList().length() < 1) {
         completer_->popup()->hide();
@@ -348,6 +428,96 @@ void SyntaxLineEdit::focusOutEvent(QFocusEvent *event)
     QLineEdit::focusOutEvent(event);
 }
 
+// Add indicator icons for syntax states in order to make things more clear for
+// color blind people.
+void SyntaxLineEdit::paintEvent(QPaintEvent *event)
+{
+    QStyleOptionFrame opt;
+    initStyleOption(&opt);
+    QRect cr = style()->subElementRect(QStyle::SE_LineEditContents, &opt, this);
+    QPainter painter(this);
+
+    // In the attempt to fix https://bugreports.qt.io/browse/QTBUG-81533
+    // the following commit was added to Qt 6.0.0 and later 5.15.3:
+    // https://code.qt.io/cgit/qt/qtbase.git/commit/src/widgets/widgets/qcombobox.cpp?h=5.15&id=6e470764a98434a120eba4fcc6035137cf9c92cf
+    //
+    // It causes a similar problem to the one it was trying to fix, viz. if I
+    // add "background: yellow;" to the DisplayFilterCombo stylesheet, when
+    // building with Qt 5.15.2 the combobox background is yellow and the text
+    // entry area (between the bookmark and apply button) is drawn in the correct
+    // base color (white for light mode and black for dark mode), and the correct
+    // syntax color otherwise. When building with Qt 5.15.3 and 6.2.4 and 6.3.1,
+    // the combobox background is yellow and the text entry area is always yellow,
+    // i.e. QLineEdit isn't painting its background because the palette from
+    // the combobox is used instead.
+    //
+    // It's not clear if this is a bug or just how things work under Qt6.
+    // Either way, it's easy to work around.
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 3)
+    // Must match CaptureFilterEdit and DisplayFilterEdit stylesheets.
+    int pad = style()->pixelMetric(QStyle::PM_DefaultFrameWidth) + 1;
+    QRect full_cr = cr.adjusted(-pad, 0, -1, 0);
+    QBrush bg;
+
+    switch (syntax_state_) {
+    case Valid:
+        bg = ColorUtils::fromColorT(&prefs.gui_text_valid);
+        break;
+    case Invalid:
+        bg = ColorUtils::fromColorT(&prefs.gui_text_invalid);
+        break;
+    case Deprecated:
+        bg = ColorUtils::fromColorT(&prefs.gui_text_deprecated);
+        break;
+    default:
+        bg = palette().base();
+        break;
+    }
+
+    painter.fillRect(full_cr, bg);
+#endif
+
+    QLineEdit::paintEvent(event);
+
+    QString si_name;
+
+    switch (syntax_state_) {
+    case Invalid:
+        si_name = "x-filter-invalid";
+        break;
+    case Deprecated:
+        si_name = "x-filter-deprecated";
+        break;
+    default:
+        return;
+    }
+
+    QRect sir = QRect(0, 0, 14, 14); // QIcon::paint scales, which is not what we want.
+    int textWidth = fontMetrics().boundingRect(text()).width();
+    // Qt always adds a margin of 6px between the border and text, see
+    // QLineEditPrivate::effectiveLeftTextMargin and
+    // QLineEditPrivate::sideWidgetParameters.
+    int margin = 2 * 6 + 1;
+
+    if (cr.width() - margin - textWidth < sir.width() || cr.height() < sir.height()) {
+        // No space to draw
+        return;
+    }
+
+    QIcon state_icon = StockIcon(si_name);
+    if (state_icon.isNull()) {
+        return;
+    }
+
+    int si_off = (cr.height() - sir.height()) / 2;
+    sir.moveTop(cr.top() + si_off);
+    sir.moveRight(cr.right() - si_off);
+    painter.save();
+    painter.setOpacity(0.25);
+    state_icon.paint(&painter, sir);
+    painter.restore();
+}
+
 void SyntaxLineEdit::insertFieldCompletion(const QString &completion_text)
 {
     if (!completer_) return;
@@ -362,7 +532,7 @@ void SyntaxLineEdit::insertFieldCompletion(const QString &completion_text)
 
     QString new_text = text().replace(field_coords.x(), field_coords.y(), completion_text);
     setText(new_text);
-    setCursorPosition(field_coords.x() + completion_text.length());
+    setCursorPosition(field_coords.x() + static_cast<int>(completion_text.length()));
     emit textEdited(new_text);
 }
 
@@ -384,4 +554,20 @@ QPoint SyntaxLineEdit::getTokenUnderCursor()
     }
 
     return QPoint(start, len);
+}
+
+QStringList SyntaxLineEdit::splitLineUnderCursor()
+{
+    QPoint token_coords(getTokenUnderCursor());
+
+    // Split line into preamble and word under cursor.
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    QString preamble = text().first(token_coords.x()).trimmed();
+#else
+    QString preamble = text().mid(0, token_coords.x()).trimmed();
+#endif
+    // This should be trimmed already
+    QString token_word = text().mid(token_coords.x(), token_coords.y());
+
+    return QStringList{ preamble, token_word };
 }

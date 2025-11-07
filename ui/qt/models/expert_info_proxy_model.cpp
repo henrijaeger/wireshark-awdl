@@ -12,6 +12,8 @@
 #include <ui/qt/models/expert_info_proxy_model.h>
 #include <ui/qt/utils/color_utils.h>
 
+#include <QRegularExpression>
+
 ExpertInfoProxyModel::ExpertInfoProxyModel(QObject *parent) : QSortFilterProxyModel(parent),
     severityMode_(Group)
 {
@@ -53,14 +55,17 @@ bool ExpertInfoProxyModel::lessThan(const QModelIndex &source_left, const QModel
             checkPacketNumber = true;
             break;
         case colProxyGroup:
-            if (left_item->group() != right_item->group()) {
-                return (left_item->group() < right_item->group());
-            }
+            compare_ret = QString::compare(val_to_str_const(left_item->group(), expert_group_vals, "Unknown"),
+                                            val_to_str_const(right_item->group(), expert_group_vals, "Unknown"));
+            if (compare_ret < 0)
+                return true;
+            if (compare_ret > 0)
+                return false;
 
             checkPacketNumber = true;
             break;
         case colProxyProtocol:
-            compare_ret = left_item->protocol().compare(right_item->protocol());
+            compare_ret =  QString::compare(left_item->protocol(), right_item->protocol(), Qt::CaseInsensitive);
             if (compare_ret < 0)
                 return true;
             if (compare_ret > 0)
@@ -93,7 +98,7 @@ QVariant ExpertInfoProxyModel::data(const QModelIndex &proxy_index, int role) co
         {
         source_index = mapToSource(proxy_index);
 
-        //only color base row
+        // only color base row
         if (!source_index.isValid() || source_index.parent().isValid())
             return QVariant();
 
@@ -117,8 +122,28 @@ QVariant ExpertInfoProxyModel::data(const QModelIndex &proxy_index, int role) co
         }
         break;
     case Qt::ForegroundRole:
-        //  XXX Use plain colors until our users demand to be blinded.
-        return QBrush(ColorUtils::expert_color_foreground);
+        {
+        source_index = mapToSource(proxy_index);
+
+        // only color base row
+        if (!source_index.isValid() || source_index.parent().isValid())
+            return QVariant();
+
+        ExpertPacketItem* item = static_cast<ExpertPacketItem*>(source_index.internalPointer());
+        if (item == NULL)
+            return QVariant();
+
+        // provide foreground color for groups
+        switch(item->severity()) {
+        case(PI_COMMENT):
+        case(PI_CHAT):
+        case(PI_NOTE):
+        case(PI_WARN):
+        case(PI_ERROR):
+            return QBrush(ColorUtils::expert_color_foreground);
+        }
+        }
+        break;
     case Qt::TextAlignmentRole:
         switch (proxy_index.column())
         {
@@ -199,7 +224,7 @@ QVariant ExpertInfoProxyModel::headerData(int section, Qt::Orientation orientati
     return QVariant();
 }
 
-int ExpertInfoProxyModel::columnCount(const QModelIndex& ) const
+int ExpertInfoProxyModel::columnCount(const QModelIndex&) const
 {
     return colProxyLast;
 }
@@ -210,7 +235,10 @@ bool ExpertInfoProxyModel::filterAcceptItem(ExpertPacketItem& item) const
         return false;
 
     if (!textFilter_.isEmpty()) {
-        QRegExp regex(textFilter_, Qt::CaseInsensitive);
+        QRegularExpression regex(textFilter_, QRegularExpression::CaseInsensitiveOption |
+                                 QRegularExpression::UseUnicodePropertiesOption);
+        if (! regex.isValid())
+            return false;
 
         if (item.protocol().contains(regex))
             return true;
@@ -263,16 +291,3 @@ void ExpertInfoProxyModel::setSummaryFilter(const QString &filter)
     textFilter_ = filter;
     invalidateFilter();
 }
-
-
-/* * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -1,11 +1,13 @@
-/* qt_ui_utils.h
+/** @file
+ *
  * Declarations of Qt-specific UI utility routines
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __QT_UI_UTILS_H__
 #define __QT_UI_UTILS_H__
@@ -19,6 +21,8 @@
 #include <config.h>
 
 #include <glib.h>
+
+#include "ui/rtp_stream.h"
 
 #include <QString>
 
@@ -41,10 +45,15 @@ struct epan_range;
 }
 #endif /* __cplusplus */
 
-// Introduced in Qt 5.4
-#ifndef qUtf8Printable
-#define qUtf8Printable(str) str.toUtf8().constData()
-#endif
+/*
+ * Helper macro, to prevent old-style-cast warnings, when using GList in c++ code
+ */
+#define gxx_list_next(list) ((list) ? ((reinterpret_cast<GList *>(list))->next) : Q_NULLPTR)
+#define gxx_constlist_next(list) ((list) ? ((reinterpret_cast<const GList *>(list))->next) : Q_NULLPTR)
+#define gxx_list_previous(list) ((list) ? ((reinterpret_cast<GList *>(list))->prev) : Q_NULLPTR)
+#define gxx_constlist_previous(list) ((list) ? ((reinterpret_cast<const GList *>(list))->prev) : Q_NULLPTR)
+
+#define gxx_list_data(type, list) ((list) ? ((reinterpret_cast<type>(list->data))) : Q_NULLPTR)
 
 /** Create a glib-compatible copy of a QString.
  *
@@ -52,7 +61,7 @@ struct epan_range;
  *
  * @return A copy of the QString. UTF-8 allocated with g_malloc().
  */
-gchar *qstring_strdup(QString q_string);
+char *qstring_strdup(QString q_string);
 
 /** Transfer ownership of a GLib character string to a newly constructed QString
  *
@@ -61,7 +70,7 @@ gchar *qstring_strdup(QString q_string);
  *
  * @return A QString instance created from the input string.
  */
-QString gchar_free_to_qstring(gchar *glib_string);
+QString gchar_free_to_qstring(char *glib_string);
 
 /** Transfer ownership of a GLib character string to a newly constructed QString
  *
@@ -70,7 +79,7 @@ QString gchar_free_to_qstring(gchar *glib_string);
  *
  * @return A QByteArray instance created from the input string.
  */
-QByteArray gchar_free_to_qbytearray(gchar *glib_string);
+QByteArray gchar_free_to_qbytearray(char *glib_string);
 
 /** Transfer ownership of a GLib character string to a newly constructed QByteArray
  *
@@ -80,6 +89,13 @@ QByteArray gchar_free_to_qbytearray(gchar *glib_string);
  * @return A QByteArray instance created from the input string.
  */
 QByteArray gstring_free_to_qbytearray(GString *glib_gstring);
+
+/** Transfer ownership of a GbyteArray to a newly constructed QByteArray
+ *
+ * @param glib_array A GByteArray or NULL. Will be freed.
+ * @return A QByteArray instance created from the input array.
+ */
+QByteArray gbytearray_free_to_qbytearray(GByteArray *glib_array);
 
 /** Convert an integer to a formatted string representation.
  *
@@ -117,7 +133,7 @@ const QString address_to_display_qstring(const struct _address *address);
  *
  * @return A QString representation of the value_string.
  */
-const QString val_to_qstring(const guint32 val, const struct _value_string *vs, const char *fmt)
+const QString val_to_qstring(const uint32_t val, const struct _value_string *vs, const char *fmt)
 G_GNUC_PRINTF(3, 0);
 
 /** Convert a value_string_ext to a QString using val_to_str_ext_wmem().
@@ -128,16 +144,16 @@ G_GNUC_PRINTF(3, 0);
  *
  * @return A QString representation of the value_string_ext.
  */
-const QString val_ext_to_qstring(const guint32 val, struct _value_string_ext *vse, const char *fmt)
+const QString val_ext_to_qstring(const uint32_t val, struct _value_string_ext *vse, const char *fmt)
 G_GNUC_PRINTF(3, 0);
 
 /** Convert a range to a QString using range_convert_range().
  *
- * @param range A pointer to an range struct.
+ * @param range A pointer to a range_string struct.
  *
- * @return A QString representation of the address. May be the null string (QString())
+ * @return A QString representation of the range_string. May be the null string (QString())
  */
-const QString range_to_qstring(const struct epan_range *range);
+const QString range_to_qstring(const range_string *range);
 
 /** Convert a bits per second value to a human-readable QString using format_size().
  *
@@ -153,7 +169,7 @@ const QString bits_s_to_qstring(const double bits_s);
  *
  * @return A QString representation of the file size in SI units.
  */
-const QString file_size_to_qstring(const gint64 size);
+const QString file_size_to_qstring(const int64_t size);
 
 /** Convert a time_t value to a human-readable QString using QDateTime.
  *
@@ -212,19 +228,53 @@ void desktop_show_in_folder(const QString file_path);
  */
 bool rect_on_screen(const QRect &rect);
 
+/**
+ * Set the "shortcutVisibleInContextMenu" property to true for
+ * a list of qactions.
+ *
+ * @param actions The actions to make visible.
+ */
+void set_action_shortcuts_visible_in_context_menu(QList<QAction *> actions);
+
+/**
+ * Create copy of all rtpstream_ids to new QVector
+ * => caller must release it with qvector_rtpstream_ids_free()
+ *
+ * @param stream_ids List of infos
+ * @return Vector of rtpstream_ids
+ */
+QVector<rtpstream_id_t *>qvector_rtpstream_ids_copy(QVector<rtpstream_id_t *> stream_ids);
+
+/**
+ * Free all rtpstream_ids in QVector
+ *
+ * @param stream_ids List of infos
+ */
+void qvector_rtpstream_ids_free(QVector<rtpstream_id_t *> stream_ids);
+
+/**
+ * Make display filter from list of rtpstream_id
+ *
+ * @param stream_ids List of ids
+ * @return Filter or empty string
+ */
+QString make_filter_based_on_rtpstream_id(QVector<rtpstream_id_t *> stream_ids);
+
+/**
+ * @brief Return the last directory that had been opened.
+ *
+ * This can be influenced by prefs.gui_fileopen_style which will allow to either
+ * open the real last dir or have the user set one specifically.
+ *
+ * @return a reference to that directory.
+ */
+QString openDialogInitialDir();
+
+/**
+ * @brief Store the directory as last directory being used
+ */
+void storeLastDir(QString dir);
+
 #endif /* __QT_UI_UTILS__H__ */
 
 // XXX Add a routine to fetch the HWND corresponding to a widget using QPlatformIntegration
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

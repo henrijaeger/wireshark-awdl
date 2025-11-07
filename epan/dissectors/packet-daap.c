@@ -15,6 +15,7 @@
 #include <epan/exceptions.h>
 #include <wsutil/str_util.h>
 #include <epan/expert.h>
+#include <epan/proto_data.h>
 #include "packet-http.h"
 
 #define TCP_PORT_DAAP 3689
@@ -204,6 +205,8 @@
 void proto_register_daap(void);
 void proto_reg_handoff_daap(void);
 
+static dissector_handle_t daap_handle;
+
 static dissector_handle_t png_handle;
 
 /*XXX: Sorted by value definition since it appears that the "value" is just */
@@ -365,35 +368,35 @@ static const value_string vals_tag_code[] = {
 static value_string_ext vals_tag_code_ext = VALUE_STRING_EXT_INIT(vals_tag_code);
 
 /* Initialize the protocol and registered fields */
-static int proto_daap = -1;
-static int hf_daap_name = -1;
-static int hf_daap_size = -1;
-static int hf_daap_data_string = -1;
-static int hf_daap_persistent_id = -1;
-static int hf_daap_status = -1;
-static int hf_daap_rev = -1;
-static int hf_daap_id = -1;
-static int hf_daap_cnt = -1;
-static int hf_daap_timeout = -1;
-static int hf_daap_data = -1;
-static int hf_daap_playlist_id = -1;
-static int hf_daap_track_id = -1;
+static int proto_daap;
+static int hf_daap_name;
+static int hf_daap_size;
+static int hf_daap_data_string;
+static int hf_daap_persistent_id;
+static int hf_daap_status;
+static int hf_daap_rev;
+static int hf_daap_id;
+static int hf_daap_cnt;
+static int hf_daap_timeout;
+static int hf_daap_data;
+static int hf_daap_playlist_id;
+static int hf_daap_track_id;
 
 /* Initialize the subtree pointers */
-static gint ett_daap = -1;
-static gint ett_daap_sub = -1;
+static int ett_daap;
+static int ett_daap_sub;
 
-static expert_field ei_daap_max_recursion_depth_reached = EI_INIT;
+static expert_field ei_daap_max_recursion_depth_reached;
 
 /* Forward declarations */
-static void dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, int recursion_depth);
+static void dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb);
 
 static int
 dissect_daap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
    proto_item *ti;
    proto_tree *daap_tree;
-   guint first_tag;
+   unsigned first_tag;
 
    first_tag = tvb_get_ntohl(tvb, 0);
    col_set_str(pinfo->cinfo, COL_PROTOCOL, "DAAP");
@@ -414,35 +417,36 @@ dissect_daap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
     */
    col_set_str(pinfo->cinfo, COL_INFO, "DAAP Response");
    col_append_fstr(pinfo->cinfo, COL_INFO, " [first tag: %s, size: %d]",
-                   tvb_format_text(tvb, 0, 4),
+                   tvb_format_text(pinfo->pool, tvb, 0, 4),
                    tvb_get_ntohl(tvb, 4));
 
    ti = proto_tree_add_item(tree, proto_daap, tvb, 0, -1, ENC_NA);
    daap_tree = proto_item_add_subtree(ti, ett_daap);
-   dissect_daap_one_tag(daap_tree, pinfo, tvb, 0);
+   dissect_daap_one_tag(daap_tree, pinfo, tvb);
    return tvb_captured_length(tvb);
 }
 
 #define DAAP_MAX_RECURSION_DEPTH 100
 
 static void
-dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, int recursion_depth)
+// NOLINTNEXTLINE(misc-no-recursion)
+dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb)
 {
-   guint       offset = 0;
-   guint32     tagname, tagsize;
+   unsigned    offset = 0;
+   uint32_t    tagname, tagsize;
    proto_item *tag_ti;
    proto_tree *tag_tree;
    tvbuff_t   *new_tvb;
+   unsigned    recursion_depth = p_get_proto_depth(pinfo, proto_daap);
 
-   if (recursion_depth >= DAAP_MAX_RECURSION_DEPTH) {
+   if (++recursion_depth >= DAAP_MAX_RECURSION_DEPTH) {
       proto_tree_add_expert(tree, pinfo, &ei_daap_max_recursion_depth_reached,
                             tvb, 0, 0);
       return;
    }
-   while (offset < tvb_reported_length(tvb)) {
-      tagname = tvb_get_ntohl(tvb, offset);
-      tagsize = tvb_get_ntohl(tvb, offset+4);
+   p_set_proto_depth(pinfo, proto_daap, recursion_depth);
 
+   while (offset < tvb_reported_length(tvb)) {
       tag_tree = proto_tree_add_subtree(tree, tvb, offset, -1,
             ett_daap_sub, &tag_ti, "Tag: ");
 
@@ -458,7 +462,7 @@ dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, int re
             tagsize, plurality(tagsize, ' ', 's'));
       proto_item_set_len(tag_ti, 8+tagsize);
 
-      if (tagsize > G_MAXINT)
+      if (tagsize > INT_MAX)
          break;
 
       switch (tagname) {
@@ -488,8 +492,8 @@ dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, int re
          case dacp_cmgt:
          case dacp_cmst:
             /* Container tags */
-            new_tvb  = tvb_new_subset_length(tvb, offset, (gint)tagsize);
-            dissect_daap_one_tag(tag_tree, pinfo, new_tvb, recursion_depth+1);
+            new_tvb  = tvb_new_subset_length(tvb, offset, (int)tagsize);
+            dissect_daap_one_tag(tag_tree, pinfo, new_tvb);
             break;
 
          case daap_minm:
@@ -527,7 +531,7 @@ dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, int re
             /* Tags contain strings
                XXX - verify that they're really 7bit ASCII */
             proto_tree_add_item(tag_tree, hf_daap_data_string,
-                  tvb, offset, tagsize, ENC_ASCII|ENC_NA);
+                  tvb, offset, tagsize, ENC_ASCII);
             break;
 
          case daap_mper:
@@ -671,10 +675,10 @@ dissect_daap_one_tag(proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb, int re
          case daap_apro:
             /* Tags contain version (uint32) */
             proto_item_append_text(tag_ti, "; Version: %d.%d.%d.%d",
-                  tvb_get_guint8(tvb, offset),
-                  tvb_get_guint8(tvb, offset+1),
-                  tvb_get_guint8(tvb, offset+2),
-                  tvb_get_guint8(tvb, offset+3));
+                  tvb_get_uint8(tvb, offset),
+                  tvb_get_uint8(tvb, offset+1),
+                  tvb_get_uint8(tvb, offset+2),
+                  tvb_get_uint8(tvb, offset+3));
             break;
 
          case dacp_canp:
@@ -713,14 +717,14 @@ proto_register_daap(void)
       },
       { &hf_daap_data_string,
         { "Data string", "daap.data_string",
-           FT_STRING, STR_ASCII, NULL, 0, NULL, HFILL }
+           FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }
       },
       { &hf_daap_persistent_id,
         { "Persistent Id", "daap.persistent_id",
            FT_UINT64, BASE_HEX, NULL, 0, NULL, HFILL }
       },
       { &hf_daap_status,
-        { "Staus", "daap.status",
+        { "Status", "daap.status",
            FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }
       },
       { &hf_daap_rev,
@@ -755,7 +759,7 @@ proto_register_daap(void)
       }
    };
 
-   static gint *ett[] = {
+   static int *ett[] = {
       &ett_daap,
       &ett_daap_sub,
    };
@@ -775,14 +779,13 @@ proto_register_daap(void)
 
    proto_register_field_array(proto_daap, hf, array_length(hf));
    proto_register_subtree_array(ett, array_length(ett));
+
+   daap_handle = register_dissector("daap", dissect_daap, proto_daap);
 }
 
 void
 proto_reg_handoff_daap(void)
 {
-   dissector_handle_t daap_handle;
-
-   daap_handle = create_dissector_handle(dissect_daap, proto_daap);
    http_tcp_port_add(TCP_PORT_DAAP);
    dissector_add_string("media_type", "application/x-dmap-tagged", daap_handle);
 
@@ -790,7 +793,7 @@ proto_reg_handoff_daap(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 3

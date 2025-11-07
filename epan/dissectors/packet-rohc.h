@@ -20,6 +20,13 @@
 
 #define MAX_CID      15
 
+ /* ROHC Profiles */
+#define ROHC_PROFILE_UNCOMPRESSED   0
+#define ROHC_PROFILE_RTP            1
+#define ROHC_PROFILE_UDP            2
+#define ROHC_PROFILE_IP             4
+#define ROHC_PROFILE_UNKNOWN        0xFFFF
+
 enum rohc_mode
 {
   MODE_NOT_SET = 0,
@@ -28,38 +35,18 @@ enum rohc_mode
   RELIABLE_BIDIRECTIONAL = 3
 };
 
-enum rohc_d_mode
-{
-  NO_CONTEXT = 1,
-  STATIC_CONTEXT = 2,
-  FULL_CONTEXT = 3
-};
+
 typedef struct rohc_info
 {
-    gboolean           rohc_compression;
-    guint16            rohc_ip_version;
-    gboolean           cid_inclusion_info;
-    gboolean           large_cid_present;
+    bool               rohc_compression;
+    uint8_t            rohc_ip_version;
+    bool               cid_inclusion_info;
+    bool               large_cid_present;
     enum rohc_mode     mode;
-    gboolean           rnd;
-    gboolean           udp_checksum_present;
-    guint16            profile;
+    bool               rnd;
+    bool               udp_checksum_present;
+    uint16_t           profile;
     proto_item         *last_created_item;
 } rohc_info;
-
-
-typedef struct rohc_context
-{
-    guint16            rohc_ip_version[MAX_CID+1];
-    gboolean           large_cid_present[MAX_CID+1];
-    enum rohc_mode     mode[MAX_CID+1];
-    enum rohc_d_mode   d_mode[MAX_CID+1];
-    gboolean           rnd[MAX_CID+1];
-    gboolean           udp_checkum_present[MAX_CID+1];
-    guint16            profile[MAX_CID+1];
-	gboolean           rohc_context_init[MAX_CID+1];
-	gint               ir_frame_number[MAX_CID+1];        /* The frame number of the last IR packet seen */
-
-} rohc_context;
 
 #endif /* PACKET_ROHC_H */

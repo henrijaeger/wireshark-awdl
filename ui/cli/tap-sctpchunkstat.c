@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -23,27 +24,29 @@
 #include <epan/dissectors/packet-sctp.h>
 #include <epan/to_str.h>
 
+#include <wsutil/cmdarg_err.h>
+
 void register_tap_listener_sctpstat(void);
 
 typedef struct sctp_ep {
 	struct sctp_ep *next;
 	address src;
 	address dst;
-	guint16 sport;
-	guint16 dport;
-	guint32 chunk_count[256];
+	uint16_t sport;
+	uint16_t dport;
+	uint32_t chunk_count[256];
 } sctp_ep_t;
 
 
 /* used to keep track of the statistics for an entire program interface */
 typedef struct _sctpstat_t {
 	char	  *filter;
-	guint32    number_of_packets;
+	uint32_t   number_of_packets;
 	sctp_ep_t *ep_list;
 } sctpstat_t;
 
 #define CHUNK_TYPE_OFFSET 0
-#define CHUNK_TYPE(x)(tvb_get_guint8((x), CHUNK_TYPE_OFFSET))
+#define CHUNK_TYPE(x)(tvb_get_uint8((x), CHUNK_TYPE_OFFSET))
 
 static void
 sctpstat_reset(void *phs)
@@ -51,7 +54,7 @@ sctpstat_reset(void *phs)
 	sctpstat_t *sctp_stat = (sctpstat_t *)phs;
 	sctp_ep_t  *list      = (sctp_ep_t *)sctp_stat->ep_list;
 	sctp_ep_t  *tmp	      = NULL;
-	guint16	    chunk_type;
+	uint16_t	    chunk_type;
 
 	if (!list)
 		return;
@@ -68,7 +71,7 @@ static sctp_ep_t *
 alloc_sctp_ep(const struct _sctp_info *si)
 {
 	sctp_ep_t *ep;
-	guint16 chunk_type;
+	uint16_t chunk_type;
 
 	if (!si)
 		return NULL;
@@ -89,18 +92,18 @@ alloc_sctp_ep(const struct _sctp_info *si)
 
 
 
-static int
-sctpstat_packet(void *phs, packet_info *pinfo _U_, epan_dissect_t *edt _U_, const void *phi)
+static tap_packet_status
+sctpstat_packet(void *phs, packet_info *pinfo _U_, epan_dissect_t *edt _U_, const void *phi, tap_flags_t flags _U_)
 {
 
 	sctpstat_t *hs = (sctpstat_t *)phs;
 	sctp_ep_t *tmp = NULL, *te = NULL;
 	const struct _sctp_info *si = (const struct _sctp_info *)phi;
-	guint32 tvb_number;
-	guint8  chunk_type;
+	uint32_t tvb_number;
+	uint8_t chunk_type;
 
 	if (!hs)
-		return (0);
+		return (TAP_PACKET_DONT_REDRAW);
 
 	hs->number_of_packets++;
 
@@ -128,7 +131,7 @@ sctpstat_packet(void *phs, packet_info *pinfo _U_, epan_dissect_t *edt _U_, cons
 	}
 
 	if (!te)
-		return (0);
+		return (TAP_PACKET_DONT_REDRAW);
 
 
 	if (si->number_of_tvbs > 0) {
@@ -141,7 +144,7 @@ sctpstat_packet(void *phs, packet_info *pinfo _U_, epan_dissect_t *edt _U_, cons
 				te->chunk_count[CHUNK_TYPE(si->tvb[tvb_number])]++;
 		}
 	}
-	return (1);
+	return (TAP_PACKET_REDRAW);
 }
 
 
@@ -187,7 +190,7 @@ sctpstat_init(const char *opt_arg, void *userdata _U_)
 	sctpstat_t *hs;
 	GString	   *error_string;
 
-	hs = (sctpstat_t *)g_malloc(sizeof(sctpstat_t));
+	hs = g_new(sctpstat_t, 1);
 	if (!strncmp(opt_arg, "sctp,stat,", 11)) {
 		hs->filter = g_strdup(opt_arg+11);
 	} else {
@@ -198,13 +201,13 @@ sctpstat_init(const char *opt_arg, void *userdata _U_)
 
 	sctpstat_reset(hs);
 
-	error_string = register_tap_listener("sctp", hs, hs->filter, 0, NULL, sctpstat_packet, sctpstat_draw);
+	error_string = register_tap_listener("sctp", hs, hs->filter, 0, NULL, sctpstat_packet, sctpstat_draw, NULL);
 	if (error_string) {
 		/* error, we failed to attach to the tap. clean up */
 		g_free(hs->filter);
 		g_free(hs);
 
-		fprintf(stderr, "tshark: Couldn't register sctp,stat tap: %s\n",
+		cmdarg_err("Couldn't register sctp,stat tap: %s",
 			error_string->str);
 		g_string_free(error_string, TRUE);
 		exit(1);
@@ -227,7 +230,7 @@ register_tap_listener_sctpstat(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

@@ -17,7 +17,6 @@
 
 #include "config.h"
 
-#include "glib.h"
 #include "packet-h248.h"
 
 void proto_register_h248_dot10(void);
@@ -26,13 +25,13 @@ void proto_register_h248_dot10(void);
 #define PSNAME "H248CHP"
 #define PFNAME "h248.chp"
 
-static int proto_h248_CHP = -1;
+static int proto_h248_CHP;
 
-static int hf_h248_CHP_mgcon = -1;
-static int hf_h248_CHP_mgcon_reduction = -1;
+static int hf_h248_CHP_mgcon;
+static int hf_h248_CHP_mgcon_reduction;
 
-static gint ett_h248_CHP = -1;
-static gint ett_h248_CHP_mgcon = -1;
+static int ett_h248_CHP;
+static int ett_h248_CHP_mgcon;
 
 static const value_string h248_CHP_prop_vals[] = {
 	{ 0, "chp (MG Congestion Handling)" },
@@ -84,7 +83,7 @@ void proto_register_h248_dot10(void) {
 		{ &hf_h248_CHP_mgcon_reduction, { "Reduction", "h248.chp.mgcon.reduction", FT_UINT32, BASE_DEC, NULL, 0, "Percentage of the load that the MGC is requested to block", HFILL }},
 	};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_h248_CHP,
 		&ett_h248_CHP_mgcon,
 	};
@@ -99,7 +98,7 @@ void proto_register_h248_dot10(void) {
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

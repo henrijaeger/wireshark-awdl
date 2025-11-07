@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 my $debug = 0;
 # 0: off
@@ -196,14 +196,14 @@ sub checkprotoabbrev {
 
 			#now check the acceptable "fields from a different protocol"
 			if ($errorline == 1) {
-				if (is_from_other_protocol_whitelist($_[0], $currfile) == 1) {
+				if (is_from_other_protocol_allowed($_[0], $currfile) == 1) {
 					$errorline = 0;
 				}
 			}
 
 			#now check the acceptable "fields that include a version number"
 			if ($errorline == 1) {
-				if (is_protocol_version_whitelist($_[0], $currfile) == 1) {
+				if (is_protocol_version_allowed($_[0], $currfile) == 1) {
 					$errorline = 0;
 				}
 			}
@@ -219,10 +219,10 @@ sub checkprotoabbrev {
 		}
 
 		if (($abbrev ne "") && (lc($abbrev) eq lc($afterabbrev))) {
-			#Allow ASN.1 generated files to duplicate part of proto name
+			# Allow ASN.1 generated files to duplicate part of proto name
 			if ((!(grep {$currfile eq $_ } @asn1automatedfilelist))   &&
-				#Check "approved" whitelist
-				(is_proto_dup_whitelist($abbrev, $check_dup_abbrev) == 0)) {
+				# Check allowed list
+				(is_proto_dup_allowed($abbrev, $check_dup_abbrev) == 0)) {
 				if ($showlinenoFlag) {
 					push(@elements_dup, "$_[1] $_[0] duplicates PROTOABBREV of $abbrev\n");
 				} else {
@@ -322,12 +322,13 @@ sub printprevfile {
 # to be provided to add to it. Acknowledge these dissectors aren't
 # a problem for the pre-commit script
 #--------------------------------------------------------------------
-sub is_proto_dup_whitelist {
+sub is_proto_dup_allowed {
 	if (($_[0] eq "amf") && (index($_[1], "amf0") >= 0)) {return 1;}
 	if (($_[0] eq "amf") && (index($_[1], "amf3") >= 0)) {return 1;}
 	if (($_[0] eq "amqp") && (index($_[1], "amqp") >= 0)) {return 1;}
 	if (($_[0] eq "bat") && (index($_[1], "batman") >= 0)) {return 1;}
 	if (($_[0] eq "browser") && (index($_[1], "browser_") >= 0)) {return 1;}
+	if (($_[0] eq "data") && (index($_[1], "data") >= 0)) {return 1;}
 	if (($_[0] eq "dlsw") && (index($_[1], "dlsw_version") >= 0)) {return 1;}
 	if (($_[0] eq "dns") && (index($_[1], "dnskey") >= 0)) {return 1;}
 	if (($_[0] eq "ecmp") && (index($_[1], "ecmp_") >= 0)) {return 1;}
@@ -345,14 +346,18 @@ sub is_proto_dup_whitelist {
 	if (($_[0] eq "nfs") && (index($_[1], "nfs") >= 0)) {return 1;}
 	if (($_[0] eq "oxid") && (index($_[1], "oxid") >= 0)) {return 1;}
 	if (($_[0] eq "rquota") && (index($_[1], "rquota") >= 0)) {return 1;}
+	if (($_[0] eq "pfcp") && (index($_[1], "pfcp") >= 0)) {return 1;}
 	if (($_[0] eq "sm") && (index($_[1], "sm_") >= 0)) {return 1;}
 	if (($_[0] eq "smpp") && (index($_[1], "smppplus") >= 0)) {return 1;}
 	if (($_[0] eq "spray") && (index($_[1], "sprayarr") >= 0)) {return 1;}
+	if (($_[0] eq "stat") && (index($_[1], "stat_") >= 0)) {return 1;}
+	if (($_[0] eq "stat") && (index($_[1], "state") >= 0)) {return 1;}
 	if (($_[0] eq "tds") && (index($_[1], "tds_") >= 0)) {return 1;}
 	if (($_[0] eq "time") && (index($_[1], "time") >= 0)) {return 1;}
 	if (($_[0] eq "tn3270") && (index($_[1], "tn3270e") >= 0)) {return 1;}
 	if (($_[0] eq "usb") && (index($_[1], "usb") >= 0)) {return 1;}
 	if (($_[0] eq "xml") && (index($_[1], "xml") >= 0)) {return 1;}
+	if (($_[0] eq "dns") && (index($_[1], "dnscrypt") >= 0)) {return 1;}
 
 	return 0;
 }
@@ -363,7 +368,7 @@ sub is_proto_dup_whitelist {
 # justification will need to be provided to add to it.
 # Acknowledge these dissectors aren't a problem for the pre-commit script
 #--------------------------------------------------------------------
-sub is_from_other_protocol_whitelist {
+sub is_from_other_protocol_allowed {
 	my $proto_filename;
 	my $dir_index = rindex($_[1], "\\");
 
@@ -380,6 +385,8 @@ sub is_from_other_protocol_whitelist {
 	}
 
 	# XXX - may be faster to hash this (note 1-many relationship)?
+	if (($proto_filename eq "packet-atalk.c") && (index($_[0], "llc") >= 0)) {return 1;}
+	if (($proto_filename eq "packet-awdl.c") && (index($_[0], "llc") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-bpdu.c") && (index($_[0], "mstp") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-bssap.c") && (index($_[0], "bsap") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-caneth.c") && (index($_[0], "can") >= 0)) {return 1;}
@@ -397,6 +404,7 @@ sub is_from_other_protocol_whitelist {
 	if (($proto_filename eq "packet-glusterfs.c") && (index($_[0], "gluster") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-h248_annex_e.c") && (index($_[0], "h248") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-h248_q1950.c") && (index($_[0], "h248") >= 0)) {return 1;}
+	if (($proto_filename eq "packet-ieee1722.c") && (index($_[0], "can") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-ieee80211.c") && (index($_[0], "eapol") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-ieee80211-radio.c") && (index($_[0], "wlan") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-ieee80211-wlancap.c") && (index($_[0], "wlan") >= 0)) {return 1;}
@@ -414,6 +422,7 @@ sub is_from_other_protocol_whitelist {
 	if (($proto_filename eq "packet-mpeg-dsmcc.c") && (index($_[0], "mpeg_sect") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-mpeg-dsmcc.c") && (index($_[0], "etv.dsmcc") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-mpeg1.c") && (index($_[0], "rtp.payload_mpeg_") >= 0)) {return 1;}
+	if (($proto_filename eq "packet-mysql.c") && (index($_[0], "mariadb") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-ndps.c") && (index($_[0], "spx.ndps_") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-pw-atm.c") && (index($_[0], "atm") >= 0)) {return 1;}
 	if (($proto_filename eq "packet-pw-atm.c") && (index($_[0], "pw") >= 0)) {return 1;}
@@ -442,10 +451,10 @@ sub is_from_other_protocol_whitelist {
 #--------------------------------------------------------------------
 # This is a list of dissectors that use their (protocol) version number
 # as part of the first display filter segment, which checkfiltername
-# usually complains about.  Whitelist them so it can pass
+# usually complains about. Manually allow them so that they can pass
 # pre-commit script
 #--------------------------------------------------------------------
-sub is_protocol_version_whitelist {
+sub is_protocol_version_allowed {
 	my $proto_filename;
 	my $dir_index = rindex($_[1], "\\");
 

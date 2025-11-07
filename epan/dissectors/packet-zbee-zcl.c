@@ -18,6 +18,11 @@
 
 #include <epan/packet.h>
 #include <epan/expert.h>
+#include <epan/to_str.h>
+#include <epan/tfs.h>
+
+#include <wsutil/array.h>
+#include <wsutil/epochs.h>
 
 #include "packet-zbee.h"
 #include "packet-zbee-nwk.h"
@@ -31,112 +36,135 @@ void proto_register_zbee_zcl(void);
 void proto_reg_handoff_zbee_zcl(void);
 
 /* Command Dissector Helpers */
-static void dissect_zcl_write_attr_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code);
-static void dissect_zcl_config_report (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code);
-static void dissect_zcl_config_report_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code);
-static void dissect_zcl_read_report_config (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code);
-static void dissect_zcl_read_report_config_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code);
-static void dissect_zcl_default_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset);
-static void dissect_zcl_discover_attr (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset);
-static void dissect_zcl_discover_attr_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code);
+static void dissect_zcl_write_attr_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_config_report (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_config_report_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_read_report_config (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_read_report_config_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_default_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_discover_attr (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_discover_attr_resp (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_read_attr_struct(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, unsigned* offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_write_attr_struct(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, unsigned* offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_write_attr_struct_resp(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, unsigned* offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
+static void dissect_zcl_discover_cmd_rec(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, unsigned* offset);
+static void dissect_zcl_discover_cmd_rec_resp(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, unsigned* offset);
+//static void dissect_zcl_discover_attr_extended_resp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
 
 /* Helper routines */
-static void  dissect_zcl_attr_data_general(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint16 attr_id, guint data_type, guint16 cluster_id, guint16 mfr_code);
-static void  dissect_zcl_attr_data_type_val (tvbuff_t *tvb, proto_tree *tree, guint *offset, guint16 cmd_id, guint16 cluster_id, guint16 mfr_code);
-static guint dissect_zcl_attr_uint8 (tvbuff_t *tvb, proto_tree *tree, guint *offset, int *length);
-static void  dissect_zcl_attr_id (tvbuff_t *tvb, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code);
-static void  zcl_dump_data(tvbuff_t *tvb, guint offset, packet_info *pinfo, proto_tree *tree);
+static void  dissect_zcl_attr_data_general(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint16_t attr_id, unsigned data_type, uint16_t cluster_id, uint16_t mfr_code, bool client_attr);
+static void  zcl_dump_data(tvbuff_t *tvb, unsigned offset, packet_info *pinfo, proto_tree *tree);
 
-static void dissect_zcl_array_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 elements_type, guint16 elements_num);
-static void dissect_zcl_set_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 elements_type, guint16 elements_num);
+static void dissect_zcl_array_type(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint8_t elements_type, uint16_t elements_num, bool client_attr);
+static void dissect_zcl_set_type(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint8_t elements_type, uint16_t elements_num, bool client_attr);
 
+static zbee_zcl_cluster_desc *zbee_zcl_get_cluster_desc(uint16_t cluster_id, uint16_t mfr_code);
+static void dissect_zcl_discover_cmd_attr_extended_resp(tvbuff_t* tvb, packet_info* pinfo _U_, proto_tree* tree, unsigned* offset, uint16_t cluster_id, uint16_t mfr_code, bool direction);
 /********************
  * Global Variables *
  ********************
  */
-/* Header Field Indices. */
-static int proto_zbee_zcl = -1;
-static int hf_zbee_zcl_fcf_frame_type = -1;
-static int hf_zbee_zcl_fcf_mfr_spec = -1;
-static int hf_zbee_zcl_fcf_dir = -1;
-static int hf_zbee_zcl_fcf_disable_default_resp = -1;
-static int hf_zbee_zcl_mfr_code = -1;
-static int hf_zbee_zcl_tran_seqno = -1;
 
-static int hf_zbee_zcl_cmd_id = -1;
-static int hf_zbee_zcl_cs_cmd_id = -1;
-static int hf_zbee_zcl_cmd_id_rsp = -1;
-static int hf_zbee_zcl_attr_id = -1;
-static int hf_zbee_zcl_attr_data_type = -1;
-static int hf_zbee_zcl_attr_boolean = -1;
-static int hf_zbee_zcl_attr_bitmap8 = -1;
-static int hf_zbee_zcl_attr_bitmap16 = -1;
-static int hf_zbee_zcl_attr_bitmap24 = -1;
-static int hf_zbee_zcl_attr_bitmap32 = -1;
-static int hf_zbee_zcl_attr_bitmap40 = -1;
-static int hf_zbee_zcl_attr_bitmap48 = -1;
-static int hf_zbee_zcl_attr_bitmap56 = -1;
-static int hf_zbee_zcl_attr_bitmap64 = -1;
-static int hf_zbee_zcl_attr_uint8 = -1;
-static int hf_zbee_zcl_attr_uint16 = -1;
-static int hf_zbee_zcl_attr_uint24 = -1;
-static int hf_zbee_zcl_attr_uint32 = -1;
-static int hf_zbee_zcl_attr_uint40 = -1;
-static int hf_zbee_zcl_attr_uint48 = -1;
-static int hf_zbee_zcl_attr_uint56 = -1;
-static int hf_zbee_zcl_attr_uint64 = -1;
-static int hf_zbee_zcl_attr_int8 = -1;
-static int hf_zbee_zcl_attr_int16 = -1;
-static int hf_zbee_zcl_attr_int24 = -1;
-static int hf_zbee_zcl_attr_int32 = -1;
-static int hf_zbee_zcl_attr_int64 = -1;
-/* static int hf_zbee_zcl_attr_semi = -1; */
-static int hf_zbee_zcl_attr_float = -1;
-static int hf_zbee_zcl_attr_double = -1;
-static int hf_zbee_zcl_attr_bytes = -1;
-static int hf_zbee_zcl_attr_minint = -1;
-static int hf_zbee_zcl_attr_maxint = -1;
-static int hf_zbee_zcl_attr_timeout = -1;
-static int hf_zbee_zcl_attr_cid = -1;
-static int hf_zbee_zcl_attr_hours = -1;
-static int hf_zbee_zcl_attr_mins = -1;
-static int hf_zbee_zcl_attr_secs = -1;
-static int hf_zbee_zcl_attr_csecs = -1;
-static int hf_zbee_zcl_attr_yy = -1;
-static int hf_zbee_zcl_attr_mm = -1;
-static int hf_zbee_zcl_attr_md = -1;
-static int hf_zbee_zcl_attr_wd = -1;
-static int hf_zbee_zcl_attr_utc = -1;
-static int hf_zbee_zcl_attr_status = -1;
-static int hf_zbee_zcl_attr_dir = -1;
-static int hf_zbee_zcl_attr_dis = -1;
-static int hf_zbee_zcl_attr_start = -1;
-static int hf_zbee_zcl_attr_maxnum = -1;
-static int hf_zbee_zcl_attr_str = -1;
-static int hf_zbee_zcl_attr_ostr = -1;
-static int hf_zbee_zcl_attr_array_elements_type = -1;
-static int hf_zbee_zcl_attr_array_elements_num = -1;
-static int hf_zbee_zcl_attr_set_elements_type = -1;
-static int hf_zbee_zcl_attr_set_elements_num = -1;
-static int hf_zbee_zcl_attr_bag_elements_type = -1;
-static int hf_zbee_zcl_attr_bag_elements_num = -1;
+#define ZBEE_ZCL_INVALID_STR_LENGTH         0xff
+#define ZBEE_ZCL_INVALID_LONG_STR_LENGTH    0xffff
+
+/* Header Field Indices. */
+static int proto_zbee_zcl;
+static int hf_zbee_zcl_fcf_frame_type;
+static int hf_zbee_zcl_fcf_mfr_spec;
+static int hf_zbee_zcl_fcf_dir;
+static int hf_zbee_zcl_fcf_disable_default_resp;
+static int hf_zbee_zcl_mfr_code;
+static int hf_zbee_zcl_tran_seqno;
+static int hf_zbee_zcl_cmd_id;
+static int hf_zbee_zcl_cs_cmd_id;
+static int hf_zbee_zcl_cmd_id_rsp;
+static int hf_zbee_zcl_attr_id;
+static int hf_zbee_zcl_attr_data_type;
+static int hf_zbee_zcl_attr_access_ctrl;
+static int hf_zbee_zcl_indicator;
+static int hf_zbee_zcl_index;
+static int hf_zbee_zcl_cmd_start;
+static int hf_zbee_zcl_cmd_maxnum;
+static int hf_zbee_zcl_attr_boolean;
+static int hf_zbee_zcl_attr_bitmap8;
+static int hf_zbee_zcl_attr_bitmap16;
+static int hf_zbee_zcl_attr_bitmap24;
+static int hf_zbee_zcl_attr_bitmap32;
+static int hf_zbee_zcl_attr_bitmap40;
+static int hf_zbee_zcl_attr_bitmap48;
+static int hf_zbee_zcl_attr_bitmap56;
+static int hf_zbee_zcl_attr_bitmap64;
+static int hf_zbee_zcl_attr_uint8;
+static int hf_zbee_zcl_attr_uint16;
+static int hf_zbee_zcl_attr_uint24;
+static int hf_zbee_zcl_attr_uint32;
+static int hf_zbee_zcl_attr_uint40;
+static int hf_zbee_zcl_attr_uint48;
+static int hf_zbee_zcl_attr_uint56;
+static int hf_zbee_zcl_attr_uint64;
+static int hf_zbee_zcl_attr_int8;
+static int hf_zbee_zcl_attr_int16;
+static int hf_zbee_zcl_attr_int24;
+static int hf_zbee_zcl_attr_int32;
+static int hf_zbee_zcl_attr_int64;
+/* static int hf_zbee_zcl_attr_semi; */
+static int hf_zbee_zcl_attr_float;
+static int hf_zbee_zcl_attr_double;
+static int hf_zbee_zcl_attr_bytes;
+static int hf_zbee_zcl_attr_minint;
+static int hf_zbee_zcl_attr_maxint;
+static int hf_zbee_zcl_attr_timeout;
+static int hf_zbee_zcl_attr_cid;
+static int hf_zbee_zcl_attr_hours;
+static int hf_zbee_zcl_attr_mins;
+static int hf_zbee_zcl_attr_secs;
+static int hf_zbee_zcl_attr_csecs;
+static int hf_zbee_zcl_attr_yy;
+static int hf_zbee_zcl_attr_mm;
+static int hf_zbee_zcl_attr_md;
+static int hf_zbee_zcl_attr_wd;
+static int hf_zbee_zcl_attr_utc;
+static int hf_zbee_zcl_attr_utc_raw;
+static int hf_zbee_zcl_attr_status;
+static int hf_zbee_zcl_attr_dir;
+static int hf_zbee_zcl_attr_dis;
+static int hf_zbee_zcl_attr_start;
+static int hf_zbee_zcl_attr_maxnum;
+static int hf_zbee_zcl_attr_str;
+static int hf_zbee_zcl_attr_ostr;
+static int hf_zbee_zcl_attr_array_elements_type;
+static int hf_zbee_zcl_attr_array_elements_num;
+static int hf_zbee_zcl_attr_set_elements_type;
+static int hf_zbee_zcl_attr_set_elements_num;
+static int hf_zbee_zcl_attr_bag_elements_type;
+static int hf_zbee_zcl_attr_bag_elements_num;
 
 /* Subtree indices. */
-static gint ett_zbee_zcl = -1;
-static gint ett_zbee_zcl_fcf = -1;
-static gint ett_zbee_zcl_attr[ZBEE_ZCL_NUM_ATTR_ETT];
-static gint ett_zbee_zcl_array_elements[ZBEE_ZCL_NUM_ARRAY_ELEM_ETT];
 
-static expert_field ei_cfg_rpt_rsp_short_non_success = EI_INIT;
+#define ZBEE_ZCL_NUM_INDIVIDUAL_ETT  2
+#define ZBEE_ZCL_NUM_ATTR_ETT       64
+#define ZBEE_ZCL_NUM_SEL_ETT        16
+#define ZBEE_ZCL_NUM_ARRAY_ELEM_ETT 16
+#define ZBEE_ZCL_NUM_TOTAL_ETT      (ZBEE_ZCL_NUM_INDIVIDUAL_ETT + ZBEE_ZCL_NUM_ATTR_ETT + ZBEE_ZCL_NUM_SEL_ETT + ZBEE_ZCL_NUM_ARRAY_ELEM_ETT)
+
+static int ett_zbee_zcl;
+static int ett_zbee_zcl_fcf;
+static int ett_zbee_zcl_attr[ZBEE_ZCL_NUM_ATTR_ETT];
+static int ett_zbee_zcl_sel[ZBEE_ZCL_NUM_SEL_ETT];
+static int ett_zbee_zcl_array_elements[ZBEE_ZCL_NUM_ARRAY_ELEM_ETT];
+
+static expert_field ei_cfg_rpt_rsp_short_non_success;
+static expert_field ei_zbee_zero_length_element;
 
 /* Dissector List. */
 static dissector_table_t    zbee_zcl_dissector_table;
 
 /* Global variables */
-static guint16 zcl_cluster_id = -1;
-static guint16 zcl_mfr_code = -1;
+static uint16_t zcl_cluster_id = -1;
+static uint16_t zcl_mfr_code = -1;
 
-static GList *acluster_desc = NULL;
+static GList *acluster_desc;
 
 /********************/
 /* Field Names      */
@@ -168,6 +196,10 @@ static const value_string zbee_zcl_cmd_names[] = {
     { ZBEE_ZCL_CMD_WRITE_ATTR_STRUCT_RESP,  "Write Attributes Structured Response" },
     { ZBEE_ZCL_CMD_DISCOVER_CMDS_REC,       "Discover Commands Received" },
     { ZBEE_ZCL_CMD_DISCOVER_CMDS_REC_RESP,  "Discover Commands Received Response" },
+    { ZBEE_ZCL_CMD_DISCOVER_CMDS_GEN,       "Discover Commands Generated" },
+    { ZBEE_ZCL_CMD_DISCOVER_CMDS_GEN_RESP,  "Discover Commands Generated Response" },
+    { ZBEE_ZCL_CMD_DISCOVER_ATTR_EXTENDED,       "Discover Attributes Extended" },
+    { ZBEE_ZCL_CMD_DISCOVER_ATTR_EXTENDED_RESP,  "Discover Attributes Extended Response" },
     { 0, NULL }
 };
 
@@ -180,7 +212,7 @@ static const value_string zbee_zcl_cs_cmd_names[] = {
 };
 
 /* ZigBee Manufacturer Code Table */
-/* Per: 053874r26, October 2014 */
+/* Per: 053874r74, June 2021 */
 const value_string zbee_mfr_code_names[] = {
     { ZBEE_MFG_CODE_PANASONIC_RF4CE,   ZBEE_MFG_PANASONIC },
     { ZBEE_MFG_CODE_SONY_RF4CE,        ZBEE_MFG_SONY },
@@ -189,7 +221,6 @@ const value_string zbee_mfr_code_names[] = {
     { ZBEE_MFG_CODE_FREESCALE_RF4CE,   ZBEE_MFG_FREESCALE },
     { ZBEE_MFG_CODE_OKI_SEMI_RF4CE,    ZBEE_MFG_OKI_SEMI },
     { ZBEE_MFG_CODE_TI_RF4CE,          ZBEE_MFG_TI },
-
     { ZBEE_MFG_CODE_CIRRONET,          ZBEE_MFG_CIRRONET },
     { ZBEE_MFG_CODE_CHIPCON,           ZBEE_MFG_CHIPCON },
     { ZBEE_MFG_CODE_EMBER,             ZBEE_MFG_EMBER },
@@ -206,7 +237,6 @@ const value_string zbee_mfr_code_names[] = {
     { ZBEE_MFG_CODE_KORWIN,            ZBEE_MFG_KORWIN },
     { ZBEE_MFG_CODE_1_RF,              ZBEE_MFG_1_RF },
     { ZBEE_MFG_CODE_STG,               ZBEE_MFG_STG },
-
     { ZBEE_MFG_CODE_TELEGESIS,         ZBEE_MFG_TELEGESIS },
     { ZBEE_MFG_CODE_VISIONIC,          ZBEE_MFG_VISIONIC },
     { ZBEE_MFG_CODE_INSTA,             ZBEE_MFG_INSTA },
@@ -223,7 +253,6 @@ const value_string zbee_mfr_code_names[] = {
     { ZBEE_MFG_CODE_ASSA,              ZBEE_MFG_ASSA },
     { ZBEE_MFG_CODE_MAXSTREAM,         ZBEE_MFG_MAXSTREAM },
     { ZBEE_MFG_CODE_NEUROCOM,          ZBEE_MFG_NEUROCOM },
-
     { ZBEE_MFG_CODE_III,               ZBEE_MFG_III },
     { ZBEE_MFG_CODE_VANTAGE,           ZBEE_MFG_VANTAGE },
     { ZBEE_MFG_CODE_ICONTROL,          ZBEE_MFG_ICONTROL },
@@ -240,7 +269,6 @@ const value_string zbee_mfr_code_names[] = {
     { ZBEE_MFG_CODE_MINDTECH,          ZBEE_MFG_MINDTECH },
     { ZBEE_MFG_CODE_LGE,               ZBEE_MFG_LGE },
     { ZBEE_MFG_CODE_MITSUBISHI,        ZBEE_MFG_MITSUBISHI },
-
     { ZBEE_MFG_CODE_JOHNSON,           ZBEE_MFG_JOHNSON },
     { ZBEE_MFG_CODE_PRI,               ZBEE_MFG_PRI },
     { ZBEE_MFG_CODE_KNICK,             ZBEE_MFG_KNICK },
@@ -517,13 +545,270 @@ const value_string zbee_mfr_code_names[] = {
     { ZBEE_MFG_CODE_TCP,               ZBEE_MFG_TCP },
     { ZBEE_MFG_CODE_ROGERS,            ZBEE_MFG_ROGERS },
     { ZBEE_MFG_CODE_CREE,              ZBEE_MFG_CREE },
-    { ZBEE_MFG_CODE_ROBERT_BOSCH,      ZBEE_MFG_ROBERT_BOSCH },
+    { ZBEE_MFG_CODE_ROBERT_BOSCH_LLC,  ZBEE_MFG_ROBERT_BOSCH_LLC },
     { ZBEE_MFG_CODE_IBIS,              ZBEE_MFG_IBIS },
     { ZBEE_MFG_CODE_QUIRKY,            ZBEE_MFG_QUIRKY },
     { ZBEE_MFG_CODE_EFERGY,            ZBEE_MFG_EFERGY },
     { ZBEE_MFG_CODE_SMARTLABS,         ZBEE_MFG_SMARTLABS },
     { ZBEE_MFG_CODE_EVERSPRING,        ZBEE_MFG_EVERSPRING },
     { ZBEE_MFG_CODE_SWANN,             ZBEE_MFG_SWANN },
+    { ZBEE_MFG_CODE_SONETER,           ZBEE_MFG_SONETER },
+    { ZBEE_MFG_CODE_SAMSUNG_SDS,       ZBEE_MFG_SAMSUNG_SDS },
+    { ZBEE_MFG_CODE_UNIBAND_ELECTRO,   ZBEE_MFG_UNIBAND_ELECTRO },
+    { ZBEE_MFG_CODE_ACCTON_TECHNOLOGY, ZBEE_MFG_ACCTON_TECHNOLOGY },
+    { ZBEE_MFG_CODE_BOSCH_THERMOTECH,  ZBEE_MFG_BOSCH_THERMOTECH },
+    { ZBEE_MFG_CODE_WINCOR_NIXDORF,    ZBEE_MFG_WINCOR_NIXDORF },
+    { ZBEE_MFG_CODE_OHSUNG_ELECTRO,    ZBEE_MFG_OHSUNG_ELECTRO },
+    { ZBEE_MFG_CODE_ZEN_WITHIN,        ZBEE_MFG_ZEN_WITHIN },
+    { ZBEE_MFG_CODE_TECH_4_HOME,       ZBEE_MFG_TECH_4_HOME },
+    { ZBEE_MFG_CODE_NANOLEAF,          ZBEE_MFG_NANOLEAF },
+    { ZBEE_MFG_CODE_KEEN_HOME,         ZBEE_MFG_KEEN_HOME },
+    { ZBEE_MFG_CODE_POLY_CONTROL,      ZBEE_MFG_POLY_CONTROL },
+    { ZBEE_MFG_CODE_EASTFIELD_LIGHT,   ZBEE_MFG_EASTFIELD_LIGHT },
+    { ZBEE_MFG_CODE_IP_DATATEL,        ZBEE_MFG_IP_DATATEL },
+    { ZBEE_MFG_CODE_LUMI_UNITED_TECH,  ZBEE_MFG_LUMI_UNITED_TECH },
+    { ZBEE_MFG_CODE_SENGLED_OPTOELEC,  ZBEE_MFG_SENGLED_OPTOELEC },
+    { ZBEE_MFG_CODE_REMOTE_SOLUTION,   ZBEE_MFG_REMOTE_SOLUTION },
+    { ZBEE_MFG_CODE_ABB_GENWAY_XIAMEN, ZBEE_MFG_ABB_GENWAY_XIAMEN },
+    { ZBEE_MFG_CODE_ZHEJIANG_REXENSE,  ZBEE_MFG_ZHEJIANG_REXENSE },
+    { ZBEE_MFG_CODE_FOREE_TECHNOLOGY,  ZBEE_MFG_FOREE_TECHNOLOGY },
+    { ZBEE_MFG_CODE_OPEN_ACCESS_TECH,  ZBEE_MFG_OPEN_ACCESS_TECH },
+    { ZBEE_MFG_CODE_INNR_LIGHTNING,    ZBEE_MFG_INNR_LIGHTNING },
+    { ZBEE_MFG_CODE_TECHWORLD,         ZBEE_MFG_TECHWORLD },
+    { ZBEE_MFG_CODE_LEEDARSON_LIGHT,   ZBEE_MFG_LEEDARSON_LIGHT },
+    { ZBEE_MFG_CODE_ARZEL_ZONING,      ZBEE_MFG_ARZEL_ZONING },
+    { ZBEE_MFG_CODE_HOLLEY_TECH,       ZBEE_MFG_HOLLEY_TECH },
+    { ZBEE_MFG_CODE_BELDON_TECH,       ZBEE_MFG_BELDON_TECH },
+    { ZBEE_MFG_CODE_FLEXTRONICS,       ZBEE_MFG_FLEXTRONICS },
+    { ZBEE_MFG_CODE_SHENZHEN_MEIAN,    ZBEE_MFG_SHENZHEN_MEIAN },
+    { ZBEE_MFG_CODE_LOWES,             ZBEE_MFG_LOWES },
+    { ZBEE_MFG_CODE_SIGMA_CONNECT,     ZBEE_MFG_SIGMA_CONNECT },
+    { ZBEE_MFG_CODE_WULIAN,            ZBEE_MFG_WULIAN },
+    { ZBEE_MFG_CODE_PLUGWISE_BV,       ZBEE_MFG_PLUGWISE_BV },
+    { ZBEE_MFG_CODE_TITAN_PRODUCTS,    ZBEE_MFG_TITAN_PRODUCTS },
+    { ZBEE_MFG_CODE_ECOSPECTRAL,       ZBEE_MFG_ECOSPECTRAL },
+    { ZBEE_MFG_CODE_D_LINK,            ZBEE_MFG_D_LINK },
+    { ZBEE_MFG_CODE_TECHNICOLOR_HOME,  ZBEE_MFG_TECHNICOLOR_HOME },
+    { ZBEE_MFG_CODE_OPPLE_LIGHTING,    ZBEE_MFG_OPPLE_LIGHTING },
+    { ZBEE_MFG_CODE_WISTRON_NEWEB,     ZBEE_MFG_WISTRON_NEWEB },
+    { ZBEE_MFG_CODE_QMOTION_SHADES,    ZBEE_MFG_QMOTION_SHADES },
+    { ZBEE_MFG_CODE_INSTA_ELEKTRO,     ZBEE_MFG_INSTA_ELEKTRO },
+    { ZBEE_MFG_CODE_SHANGHAI_VANCOUNT, ZBEE_MFG_SHANGHAI_VANCOUNT },
+    { ZBEE_MFG_CODE_IKEA_OF_SWEDEN,    ZBEE_MFG_IKEA_OF_SWEDEN },
+    { ZBEE_MFG_CODE_RT_RK,             ZBEE_MFG_RT_RK },
+    { ZBEE_MFG_CODE_SHENZHEN_FEIBIT,   ZBEE_MFG_SHENZHEN_FEIBIT },
+    { ZBEE_MFG_CODE_EU_CONTROLS,       ZBEE_MFG_EU_CONTROLS },
+    { ZBEE_MFG_CODE_TELKONET,          ZBEE_MFG_TELKONET },
+    { ZBEE_MFG_CODE_THERMAL_SOLUTION,  ZBEE_MFG_THERMAL_SOLUTION },
+    { ZBEE_MFG_CODE_POM_CUBE,          ZBEE_MFG_POM_CUBE },
+    { ZBEE_MFG_CODE_EI_ELECTRONICS,    ZBEE_MFG_EI_ELECTRONICS },
+    { ZBEE_MFG_CODE_OPTOGA,            ZBEE_MFG_OPTOGA },
+    { ZBEE_MFG_CODE_STELPRO,           ZBEE_MFG_STELPRO },
+    { ZBEE_MFG_CODE_LYNXUS_TECH,       ZBEE_MFG_LYNXUS_TECH },
+    { ZBEE_MFG_CODE_SEMICONDUCTOR_COM, ZBEE_MFG_SEMICONDUCTOR_COM },
+    { ZBEE_MFG_CODE_TP_LINK,           ZBEE_MFG_TP_LINK },
+    { ZBEE_MFG_CODE_LEDVANCE_LLC,      ZBEE_MFG_LEDVANCE_LLC },
+    { ZBEE_MFG_CODE_NORTEK,            ZBEE_MFG_NORTEK },
+    { ZBEE_MFG_CODE_IREVO_ASSA_ABBLOY, ZBEE_MFG_IREVO_ASSA_ABBLOY },
+    { ZBEE_MFG_CODE_MIDEA,             ZBEE_MFG_MIDEA },
+    { ZBEE_MFG_CODE_ZF_FRIEDRICHSHAF,  ZBEE_MFG_ZF_FRIEDRICHSHAF },
+    { ZBEE_MFG_CODE_CHECKIT,           ZBEE_MFG_CHECKIT },
+    { ZBEE_MFG_CODE_ACLARA,            ZBEE_MFG_ACLARA },
+    { ZBEE_MFG_CODE_NOKIA,             ZBEE_MFG_NOKIA },
+    { ZBEE_MFG_CODE_GOLDCARD_HIGHTECH, ZBEE_MFG_GOLDCARD_HIGHTECH },
+    { ZBEE_MFG_CODE_GEORGE_WILSON,     ZBEE_MFG_GEORGE_WILSON },
+    { ZBEE_MFG_CODE_EASY_SAVER_CO,     ZBEE_MFG_EASY_SAVER_CO },
+    { ZBEE_MFG_CODE_ZTE_CORPORATION,   ZBEE_MFG_ZTE_CORPORATION },
+    { ZBEE_MFG_CODE_ARRIS,             ZBEE_MFG_ARRIS },
+    { ZBEE_MFG_CODE_RELIANCE_BIG_TV,   ZBEE_MFG_RELIANCE_BIG_TV },
+    { ZBEE_MFG_CODE_INSIGHT_ENERGY,    ZBEE_MFG_INSIGHT_ENERGY },
+    { ZBEE_MFG_CODE_THOMAS_RESEARCH,   ZBEE_MFG_THOMAS_RESEARCH },
+    { ZBEE_MFG_CODE_LI_SENG_TECH,      ZBEE_MFG_LI_SENG_TECH },
+    { ZBEE_MFG_CODE_SYSTEM_LEVEL_SOLU, ZBEE_MFG_SYSTEM_LEVEL_SOLU },
+    { ZBEE_MFG_CODE_MATRIX_LABS,       ZBEE_MFG_MATRIX_LABS },
+    { ZBEE_MFG_CODE_SINOPE_TECH,       ZBEE_MFG_SINOPE_TECH },
+    { ZBEE_MFG_CODE_JIUZHOU_GREEBLE,   ZBEE_MFG_JIUZHOU_GREEBLE },
+    { ZBEE_MFG_CODE_GUANGZHOU_LANVEE,  ZBEE_MFG_GUANGZHOU_LANVEE },
+    { ZBEE_MFG_CODE_VENSTAR,           ZBEE_MFG_VENSTAR },
+    { ZBEE_MFG_CODE_SLV,               ZBEE_MFG_SLV },
+    { ZBEE_MFG_CODE_HALO_SMART_LABS,   ZBEE_MFG_HALO_SMART_LABS },
+    { ZBEE_MFG_CODE_SCOUT_SECURITY,    ZBEE_MFG_SCOUT_SECURITY },
+    { ZBEE_MFG_CODE_ALIBABA_CHINA,     ZBEE_MFG_ALIBABA_CHINA },
+    { ZBEE_MFG_CODE_RESOLUTION_PROD,   ZBEE_MFG_RESOLUTION_PROD },
+    { ZBEE_MFG_CODE_SMARTLOK_INC,      ZBEE_MFG_SMARTLOK_INC },
+    { ZBEE_MFG_CODE_LUX_PRODUCTS_CORP, ZBEE_MFG_LUX_PRODUCTS_CORP },
+    { ZBEE_MFG_CODE_VIMAR_SPA,         ZBEE_MFG_VIMAR_SPA },
+    { ZBEE_MFG_CODE_UNIVERSAL_LIGHT,   ZBEE_MFG_UNIVERSAL_LIGHT },
+    { ZBEE_MFG_CODE_ROBERT_BOSCH_GMBH, ZBEE_MFG_ROBERT_BOSCH_GMBH },
+    { ZBEE_MFG_CODE_ACCENTURE,         ZBEE_MFG_ACCENTURE },
+    { ZBEE_MFG_CODE_HEIMAN_TECHNOLOGY, ZBEE_MFG_HEIMAN_TECHNOLOGY },
+    { ZBEE_MFG_CODE_SHENZHEN_HOMA,     ZBEE_MFG_SHENZHEN_HOMA },
+    { ZBEE_MFG_CODE_VISION_ELECTRO,    ZBEE_MFG_VISION_ELECTRO },
+    { ZBEE_MFG_CODE_LENOVO,            ZBEE_MFG_LENOVO },
+    { ZBEE_MFG_CODE_PRESCIENSE_RD,     ZBEE_MFG_PRESCIENSE_RD },
+    { ZBEE_MFG_CODE_SHENZHEN_SEASTAR,  ZBEE_MFG_SHENZHEN_SEASTAR },
+    { ZBEE_MFG_CODE_SENSATIVE_AB,      ZBEE_MFG_SENSATIVE_AB },
+    { ZBEE_MFG_CODE_SOLAREDGE,         ZBEE_MFG_SOLAREDGE },
+    { ZBEE_MFG_CODE_ZIPATO,            ZBEE_MFG_ZIPATO },
+    { ZBEE_MFG_CODE_CHINA_FIRE_SEC,    ZBEE_MFG_CHINA_FIRE_SEC },
+    { ZBEE_MFG_CODE_QUBY_BV,           ZBEE_MFG_QUBY_BV },
+    { ZBEE_MFG_CODE_HANGZHOU_ROOMBANK, ZBEE_MFG_HANGZHOU_ROOMBANK },
+    { ZBEE_MFG_CODE_AMAZON_LAB126,     ZBEE_MFG_AMAZON_LAB126 },
+    { ZBEE_MFG_CODE_PAULMANN_LICHT,    ZBEE_MFG_PAULMANN_LICHT },
+    { ZBEE_MFG_CODE_SHENZHEN_ORVIBO,   ZBEE_MFG_SHENZHEN_ORVIBO },
+    { ZBEE_MFG_CODE_TCI_TELECOMM,      ZBEE_MFG_TCI_TELECOMM },
+    { ZBEE_MFG_CODE_MUELLER_LICHT_INT, ZBEE_MFG_MUELLER_LICHT_INT },
+    { ZBEE_MFG_CODE_AURORA_LIMITED,    ZBEE_MFG_AURORA_LIMITED },
+    { ZBEE_MFG_CODE_SMART_DCC,         ZBEE_MFG_SMART_DCC },
+    { ZBEE_MFG_CODE_SHANGHAI_UMEINFO,  ZBEE_MFG_SHANGHAI_UMEINFO },
+    { ZBEE_MFG_CODE_CARBON_TRACK,      ZBEE_MFG_CARBON_TRACK },
+    { ZBEE_MFG_CODE_SOMFY,             ZBEE_MFG_SOMFY },
+    { ZBEE_MFG_CODE_VIESSMAN_ELEKTRO,  ZBEE_MFG_VIESSMAN_ELEKTRO },
+    { ZBEE_MFG_CODE_HILDEBRAND_TECH,   ZBEE_MFG_HILDEBRAND_TECH },
+    { ZBEE_MFG_CODE_ONKYO_TECH,        ZBEE_MFG_ONKYO_TECH },
+    { ZBEE_MFG_CODE_SHENZHEN_SUNRICH,  ZBEE_MFG_SHENZHEN_SUNRICH },
+    { ZBEE_MFG_CODE_XIU_XIU_TECH,      ZBEE_MFG_XIU_XIU_TECH },
+    { ZBEE_MFG_CODE_ZUMTOBEL_GROUP,    ZBEE_MFG_ZUMTOBEL_GROUP },
+    { ZBEE_MFG_CODE_SHENZHEN_KAADAS,   ZBEE_MFG_SHENZHEN_KAADAS },
+    { ZBEE_MFG_CODE_SHANGHAI_XIAOYAN,  ZBEE_MFG_SHANGHAI_XIAOYAN },
+    { ZBEE_MFG_CODE_CYPRESS_SEMICOND,  ZBEE_MFG_CYPRESS_SEMICOND },
+    { ZBEE_MFG_CODE_XAL_GMBH,          ZBEE_MFG_XAL_GMBH },
+    { ZBEE_MFG_CODE_INERGY_SYSTEMS,    ZBEE_MFG_INERGY_SYSTEMS },
+    { ZBEE_MFG_CODE_ALFRED_KARCHER,    ZBEE_MFG_ALFRED_KARCHER },
+    { ZBEE_MFG_CODE_ADUROLIGHT_MANU,   ZBEE_MFG_ADUROLIGHT_MANU },
+    { ZBEE_MFG_CODE_GROUPE_MULLER,     ZBEE_MFG_GROUPE_MULLER },
+    { ZBEE_MFG_CODE_V_MARK_ENTERPRI,   ZBEE_MFG_V_MARK_ENTERPRI },
+    { ZBEE_MFG_CODE_LEAD_ENERGY_AG,    ZBEE_MFG_LEAD_ENERGY_AG },
+    { ZBEE_MFG_CODE_UIOT_GROUP,        ZBEE_MFG_UIOT_GROUP },
+    { ZBEE_MFG_CODE_AXXESS_INDUSTRIES, ZBEE_MFG_AXXESS_INDUSTRIES },
+    { ZBEE_MFG_CODE_THIRD_REALITY_INC, ZBEE_MFG_THIRD_REALITY_INC },
+    { ZBEE_MFG_CODE_DSR_CORPORATION,   ZBEE_MFG_DSR_CORPORATION },
+    { ZBEE_MFG_CODE_GUANGZHOU_VENSI,   ZBEE_MFG_GUANGZHOU_VENSI },
+    { ZBEE_MFG_CODE_SCHLAGE_LOCK_ALL,  ZBEE_MFG_SCHLAGE_LOCK_ALL },
+    { ZBEE_MFG_CODE_NET2GRID,          ZBEE_MFG_NET2GRID },
+    { ZBEE_MFG_CODE_AIRAM_ELECTRIC,    ZBEE_MFG_AIRAM_ELECTRIC },
+    { ZBEE_MFG_CODE_IMMAX_WPB_CZ,      ZBEE_MFG_IMMAX_WPB_CZ },
+    { ZBEE_MFG_CODE_ZIV_AUTOMATION,    ZBEE_MFG_ZIV_AUTOMATION },
+    { ZBEE_MFG_CODE_HANGZHOU_IMAGIC,   ZBEE_MFG_HANGZHOU_IMAGIC },
+    { ZBEE_MFG_CODE_XIAMEN_LEELEN,     ZBEE_MFG_XIAMEN_LEELEN },
+    { ZBEE_MFG_CODE_OVERKIZ_SAS,       ZBEE_MFG_OVERKIZ_SAS },
+    { ZBEE_MFG_CODE_FLONIDAN,          ZBEE_MFG_FLONIDAN },
+    { ZBEE_MFG_CODE_HDL_AUTOATION,     ZBEE_MFG_HDL_AUTOATION },
+    { ZBEE_MFG_CODE_ARDOMUS_NETWORKS,  ZBEE_MFG_ARDOMUS_NETWORKS},
+    { ZBEE_MFG_CODE_SAMJIN_CO,         ZBEE_MFG_SAMJIN_CO},
+    { ZBEE_MFG_CODE_SPRUE_AEGIS_PLC,   ZBEE_MFG_SPRUE_AEGIS_PLC },
+    { ZBEE_MFG_CODE_INDRA_SISTEMAS,    ZBEE_MFG_INDRA_SISTEMAS },
+    { ZBEE_MFG_CODE_JBT_SMART_LIGHT,   ZBEE_MFG_JBT_SMART_LIGHT },
+    { ZBEE_MFG_CODE_GE_LIGHTING_CURRE, ZBEE_MFG_GE_LIGHTING_CURRE },
+    { ZBEE_MFG_CODE_DANFOSS,           ZBEE_MFG_DANFOSS },
+    { ZBEE_MFG_CODE_NIVISS_PHP_SP,     ZBEE_MFG_NIVISS_PHP_SP },
+    { ZBEE_MFG_CODE_FENGLIYUAN_ENERGY, ZBEE_MFG_FENGLIYUAN_ENERGY },
+    { ZBEE_MFG_CODE_NEXELEC,           ZBEE_MFG_NEXELEC },
+    { ZBEE_MFG_CODE_SICHUAN_BEHOME_PR, ZBEE_MFG_SICHUAN_BEHOME_PR },
+    { ZBEE_MFG_CODE_FUJIAN_STARNET,    ZBEE_MFG_FUJIAN_STARNET },
+    { ZBEE_MFG_CODE_TOSHIBA_VISUAL_SO, ZBEE_MFG_TOSHIBA_VISUAL_SO },
+    { ZBEE_MFG_CODE_LATCHABLE_INC,     ZBEE_MFG_LATCHABLE_INC },
+    { ZBEE_MFG_CODE_LS_DEUTSCHLAND,    ZBEE_MFG_LS_DEUTSCHLAND },
+    { ZBEE_MFG_CODE_GLEDOPTO_CO_LTD,   ZBEE_MFG_GLEDOPTO_CO_LTD },
+    { ZBEE_MFG_CODE_THE_HOME_DEPOT,    ZBEE_MFG_THE_HOME_DEPOT },
+    { ZBEE_MFG_CODE_NEONLITE_INTERNAT, ZBEE_MFG_NEONLITE_INTERNAT },
+    { ZBEE_MFG_CODE_ARLO_TECHNOLOGIES, ZBEE_MFG_ARLO_TECHNOLOGIES },
+    { ZBEE_MFG_CODE_XINGLUO_TECH,      ZBEE_MFG_XINGLUO_TECH },
+    { ZBEE_MFG_CODE_SIMON_ELECTRIC_CH, ZBEE_MFG_SIMON_ELECTRIC_CH },
+    { ZBEE_MFG_CODE_HANGZHOU_GREATSTA, ZBEE_MFG_HANGZHOU_GREATSTA },
+    { ZBEE_MFG_CODE_SEQUENTRIC_ENERGY, ZBEE_MFG_SEQUENTRIC_ENERGY },
+    { ZBEE_MFG_CODE_SOLUM_CO_LTD,      ZBEE_MFG_SOLUM_CO_LTD },
+    { ZBEE_MFG_CODE_EAGLERISE_ELEC,    ZBEE_MFG_EAGLERISE_ELEC },
+    { ZBEE_MFG_CODE_FANTEM_TECH,       ZBEE_MFG_FANTEM_TECH },
+    { ZBEE_MFG_CODE_YUNDING_NETWORK,   ZBEE_MFG_YUNDING_NETWORK },
+    { ZBEE_MFG_CODE_ATLANTIC_GROUP,    ZBEE_MFG_ATLANTIC_GROUP },
+    { ZBEE_MFG_CODE_XIAMEN_INTRETECH,  ZBEE_MFG_XIAMEN_INTRETECH },
+    { ZBEE_MFG_CODE_TUYA_GLOBAL_INC,   ZBEE_MFG_TUYA_GLOBAL_INC },
+    { ZBEE_MFG_CODE_XIAMEN_DNAKE_INTE, ZBEE_MFG_XIAMEN_DNAKE_INTE },
+    { ZBEE_MFG_CODE_NIKO_NV,           ZBEE_MFG_NIKO_NV },
+    { ZBEE_MFG_CODE_EMPORIA_ENERGY,    ZBEE_MFG_EMPORIA_ENERGY },
+    { ZBEE_MFG_CODE_SIKOM_AS,          ZBEE_MFG_SIKOM_AS },
+    { ZBEE_MFG_CODE_AXIS_LABS_INC,     ZBEE_MFG_AXIS_LABS_INC },
+    { ZBEE_MFG_CODE_CURRENT_PRODUCTS,  ZBEE_MFG_CURRENT_PRODUCTS },
+    { ZBEE_MFG_CODE_METERSIT_SRL,      ZBEE_MFG_METERSIT_SRL },
+    { ZBEE_MFG_CODE_HORNBACH_BAUMARKT, ZBEE_MFG_HORNBACH_BAUMARKT },
+    { ZBEE_MFG_CODE_DICEWORLD_SRL_A,   ZBEE_MFG_DICEWORLD_SRL_A },
+    { ZBEE_MFG_CODE_ARC_TECHNOLOGY,    ZBEE_MFG_ARC_TECHNOLOGY },
+    { ZBEE_MFG_CODE_KONKE_INFORMATION, ZBEE_MFG_KONKE_INFORMATION },
+    { ZBEE_MFG_CODE_SALTO_SYSTEMS_SL,  ZBEE_MFG_SALTO_SYSTEMS_SL },
+    { ZBEE_MFG_CODE_SHYUGJ_TECHNOLOGY, ZBEE_MFG_SHYUGJ_TECHNOLOGY },
+    { ZBEE_MFG_CODE_BRAYDEN_AUTOMA,    ZBEE_MFG_BRAYDEN_AUTOMA },
+    { ZBEE_MFG_CODE_ENVIRONEXUS_PTY,   ZBEE_MFG_ENVIRONEXUS_PTY },
+    { ZBEE_MFG_CODE_ELTRA_NV_SA,       ZBEE_MFG_ELTRA_NV_SA },
+    { ZBEE_MFG_CODE_XIAMOMI_COMMUNI,   ZBEE_MFG_XIAMOMI_COMMUNI },
+    { ZBEE_MFG_CODE_SHUNCOM_ELECTRON,  ZBEE_MFG_SHUNCOM_ELECTRON },
+    { ZBEE_MFG_CODE_VOLTALIS_SA,       ZBEE_MFG_VOLTALIS_SA },
+    { ZBEE_MFG_CODE_FEELUX_CO_LTD,     ZBEE_MFG_FEELUX_CO_LTD },
+    { ZBEE_MFG_CODE_SMARTPLUS_INC,     ZBEE_MFG_SMARTPLUS_INC },
+    { ZBEE_MFG_CODE_HALEMEIER_GMBH,    ZBEE_MFG_HALEMEIER_GMBH },
+    { ZBEE_MFG_CODE_TRUST_INTL,        ZBEE_MFG_TRUST_INTL },
+    { ZBEE_MFG_CODE_DUKE_ENERGY,       ZBEE_MFG_DUKE_ENERGY },
+    { ZBEE_MFG_CODE_CALIX,             ZBEE_MFG_CALIX },
+    { ZBEE_MFG_CODE_ADEO,              ZBEE_MFG_ADEO },
+    { ZBEE_MFG_CODE_CONNECTED_RESP,    ZBEE_MFG_CONNECTED_RESP },
+    { ZBEE_MFG_CODE_STROYENERGOKOM,    ZBEE_MFG_STROYENERGOKOM },
+    { ZBEE_MFG_CODE_LUMITECH_LIGHT,    ZBEE_MFG_LUMITECH_LIGHT },
+    { ZBEE_MFG_CODE_VERDANT_ENVIRO ,   ZBEE_MFG_VERDANT_ENVIRO },
+    { ZBEE_MFG_CODE_ALFRED_INTL,       ZBEE_MFG_ALFRED_INTL },
+    { ZBEE_MFG_CODE_SANSI_LED_LIGHT,   ZBEE_MFG_SANSI_LED_LIGHT },
+    { ZBEE_MFG_CODE_MINDTREE,          ZBEE_MFG_MINDTREE },
+    { ZBEE_MFG_CODE_NORDIC_SEMI,       ZBEE_MFG_NORDIC_SEMI },
+    { ZBEE_MFG_CODE_SITERWELL_ELEC,    ZBEE_MFG_SITERWELL_ELEC },
+    { ZBEE_MFG_CODE_BRILONER_LEUCHTEN, ZBEE_MFG_BRILONER_LEUCHTEN },
+    { ZBEE_MFG_CODE_SHENZHEN_SEI_TECH, ZBEE_MFG_SHENZHEN_SEI_TECH },
+    { ZBEE_MFG_CODE_COPPER_LABS,       ZBEE_MFG_COPPER_LABS },
+    { ZBEE_MFG_CODE_DELTA_DORE,        ZBEE_MFG_DELTA_DORE },
+    { ZBEE_MFG_CODE_HAGER_GROUP,       ZBEE_MFG_HAGER_GROUP },
+    { ZBEE_MFG_CODE_SHENZHEN_COOLKIT,  ZBEE_MFG_SHENZHEN_COOLKIT },
+    { ZBEE_MFG_CODE_HANGZHOU_SKY_LIGHT,ZBEE_MFG_HANGZHOU_SKY_LIGHT },
+    { ZBEE_MFG_CODE_E_ON_SE,           ZBEE_MFG_E_ON_SE },
+    { ZBEE_MFG_CODE_LIDL_STIFTUNG,     ZBEE_MFG_LIDL_STIFTUNG },
+    { ZBEE_MFG_CODE_SICHUAN_CHANGHONG, ZBEE_MFG_SICHUAN_CHANGHONG },
+    { ZBEE_MFG_CODE_NODON,             ZBEE_MFG_NODON },
+    { ZBEE_MFG_CODE_JIANGXI_INNOTECH,  ZBEE_MFG_JIANGXI_INNOTECH },
+    { ZBEE_MFG_CODE_MERCATOR_PTY,      ZBEE_MFG_MERCATOR_PTY },
+    { ZBEE_MFG_CODE_BEIJING_RUYING,    ZBEE_MFG_BEIJING_RUYING },
+    { ZBEE_MFG_CODE_EGLO_LEUCHTEN,     ZBEE_MFG_EGLO_LEUCHTEN },
+    { ZBEE_MFG_CODE_PIETRO_FIORENTINI, ZBEE_MFG_PIETRO_FIORENTINI },
+    { ZBEE_MFG_CODE_ZEHNDER_GROUP,     ZBEE_MFG_ZEHNDER_GROUP },
+    { ZBEE_MFG_CODE_BRK_BRANDS,        ZBEE_MFG_BRK_BRANDS },
+    { ZBEE_MFG_CODE_ASKEY_COMPUTER,    ZBEE_MFG_ASKEY_COMPUTER },
+    { ZBEE_MFG_CODE_PASSIVEBOLT,       ZBEE_MFG_PASSIVEBOLT },
+    { ZBEE_MFG_CODE_AVM_AUDIOVISUELLE, ZBEE_MFG_AVM_AUDIOVISUELLE },
+    { ZBEE_MFG_CODE_NINGBO_SUNTECH,    ZBEE_MFG_NINGBO_SUNTECH },
+    { ZBEE_MFG_CODE_SOCIETE_EN_COMMAND,ZBEE_MFG_SOCIETE_EN_COMMAND },
+    { ZBEE_MFG_CODE_VIVINT_SMART_HOME, ZBEE_MFG_VIVINT_SMART_HOME },
+    { ZBEE_MFG_CODE_NAMRON,            ZBEE_MFG_NAMRON },
+    { ZBEE_MFG_CODE_RADEMACHER_GERA,   ZBEE_MFG_RADEMACHER_GERA },
+    { ZBEE_MFG_CODE_OMO_SYSTEMS,       ZBEE_MFG_OMO_SYSTEMS },
+    { ZBEE_MFG_CODE_SIGLIS,            ZBEE_MFG_SIGLIS },
+    { ZBEE_MFG_CODE_IMHOTEP_CREATION,  ZBEE_MFG_IMHOTEP_CREATION },
+    { ZBEE_MFG_CODE_ICASA,             ZBEE_MFG_ICASA },
+    { ZBEE_MFG_CODE_LEVEL_HOME,        ZBEE_MFG_LEVEL_HOME },
+    { ZBEE_MFG_CODE_TIS_CONTROL,       ZBEE_MFG_TIS_CONTROL },
+    { ZBEE_MFG_CODE_RADISYS_INDIA,     ZBEE_MFG_RADISYS_INDIA },
+    { ZBEE_MFG_CODE_VEEA,              ZBEE_MFG_VEEA },
+    { ZBEE_MFG_CODE_FELL_TECHNOLOGY,   ZBEE_MFG_FELL_TECHNOLOGY },
+    { ZBEE_MFG_CODE_SOWILO_DESIGN,     ZBEE_MFG_SOWILO_DESIGN },
+    { ZBEE_MFG_CODE_LEXI_DEVICES,      ZBEE_MFG_LEXI_DEVICES },
+    { ZBEE_MFG_CODE_LIFI_LABS,         ZBEE_MFG_LIFI_LABS },
+    { ZBEE_MFG_CODE_GRUNDFOS_HOLDING,  ZBEE_MFG_GRUNDFOS_HOLDING },
+    { ZBEE_MFG_CODE_SOURCING_CREATION, ZBEE_MFG_SOURCING_CREATION },
+    { ZBEE_MFG_CODE_KRAKEN_TECH,       ZBEE_MFG_KRAKEN_TECHNOLOGIES },
+    { ZBEE_MFG_CODE_EVE_SYSTEMS,       ZBEE_MFG_EVE_SYSTEMS },
+    { ZBEE_MFG_CODE_LITE_ON_TECH,      ZBEE_MFG_LITE_ON_TECHNOLOGY },
+    { ZBEE_MFG_CODE_FOCALCREST,        ZBEE_MFG_FOCALCREST },
+    { ZBEE_MFG_CODE_BOUFFALO_LAB,      ZBEE_MFG_BOUFFALO_LAB },
+    { ZBEE_MFG_CODE_WYZE_LABS,         ZBEE_MFG_WYZE_LABS },
+
+    { ZBEE_MFG_CODE_DATEK_WIRLESS,     ZBEE_MFG_DATEK_WIRLESS },
+    { ZBEE_MFG_CODE_GEWISS_SPA,        ZBEE_MFG_GEWISS_SPA },
+    { ZBEE_MFG_CODE_CLIMAX_TECH,       ZBEE_MFG_CLIMAX_TECH },
     { 0, NULL }
 };
 static value_string_ext zbee_mfr_code_names_ext = VALUE_STRING_EXT_INIT(zbee_mfr_code_names);
@@ -773,10 +1058,10 @@ static int dissect_zbee_zcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     zbee_nwk_packet *nwk;
     zbee_zcl_packet packet;
     zbee_zcl_cluster_desc *desc;
-    guint16 cluster_id;
+    uint16_t cluster_id;
 
-    guint8  fcf;
-    guint   offset = 0;
+    uint8_t fcf;
+    unsigned   offset = 0;
 
     /* Reject the packet if data is NULL */
     if (data == NULL)
@@ -799,7 +1084,7 @@ static int dissect_zbee_zcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     col_clear(pinfo->cinfo, COL_INFO);
 
     /* Get the FCF */
-    fcf = tvb_get_guint8(tvb, offset);
+    fcf = tvb_get_uint8(tvb, offset);
     packet.frame_type = zbee_get_bit_field(fcf, ZBEE_ZCL_FCF_FRAME_TYPE);
     packet.mfr_spec = zbee_get_bit_field(fcf, ZBEE_ZCL_FCF_MFR_SPEC);
     packet.direction = zbee_get_bit_field(fcf, ZBEE_ZCL_FCF_DIRECTION);
@@ -841,13 +1126,13 @@ static int dissect_zbee_zcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     zcl_mfr_code = packet.mfr_code;
 
     /* Add the transaction sequence number to the tree */
-    packet.tran_seqno = tvb_get_guint8(tvb, offset);
+    packet.tran_seqno = tvb_get_uint8(tvb, offset);
 
     proto_tree_add_uint(zcl_tree, hf_zbee_zcl_tran_seqno, tvb, offset, 1, packet.tran_seqno);
     offset += 1;
 
     /* Display the command and sequence number on the proto root and info column. */
-    packet.cmd_id = tvb_get_guint8(tvb, offset);
+    packet.cmd_id = tvb_get_uint8(tvb, offset);
 
     /* Get the manufacturer specific cluster handle */
     cluster_handle = dissector_get_uint_handle(zbee_zcl_dissector_table, ZCL_CLUSTER_MFR_KEY(cluster_id, packet.mfr_code));
@@ -896,38 +1181,41 @@ static int dissect_zbee_zcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     /* Handle the contents of the command frame. */
         switch ( packet.cmd_id ) {
             case ZBEE_ZCL_CMD_READ_ATTR:
-                dissect_zcl_read_attr(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_read_attr(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_READ_ATTR_RESP:
-                dissect_zcl_read_attr_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_read_attr_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_WRITE_ATTR:
             case ZBEE_ZCL_CMD_WRITE_ATTR_UNDIVIDED:
             case ZBEE_ZCL_CMD_WRITE_ATTR_NO_RESP:
+                dissect_zcl_write_attr(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
+                break;
+
             case ZBEE_ZCL_CMD_REPORT_ATTR:
-                dissect_zcl_write_attr(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_report_attr(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_WRITE_ATTR_RESP:
-                dissect_zcl_write_attr_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_write_attr_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_CONFIG_REPORT:
-                dissect_zcl_config_report(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_config_report(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_CONFIG_REPORT_RESP:
-                dissect_zcl_config_report_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_config_report_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_READ_REPORT_CONFIG:
-                dissect_zcl_read_report_config(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_read_report_config(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_READ_REPORT_CONFIG_RESP:
-                dissect_zcl_read_report_config_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_read_report_config_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
             case ZBEE_ZCL_CMD_DEFAULT_RESP:
@@ -935,18 +1223,45 @@ static int dissect_zbee_zcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 break;
 
             case ZBEE_ZCL_CMD_DISCOVER_ATTR:
+            case ZBEE_ZCL_CMD_DISCOVER_ATTR_EXTENDED:
                 dissect_zcl_discover_attr(tvb, pinfo, zcl_tree, &offset);
                 break;
 
             case ZBEE_ZCL_CMD_DISCOVER_ATTR_RESP:
-                dissect_zcl_discover_attr_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code);
+                dissect_zcl_discover_attr_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
 
-            /* BUGBUG: don't dissect these for now */
+            /* BUGBUG: don't dissect these for now*/
             case ZBEE_ZCL_CMD_READ_ATTR_STRUCT:
-            case ZBEE_ZCL_CMD_WRITE_ATTR_STRUCT:
-            case ZBEE_ZCL_CMD_WRITE_ATTR_STRUCT_RESP:
+                dissect_zcl_read_attr_struct(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
                 break;
+
+            case ZBEE_ZCL_CMD_WRITE_ATTR_STRUCT:
+                dissect_zcl_write_attr_struct(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
+                break;
+
+            case ZBEE_ZCL_CMD_WRITE_ATTR_STRUCT_RESP:
+                dissect_zcl_write_attr_struct_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
+                break;
+
+            case ZBEE_ZCL_CMD_DISCOVER_CMDS_REC:
+            case ZBEE_ZCL_CMD_DISCOVER_CMDS_GEN:
+                 dissect_zcl_discover_cmd_rec(tvb, pinfo, zcl_tree, &offset);
+                 break;
+
+            case ZBEE_ZCL_CMD_DISCOVER_CMDS_REC_RESP:
+            case ZBEE_ZCL_CMD_DISCOVER_CMDS_GEN_RESP:
+                 dissect_zcl_discover_cmd_rec_resp(tvb, pinfo, zcl_tree, &offset);
+                 break;
+
+           /* case ZBEE_ZCL_CMD_DISCOVER_CMDS_GEN_RESP:
+                 dissect_zcl_discover_cmd_gen_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
+                 break;*/
+
+            case ZBEE_ZCL_CMD_DISCOVER_ATTR_EXTENDED_RESP:
+                 dissect_zcl_discover_cmd_attr_extended_resp(tvb, pinfo, zcl_tree, &offset, cluster_id, packet.mfr_code, packet.direction);
+                 break;
+
         } /* switch */
     }
     zcl_dump_data(tvb, offset, pinfo, zcl_tree);
@@ -962,15 +1277,17 @@ static int dissect_zbee_zcl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
  *@param offset pointer from caller.
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
-void dissect_zcl_read_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code)
+void dissect_zcl_read_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
-    guint tvb_len;
+    unsigned tvb_len;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_CLIENT;
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len ) {
         /* Dissect the attribute identifier */
-        dissect_zcl_attr_id(tvb, tree, offset, cluster_id, mfr_code);
+        dissect_zcl_attr_id(tvb, tree, offset, cluster_id, mfr_code, client_attr);
     }
 
     return;
@@ -985,14 +1302,16 @@ void dissect_zcl_read_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tr
  *@param offset pointer to offset from caller
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
-void dissect_zcl_read_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code)
+void dissect_zcl_read_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 0;
-    guint16 attr_id;
+    unsigned tvb_len;
+    unsigned i = 0;
+    uint16_t attr_id;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_SERVER;
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
@@ -1003,14 +1322,14 @@ void dissect_zcl_read_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tre
 
         /* Dissect the attribute identifier */
         attr_id = tvb_get_letohs(tvb, *offset);
-        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
 
         /* Dissect the status and optionally the data type and value */
         if ( dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_status)
             == ZBEE_ZCL_STAT_SUCCESS ) {
 
             /* Dissect the attribute data type and data */
-            dissect_zcl_attr_data_type_val(tvb, sub_tree, offset, attr_id, cluster_id, mfr_code);
+            dissect_zcl_attr_data_type_val(tvb, sub_tree, offset, attr_id, cluster_id, mfr_code, client_attr);
         }
 
         /* Set end for subtree */
@@ -1027,14 +1346,16 @@ void dissect_zcl_read_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tre
  *@param offset pointer to offset from caller
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
-void dissect_zcl_write_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code)
+void dissect_zcl_write_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 0;
-    guint16 attr_id;
+    unsigned tvb_len;
+    unsigned i = 0;
+    uint16_t attr_id;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_CLIENT;
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
@@ -1045,15 +1366,54 @@ void dissect_zcl_write_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *t
 
         /* Dissect the attribute identifier */
         attr_id = tvb_get_letohs(tvb, *offset);
-        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
 
         /* Dissect the attribute data type and data */
-        dissect_zcl_attr_data_type_val(tvb, sub_tree, offset, attr_id, cluster_id, mfr_code);
+        dissect_zcl_attr_data_type_val(tvb, sub_tree, offset, attr_id, cluster_id, mfr_code, client_attr);
 
         /* Set end for subtree */
         proto_item_set_end(proto_tree_get_parent(sub_tree), tvb, *offset);
     }
 } /* dissect_zcl_write_attr */
+
+/**
+ *Helper dissector for ZCL Report Attribute commands.
+ *
+ *@param tvb pointer to buffer containing raw packet.
+ *@param pinfo pointer to packet information fields
+ *@param tree pointer to data tree wireshark uses to display packet.
+ *@param offset pointer to offset from caller
+ *@param cluster_id cluster id
+ *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
+*/
+void dissect_zcl_report_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
+{
+    proto_tree *sub_tree;
+
+    unsigned tvb_len;
+    unsigned i = 0;
+    uint16_t attr_id;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_SERVER;
+
+    tvb_len = tvb_captured_length(tvb);
+    while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
+
+        /* Create subtree for attribute status field */
+        sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 0, ett_zbee_zcl_attr[i], NULL, "Attribute Field");
+        i++;
+
+        /* Dissect the attribute identifier */
+        attr_id = tvb_get_letohs(tvb, *offset);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
+
+        /* Dissect the attribute data type and data */
+        dissect_zcl_attr_data_type_val(tvb, sub_tree, offset, attr_id, cluster_id, mfr_code, client_attr);
+
+        /* Set end for subtree */
+        proto_item_set_end(proto_tree_get_parent(sub_tree), tvb, *offset);
+    }
+} /* dissect_zcl_report_attr */
 
 /**
  *Helper dissector for ZCL Write Attribute Response command.
@@ -1064,13 +1424,15 @@ void dissect_zcl_write_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *t
  *@param offset pointer to offset from caller
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
-static void dissect_zcl_write_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code)
+static void dissect_zcl_write_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 0;
+    unsigned tvb_len;
+    unsigned i = 0;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_SERVER;
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
@@ -1084,7 +1446,7 @@ static void dissect_zcl_write_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, p
             ZBEE_ZCL_STAT_SUCCESS ) {
 
             /* Dissect the failed attribute identifier */
-            dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+            dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
         }
 
         /* Set end for subtree */
@@ -1102,18 +1464,19 @@ static void dissect_zcl_write_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, p
  *@param offset pointer to offset from caller
  *@param cluster_id cluster identification
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
  */
 static void dissect_zcl_read_report_config_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
-                guint *offset, guint16 cluster_id, guint16 mfr_code)
+                unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 0;
-    guint data_type;
-    guint attr_status;
-    guint attr_dir;
-    guint16 attr_id;
+    unsigned tvb_len;
+    unsigned i = 0;
+    unsigned data_type;
+    unsigned attr_status;
+    unsigned attr_dir;
+    uint16_t attr_id;
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
@@ -1130,7 +1493,8 @@ static void dissect_zcl_read_report_config_resp(tvbuff_t *tvb, packet_info *pinf
 
         /* Dissect the attribute id */
         attr_id = tvb_get_letohs(tvb, *offset);
-        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, (direction == ZBEE_ZCL_FCF_TO_SERVER && attr_dir == ZBEE_ZCL_DIR_REPORTED) ||
+                (direction == ZBEE_ZCL_FCF_TO_CLIENT && attr_dir == ZBEE_ZCL_DIR_RECEIVED));
 
         if ( attr_status == ZBEE_ZCL_STAT_SUCCESS ) {
             if ( attr_dir == ZBEE_ZCL_DIR_REPORTED ) {
@@ -1149,7 +1513,7 @@ static void dissect_zcl_read_report_config_resp(tvbuff_t *tvb, packet_info *pinf
 
                 if ( IS_ANALOG_SUBTYPE(data_type) ) {
                     /* Dissect reportable change */
-                    dissect_zcl_attr_data_general(tvb, sub_tree, offset, attr_id, data_type, cluster_id, mfr_code);
+                    dissect_zcl_attr_data_general(tvb, sub_tree, offset, attr_id, data_type, cluster_id, mfr_code, direction == ZBEE_ZCL_FCF_TO_SERVER);
                 }
 
             } else {
@@ -1163,7 +1527,7 @@ static void dissect_zcl_read_report_config_resp(tvbuff_t *tvb, packet_info *pinf
 } /* dissect_zcl_read_report_config_resp */
 
 /**
- *Helper dissector for ZCL Report Attribute commands.
+ *Helper dissector for ZCL Config Report Attribute commands.
  *
  *@param tvb pointer to buffer containing raw packet.
  *@param pinfo pointer to packet information fields
@@ -1171,15 +1535,16 @@ static void dissect_zcl_read_report_config_resp(tvbuff_t *tvb, packet_info *pinf
  *@param offset pointer to offset from caller
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
-static void dissect_zcl_config_report(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code)
+static void dissect_zcl_config_report(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 0;
-    guint data_type;
-    guint16 attr_id;
+    unsigned tvb_len;
+    unsigned i = 0;
+    unsigned data_type;
+    uint16_t attr_id;
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
@@ -1194,7 +1559,7 @@ static void dissect_zcl_config_report(tvbuff_t *tvb, packet_info *pinfo _U_, pro
 
             /* Dissect the attribute id */
             attr_id = tvb_get_letohs(tvb, *offset);
-            dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+            dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, direction == ZBEE_ZCL_FCF_TO_CLIENT);
 
             /* Dissect the attribute data type */
             data_type = dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_data_type);
@@ -1209,12 +1574,12 @@ static void dissect_zcl_config_report(tvbuff_t *tvb, packet_info *pinfo _U_, pro
 
             if ( IS_ANALOG_SUBTYPE(data_type) ) {
                 /* Dissect reportable change */
-                dissect_zcl_attr_data_general(tvb, sub_tree, offset, attr_id, data_type, cluster_id, mfr_code);
+                dissect_zcl_attr_data_general(tvb, sub_tree, offset, attr_id, data_type, cluster_id, mfr_code, direction == ZBEE_ZCL_FCF_TO_CLIENT);
             }
         } else {
 
             /* Dissect the attribute id */
-            dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+            dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, direction == ZBEE_ZCL_FCF_TO_SERVER);
 
             /* Dissect timeout period */
             proto_tree_add_item(tree, hf_zbee_zcl_attr_timeout, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -1225,7 +1590,7 @@ static void dissect_zcl_config_report(tvbuff_t *tvb, packet_info *pinfo _U_, pro
 } /* dissect_zcl_config_report */
 
 /**
- *Helper dissector for ZCL Report Attribute commands.
+ *Helper dissector for ZCL Config Report Attribute Response commands.
  *
  *@param tvb pointer to buffer containing raw packet.
  *@param pinfo pointer to packet information fields
@@ -1233,14 +1598,15 @@ static void dissect_zcl_config_report(tvbuff_t *tvb, packet_info *pinfo _U_, pro
  *@param offset pointer to offset from caller
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
 static void dissect_zcl_config_report_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
-                guint *offset, guint16 cluster_id, guint16 mfr_code)
+                unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 0;
+    unsigned tvb_len;
+    unsigned i = 0;
 
     tvb_len = tvb_captured_length(tvb);
 
@@ -1254,6 +1620,8 @@ static void dissect_zcl_config_report_resp(tvbuff_t *tvb, packet_info *pinfo _U_
     }
 
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
+        uint8_t attr_dir;
+
         /* Create subtree for attribute status field */
         sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 3, ett_zbee_zcl_attr[i], NULL, "Attribute Status Record");
         i++;
@@ -1261,9 +1629,10 @@ static void dissect_zcl_config_report_resp(tvbuff_t *tvb, packet_info *pinfo _U_
         /* Dissect the status */
         dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_status);
         /* Dissect the direction */
-        dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_dir);
+        attr_dir = dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_dir);
         /* Dissect the attribute identifier */
-        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, (direction == ZBEE_ZCL_FCF_TO_SERVER && attr_dir == ZBEE_ZCL_DIR_REPORTED) ||
+                (direction == ZBEE_ZCL_FCF_TO_CLIENT && attr_dir == ZBEE_ZCL_DIR_RECEIVED));
     }
 } /* dissect_zcl_config_report_resp */
 
@@ -1276,27 +1645,30 @@ static void dissect_zcl_config_report_resp(tvbuff_t *tvb, packet_info *pinfo _U_
  *@param offset pointer to offset from caller
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
 static void dissect_zcl_read_report_config(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
-                guint *offset, guint16 cluster_id, guint16 mfr_code)
+                unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 0;
+    unsigned tvb_len;
+    unsigned i = 0;
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
+        uint8_t attr_dir;
 
         /* Create subtree for attribute status field */
         sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 3, ett_zbee_zcl_attr[i], NULL, "Attribute Status Record");
         i++;
 
         /* Dissect the direction */
-        dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_dir);
+        attr_dir = dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_dir);
 
         /* Dissect the attribute identifier */
-        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, (direction == ZBEE_ZCL_FCF_TO_SERVER && attr_dir == ZBEE_ZCL_DIR_RECEIVED) ||
+                (direction == ZBEE_ZCL_FCF_TO_CLIENT && attr_dir == ZBEE_ZCL_DIR_REPORTED));
     }
 
 } /* dissect_zcl_read_report_config */
@@ -1309,7 +1681,7 @@ static void dissect_zcl_read_report_config(tvbuff_t *tvb, packet_info *pinfo _U_
  *@param tree pointer to data tree wireshark uses to display packet.
  *@param offset pointer to offset from caller.
 */
-static void dissect_zcl_default_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint *offset)
+static void dissect_zcl_default_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset)
 {
     /* The only way to tell if this is a profile-wide or cluster specific command */
     /* is the frame control of the original message to which this is the response. */
@@ -1329,7 +1701,7 @@ static void dissect_zcl_default_resp(tvbuff_t *tvb, packet_info *pinfo _U_, prot
  *@param tree pointer to data tree wireshark uses to display packet.
  *@param offset pointer to offset from caller
 */
-static void dissect_zcl_discover_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint *offset)
+static void dissect_zcl_discover_attr(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset)
 {
     /* Dissect the starting attribute identifier */
     proto_tree_add_item(tree, hf_zbee_zcl_attr_start, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -1351,17 +1723,18 @@ static void dissect_zcl_discover_attr(tvbuff_t *tvb, packet_info *pinfo _U_, pro
  *@param offset pointer to offset from caller
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param direction ZCL direction
 */
 static void dissect_zcl_discover_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
-                guint *offset, guint16 cluster_id, guint16 mfr_code)
+                unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction)
 {
     proto_tree *sub_tree = NULL;
 
-    guint tvb_len;
-    guint i = 0;
+    unsigned tvb_len;
+    unsigned i = 0;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_SERVER;
 
-    /* XXX - tree is never available!!!*/
-    dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_dis);
+    dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_attr_dis);
 
     tvb_len = tvb_captured_length(tvb);
     while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
@@ -1371,7 +1744,7 @@ static void dissect_zcl_discover_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_
         i++;
 
         /* Dissect the attribute identifier */
-        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
 
         /* Dissect the number of maximum attribute identifiers */
         dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_data_type);
@@ -1379,6 +1752,163 @@ static void dissect_zcl_discover_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_
 
 } /* dissect_zcl_discover_attr_resp */
 
+
+static void dissect_zcl_read_attr_struct(tvbuff_t* tvb, packet_info* pinfo _U_, proto_tree* tree, unsigned* offset,
+    uint16_t cluster_id, uint16_t mfr_code, bool direction)
+{
+    proto_tree *sub_tree = NULL;
+    unsigned tvb_len;
+    unsigned i = 0, j=0;
+//    uint16_t attr_id;
+    uint8_t indicator;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_CLIENT;
+    tvb_len = tvb_captured_length(tvb);
+    while (*offset < tvb_len && i < ZBEE_ZCL_NUM_SEL_ETT) {
+        /* Create subtree for selector field */
+        sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 0, ett_zbee_zcl_sel[i], NULL, "Selector");
+        i++;
+        /* Dissect the attribute identifier */
+//        attr_id = tvb_get_letohs(tvb, *offset);
+        dissect_zcl_attr_id(tvb, tree, offset, cluster_id, mfr_code, client_attr);
+        proto_tree_add_item(sub_tree, hf_zbee_zcl_indicator, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
+        indicator = tvb_get_uint8(tvb, *offset);
+        *offset += 1;
+        j=0;
+        while (j < indicator) {
+            proto_tree_add_item(sub_tree, hf_zbee_zcl_index, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
+            //index = tvb_get_letohs(tvb, offset);
+            /*index = dissect_zcl_array_type();*/
+            j++;
+            *offset += 2;
+        }
+    }
+
+}/*dissect_zcl_read_attr_struct*/
+
+static void dissect_zcl_write_attr_struct(tvbuff_t* tvb, packet_info* pinfo _U_, proto_tree* tree, unsigned* offset,
+    uint16_t cluster_id, uint16_t mfr_code, bool direction)
+{
+    proto_tree *sub_tree = NULL;
+    proto_tree *sub_tree_1 = NULL;
+    unsigned tvb_len, indicator;
+    unsigned i = 0, j=0;
+    uint16_t attr_id;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_CLIENT;
+    tvb_len = tvb_captured_length(tvb);
+    while(*offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT){
+        /* Create subtree for selector field */
+        sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 0, ett_zbee_zcl_attr[i], NULL, "Attribute Record");
+        sub_tree_1 = proto_tree_add_subtree(sub_tree, tvb, *offset, 0, ett_zbee_zcl_attr[i], NULL, "Selector");
+        i++;
+        /* Dissect the attribute identifier */
+        attr_id = tvb_get_letohs(tvb, *offset);
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
+        if(sub_tree_1){
+            proto_tree_add_item(sub_tree, hf_zbee_zcl_indicator, tvb, 0, 1, ENC_LITTLE_ENDIAN);
+            indicator = tvb_get_uint8(tvb, *offset);
+            (* offset) += 1;
+            j=0;
+            while (j < indicator) {
+                proto_tree_add_item(sub_tree, hf_zbee_zcl_index, tvb, 0, 2, ENC_LITTLE_ENDIAN);
+                j++;
+                (* offset) += 2;
+            }
+        }
+        /* Dissect the attribute data type and data */
+        dissect_zcl_attr_data_type_val(tvb, sub_tree, offset, attr_id, cluster_id, mfr_code, client_attr);
+    }
+    /* Set end for subtree */
+    proto_item_set_end(proto_tree_get_parent(sub_tree_1), tvb, *offset);
+}
+
+static void dissect_zcl_write_attr_struct_resp(tvbuff_t* tvb, packet_info* pinfo _U_, proto_tree* tree, unsigned* offset,    uint16_t cluster_id, uint16_t mfr_code, bool direction){
+
+    proto_tree *sub_tree;
+    proto_tree *sub_tree_1;
+    unsigned tvb_len, indicator;
+    unsigned i = 0,j = 0;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_SERVER;
+    tvb_len = tvb_captured_length(tvb);
+    while (*offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT) {
+        /* Create subtree for attribute status field */
+        sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 0, ett_zbee_zcl_attr[i], NULL, "Write Attribute Record");
+        sub_tree_1 = proto_tree_add_subtree(sub_tree, tvb, *offset, 0, ett_zbee_zcl_attr[i], NULL, "Selector");
+        i++;
+        /* Dissect the status */
+        if (dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_status) !=
+            ZBEE_ZCL_STAT_SUCCESS) {
+            /* Dissect the failed attribute identifier */
+            dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
+            if (sub_tree_1) {
+                proto_tree_add_item(sub_tree, hf_zbee_zcl_indicator, tvb, 0, 1, ENC_LITTLE_ENDIAN);
+                indicator = tvb_get_uint8(tvb, *offset);
+                *offset += 1;
+                j = 0;
+                while (j < indicator) {
+                    proto_tree_add_item(sub_tree, hf_zbee_zcl_index, tvb, 0, 2, ENC_LITTLE_ENDIAN);
+                    //index = tvb_get_letohs(tvb, offset);
+                    /*index = dissect_zcl_array_type();*/
+                    j++;
+                    *offset += 2;
+                }
+            }
+        }
+    }
+        /* Set end for subtree */
+//        proto_item_set_end(proto_tree_get_parent(sub_tree_1), tvb, *offset);
+}
+static void dissect_zcl_discover_cmd_rec(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset)
+{
+    dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_cmd_start);
+    /* Dissect the number of maximum attribute identifiers */
+    dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_cmd_maxnum);
+    return;
+}
+
+static void dissect_zcl_discover_cmd_rec_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset)
+{
+    proto_tree* sub_tree = NULL;
+    unsigned tvb_len;
+    unsigned i = 0;
+
+    /* Discovery Complete */
+    dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_attr_dis);
+
+    tvb_len = tvb_captured_length(tvb);
+    if ( *offset < tvb_len ) {
+        sub_tree = proto_tree_add_subtree(tree, tvb, *offset, *offset - tvb_len, ett_zbee_zcl_attr[i], NULL, "Command Identifiers");
+        while ( *offset < tvb_len && i < (tvb_len-1) ) {
+            /* Dissect the command identifiers */
+            dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_cs_cmd_id);
+            i++;
+        }
+    }
+}
+
+static void dissect_zcl_discover_cmd_attr_extended_resp(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool direction){
+    proto_tree* sub_tree = NULL;
+    unsigned tvb_len;
+    unsigned i = 0;
+    bool client_attr = direction == ZBEE_ZCL_FCF_TO_SERVER;
+
+    /** Discovery Complete */
+    dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_attr_dis);
+
+    tvb_len = tvb_captured_length(tvb);
+    while ( *offset < tvb_len && i < ZBEE_ZCL_NUM_ATTR_ETT ) {
+        sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 4, ett_zbee_zcl_attr[i], NULL, "Extended Attribute Information");
+        i++;
+
+        /** Attribute identifier */
+        dissect_zcl_attr_id(tvb, sub_tree, offset, cluster_id, mfr_code, client_attr);
+
+        /** Attribute data type */
+        dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_data_type);
+
+        /** Attribute access control */
+        dissect_zcl_attr_uint8(tvb, sub_tree, offset, &hf_zbee_zcl_attr_access_ctrl);
+    }
+}
 
 /**
  *Dissects Attribute ID field. This could be done with the
@@ -1388,15 +1918,28 @@ static void dissect_zcl_discover_attr_resp(tvbuff_t *tvb, packet_info *pinfo _U_
  *@param  offset into the tvb to begin dissection.
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param client_attr ZCL client
 */
-static void dissect_zcl_attr_id(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint16 cluster_id, guint16 mfr_code)
+void dissect_zcl_attr_id(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint16_t cluster_id, uint16_t mfr_code, bool client_attr)
 {
     zbee_zcl_cluster_desc *desc;
     int hf_attr_id = hf_zbee_zcl_attr_id;
 
     /* Check if a cluster-specific attribute ID definition exists. */
     desc = zbee_zcl_get_cluster_desc(cluster_id, mfr_code);
-    if (desc && (desc->hf_attr_id >= 0)) hf_attr_id = desc->hf_attr_id;
+
+    if (desc) {
+        if (client_attr) {
+            if (desc->hf_attr_client_id > 0) {
+                hf_attr_id = desc->hf_attr_client_id;
+            }
+        }
+        else {
+            if (desc->hf_attr_server_id > 0) {
+                hf_attr_id = desc->hf_attr_server_id;
+            }
+        }
+    }
 
     /* Add the identifier. */
     proto_tree_add_item(tree, hf_attr_id, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -1412,19 +1955,20 @@ static void dissect_zcl_attr_id(tvbuff_t *tvb, proto_tree *tree, guint *offset, 
  *@param attr_id attribute id
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param client_attr ZCL client
 */
-static void dissect_zcl_attr_data_type_val(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint16 attr_id, guint16 cluster_id, guint16 mfr_code)
+void dissect_zcl_attr_data_type_val(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint16_t attr_id, uint16_t cluster_id, uint16_t mfr_code, bool client_attr)
 {
     zbee_zcl_cluster_desc *desc;
 
     desc = zbee_zcl_get_cluster_desc(cluster_id, mfr_code);
     if ((desc != NULL) && (desc->fn_attr_data != NULL)) {
         desc->fn_attr_data(tree, tvb, offset, attr_id,
-            dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_attr_data_type));
+            dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_attr_data_type), client_attr);
     }
     else {
         dissect_zcl_attr_data(tvb, tree, offset,
-            dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_attr_data_type) );
+            dissect_zcl_attr_uint8(tvb, tree, offset, &hf_zbee_zcl_attr_data_type), client_attr);
     }
 
 } /* dissect_zcl_attr_data_type_val */
@@ -1440,17 +1984,18 @@ static void dissect_zcl_attr_data_type_val(tvbuff_t *tvb, proto_tree *tree, guin
  *@param data_type type of data
  *@param cluster_id cluster id
  *@param mfr_code manufacturer code.
+ *@param client_attr ZCL client
 */
-static void dissect_zcl_attr_data_general(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint16 attr_id, guint data_type, guint16 cluster_id, guint16 mfr_code)
+static void dissect_zcl_attr_data_general(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint16_t attr_id, unsigned data_type, uint16_t cluster_id, uint16_t mfr_code, bool client_attr)
 {
     zbee_zcl_cluster_desc *desc;
 
     desc = zbee_zcl_get_cluster_desc(cluster_id, mfr_code);
     if ((desc != NULL) && (desc->fn_attr_data != NULL)) {
-        desc->fn_attr_data(tree, tvb, offset, attr_id, data_type);
+        desc->fn_attr_data(tree, tvb, offset, attr_id, data_type, client_attr);
     }
     else {
-        dissect_zcl_attr_data(tvb, tree, offset, data_type);
+        dissect_zcl_attr_data(tvb, tree, offset, data_type, client_attr);
     }
 
 } /*dissect_zcl_attr_data_general*/
@@ -1461,20 +2006,25 @@ static void dissect_zcl_attr_data_general(tvbuff_t *tvb, proto_tree *tree, guint
  *@param tvb pointer to buffer containing raw packet.
  *@param tree pointer to data tree wireshark uses to display packet.
  *@param offset into the tvb to begin dissection.
+ *@param client_attr ZCL client
 */
-void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint data_type)
+// NOLINTNEXTLINE(misc-no-recursion)
+void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, unsigned data_type, bool client_attr)
 {
-    guint     attr_uint;
-    gint      attr_int;
-    const guint8   *attr_string;
-    guint8    attr_uint8[4];
-    guint8    elements_type;
-    guint16   elements_num;
-    gfloat    attr_float;
-    gdouble   attr_double;
+    unsigned  attr_uint;
+    int       attr_int;
+    const uint8_t  *attr_string;
+    uint8_t   attr_uint8[4];
+    uint8_t   elements_type;
+    uint16_t  elements_num;
+    float     attr_float;
+    double    attr_double;
     nstime_t  attr_time;
+    uint32_t  utc_time;
+    proto_item *attr_utc_item = NULL;
 
     /* Dissect attribute data type and data */
+    // We can recurse here, but we should run out of packet before we run out of stack.
     switch ( data_type ) {
         case ZBEE_ZCL_NO_DATA:
             break;
@@ -1486,14 +2036,14 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_8_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap8, tvb, *offset, 1, ENC_NA);
-            proto_item_append_text(tree, ", Bitmap: %02x", tvb_get_guint8(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %02x", tvb_get_uint8(tvb, *offset));
             (*offset) += 1;
             break;
 
         case ZBEE_ZCL_8_BIT_UINT:
         case ZBEE_ZCL_8_BIT_ENUM:
             /* Display 8 bit unsigned integer */
-            attr_uint = tvb_get_guint8(tvb, *offset);
+            attr_uint = tvb_get_uint8(tvb, *offset);
             proto_item_append_text(tree, ", %s: %u",
                 val_to_str_ext_const(data_type, &zbee_zcl_short_data_type_names_ext, "Reserved"), attr_uint);
             proto_tree_add_item(tree, hf_zbee_zcl_attr_uint8, tvb, *offset, 1, ENC_NA);
@@ -1502,7 +2052,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_8_BIT_INT:
             /* Display 8 bit integer */
-            attr_int = (gint8)tvb_get_guint8(tvb, *offset);
+            attr_int = tvb_get_int8(tvb, *offset);
             proto_item_append_text(tree, ", %s: %-d",
                 val_to_str_ext_const(data_type, &zbee_zcl_short_data_type_names_ext, "Reserved"), attr_int);
             proto_tree_add_item(tree, hf_zbee_zcl_attr_int8, tvb, *offset, 1, ENC_NA);
@@ -1510,7 +2060,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
             break;
 
         case ZBEE_ZCL_BOOLEAN:
-            attr_uint = tvb_get_guint8(tvb, *offset);
+            attr_uint = tvb_get_uint8(tvb, *offset);
             proto_item_append_text(tree, ", %s: 0x%02x",
                 val_to_str_ext_const(data_type, &zbee_zcl_short_data_type_names_ext, "Reserved"), attr_uint);
             proto_tree_add_item(tree, hf_zbee_zcl_attr_boolean, tvb, *offset, 1, ENC_BIG_ENDIAN);
@@ -1524,7 +2074,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_16_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap16, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Bitmap: %04" G_GINT16_MODIFIER "x", tvb_get_letohs(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %04" PRIx16, tvb_get_letohs(tvb, *offset));
             (*offset) += 2;
             break;
 
@@ -1540,7 +2090,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_16_BIT_INT:
             /* Display 16 bit integer */
-            attr_int = (gint16)tvb_get_letohs(tvb, *offset);
+            attr_int = tvb_get_letohis(tvb, *offset);
             proto_item_append_text(tree, ", %s: %-d",
                 val_to_str_ext_const(data_type, &zbee_zcl_short_data_type_names_ext, "Reserved"), attr_int);
             proto_tree_add_item(tree, hf_zbee_zcl_attr_int16, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -1554,7 +2104,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_24_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap24, tvb, *offset, 3, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Bitmap: %06" G_GINT32_MODIFIER "x", tvb_get_letoh24(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %06" PRIx32, tvb_get_letoh24(tvb, *offset));
             (*offset) += 3;
             break;
 
@@ -1569,7 +2119,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_24_BIT_INT:
             /* Display 24 bit signed integer */
-            attr_int = (gint)tvb_get_letoh24(tvb, *offset);
+            attr_int = tvb_get_letohi24(tvb, *offset);
             /* sign extend into int32 */
             if (attr_int & INT24_SIGN_BITS) attr_int |= INT24_SIGN_BITS;
             proto_item_append_text(tree, ", %s: %-d",
@@ -1585,7 +2135,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_32_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap32, tvb, *offset, 4, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Bitmap: %08" G_GINT32_MODIFIER "x", tvb_get_letohl(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %08" PRIx32, tvb_get_letohl(tvb, *offset));
             (*offset) += 4;
             break;
 
@@ -1600,7 +2150,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_32_BIT_INT:
             /* Display 32 bit signed integer */
-            attr_int = (gint)tvb_get_letohl(tvb, *offset);
+            attr_int = tvb_get_letohil(tvb, *offset);
             proto_item_append_text(tree, ", %s: %-d",
                 val_to_str_ext_const(data_type, &zbee_zcl_short_data_type_names_ext, "Reserved"), attr_int);
             proto_tree_add_item(tree, hf_zbee_zcl_attr_int32, tvb, *offset, 4, ENC_LITTLE_ENDIAN);
@@ -1614,19 +2164,19 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_40_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap40, tvb, *offset, 5, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Bitmap: %010" G_GINT64_MODIFIER "x", tvb_get_letoh40(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %010" PRIx64, tvb_get_letoh40(tvb, *offset));
             (*offset) += 5;
             break;
 
         case ZBEE_ZCL_40_BIT_UINT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_uint40, tvb, *offset, 5, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Uint: %" G_GINT64_MODIFIER "u", tvb_get_letoh40(tvb, *offset));
+            proto_item_append_text(tree, ", Uint: %" PRIu64, tvb_get_letoh40(tvb, *offset));
             (*offset) += 5;
             break;
 
         case ZBEE_ZCL_40_BIT_INT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_int64, tvb, *offset, 5, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Int: %" G_GINT64_MODIFIER "d", tvb_get_letohi40(tvb, *offset));
+            proto_item_append_text(tree, ", Int: %" PRId64, tvb_get_letohi40(tvb, *offset));
             (*offset) += 5;
             break;
 
@@ -1637,19 +2187,19 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_48_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap48, tvb, *offset, 6, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Bitmap: %012" G_GINT64_MODIFIER "x", tvb_get_letoh48(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %012" PRIx64, tvb_get_letoh48(tvb, *offset));
             (*offset) += 6;
             break;
 
         case ZBEE_ZCL_48_BIT_UINT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_uint48, tvb, *offset, 6, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Uint: %" G_GINT64_MODIFIER "u", tvb_get_letoh48(tvb, *offset));
+            proto_item_append_text(tree, ", Uint: %" PRIu64, tvb_get_letoh48(tvb, *offset));
             (*offset) += 6;
             break;
 
         case ZBEE_ZCL_48_BIT_INT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_int64, tvb, *offset, 6, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Int: %" G_GINT64_MODIFIER "d", tvb_get_letohi48(tvb, *offset));
+            proto_item_append_text(tree, ", Int: %" PRId64, tvb_get_letohi48(tvb, *offset));
             (*offset) += 6;
             break;
 
@@ -1660,19 +2210,19 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_56_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap56, tvb, *offset, 7, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Bitmap: %014" G_GINT64_MODIFIER "x", tvb_get_letoh56(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %014" PRIx64, tvb_get_letoh56(tvb, *offset));
             (*offset) += 7;
             break;
 
         case ZBEE_ZCL_56_BIT_UINT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_uint56, tvb, *offset, 7, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Uint: %" G_GINT64_MODIFIER "u", tvb_get_letoh56(tvb, *offset));
+            proto_item_append_text(tree, ", Uint: %" PRIu64, tvb_get_letoh56(tvb, *offset));
             (*offset) += 7;
             break;
 
         case ZBEE_ZCL_56_BIT_INT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_int64, tvb, *offset, 7, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Int: %" G_GINT64_MODIFIER "d", tvb_get_letohi56(tvb, *offset));
+            proto_item_append_text(tree, ", Int: %" PRId64, tvb_get_letohi56(tvb, *offset));
             (*offset) += 7;
             break;
 
@@ -1683,19 +2233,19 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_64_BIT_BITMAP:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_bitmap64, tvb, *offset, 8, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Bitmap: %016" G_GINT64_MODIFIER "x", tvb_get_letoh64(tvb, *offset));
+            proto_item_append_text(tree, ", Bitmap: %016" PRIx64, tvb_get_letoh64(tvb, *offset));
             (*offset) += 8;
             break;
 
         case ZBEE_ZCL_64_BIT_UINT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_uint64, tvb, *offset, 8, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Uint: %" G_GINT64_MODIFIER "u", tvb_get_letoh64(tvb, *offset));
+            proto_item_append_text(tree, ", Uint: %" PRIu64, tvb_get_letoh64(tvb, *offset));
             (*offset) += 8;
             break;
 
         case ZBEE_ZCL_64_BIT_INT:
             proto_tree_add_item(tree, hf_zbee_zcl_attr_int64, tvb, *offset, 8, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(tree, ", Int: %" G_GINT64_MODIFIER "u", tvb_get_letoh64(tvb, *offset));
+            proto_item_append_text(tree, ", Int: %" PRIu64, tvb_get_letoh64(tvb, *offset));
             (*offset) += 8;
             break;
 
@@ -1723,7 +2273,8 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
         case ZBEE_ZCL_OCTET_STRING:
             /* Display octet string */
             proto_tree_add_item_ret_length(tree, hf_zbee_zcl_attr_ostr, tvb, *offset, 1, ENC_NA|ENC_ZIGBEE, &attr_int);
-            proto_item_append_text(tree, ", Octets: %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, (*offset)+1, attr_int-1, ':'));
+            if (attr_int > 1)
+                proto_item_append_text(tree, ", Octets: %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, (*offset)+1, attr_int-1, ':'));
             *offset += attr_int;
             break;
 
@@ -1737,7 +2288,8 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
         case ZBEE_ZCL_LONG_OCTET_STRING:
             /* Display long octet string */
             proto_tree_add_item_ret_length(tree, hf_zbee_zcl_attr_ostr, tvb, *offset, 2, ENC_LITTLE_ENDIAN|ENC_ZIGBEE, &attr_int);
-            proto_item_append_text(tree, ", Octets: %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, (*offset)+2, attr_int-2, ':'));
+            if (attr_int > 2)
+                proto_item_append_text(tree, ", Octets: %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, (*offset)+2, attr_int-2, ':'));
             *offset += attr_int;
             break;
 
@@ -1750,7 +2302,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_ARRAY:
             /* BYTE 0 - Elements type */
-            elements_type = tvb_get_guint8(tvb, *offset);
+            elements_type = tvb_get_uint8(tvb, *offset);
             proto_tree_add_uint(tree, hf_zbee_zcl_attr_array_elements_type, tvb, *offset, 1, elements_type);
             *offset += 1;
             /* BYTE 1-2 - Element number */
@@ -1758,12 +2310,12 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
             proto_tree_add_uint(tree, hf_zbee_zcl_attr_array_elements_num, tvb, *offset, 2, elements_num);
             *offset += 2;
             /* BYTE ... - Elements */
-            dissect_zcl_array_type(tvb, tree, offset, elements_type, elements_num);
+            dissect_zcl_array_type(tvb, tree, offset, elements_type, elements_num, client_attr);
             break;
 
         case ZBEE_ZCL_SET:
             /* BYTE 0 - Elements type */
-            elements_type = tvb_get_guint8(tvb, *offset);
+            elements_type = tvb_get_uint8(tvb, *offset);
             proto_tree_add_uint(tree, hf_zbee_zcl_attr_set_elements_type, tvb, *offset, 1, elements_type);
             *offset += 1;
             /* BYTE 1-2 - Element number */
@@ -1771,12 +2323,12 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
             proto_tree_add_uint(tree, hf_zbee_zcl_attr_set_elements_num, tvb, *offset, 2, elements_num);
             *offset += 2;
             /* BYTE ... - Elements */
-            dissect_zcl_set_type(tvb, tree, offset, elements_type, elements_num);
+            dissect_zcl_set_type(tvb, tree, offset, elements_type, elements_num, client_attr);
             break;
 
         case ZBEE_ZCL_BAG: /* Same as ZBEE_ZCL_SET, but using different filter fields */
             /* BYTE 0 - Elements type */
-            elements_type = tvb_get_guint8(tvb, *offset);
+            elements_type = tvb_get_uint8(tvb, *offset);
             proto_tree_add_uint(tree, hf_zbee_zcl_attr_bag_elements_type, tvb, *offset, 1, elements_type);
             *offset += 1;
             /* BYTE 1-2 - Element number */
@@ -1784,7 +2336,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
             proto_tree_add_uint(tree, hf_zbee_zcl_attr_bag_elements_num, tvb, *offset, 2, elements_num);
             *offset += 2;
             /* BYTE ... - Elements */
-            dissect_zcl_set_type(tvb, tree, offset, elements_type, elements_num);
+            dissect_zcl_set_type(tvb, tree, offset, elements_type, elements_num, client_attr);
             break;
 
         case ZBEE_ZCL_STRUCT:
@@ -1815,12 +2367,19 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
 
         case ZBEE_ZCL_UTC:
             /* Display UTC */
-            attr_time.secs = tvb_get_letohl(tvb, *offset);
-            attr_time.secs += ZBEE_ZCL_NSTIME_UTC_OFFSET;
+            utc_time = tvb_get_letohl(tvb, *offset);
+            attr_time.secs = utc_time;
+            attr_time.secs += EPOCH_DELTA_2000_01_01_00_00_00_UTC;
             attr_time.nsecs = 0;
             proto_item_append_text(tree, ", %s",
                 val_to_str_ext_const(data_type, &zbee_zcl_short_data_type_names_ext, "Reserved") );
-            proto_tree_add_time(tree, hf_zbee_zcl_attr_utc, tvb, *offset, 4, &attr_time);
+            attr_string = (const uint8_t *)abs_time_to_str(wmem_packet_scope(), &attr_time, ABSOLUTE_TIME_UTC, true);
+            proto_tree_add_time_format(tree, hf_zbee_zcl_attr_utc, tvb, *offset, 4, &attr_time,
+                "UTC Time: %s (%u)", attr_string, utc_time);
+
+            /* The raw integer value is sometimes needed independent of the formatted time */
+            attr_utc_item = proto_tree_add_item(tree, hf_zbee_zcl_attr_utc_raw, tvb, *offset, 4, ENC_LITTLE_ENDIAN);
+            proto_item_set_hidden(attr_utc_item);
             *offset += 4;
             break;
 
@@ -1830,7 +2389,7 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
             break;
 
         case ZBEE_ZCL_ATTR_ID:
-            dissect_zcl_attr_id(tvb, tree, offset, zcl_cluster_id, zcl_mfr_code);
+            dissect_zcl_attr_id(tvb, tree, offset, zcl_cluster_id, zcl_mfr_code, client_attr);
             break;
 
         case ZBEE_ZCL_BACNET_OID:
@@ -1863,11 +2422,11 @@ void dissect_zcl_attr_data(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint
  *@param hf_zbee_zcl pointer to header field index
  *@return dissected data
 */
-static guint dissect_zcl_attr_uint8(tvbuff_t *tvb, proto_tree *tree, guint *offset, int *hf_zbee_zcl)
+unsigned dissect_zcl_attr_uint8(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, int *hf_zbee_zcl)
 {
-    guint attr_uint;
+    unsigned attr_uint;
 
-    attr_uint = tvb_get_guint8(tvb, *offset);
+    attr_uint = tvb_get_uint8(tvb, *offset);
     proto_tree_add_uint(tree, *hf_zbee_zcl, tvb, *offset, 1, attr_uint);
     (*offset)++;
 
@@ -1882,14 +2441,16 @@ static guint dissect_zcl_attr_uint8(tvbuff_t *tvb, proto_tree *tree, guint *offs
  *@param offset into the tvb to begin dissection.
  *@param elements_type element type
  *@param elements_num elements number
+ *@param client_attr ZCL client
 */
 static void
-dissect_zcl_array_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 elements_type, guint16 elements_num)
+// NOLINTNEXTLINE(misc-no-recursion)
+dissect_zcl_array_type(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint8_t elements_type, uint16_t elements_num, bool client_attr)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 1;   /* First element has a 1-index value */
+    unsigned tvb_len;
+    unsigned i = 1;   /* First element has a 1-index value */
 
     tvb_len = tvb_captured_length(tvb);
     while ( (*offset < tvb_len) && (elements_num != 0) ) {
@@ -1903,7 +2464,12 @@ dissect_zcl_array_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 el
             sub_tree = proto_tree_add_subtree_format(tree, tvb, *offset, 0,
                         ett_zbee_zcl_array_elements[ZBEE_ZCL_NUM_ARRAY_ELEM_ETT-1], NULL, "Element #%d", i);
 
-        dissect_zcl_attr_data(tvb, sub_tree, offset, elements_type);
+        unsigned old_offset = *offset;
+        dissect_zcl_attr_data(tvb, sub_tree, offset, elements_type, client_attr);
+        if (old_offset >= *offset) {
+            proto_tree_add_expert(sub_tree, NULL, &ei_zbee_zero_length_element, tvb, old_offset, -1);
+            break;
+        }
         elements_num--;
         i++;
     }
@@ -1917,14 +2483,16 @@ dissect_zcl_array_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 el
  *@param offset into the tvb to begin dissection.
  *@param elements_type element type
  *@param elements_num elements number
+ *@param client_attr ZCL client
 */
 static void
-dissect_zcl_set_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 elements_type, guint16 elements_num)
+// NOLINTNEXTLINE(misc-no-recursion)
+dissect_zcl_set_type(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, uint8_t elements_type, uint16_t elements_num, bool client_attr)
 {
     proto_tree *sub_tree;
 
-    guint tvb_len;
-    guint i = 1;   /* First element has a 1-index value */
+    unsigned tvb_len;
+    unsigned i = 1;   /* First element has a 1-index value */
 
     tvb_len = tvb_captured_length(tvb);
     while ( (*offset < tvb_len) && (elements_num != 0) ) {
@@ -1938,7 +2506,12 @@ dissect_zcl_set_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 elem
             sub_tree = proto_tree_add_subtree(tree, tvb, *offset, 0,
                         ett_zbee_zcl_array_elements[ZBEE_ZCL_NUM_ARRAY_ELEM_ETT-1], NULL, "Element");
 
-        dissect_zcl_attr_data(tvb, sub_tree, offset, elements_type);
+        unsigned old_offset = *offset;
+        dissect_zcl_attr_data(tvb, sub_tree, offset, elements_type, client_attr);
+        if (old_offset >= *offset) {
+            proto_tree_add_expert(sub_tree, NULL, &ei_zbee_zero_length_element, tvb, old_offset, -1);
+            break;
+        }
         elements_num--;
         i++;
     }
@@ -1952,10 +2525,10 @@ dissect_zcl_set_type(tvbuff_t *tvb, proto_tree *tree, guint *offset, guint8 elem
  *@param pinfo packet information structure.
  *@param tree pointer to data tree Wireshark uses to display packet.
 */
-static void zcl_dump_data(tvbuff_t *tvb, guint offset, packet_info *pinfo, proto_tree *tree)
+static void zcl_dump_data(tvbuff_t *tvb, unsigned offset, packet_info *pinfo, proto_tree *tree)
 {
     proto_tree *root   = proto_tree_get_root(tree);
-    guint       length = tvb_captured_length_remaining(tvb, offset);
+    unsigned    length = tvb_captured_length_remaining(tvb, offset);
     tvbuff_t   *remainder;
 
     if (length > 0) {
@@ -1967,12 +2540,30 @@ static void zcl_dump_data(tvbuff_t *tvb, guint offset, packet_info *pinfo, proto
 } /* zcl_dump_data */
 
 /**
+ * This function decodes ZCL UTCTime into a string representation of the time
+ * with the integer UTCTime value in brackets afterwards as the value is
+ * sometimes also useful.
+ *
+ * @param s string to display
+ * @param value value to decode as ZCL 32 bit UTCTime
+*/
+void
+decode_zcl_utc_time(char *s, uint32_t value)
+{
+    char *start_time;
+    time_t epoch_time = (time_t)value + EPOCH_DELTA_2000_01_01_00_00_00_UTC;
+    start_time = abs_time_secs_to_str (NULL, epoch_time, ABSOLUTE_TIME_UTC, true);
+    snprintf(s, ITEM_LABEL_LENGTH, "%s (%d)", start_time, value);
+    wmem_free(NULL, start_time);
+} /* decode_zcl_utc_time */
+
+/**
  *This function decodes tenth of second time type variable
  *
 */
-void decode_zcl_time_in_100ms(gchar *s, guint16 value)
+void decode_zcl_time_in_100ms(char *s, uint16_t value)
 {
-    g_snprintf(s, ITEM_LABEL_LENGTH, "%d.%d seconds", value/10, value%10);
+    snprintf(s, ITEM_LABEL_LENGTH, "%d.%d seconds", value/10, value%10);
     return;
 } /* decode_zcl_time_in_100ms*/
 
@@ -1980,9 +2571,9 @@ void decode_zcl_time_in_100ms(gchar *s, guint16 value)
   *This function decodes second time type variable
   *
   */
-void decode_zcl_time_in_seconds(gchar *s, guint16 value)
+void decode_zcl_time_in_seconds(char *s, uint16_t value)
 {
-    g_snprintf(s, ITEM_LABEL_LENGTH, "%d seconds", value);
+    snprintf(s, ITEM_LABEL_LENGTH, "%d seconds", value);
     return;
 } /* decode_zcl_time_in_seconds*/
 
@@ -1990,14 +2581,14 @@ void decode_zcl_time_in_seconds(gchar *s, guint16 value)
  *This function decodes minute time type variable
  *
 */
-void decode_zcl_time_in_minutes(gchar *s, guint16 value)
+void decode_zcl_time_in_minutes(char *s, uint16_t value)
 {
-    g_snprintf(s, ITEM_LABEL_LENGTH, "%d minutes", value);
+    snprintf(s, ITEM_LABEL_LENGTH, "%d minutes", value);
     return;
 } /*decode_zcl_time_in_minutes*/
 
 static void
-cluster_desc_free(gpointer p, gpointer user_data _U_)
+cluster_desc_free(void *p, void *user_data _U_)
 {
     g_free(p);
 }
@@ -2015,7 +2606,7 @@ zbee_shutdown(void)
 */
 void proto_register_zbee_zcl(void)
 {
-    guint i, j;
+    unsigned i, j;
 
     static hf_register_info hf[] = {
         { &hf_zbee_zcl_fcf_frame_type,
@@ -2063,7 +2654,7 @@ void proto_register_zbee_zcl(void)
                 &zbee_zcl_data_type_names_ext, 0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_attr_boolean,
-            { "Boolean",    "zbee_zcl.attr.boolean", FT_BOOLEAN, 8, TFS(&tfs_true_false), 0xff,
+            { "Boolean",    "zbee_zcl.attr.boolean", FT_BOOLEAN, 8, NULL, 0xff,
                 NULL, HFILL }},
 
         { &hf_zbee_zcl_attr_bitmap8,
@@ -2205,6 +2796,9 @@ void proto_register_zbee_zcl(void)
         { &hf_zbee_zcl_attr_utc,
             { "UTC", "zbee_zcl.attr.utc", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_LOCAL, NULL, 0x0, NULL, HFILL }},
 
+        { &hf_zbee_zcl_attr_utc_raw,
+            { "UTC (raw value)", "zbee_zcl.attr.utc_raw", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+
         { &hf_zbee_zcl_attr_status,
             { "Status", "zbee_zcl.attr.status", FT_UINT8, BASE_HEX|BASE_EXT_STRING, &zbee_zcl_status_names_ext,
                 0x0, NULL, HFILL }},
@@ -2213,9 +2807,26 @@ void proto_register_zbee_zcl(void)
             { "Direction", "zbee_zcl.attr.dir", FT_UINT8, BASE_HEX, VALS(zbee_zcl_dir_names),
                 0x0, NULL, HFILL }},
 
+        { &hf_zbee_zcl_indicator,
+            { "Indicator", "zbee_zcl.attr.ind", FT_UINT8, BASE_DEC, NULL,
+                0x0, NULL, HFILL}},
+
+        { &hf_zbee_zcl_index,
+            { "Indicator", "zbee_zcl.attr.index", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL}},
+
+        { &hf_zbee_zcl_attr_access_ctrl,
+            { "Attribute Access Control", "zbee_zcl.attr.access.ctrl", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
+
         { &hf_zbee_zcl_attr_dis,
             { "Discovery", "zbee_zcl.attr.dis", FT_UINT8, BASE_HEX, VALS(zbee_zcl_dis_names),
                 0x0, NULL, HFILL }},
+
+        { &hf_zbee_zcl_cmd_start,
+            {"Start Command", "zbee_zcl.cmd.start", FT_UINT8, BASE_HEX, NULL,
+                0x0, NULL, HFILL}},
+
+        { &hf_zbee_zcl_cmd_maxnum,
+            {"Maximum Number", "zbee_zcl.cmd.maxnum", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL}},
 
         { &hf_zbee_zcl_attr_cid,
             { "Cluster", "zbee_zcl.attr.cid", FT_UINT16, BASE_HEX, NULL, 0x0,
@@ -2266,7 +2877,7 @@ void proto_register_zbee_zcl(void)
     };
 
     /* ZCL subtrees */
-    gint *ett[ZBEE_ZCL_NUM_TOTAL_ETT];
+    int *ett[ZBEE_ZCL_NUM_TOTAL_ETT];
 
     ett[0] = &ett_zbee_zcl;
     ett[1] = &ett_zbee_zcl_fcf;
@@ -2274,12 +2885,14 @@ void proto_register_zbee_zcl(void)
 
     /* initialize attribute subtree types */
     for ( i = 0; i < ZBEE_ZCL_NUM_ATTR_ETT; i++, j++) {
-        ett_zbee_zcl_attr[i] = -1;
         ett[j] = &ett_zbee_zcl_attr[i];
     }
 
+    for( i = 0; i < ZBEE_ZCL_NUM_SEL_ETT; i++, j++) {
+        ett[j] = &ett_zbee_zcl_sel[i];
+    }
+
     for ( i = 0; i < ZBEE_ZCL_NUM_ARRAY_ELEM_ETT; i++, j++ ) {
-        ett_zbee_zcl_array_elements[i] = -1;
         ett[j] = &ett_zbee_zcl_array_elements[i];
     }
 
@@ -2287,6 +2900,9 @@ void proto_register_zbee_zcl(void)
         { &ei_cfg_rpt_rsp_short_non_success,
           { "zbee_zcl.cfg_rpt_rsp_short_non_success", PI_PROTOCOL, PI_WARN,
             "Non-success response without full status records", EXPFILL }},
+        { &ei_zbee_zero_length_element,
+          { "zbee_zcl.zero_length_element", PI_PROTOCOL, PI_ERROR,
+            "Element has zero length", EXPFILL }},
     };
 
     expert_module_t *expert_zbee_zcl;
@@ -2331,21 +2947,22 @@ void proto_reg_handoff_zbee_zcl(void)
     dissector_add_uint("zbee.profile", ZBEE_PROFILE_C4_CL, zbee_zcl_handle);
 } /* proto_reg_handoff_zbee_zcl */
 
-
 /**
  *Register the specific cluster.
  *
+ *@param  proto_abbrev Protocol abbreviation
  *@param  proto dissector
  *@param  ett proto (not used at the moment)
  *@param  cluster_id cluster identification
  *@param  mfr_code manufacturer code.
- *@param  hf_attr_id cluster-specific attribute ID field.
+ *@param  hf_attr_server_id cluster-specific server attribute ID field.
+ *@param  hf_attr_client_id cluster-specific client attribute ID field.
  *@param  hf_cmd_rx_id cluster-specific client-to-server command ID field, or -1.
  *@param  hf_cmd_tx_id cluster-specific server-to-client command ID field, or -1.
  *@param  fn_attr_data specific cluster attribute data decode function
 */
 void
-zbee_zcl_init_cluster(const char *proto_abbrev, int proto, gint ett, guint16 cluster_id, guint16 mfr_code, int hf_attr_id, int hf_cmd_rx_id, int hf_cmd_tx_id, zbee_zcl_fn_attr_data fn_attr_data)
+zbee_zcl_init_cluster(const char *proto_abbrev, int proto, int ett, uint16_t cluster_id, uint16_t mfr_code, int hf_attr_server_id, int hf_attr_client_id, int hf_cmd_rx_id, int hf_cmd_tx_id, zbee_zcl_fn_attr_data fn_attr_data)
 {
     zbee_zcl_cluster_desc *cluster_desc;
     dissector_handle_t dissector_handle;
@@ -2364,7 +2981,8 @@ zbee_zcl_init_cluster(const char *proto_abbrev, int proto, gint ett, guint16 clu
     cluster_desc->ett = ett;
     cluster_desc->cluster_id = cluster_id;
     cluster_desc->mfr_code = mfr_code;
-    cluster_desc->hf_attr_id = hf_attr_id;
+    cluster_desc->hf_attr_server_id = hf_attr_server_id;
+    cluster_desc->hf_attr_client_id = hf_attr_client_id;
     cluster_desc->hf_cmd_rx_id = hf_cmd_rx_id;
     cluster_desc->hf_cmd_tx_id = hf_cmd_tx_id;
     cluster_desc->fn_attr_data = fn_attr_data;
@@ -2380,8 +2998,8 @@ zbee_zcl_init_cluster(const char *proto_abbrev, int proto, gint ett, guint16 clu
  *@param  mfr_code manufacturer code
  *@return cluster descriptor pointer
 */
-zbee_zcl_cluster_desc
-*zbee_zcl_get_cluster_desc(guint16 cluster_id, guint16 mfr_code)
+static zbee_zcl_cluster_desc
+*zbee_zcl_get_cluster_desc(uint16_t cluster_id, uint16_t mfr_code)
 {
     GList *gl;
     gl = acluster_desc;
@@ -2398,7 +3016,7 @@ zbee_zcl_cluster_desc
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

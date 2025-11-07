@@ -11,8 +11,11 @@
  * Ref: 3GPP TS 25.433 version 6.6.0 Release 6
  */
 
+#define WS_LOG_DOMAIN "packet-nbap"
 #include "config.h"
+#include <wireshark.h>
 
+#include <epan/to_str.h>
 #include <epan/packet.h>
 #include <epan/sctpppids.h>
 #include <epan/asn1.h>
@@ -21,8 +24,7 @@
 #include <epan/prefs.h>
 #include <epan/proto_data.h>
 #include <epan/uat.h>
-
-#include <wsutil/ws_printf.h> /* ws_g_warning */
+#include <wsutil/array.h>
 
 #include "packet-per.h"
 #include "packet-isup.h"
@@ -44,15 +46,6 @@
 
 #define NBAP_IGNORE_PORT 255
 
-/* Debug */
-#define DEBUG_NBAP 0
-#if DEBUG_NBAP
-#include <epan/to_str.h>
-#define nbap_debug(...) ws_g_warning(__VA_ARGS__)
-#else
-#define nbap_debug(...)
-#endif
-
 void proto_register_nbap(void);
 void proto_reg_handoff_nbap(void);
 
@@ -62,26 +55,25 @@ static dissector_handle_t fp_handle;
 #include "packet-nbap-val.h"
 
 /* Initialize the protocol and registered fields */
-static int proto_nbap = -1;
-static int hf_nbap_transportLayerAddress_ipv4 = -1;
-static int hf_nbap_transportLayerAddress_ipv6 = -1;
-static int hf_nbap_transportLayerAddress_nsap = -1;
-static int hf_nbap_reassembled_information_block = -1;
+static int proto_nbap;
+static int hf_nbap_transportLayerAddress_ipv4;
+static int hf_nbap_transportLayerAddress_ipv6;
+static int hf_nbap_transportLayerAddress_nsap;
+static int hf_nbap_reassembled_information_block;
 
 #include "packet-nbap-hf.c"
 
 /* Initialize the subtree pointers */
-static int ett_nbap = -1;
-static int ett_nbap_TransportLayerAddress = -1;
-static int ett_nbap_TransportLayerAddress_nsap = -1;
-static int ett_nbap_ib_sg_data = -1;
+static int ett_nbap;
+static int ett_nbap_TransportLayerAddress;
+static int ett_nbap_TransportLayerAddress_nsap;
+static int ett_nbap_ib_sg_data;
 
 #include "packet-nbap-ett.c"
 
-static expert_field ei_nbap_no_find_comm_context_id = EI_INIT;
-static expert_field ei_nbap_no_find_port_info = EI_INIT;
-static expert_field ei_nbap_no_set_comm_context_id = EI_INIT;
-static expert_field ei_nbap_hsdsch_entity_not_specified = EI_INIT;
+static expert_field ei_nbap_no_find_port_info;
+static expert_field ei_nbap_no_set_comm_context_id;
+static expert_field ei_nbap_hsdsch_entity_not_specified;
 
 extern int proto_fp;
 
@@ -95,12 +87,12 @@ static dissector_handle_t nbap_handle;
  */
 typedef struct nbap_setup_conv
 {
-  guint32 transaction_id;
-  guint32 dd_mode;
-  guint32 channel_id;
-  guint32 request_frame_number;
+  uint32_t transaction_id;
+  uint32_t dd_mode;
+  uint32_t channel_id;
+  uint32_t request_frame_number;
   address addr;
-  guint32 port;
+  uint32_t port;
   umts_fp_conversation_info_t *umts_fp_conversation_info;
   conversation_t *conv;
 }nbap_setup_conv_t;
@@ -113,14 +105,14 @@ static wmem_map_t *nbap_setup_conv_table;
 
 typedef struct
 {
-  gint num_dch_in_flow;
-  gint next_dch;
-  gint num_ul_chans;
-  gint ul_chan_tf_size[MAX_FP_CHANS];
-  gint ul_chan_num_tbs[MAX_FP_CHANS];
-  gint num_dl_chans;
-  gint dl_chan_tf_size[MAX_FP_CHANS];
-  gint dl_chan_num_tbs[MAX_FP_CHANS];
+  int num_dch_in_flow;
+  int next_dch;
+  int num_ul_chans;
+  int ul_chan_tf_size[MAX_FP_CHANS];
+  int ul_chan_num_tbs[MAX_FP_CHANS];
+  int num_dl_chans;
+  int dl_chan_tf_size[MAX_FP_CHANS];
+  int dl_chan_num_tbs[MAX_FP_CHANS];
 }nbap_dch_channel_info_t;
 
 /* Struct to collect E-DCH data in a packet
@@ -131,42 +123,42 @@ typedef struct
 typedef struct
 {
   address crnc_address;
-  guint16 crnc_port;
-  gint no_ddi_entries;
-  guint8 edch_ddi[MAX_EDCH_DDIS];
-  guint edch_macd_pdu_size[MAX_EDCH_DDIS];
-  guint8 edch_type;  /* 1 means T2 */
-  guint8 lchId[MAX_EDCH_DDIS]; /*Logical channel ids.*/
+  uint16_t crnc_port;
+  int no_ddi_entries;
+  uint8_t edch_ddi[MAX_EDCH_DDIS];
+  unsigned edch_macd_pdu_size[MAX_EDCH_DDIS];
+  uint8_t edch_type;  /* 1 means T2 */
+  uint8_t lchId[MAX_EDCH_DDIS]; /*Logical channel ids.*/
 } nbap_edch_channel_info_t;
 
 
 typedef struct
 {
-  guint32 crnc_address;
-  guint16 crnc_port[maxNrOfEDCHMACdFlows];
+  uint32_t crnc_address;
+  uint16_t crnc_port[maxNrOfEDCHMACdFlows];
 } nbap_edch_port_info_t;
 
 typedef struct
 {
   address crnc_address;
-  guint16 crnc_port;
+  uint16_t crnc_port;
   enum fp_rlc_mode rlc_mode;
-  guint32 hsdsch_physical_layer_category;
-  guint8 entity;  /* "ns" means type 1 and "ehs" means type 2, type 3 == ?*/
+  uint32_t hsdsch_physical_layer_category;
+  uint8_t entity;  /* "ns" means type 1 and "ehs" means type 2, type 3 == ?*/
 } nbap_hsdsch_channel_info_t;
 
 typedef struct
 {
  address crnc_address;
- guint16 crnc_port;
+ uint16_t crnc_port;
  enum fp_rlc_mode rlc_mode;
 } nbap_common_channel_info_t;
 
-/*Stuff for mapping NodeB-Comuncation Context ID to CRNC Communication Context ID*/
+/*Stuff for mapping NodeB-Communication Context ID to CRNC Communication Context ID*/
 typedef struct com_ctxt_{
-  /*guint   nodeb_context;*/
-  guint crnc_context;
-  guint frame_num;
+  /*unsigned   nodeb_context;*/
+  unsigned crnc_context;
+  unsigned frame_num;
 }nbap_com_context_id_t;
 
 enum TransportFormatSet_type_enum
@@ -181,27 +173,27 @@ enum TransportFormatSet_type_enum
 #define NBAP_MAX_IB_SEGMENT_LENGTH 222
 
 typedef struct nbap_ib_segment_t {
-  guint32 bit_length;
-  guint8* data;
+  uint32_t bit_length;
+  uint8_t* data;
 } nbap_ib_segment_t;
 
-static nbap_ib_segment_t* nbap_parse_ib_segment_t(tvbuff_t *tvb,gboolean is_short)
+static nbap_ib_segment_t* nbap_parse_ib_sg_data_var1(packet_info *pinfo, tvbuff_t *tvb,bool is_short)
 {
-  guint8 bit_length;
-  guint8* data;
+  uint8_t bit_length;
+  uint8_t* data;
   nbap_ib_segment_t* output;
   if ( tvb_captured_length(tvb) < 2 ) {
     return NULL;
   }
   if (is_short) {
-    bit_length = tvb_get_guint8(tvb,0) + 1;
-    data = (guint8*)tvb_memdup(wmem_packet_scope(),tvb,1,(bit_length+7)/8);
+    bit_length = tvb_get_uint8(tvb,0) + 1;
+    data = (uint8_t*)tvb_memdup(pinfo->pool,tvb,1,(bit_length+7)/8);
   }
   else {
     bit_length = NBAP_MAX_IB_SEGMENT_LENGTH;
-    data = (guint8*)tvb_memdup(wmem_packet_scope(),tvb,0,(bit_length+7)/8);
+    data = (uint8_t*)tvb_memdup(pinfo->pool,tvb,0,(bit_length+7)/8);
   }
-  output = wmem_new(wmem_packet_scope(), nbap_ib_segment_t);
+  output = wmem_new(pinfo->pool, nbap_ib_segment_t);
   output->bit_length = bit_length;
   output->data = data;
   return output;
@@ -216,38 +208,39 @@ static nbap_ib_segment_t* nbap_parse_ib_segment_t(tvbuff_t *tvb,gboolean is_shor
 
 typedef struct nbap_private_data_t
 {
-  guint32 transportLayerAddress_ipv4;
-  guint16 binding_id_port;
+  uint32_t transportLayerAddress_ipv4;
+  uint16_t binding_id_port;
   enum TransportFormatSet_type_enum transport_format_set_type;
-  guint32 procedure_code;
-  guint num_items;
-  guint32 ul_scrambling_code;
-  guint32 com_context_id;
-  gint num_dch_in_flow;
-  gint hrnti;
-  guint32 protocol_ie_id;
-  guint32 dd_mode;
-  guint32 transaction_id;
-  guint32 t_dch_id;
-  guint32 dch_id;
-  guint32 prev_dch_id;
-  guint32 common_physical_channel_id;
-  guint32 e_dch_macdflow_id;
-  guint32 hsdsch_macdflow_id;
-  guint32 e_dch_ddi_value;
-  guint32 logical_channel_id;
-  guint32 common_macdflow_id;
-  guint32 mac_d_pdu_size;
-  guint32 common_transport_channel_id;
-  gint paging_indications;
-  guint32 ib_type;
-  guint32 segment_type;
-  gboolean crnc_context_present; /* Whether 'com_context_id' is set */
-  guint8 dch_crc_present;
+  uint32_t procedure_code;
+  unsigned num_items;
+  uint32_t ul_scrambling_code;
+  uint32_t com_context_id;
+  int num_dch_in_flow;
+  int hrnti;
+  uint32_t protocol_ie_id;
+  uint32_t dd_mode;
+  uint32_t transaction_id;
+  uint32_t t_dch_id;
+  uint32_t dch_id;
+  uint32_t prev_dch_id;
+  uint32_t common_physical_channel_id;
+  uint32_t e_dch_macdflow_id;
+  uint32_t hsdsch_macdflow_id;
+  bool max_mac_d_pdu_size_ext_ie_present;
+  uint32_t e_dch_ddi_value;
+  uint32_t logical_channel_id;
+  uint32_t common_macdflow_id;
+  uint32_t mac_d_pdu_size;
+  uint32_t common_transport_channel_id;
+  int paging_indications;
+  uint32_t ib_type;
+  uint32_t segment_type;
+  bool crnc_context_present; /* Whether 'com_context_id' is set */
+  uint8_t dch_crc_present;
   /* Arrays */
   nbap_dch_channel_info_t nbap_dch_chnl_info[256];
   nbap_edch_channel_info_t nbap_edch_channel_info[maxNrOfEDCHMACdFlows];
-  gint hsdsch_macdflow_ids[maxNrOfMACdFlows];
+  int hsdsch_macdflow_ids[maxNrOfMACdFlows];
   nbap_hsdsch_channel_info_t nbap_hsdsch_channel_info[maxNrOfMACdFlows];
   nbap_common_channel_info_t nbap_common_channel_info[maxNrOfMACdFlows];	/*TODO: Fix this!*/
   wmem_list_t* ib_segments; /* Information block segments */
@@ -257,7 +250,7 @@ typedef struct nbap_private_data_t
 /* Helper function to get or create a private_data struct */
 static nbap_private_data_t* nbap_get_private_data(packet_info *pinfo)
 {
-  guint8 i;
+  uint8_t i;
   /* NOTE: Unlike other ASN.1 dissectors which store information in
   * actx->private_data the NBAP dissector can't do so because some fields
   * are defined as their own 'PDU' (Like BindingID and TransportLayerAddress)
@@ -266,23 +259,20 @@ static nbap_private_data_t* nbap_get_private_data(packet_info *pinfo)
   * can't be passes to/from them.
   */
   nbap_private_data_t *private_data = (nbap_private_data_t *)p_get_proto_data(pinfo->pool, pinfo, proto_nbap, 0);
-  if(private_data != NULL ) {
-    return private_data;
-  }
-  else {
+  if(private_data == NULL ) {
     private_data = wmem_new0(pinfo->pool, nbap_private_data_t);
     p_add_proto_data(pinfo->pool, pinfo, proto_nbap, 0, private_data);
     /* Setting  default values */
     private_data->hsdsch_macdflow_id = 3;
-    private_data->crnc_context_present = FALSE;
+    private_data->crnc_context_present = false;
     private_data->procedure_code = 0xFFFF;
     private_data->dd_mode = 0xFFFF;
     private_data->dch_crc_present = 2; /* Unknown */
     for (i = 0; i < maxNrOfMACdFlows; i++) {
         private_data->nbap_hsdsch_channel_info[i].entity = hs;
     }
-    return private_data;
   }
+  return private_data;
 }
 
 /* Helper function to reset the private data struct*/
@@ -291,414 +281,22 @@ static void nbap_reset_private_data(packet_info *pinfo)
   p_remove_proto_data(pinfo->pool, pinfo, proto_nbap, 0);
 }
 
-static guint32 private_data_get_transportLayerAddress_ipv4(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->transportLayerAddress_ipv4;
-}
-
-static void private_data_set_transportLayerAddress_ipv4(packet_info *pinfo, guint32 transportLayerAddress_ipv4)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->transportLayerAddress_ipv4 = transportLayerAddress_ipv4;
-}
-
-static guint16 private_data_get_binding_id_port(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->binding_id_port;
-}
-
-static void private_data_set_binding_id_port(packet_info *pinfo, guint16 binding_id_port)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->binding_id_port = binding_id_port;
-}
-
-static guint32 private_data_get_ul_scrambling_code(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->ul_scrambling_code;
-}
-
-static void private_data_set_ul_scrambling_code(packet_info *pinfo, guint32 ul_scrambling_code)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->ul_scrambling_code = ul_scrambling_code;
-}
-
-static enum TransportFormatSet_type_enum private_data_get_transport_format_set_type(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->transport_format_set_type;
-}
-
-static void private_data_set_transport_format_set_type(packet_info *pinfo, enum TransportFormatSet_type_enum transport_format_set_type)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->transport_format_set_type = transport_format_set_type;
-}
-
-static guint32 private_data_get_procedure_code(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->procedure_code;
-}
-
-static void private_data_set_procedure_code(packet_info *pinfo, guint32 procedure_code)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->procedure_code = procedure_code;
-}
-
-static guint private_data_get_num_items(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->num_items;
-}
-
-static void private_data_set_num_items(packet_info *pinfo, guint num_items)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->num_items = num_items;
-}
-
-static guint private_data_increment_num_items(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->num_items++;
-  return private_data->num_items;
-}
-
-static guint32 private_data_get_com_context_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->com_context_id;
-}
-
-static void private_data_set_com_context_id(packet_info *pinfo, guint32 com_context_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->com_context_id = com_context_id;
-}
-
-static gint private_data_get_num_dch_in_flow(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->num_dch_in_flow;
-}
-
-static void private_data_set_num_dch_in_flow(packet_info *pinfo, gint num_dch_in_flow)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->num_dch_in_flow = num_dch_in_flow;
-}
-
-static gint private_data_increment_num_dch_in_flow(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->num_dch_in_flow++;
-  return private_data->num_dch_in_flow;
-}
-
-static gint private_data_get_hrnti(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->hrnti;
-}
-
-static void private_data_set_hrnti(packet_info *pinfo, gint hrnti)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->hrnti = hrnti;
-}
-
-static guint32 private_data_get_protocol_ie_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->protocol_ie_id;
-}
-
-static void private_data_set_protocol_ie_id(packet_info *pinfo, guint32 protocol_ie_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->protocol_ie_id = protocol_ie_id;
-}
-
-static guint32 private_data_get_dd_mode(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->dd_mode;
-}
-
-static void private_data_set_dd_mode(packet_info *pinfo, guint32 dd_mode)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->dd_mode = dd_mode;
-}
-
-static guint32 private_data_get_transaction_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->transaction_id;
-}
-
-static void private_data_set_transaction_id(packet_info *pinfo, guint32 transaction_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->transaction_id = transaction_id;
-}
-
-static guint32 private_data_get_t_dch_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->t_dch_id;
-}
-
-static void private_data_set_t_dch_id(packet_info *pinfo, guint32 t_dch_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->t_dch_id = t_dch_id;
-}
-
-static guint32 private_data_get_dch_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->dch_id;
-}
-
-static void private_data_set_dch_id(packet_info *pinfo, guint32 dch_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->dch_id = dch_id;
-}
-
-static guint32 private_data_get_prev_dch_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->prev_dch_id;
-}
-
-static void private_data_set_prev_dch_id(packet_info *pinfo, guint32 prev_dch_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->prev_dch_id = prev_dch_id;
-}
-
-static guint32 private_data_get_common_physical_channel_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->common_physical_channel_id;
-}
-
-static void private_data_set_common_physical_channel_id(packet_info *pinfo, guint32 common_physical_channel_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->common_physical_channel_id = common_physical_channel_id;
-}
-
-static guint32 private_data_get_e_dch_macdflow_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->e_dch_macdflow_id;
-}
-
-static void private_data_set_e_dch_macdflow_id(packet_info *pinfo, guint32 e_dch_macdflow_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->e_dch_macdflow_id = e_dch_macdflow_id;
-}
-
-static guint32 private_data_get_hsdsch_macdflow_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->hsdsch_macdflow_id;
-}
-
-static void private_data_set_hsdsch_macdflow_id(packet_info *pinfo, guint32 hsdsch_macdflow_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->hsdsch_macdflow_id = hsdsch_macdflow_id;
-}
-
-static guint32 private_data_get_e_dch_ddi_value(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->e_dch_ddi_value;
-}
-
-static void private_data_set_e_dch_ddi_value(packet_info *pinfo, guint32 e_dch_ddi_value)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->e_dch_ddi_value = e_dch_ddi_value;
-}
-
-static guint32 private_data_get_logical_channel_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->logical_channel_id;
-}
-
-static void private_data_set_logical_channel_id(packet_info *pinfo, guint32 logical_channel_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->logical_channel_id = logical_channel_id;
-}
-
-static guint32 private_data_get_common_macdflow_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->common_macdflow_id;
-}
-
-static void private_data_set_common_macdflow_id(packet_info *pinfo, guint32 common_macdflow_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->common_macdflow_id = common_macdflow_id;
-}
-
-static guint32 private_data_get_mac_d_pdu_size(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->mac_d_pdu_size;
-}
-
-static void private_data_set_mac_d_pdu_size(packet_info *pinfo, guint32 mac_d_pdu_size)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->mac_d_pdu_size = mac_d_pdu_size;
-}
-
-static guint32 private_data_get_common_transport_channel_id(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->common_transport_channel_id;
-}
-
-static void private_data_set_common_transport_channel_id(packet_info *pinfo, guint32 common_transport_channel_id)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->common_transport_channel_id = common_transport_channel_id;
-}
-
-static gint private_data_get_paging_indications(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->paging_indications;
-}
-
-static void private_data_set_paging_indications(packet_info *pinfo, gint paging_indications)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->paging_indications = paging_indications;
-}
-
-static guint32 private_data_get_ib_type(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->ib_type;
-}
-
-static void private_data_set_ib_type(packet_info *pinfo, guint32 ib_type)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->ib_type = ib_type;
-}
-
-static guint32 private_data_get_segment_type(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->segment_type;
-}
-
-static void private_data_set_segment_type(packet_info *pinfo, guint32 segment_type)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->segment_type = segment_type;
-}
-
-static gboolean private_data_get_crnc_context_present(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->crnc_context_present;
-}
-
-static void private_data_set_crnc_context_present(packet_info *pinfo, gboolean crnc_context_present)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->crnc_context_present = crnc_context_present;
-}
-
-static guint8 private_data_get_dch_crc_present(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->dch_crc_present;
-}
-
-static void private_data_set_dch_crc_present(packet_info *pinfo, guint8 dch_crc_present)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->dch_crc_present = dch_crc_present;
-}
-
-static nbap_dch_channel_info_t* private_data_get_nbap_dch_chnl_info(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->nbap_dch_chnl_info;
-}
-
-static nbap_edch_channel_info_t* private_data_get_nbap_edch_channel_info(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->nbap_edch_channel_info;
-}
-
-static gint* private_data_get_hsdsch_macdflow_ids(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->hsdsch_macdflow_ids;
-}
-
-static nbap_hsdsch_channel_info_t* private_data_get_nbap_hsdsch_channel_info(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->nbap_hsdsch_channel_info;
-}
-
-static nbap_common_channel_info_t* private_data_get_nbap_common_channel_info(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->nbap_common_channel_info;
-}
-
-static wmem_list_t* private_data_get_ib_segments(packet_info *pinfo)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  return private_data->ib_segments;
-}
-
-static void private_data_set_ib_segments(packet_info *pinfo, wmem_list_t* ib_segments)
-{
-  nbap_private_data_t *private_data = (nbap_private_data_t*)nbap_get_private_data(pinfo);
-  private_data->ib_segments = ib_segments;
-}
-
 /*****************************************************************************/
 
 
 /* Global Variables */
 
 /* Variables for sub elements dissection */
-static  const gchar *ProcedureID;
+static  const char *ProcedureID;
 /* Trees */
-static wmem_tree_t* edch_flow_port_map = NULL;
-wmem_tree_t *nbap_scrambling_code_crncc_map = NULL;
-wmem_tree_t *nbap_crncc_urnti_map = NULL;
+static wmem_tree_t* edch_flow_port_map;
+wmem_tree_t *nbap_scrambling_code_crncc_map;
+wmem_tree_t *nbap_crncc_urnti_map;
 static wmem_tree_t* com_context_map;
 
 /* This table is used externally from FP, MAC and such, TODO: merge this with
  * lch_contents[] */
-guint8 lchId_type_table[]= {
+uint8_t lchId_type_table[]= {
   MAC_CONTENT_UNKNOWN,  /* Shouldn't happen*/
   MAC_CONTENT_DCCH,  /* 1 to 4 SRB => DCCH*/
   MAC_CONTENT_DCCH,
@@ -718,7 +316,7 @@ guint8 lchId_type_table[]= {
 };
 
 /* Mapping logicalchannel id to RLC_MODE */
-guint8 lchId_rlc_map[] = {
+uint8_t lchId_rlc_map[] = {
   0,
   RLC_UM, /* Logical channel id = 1 is SRB1 which uses RLC_UM*/
   RLC_AM,
@@ -792,6 +390,21 @@ static const preference_strings ch_strings[] = {
   {"lch15_content", "Logical Channel 15 Content", "foo"},
   {"lch16_content", "Logical Channel 16 Content", "foo"}};
 
+enum ib_sg_enc_type {
+  IB_SG_DATA_ENC_VAR_1,
+  IB_SG_DATA_ENC_VAR_2
+};
+
+static const enum_val_t ib_sg_enc_vals[] = {
+  {"Variant1",
+   "Encoding Variant 1 (TS 25.433 Annex D.2)", IB_SG_DATA_ENC_VAR_1},
+  {"Variant2",
+   "Encoding Variant 2 (TS 25.433 Annex D.3)", IB_SG_DATA_ENC_VAR_2},
+  {NULL, NULL, -1}
+};
+
+static int preferences_ib_sg_data_encoding = IB_SG_DATA_ENC_VAR_1;
+
 /* Dissector tables */
 static dissector_table_t nbap_ies_dissector_table;
 static dissector_table_t nbap_extension_dissector_table;
@@ -805,10 +418,10 @@ static int dissect_InitiatingMessageValue(tvbuff_t *tvb, packet_info *pinfo, pro
 static int dissect_SuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *);
 static int dissect_UnsuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *);
 
-static guint32 calculate_setup_conv_key(const guint32 transaction_id, const guint32 dd_mode, const guint32 channel_id);
-static void add_setup_conv(const guint32 transaction_id, const guint32 dd_mode, const guint32 channel_id, const guint32 req_frame_number,
-           const address *addr, const guint32 port, umts_fp_conversation_info_t * umts_fp_conversation_info, conversation_t *conv);
-static nbap_setup_conv_t* find_setup_conv(const guint32 transaction_id, const guint32 dd_mode, const guint32 channel_id);
+static uint32_t calculate_setup_conv_key(const uint32_t transaction_id, const uint32_t dd_mode, const uint32_t channel_id);
+static void add_setup_conv(const packet_info *pinfo _U_, const uint32_t transaction_id, const uint32_t dd_mode, const uint32_t channel_id, const uint32_t req_frame_number,
+           const address *addr, const uint32_t port, umts_fp_conversation_info_t * umts_fp_conversation_info, conversation_t *conv);
+static nbap_setup_conv_t* find_setup_conv(const packet_info *pinfo _U_, const uint32_t transaction_id, const uint32_t dd_mode, const uint32_t channel_id);
 static void delete_setup_conv(nbap_setup_conv_t *conv);
 
 /*Easy way to add hsdhsch binds for corner cases*/
@@ -818,58 +431,60 @@ static void add_hsdsch_bind(packet_info * pinfo);
 
 static int dissect_ProtocolIEFieldValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-  guint32 protocol_ie_id;
-  protocol_ie_id = private_data_get_protocol_ie_id(pinfo);
-  return (dissector_try_uint_new(nbap_ies_dissector_table, protocol_ie_id, tvb, pinfo, tree, FALSE, NULL)) ? tvb_captured_length(tvb) : 0;
+  uint32_t protocol_ie_id;
+  protocol_ie_id = nbap_get_private_data(pinfo)->protocol_ie_id;
+  return (dissector_try_uint_with_data(nbap_ies_dissector_table, protocol_ie_id, tvb, pinfo, tree, false, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int dissect_ProtocolExtensionFieldExtensionValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
-  guint32 protocol_ie_id;
-  protocol_ie_id = private_data_get_protocol_ie_id(pinfo);
-  return (dissector_try_uint_new(nbap_extension_dissector_table, protocol_ie_id, tvb, pinfo, tree, FALSE, NULL)) ? tvb_captured_length(tvb) : 0;
+  uint32_t protocol_ie_id;
+  protocol_ie_id = nbap_get_private_data(pinfo)->protocol_ie_id;
+  return (dissector_try_uint_with_data(nbap_extension_dissector_table, protocol_ie_id, tvb, pinfo, tree, false, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int dissect_InitiatingMessageValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
   if (!ProcedureID) return 0;
-  return (dissector_try_string(nbap_proc_imsg_dissector_table, ProcedureID, tvb, pinfo, tree, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_string_with_data(nbap_proc_imsg_dissector_table, ProcedureID, tvb, pinfo, tree, true, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int dissect_SuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
   if (!ProcedureID) return 0;
-  return (dissector_try_string(nbap_proc_sout_dissector_table, ProcedureID, tvb, pinfo, tree, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_string_with_data(nbap_proc_sout_dissector_table, ProcedureID, tvb, pinfo, tree, true, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 
 static int dissect_UnsuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
   if (!ProcedureID) return 0;
-  return (dissector_try_string(nbap_proc_uout_dissector_table, ProcedureID, tvb, pinfo, tree, NULL)) ? tvb_captured_length(tvb) : 0;
+  return (dissector_try_string_with_data(nbap_proc_uout_dissector_table, ProcedureID, tvb, pinfo, tree, true, NULL)) ? tvb_captured_length(tvb) : 0;
 }
 static void add_hsdsch_bind(packet_info *pinfo){
   address null_addr;
   conversation_t *conversation = NULL;
   umts_fp_conversation_info_t *umts_fp_conversation_info;
   fp_hsdsch_channel_info_t* fp_hsdsch_channel_info = NULL;
-  guint32 i;
+  uint32_t i;
+  nbap_private_data_t* nbap_private_data;
   nbap_hsdsch_channel_info_t* nbap_hsdsch_channel_info;
 
-  if (pinfo->fd->flags.visited){
+  if (PINFO_FD_VISITED(pinfo)){
     return;
   }
 
-  nbap_hsdsch_channel_info = private_data_get_nbap_hsdsch_channel_info(pinfo);
+  nbap_private_data = nbap_get_private_data(pinfo);
+  nbap_hsdsch_channel_info = nbap_private_data->nbap_hsdsch_channel_info;
   /* Set port to zero use that as an indication of whether we have data or not */
   clear_address(&null_addr);
   for (i = 0; i < maxNrOfMACdFlows; i++) {
     if (nbap_hsdsch_channel_info[i].crnc_port != 0){
-      conversation = find_conversation(pinfo->num, &(nbap_hsdsch_channel_info[i].crnc_address), &null_addr, ENDPOINT_UDP,
+      conversation = find_conversation(pinfo->num, &(nbap_hsdsch_channel_info[i].crnc_address), &null_addr, CONVERSATION_UDP,
                                       nbap_hsdsch_channel_info[i].crnc_port, 0, NO_ADDR_B);
 
       if (conversation == NULL) {
         /* It's not part of any conversation - create a new one. */
-        conversation = conversation_new(pinfo->num, &(nbap_hsdsch_channel_info[i].crnc_address), &null_addr, ENDPOINT_UDP,
+        conversation = conversation_new(pinfo->num, &(nbap_hsdsch_channel_info[i].crnc_address), &null_addr, CONVERSATION_UDP,
                                        nbap_hsdsch_channel_info[i].crnc_port, 0, NO_ADDR2|NO_PORT2);
 
         /* Set dissector */
@@ -890,6 +505,15 @@ static void add_hsdsch_bind(packet_info *pinfo){
           umts_fp_conversation_info->channel_specific_info = (void*)fp_hsdsch_channel_info;
           /*Added june 3, normally just the iterator variable*/
           fp_hsdsch_channel_info->hsdsch_macdflow_id = i ; /*hsdsch_macdflow_ids[i];*/ /* hsdsch_macdflow_id;*/
+
+          if (nbap_private_data->crnc_context_present) {
+            umts_fp_conversation_info->com_context_id = nbap_private_data->com_context_id;
+          } else {
+            /* XXX: This expert info doesn't get added in subsequent passes,
+             * but probably should.
+             */
+            expert_add_info(pinfo, NULL, &ei_nbap_no_set_comm_context_id);
+          }
 
           /* Cheat and use the DCH entries */
           umts_fp_conversation_info->num_dch_in_flow++;
@@ -912,29 +536,29 @@ static void add_hsdsch_bind(packet_info *pinfo){
 /*
  * Function used to manage conversation declared in Setup Request/Response message
  */
-static guint32 calculate_setup_conv_key(const guint32 transaction_id, const guint32 dd_mode, const guint32 channel_id)
+static uint32_t calculate_setup_conv_key(const uint32_t transaction_id, const uint32_t dd_mode, const uint32_t channel_id)
 {
   /* We need to pack 3 values on 32 bits:
    * 31-16 transaction_id
    * 15-14 dd_mode
    * 13-0  channel_id
    */
-  guint32 key;
+  uint32_t key;
   key = transaction_id << 16;
   key |= (dd_mode & 0x03) << 14;
   key |= (channel_id & 0x3fff);
-  nbap_debug("\tCalculating key 0x%04x", key);
+  ws_debug("\tCalculating key 0x%04x", key);
   return key;
 }
 
-static void add_setup_conv(const guint32 transaction_id, const guint32 dd_mode, const guint32 channel_id, const guint32 req_frame_number,
-              const address *addr, const guint32 port, umts_fp_conversation_info_t * umts_fp_conversation_info, conversation_t *conv)
+static void add_setup_conv(const packet_info *pinfo _U_, const uint32_t transaction_id, const uint32_t dd_mode, const uint32_t channel_id, const uint32_t req_frame_number,
+              const address *addr, const uint32_t port, umts_fp_conversation_info_t * umts_fp_conversation_info, conversation_t *conv)
 {
   nbap_setup_conv_t *new_conv = NULL;
-  guint32 key;
+  uint32_t key;
 
-  nbap_debug("Creating new setup conv\t TransactionID: %u\tddMode: %u\tChannelID: %u\t %s:%u",
-  transaction_id, dd_mode, channel_id, address_to_str(wmem_packet_scope(), addr), port);
+  ws_debug("Creating new setup conv\t TransactionID: %u\tddMode: %u\tChannelID: %u\t %s:%u",
+  transaction_id, dd_mode, channel_id, address_to_str(pinfo->pool, addr), port);
 
   new_conv = wmem_new0(wmem_file_scope(), nbap_setup_conv_t);
 
@@ -953,21 +577,21 @@ static void add_setup_conv(const guint32 transaction_id, const guint32 dd_mode, 
   wmem_map_insert(nbap_setup_conv_table, GUINT_TO_POINTER(key), new_conv);
 }
 
-static nbap_setup_conv_t* find_setup_conv(const guint32 transaction_id, const guint32 dd_mode, const guint32 channel_id)
+static nbap_setup_conv_t* find_setup_conv(const packet_info *pinfo _U_, const uint32_t transaction_id, const uint32_t dd_mode, const uint32_t channel_id)
 {
   nbap_setup_conv_t *conv;
-  guint32 key;
-  nbap_debug("Looking for Setup Conversation match\t TransactionID: %u\t ddMode: %u\t ChannelID: %u", transaction_id, dd_mode, channel_id);
+  uint32_t key;
+  ws_debug("Looking for Setup Conversation match\t TransactionID: %u\t ddMode: %u\t ChannelID: %u", transaction_id, dd_mode, channel_id);
 
   key = calculate_setup_conv_key(transaction_id, dd_mode, channel_id);
 
   conv = (nbap_setup_conv_t*) wmem_map_lookup(nbap_setup_conv_table, GUINT_TO_POINTER(key));
 
   if(conv == NULL){
-    nbap_debug("\tDidnt found Setup Conversation match");
+    ws_debug("\tDidn't find Setup Conversation match");
   }else{
-    nbap_debug("\tFOUND Setup Conversation match\t TransactionID: %u\t ddMode: %u\t ChannelID: %u\t %s:%u",
-         conv->transaction_id, conv->dd_mode, conv->channel_id, address_to_str(wmem_packet_scope(), &(conv->addr)), conv->port);
+    ws_debug("\tFOUND Setup Conversation match\t TransactionID: %u\t ddMode: %u\t ChannelID: %u\t %s:%u",
+         conv->transaction_id, conv->dd_mode, conv->channel_id, address_to_str(pinfo->pool, &(conv->addr)), conv->port);
   }
 
   return conv;
@@ -975,11 +599,11 @@ static nbap_setup_conv_t* find_setup_conv(const guint32 transaction_id, const gu
 
 static void delete_setup_conv(nbap_setup_conv_t *conv)
 {
-  guint32 key;
+  uint32_t key;
 
   /* check if conversation exist */
   if(conv == NULL){
-    nbap_debug("Trying delete Setup Conversation that does not exist (ptr == NULL)\t");
+    ws_debug("Trying delete Setup Conversation that does not exist (ptr == NULL)\t");
     return;
   }
   key = calculate_setup_conv_key(conv->transaction_id, conv->dd_mode, conv->channel_id);
@@ -987,18 +611,10 @@ static void delete_setup_conv(nbap_setup_conv_t *conv)
 }
 
 static void nbap_init(void){
-  guint8 i;
-  /*Initialize*/
-  com_context_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
-
-  /*Initialize structure for muxed flow indication*/
-  edch_flow_port_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
+  uint8_t i;
 
   /*Initialize Setup Conversation hash table*/
   nbap_setup_conv_table = wmem_map_new(wmem_file_scope(), g_direct_hash, g_direct_equal);
-  /*Initializing Scrambling Code to C-RNC Context & C-RNC Context to U-RNTI maps*/
-  nbap_scrambling_code_crncc_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
-  nbap_crncc_urnti_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
 
   for (i = 0; i < 15; i++) {
     lchId_type_table[i+1] = lch_contents[i];
@@ -1026,46 +642,50 @@ dissect_nbap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 /* Highest ProcedureCode value, used in heuristics */
 #define NBAP_MAX_PC 56 /* id-secondaryULFrequencyUpdate = 56*/
 #define NBAP_MSG_MIN_LENGTH 7
-static gboolean
+static bool
 dissect_nbap_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-  guint8 pdu_type;
-  guint8 procedure_id;
-  guint8 dd_mode;
-  guint8 criticality;
-  guint8 transaction_id_type;
-  guint length;
+  uint8_t pdu_type;
+  uint8_t procedure_id;
+  uint8_t dd_mode;
+  uint8_t criticality;
+  uint8_t transaction_id_type;
+  unsigned length;
   int length_field_offset;
 
   #define PDU_TYPE_OFFSET 0
   #define PROC_CODE_OFFSET 1
   #define DD_CRIT_OFFSET 2
   if (tvb_captured_length(tvb) < NBAP_MSG_MIN_LENGTH) {
-    return FALSE;
+    return false;
   }
 
-  pdu_type = tvb_get_guint8(tvb, PDU_TYPE_OFFSET);
-  if (pdu_type != 0x00 && pdu_type != 0x20 && pdu_type != 0x40 && pdu_type != 0x60) {
-    return FALSE;
+  pdu_type = tvb_get_uint8(tvb, PDU_TYPE_OFFSET);
+  if (pdu_type & 0x1f) {
+    /* pdu_type is not 0x00 (initiatingMessage), 0x20 (succesfulOutcome),
+       0x40 (unsuccesfulOutcome) or 0x60 (outcome), ignore extension bit (0x80) */
+    return false;
   }
 
-  procedure_id = tvb_get_guint8(tvb, PROC_CODE_OFFSET);
+  procedure_id = tvb_get_uint8(tvb, PROC_CODE_OFFSET);
   if (procedure_id > NBAP_MAX_PC) {
-      return FALSE;
+      return false;
   }
 
-  dd_mode = tvb_get_guint8(tvb, DD_CRIT_OFFSET) >> 5;
-  if (dd_mode != 0x00 && dd_mode != 0x01 && dd_mode != 0x02) {
-    return FALSE;
+  dd_mode = tvb_get_uint8(tvb, DD_CRIT_OFFSET) >> 5;
+  if (dd_mode >= 0x03) {
+    /* dd_mode is not 0x00 (tdd), 0x01 (fdd) or 0x02 (common) */
+    return false;
   }
 
-  criticality = (tvb_get_guint8(tvb, DD_CRIT_OFFSET) & 0x18) >> 3;
-  if (criticality != 0x00 && criticality != 0x01 && criticality != 0x02) {
-    return FALSE;
+  criticality = (tvb_get_uint8(tvb, DD_CRIT_OFFSET) & 0x18) >> 3;
+  if (criticality == 0x03) {
+    /* criticality is not 0x00 (reject), 0x01 (ignore) or 0x02 (notify) */
+    return false;
   }
 
   /* Finding the offset for the length field - depends on wether the transaction id is long or short */
-  transaction_id_type = (tvb_get_guint8(tvb, DD_CRIT_OFFSET) & 0x02) >> 1;
+  transaction_id_type = (tvb_get_uint8(tvb, DD_CRIT_OFFSET) & 0x02) >> 1;
   if(transaction_id_type == 0x00) { /* Short transaction id - 1 byte*/
     length_field_offset = 4;
   }
@@ -1075,32 +695,32 @@ dissect_nbap_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
 
   /* compute aligned PER length determinant without calling dissect_per_length_determinant()
      to avoid exceptions and info added to tree, info column and expert info */
-  length = tvb_get_guint8(tvb, length_field_offset);
+  length = tvb_get_uint8(tvb, length_field_offset);
   length_field_offset += 1;
-  if ((length & 0x80) == 0x80) {
+  if (length & 0x80) {
     if ((length & 0xc0) == 0x80) {
       length &= 0x3f;
       length <<= 8;
-      length += tvb_get_guint8(tvb, length_field_offset);
+      length += tvb_get_uint8(tvb, length_field_offset);
       length_field_offset += 1;
     } else {
       length = 0;
     }
   }
   if (length!= (tvb_reported_length(tvb) - length_field_offset)){
-    return FALSE;
+    return false;
   }
 
   dissect_nbap(tvb, pinfo, tree, data);
 
-  return TRUE;
+  return true;
 }
 
 /*--- proto_register_nbap -------------------------------------------*/
 void proto_register_nbap(void)
 {
   module_t *nbap_module;
-  guint8 i;
+  uint8_t i;
 
   /* List of fields */
   static hf_register_info hf[] = {
@@ -1124,7 +744,7 @@ void proto_register_nbap(void)
   };
 
   /* List of subtrees */
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_nbap,
     &ett_nbap_TransportLayerAddress,
     &ett_nbap_TransportLayerAddress_nsap,
@@ -1134,7 +754,6 @@ void proto_register_nbap(void)
 
   static ei_register_info ei[] = {
     { &ei_nbap_no_set_comm_context_id, { "nbap.no_set_comm_context_id", PI_MALFORMED, PI_WARN, "Couldn't not set Communication Context-ID, fragments over reconfigured channels might fail", EXPFILL }},
-    { &ei_nbap_no_find_comm_context_id, { "nbap.no_find_comm_context_id", PI_MALFORMED, PI_WARN, "Couldn't not find Communication Context-ID, unable to reconfigure this E-DCH flow.", EXPFILL }},
     { &ei_nbap_no_find_port_info, { "nbap.no_find_port_info", PI_MALFORMED, PI_WARN, "Couldn't not find port information for reconfigured E-DCH flow, unable to reconfigure", EXPFILL }},
     { &ei_nbap_hsdsch_entity_not_specified, { "nbap.hsdsch_entity_not_specified", PI_MALFORMED,PI_ERROR, "HSDSCH Entity not specified!", EXPFILL }},
   };
@@ -1156,17 +775,30 @@ void proto_register_nbap(void)
 
   /* Register preferences for mapping logical channel IDs to MAC content types. */
   for (i = 0; i < 16; i++) {
-    prefs_register_enum_preference(nbap_module, ch_strings[i].name, ch_strings[i].title, ch_strings[i].description, &lch_contents[i], content_types, FALSE);
+    prefs_register_enum_preference(nbap_module, ch_strings[i].name, ch_strings[i].title, ch_strings[i].description, &lch_contents[i], content_types, false);
   }
+  prefs_register_enum_preference(nbap_module, "ib_sg_data_encoding",
+    "IB_SG_DATA encoding",
+    "Encoding used for the IB-SG-DATA element carrying segments of information blocks",
+    &preferences_ib_sg_data_encoding, ib_sg_enc_vals, false);
 
   /* Register dissector tables */
   nbap_ies_dissector_table = register_dissector_table("nbap.ies", "NBAP-PROTOCOL-IES", proto_nbap, FT_UINT32, BASE_DEC);
   nbap_extension_dissector_table = register_dissector_table("nbap.extension", "NBAP-PROTOCOL-EXTENSION", proto_nbap, FT_UINT32, BASE_DEC);
-  nbap_proc_imsg_dissector_table = register_dissector_table("nbap.proc.imsg", "NBAP-ELEMENTARY-PROCEDURE InitiatingMessage", proto_nbap, FT_STRING, BASE_NONE);
-  nbap_proc_sout_dissector_table = register_dissector_table("nbap.proc.sout", "NBAP-ELEMENTARY-PROCEDURE SuccessfulOutcome", proto_nbap, FT_STRING, BASE_NONE);
-  nbap_proc_uout_dissector_table = register_dissector_table("nbap.proc.uout", "NBAP-ELEMENTARY-PROCEDURE UnsuccessfulOutcome", proto_nbap, FT_STRING, BASE_NONE);
+  nbap_proc_imsg_dissector_table = register_dissector_table("nbap.proc.imsg", "NBAP-ELEMENTARY-PROCEDURE InitiatingMessage", proto_nbap, FT_STRING, STRING_CASE_SENSITIVE);
+  nbap_proc_sout_dissector_table = register_dissector_table("nbap.proc.sout", "NBAP-ELEMENTARY-PROCEDURE SuccessfulOutcome", proto_nbap, FT_STRING, STRING_CASE_SENSITIVE);
+  nbap_proc_uout_dissector_table = register_dissector_table("nbap.proc.uout", "NBAP-ELEMENTARY-PROCEDURE UnsuccessfulOutcome", proto_nbap, FT_STRING, STRING_CASE_SENSITIVE);
 
   register_init_routine(nbap_init);
+
+  com_context_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
+
+  /*Initialize structure for muxed flow indication*/
+  edch_flow_port_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
+
+  /*Initializing Scrambling Code to C-RNC Context & C-RNC Context to U-RNTI maps*/
+  nbap_scrambling_code_crncc_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
+  nbap_crncc_urnti_map = wmem_tree_new_autoreset(wmem_epan_scope(), wmem_file_scope());
 }
 
 /*

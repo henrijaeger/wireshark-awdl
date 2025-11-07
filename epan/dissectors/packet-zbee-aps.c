@@ -14,43 +14,46 @@
 #include "config.h"
 
 #include <epan/packet.h>
-#include <epan/exceptions.h>
 #include <epan/prefs.h>    /* req'd for packet-zbee-security.h */
 #include <epan/expert.h>
 #include <epan/reassemble.h>
 #include <epan/proto_data.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 
 #include "packet-zbee.h"
 #include "packet-zbee-nwk.h"
 #include "packet-zbee-security.h"
 #include "packet-zbee-aps.h"
 #include "packet-zbee-zdp.h"
+#include "packet-zbee-tlv.h"
 
 /*************************
  * Function Declarations *
  *************************
  */
 /* Dissector Routines */
-static void    dissect_zbee_aps_cmd        (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint8 version, void *data);
+static void    dissect_zbee_aps_cmd        (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, uint8_t version, void *data);
 
 /* Command Dissector Helpers */
-static guint   dissect_zbee_aps_skke_challenge (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_skke_data      (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_transport_key  (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_update_device  (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset, guint8 version);
-static guint   dissect_zbee_aps_remove_device  (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_request_key    (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_switch_key     (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_auth_challenge (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_auth_data      (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_tunnel         (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset, void *data);
-static guint   dissect_zbee_aps_verify_key     (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset);
-static guint   dissect_zbee_aps_confirm_key    (tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset);
-static guint   dissect_zbee_t2                 (tvbuff_t *tvb, proto_tree *tree, guint16 cluster_id);
+static unsigned   dissect_zbee_aps_skke_challenge (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_skke_data      (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_transport_key  (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_update_device  (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset, uint8_t version);
+static unsigned   dissect_zbee_aps_remove_device  (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_request_key    (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_switch_key     (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_auth_challenge (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_auth_data      (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_tunnel         (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset, void *data);
+static unsigned   dissect_zbee_aps_verify_key     (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_aps_confirm_key    (tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset);
+static unsigned   dissect_zbee_t2                 (tvbuff_t *tvb, proto_tree *tree, uint16_t cluster_id);
 
 /* Helper routine. */
-static guint   zbee_apf_transaction_len    (tvbuff_t *tvb, guint offset, guint8 type);
+static unsigned   zbee_apf_transaction_len    (tvbuff_t *tvb, unsigned offset, uint8_t type);
 
+void dissect_zbee_aps_status_code(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset);
 void proto_register_zbee_aps(void);
 
 /********************
@@ -58,96 +61,96 @@ void proto_register_zbee_aps(void);
  ********************
  */
 /* Field indices. */
-static int proto_zbee_aps = -1;
-static int hf_zbee_aps_fcf_frame_type = -1;
-static int hf_zbee_aps_fcf_delivery = -1;
-static int hf_zbee_aps_fcf_indirect_mode = -1;  /* ZigBee 2004 and earlier. */
-static int hf_zbee_aps_fcf_ack_format = -1;       /* ZigBee 2007 and later. */
-static int hf_zbee_aps_fcf_security = -1;
-static int hf_zbee_aps_fcf_ack_req = -1;
-static int hf_zbee_aps_fcf_ext_header = -1;
-static int hf_zbee_aps_dst = -1;
-static int hf_zbee_aps_group = -1;
-static int hf_zbee_aps_cluster = -1;
-static int hf_zbee_aps_profile = -1;
-static int hf_zbee_aps_src = -1;
-static int hf_zbee_aps_counter = -1;
-static int hf_zbee_aps_fragmentation = -1;
-static int hf_zbee_aps_block_number = -1;
-static int hf_zbee_aps_block_ack = -1;
-static int hf_zbee_aps_block_ack1 = -1;
-static int hf_zbee_aps_block_ack2 = -1;
-static int hf_zbee_aps_block_ack3 = -1;
-static int hf_zbee_aps_block_ack4 = -1;
-static int hf_zbee_aps_block_ack5 = -1;
-static int hf_zbee_aps_block_ack6 = -1;
-static int hf_zbee_aps_block_ack7 = -1;
-static int hf_zbee_aps_block_ack8 = -1;
+static int proto_zbee_aps;
+static int hf_zbee_aps_fcf_frame_type;
+static int hf_zbee_aps_fcf_delivery;
+static int hf_zbee_aps_fcf_indirect_mode;  /* ZigBee 2004 and earlier. */
+static int hf_zbee_aps_fcf_ack_format;       /* ZigBee 2007 and later. */
+static int hf_zbee_aps_fcf_security;
+static int hf_zbee_aps_fcf_ack_req;
+static int hf_zbee_aps_fcf_ext_header;
+static int hf_zbee_aps_dst;
+static int hf_zbee_aps_group;
+static int hf_zbee_aps_cluster;
+static int hf_zbee_aps_profile;
+static int hf_zbee_aps_src;
+static int hf_zbee_aps_counter;
+static int hf_zbee_aps_fragmentation;
+static int hf_zbee_aps_block_number;
+static int hf_zbee_aps_block_ack;
+static int hf_zbee_aps_block_ack1;
+static int hf_zbee_aps_block_ack2;
+static int hf_zbee_aps_block_ack3;
+static int hf_zbee_aps_block_ack4;
+static int hf_zbee_aps_block_ack5;
+static int hf_zbee_aps_block_ack6;
+static int hf_zbee_aps_block_ack7;
+static int hf_zbee_aps_block_ack8;
 
-static int hf_zbee_aps_cmd_id = -1;
-static int hf_zbee_aps_cmd_initiator = -1;
-static int hf_zbee_aps_cmd_responder = -1;
-static int hf_zbee_aps_cmd_partner = -1;
-static int hf_zbee_aps_cmd_initiator_flag = -1;
-static int hf_zbee_aps_cmd_device = -1;
-static int hf_zbee_aps_cmd_challenge = -1;
-static int hf_zbee_aps_cmd_mac = -1;
-static int hf_zbee_aps_cmd_key = -1;
-static int hf_zbee_aps_cmd_key_hash = -1;
-static int hf_zbee_aps_cmd_key_type = -1;
-static int hf_zbee_aps_cmd_dst = -1;
-static int hf_zbee_aps_cmd_src = -1;
-static int hf_zbee_aps_cmd_seqno = -1;
-static int hf_zbee_aps_cmd_short_addr = -1;
-static int hf_zbee_aps_cmd_device_status = -1;
-static int hf_zbee_aps_cmd_status = -1;
-static int hf_zbee_aps_cmd_ea_key_type = -1;
-static int hf_zbee_aps_cmd_ea_data = -1;
+static int hf_zbee_aps_cmd_id;
+static int hf_zbee_aps_cmd_initiator;
+static int hf_zbee_aps_cmd_responder;
+static int hf_zbee_aps_cmd_partner;
+static int hf_zbee_aps_cmd_initiator_flag;
+static int hf_zbee_aps_cmd_device;
+static int hf_zbee_aps_cmd_challenge;
+static int hf_zbee_aps_cmd_mac;
+static int hf_zbee_aps_cmd_key;
+static int hf_zbee_aps_cmd_key_hash;
+static int hf_zbee_aps_cmd_key_type;
+static int hf_zbee_aps_cmd_dst;
+static int hf_zbee_aps_cmd_src;
+static int hf_zbee_aps_cmd_seqno;
+static int hf_zbee_aps_cmd_short_addr;
+static int hf_zbee_aps_cmd_device_status;
+static int hf_zbee_aps_cmd_status;
+static int hf_zbee_aps_cmd_ea_key_type;
+static int hf_zbee_aps_cmd_ea_data;
 
 /* Field indices for ZigBee 2003 & earlier Application Framework. */
-static int proto_zbee_apf = -1;
-static int hf_zbee_apf_count = -1;
-static int hf_zbee_apf_type = -1;
+static int proto_zbee_apf;
+static int hf_zbee_apf_count;
+static int hf_zbee_apf_type;
 
 /* Subtree indices. */
-static gint ett_zbee_aps = -1;
-static gint ett_zbee_aps_fcf = -1;
-static gint ett_zbee_aps_ext = -1;
-static gint ett_zbee_aps_cmd = -1;
+static int ett_zbee_aps;
+static int ett_zbee_aps_fcf;
+static int ett_zbee_aps_ext;
+static int ett_zbee_aps_cmd;
 
 /* Fragmentation indices. */
-static int hf_zbee_aps_fragments = -1;
-static int hf_zbee_aps_fragment = -1;
-static int hf_zbee_aps_fragment_overlap = -1;
-static int hf_zbee_aps_fragment_overlap_conflicts = -1;
-static int hf_zbee_aps_fragment_multiple_tails = -1;
-static int hf_zbee_aps_fragment_too_long_fragment = -1;
-static int hf_zbee_aps_fragment_error = -1;
-static int hf_zbee_aps_fragment_count = -1;
-static int hf_zbee_aps_reassembled_in = -1;
-static int hf_zbee_aps_reassembled_length = -1;
-static gint ett_zbee_aps_fragment = -1;
-static gint ett_zbee_aps_fragments = -1;
+static int hf_zbee_aps_fragments;
+static int hf_zbee_aps_fragment;
+static int hf_zbee_aps_fragment_overlap;
+static int hf_zbee_aps_fragment_overlap_conflicts;
+static int hf_zbee_aps_fragment_multiple_tails;
+static int hf_zbee_aps_fragment_too_long_fragment;
+static int hf_zbee_aps_fragment_error;
+static int hf_zbee_aps_fragment_count;
+static int hf_zbee_aps_reassembled_in;
+static int hf_zbee_aps_reassembled_length;
+static int ett_zbee_aps_fragment;
+static int ett_zbee_aps_fragments;
 
 /* Test Profile #2 indices. */
-static int hf_zbee_aps_t2_cluster = -1;
-static int hf_zbee_aps_t2_btres_octet_sequence = -1;
-static int hf_zbee_aps_t2_btres_octet_sequence_length_requested = -1;
-static int hf_zbee_aps_t2_btres_status = -1;
-static int hf_zbee_aps_t2_btreq_octet_sequence_length = -1;
+static int hf_zbee_aps_t2_cluster;
+static int hf_zbee_aps_t2_btres_octet_sequence;
+static int hf_zbee_aps_t2_btres_octet_sequence_length_requested;
+static int hf_zbee_aps_t2_btres_status;
+static int hf_zbee_aps_t2_btreq_octet_sequence_length;
 
 /* ZDP indices. */
-static int hf_zbee_aps_zdp_cluster = -1;
+static int hf_zbee_aps_zdp_cluster;
 
 /* Subtree indices for the ZigBee 2004 & earlier Application Framework. */
-static gint ett_zbee_apf = -1;
-static gint ett_zbee_aps_frag_ack = -1;
+static int ett_zbee_apf;
+static int ett_zbee_aps_frag_ack;
 
 /* Subtree indices for the ZigBee Test Profile #2. */
-static gint ett_zbee_aps_t2 = -1;
+static int ett_zbee_aps_t2;
 
-static expert_field ei_zbee_aps_invalid_delivery_mode = EI_INIT;
-static expert_field ei_zbee_aps_missing_payload = EI_INIT;
+static expert_field ei_zbee_aps_invalid_delivery_mode;
+static expert_field ei_zbee_aps_missing_payload;
 
 /* Dissector Handles. */
 static dissector_handle_t   zbee_aps_handle;
@@ -181,6 +184,8 @@ static const fragment_items zbee_aps_frag_items = {
     /* Tag */
     "APS Message fragments"
 };
+
+static GHashTable *zbee_table_aps_extended_counters;
 
 /********************/
 /* Field Names      */
@@ -229,6 +234,8 @@ static const value_string zbee_aps_cmd_names[] = {
     { ZBEE_APS_CMD_TUNNEL,          "Tunnel" },
     { ZBEE_APS_CMD_VERIFY_KEY,      "Verify Key" },
     { ZBEE_APS_CMD_CONFIRM_KEY,     "Confirm Key" },
+    { ZBEE_APS_CMD_RELAY_MSG_DOWNSTREAM, "Relay Message Downstream" },
+    { ZBEE_APS_CMD_RELAY_MSG_UPSTREAM,   "Relay Message Upstream" },
     { 0, NULL }
 };
 
@@ -349,8 +356,6 @@ const range_string zbee_aps_apid_names[] = {
 
     { ZBEE_PROFILE_MFR_SPEC_ORG_MIN,    ZBEE_PROFILE_MFR_SPEC_ORG_MAX,
             "Unallocated Manufacturer-Specific" },
-
-    { ZBEE_PROFILE_IEEE_1451_5,     ZBEE_PROFILE_IEEE_1451_5,       "IEEE_1451_5" },
 
     /* Manufacturer Allocations */
     { ZBEE_PROFILE_CIRRONET_0_MIN,  ZBEE_PROFILE_CIRRONET_0_MAX,    ZBEE_MFG_CIRRONET },
@@ -512,7 +517,7 @@ const range_string zbee_aps_apid_names[] = {
 };
 
 /* ZigBee Application Profile ID Abbreviations */
-const range_string zbee_aps_apid_abbrs[] = {
+static const range_string zbee_aps_apid_abbrs[] = {
     { ZBEE_DEVICE_PROFILE,  ZBEE_DEVICE_PROFILE,    "ZDP" },
     { ZBEE_PROFILE_IPM,     ZBEE_PROFILE_IPM,       "IPM" },
     { ZBEE_PROFILE_T1,      ZBEE_PROFILE_T1,        "T1" },
@@ -533,120 +538,126 @@ const range_string zbee_aps_apid_abbrs[] = {
 
 /* ZCL Cluster Names */
 /* BUGBUG: big enough to hash? */
-const value_string zbee_aps_cid_names[] = {
+const range_string zbee_aps_cid_names[] = {
 
     /* General */
-    { ZBEE_ZCL_CID_BASIC,                           "Basic"},
-    { ZBEE_ZCL_CID_POWER_CONFIG,                    "Power Configuration"},
-    { ZBEE_ZCL_CID_DEVICE_TEMP_CONFIG,              "Device Temperature Configuration"},
-    { ZBEE_ZCL_CID_IDENTIFY,                        "Identify"},
-    { ZBEE_ZCL_CID_GROUPS,                          "Groups"},
-    { ZBEE_ZCL_CID_SCENES,                          "Scenes"},
-    { ZBEE_ZCL_CID_ON_OFF,                          "On/Off"},
-    { ZBEE_ZCL_CID_ON_OFF_SWITCH_CONFIG,            "On/Off Switch Configuration"},
-    { ZBEE_ZCL_CID_LEVEL_CONTROL,                   "Level Control"},
-    { ZBEE_ZCL_CID_ALARMS,                          "Alarms"},
-    { ZBEE_ZCL_CID_TIME,                            "Time"},
-    { ZBEE_ZCL_CID_RSSI_LOCATION,                   "RSSI Location"},
-    { ZBEE_ZCL_CID_ANALOG_INPUT_BASIC,              "Analog Input (Basic)"},
-    { ZBEE_ZCL_CID_ANALOG_OUTPUT_BASIC,             "Analog Output (Basic)"},
-    { ZBEE_ZCL_CID_ANALOG_VALUE_BASIC,              "Analog Value (Basic)"},
-    { ZBEE_ZCL_CID_BINARY_INPUT_BASIC,              "Binary Input (Basic)"},
-    { ZBEE_ZCL_CID_BINARY_OUTPUT_BASIC,             "Binary Output (Basic)"},
-    { ZBEE_ZCL_CID_BINARY_VALUE_BASIC,              "Binary Value (Basic)"},
-    { ZBEE_ZCL_CID_MULTISTATE_INPUT_BASIC,          "Multistate Input (Basic)"},
-    { ZBEE_ZCL_CID_MULTISTATE_OUTPUT_BASIC,         "Multistate Output (Basic)"},
-    { ZBEE_ZCL_CID_MULTISTATE_VALUE_BASIC,          "Multistate Value (Basic)"},
-    { ZBEE_ZCL_CID_COMMISSIONING,                   "Commissioning"},
-    { ZBEE_ZCL_CID_PARTITION,                       "Partition"},
-    { ZBEE_ZCL_CID_OTA_UPGRADE,                     "OTA Upgrade"},
-    { ZBEE_ZCL_CID_POLL_CONTROL,                    "Poll Control"},
-    { ZBEE_ZCL_CID_GP,                              "Green Power"},
+    { ZBEE_ZCL_CID_BASIC,                           ZBEE_ZCL_CID_BASIC,                           "Basic"},
+    { ZBEE_ZCL_CID_POWER_CONFIG,                    ZBEE_ZCL_CID_POWER_CONFIG,                    "Power Configuration"},
+    { ZBEE_ZCL_CID_DEVICE_TEMP_CONFIG,              ZBEE_ZCL_CID_DEVICE_TEMP_CONFIG,              "Device Temperature Configuration"},
+    { ZBEE_ZCL_CID_IDENTIFY,                        ZBEE_ZCL_CID_IDENTIFY,                        "Identify"},
+    { ZBEE_ZCL_CID_GROUPS,                          ZBEE_ZCL_CID_GROUPS,                          "Groups"},
+    { ZBEE_ZCL_CID_SCENES,                          ZBEE_ZCL_CID_SCENES,                          "Scenes"},
+    { ZBEE_ZCL_CID_ON_OFF,                          ZBEE_ZCL_CID_ON_OFF,                          "On/Off"},
+    { ZBEE_ZCL_CID_ON_OFF_SWITCH_CONFIG,            ZBEE_ZCL_CID_ON_OFF_SWITCH_CONFIG,            "On/Off Switch Configuration"},
+    { ZBEE_ZCL_CID_LEVEL_CONTROL,                   ZBEE_ZCL_CID_LEVEL_CONTROL,                   "Level Control"},
+    { ZBEE_ZCL_CID_ALARMS,                          ZBEE_ZCL_CID_ALARMS,                          "Alarms"},
+    { ZBEE_ZCL_CID_TIME,                            ZBEE_ZCL_CID_TIME,                            "Time"},
+    { ZBEE_ZCL_CID_RSSI_LOCATION,                   ZBEE_ZCL_CID_RSSI_LOCATION,                   "RSSI Location"},
+    { ZBEE_ZCL_CID_ANALOG_INPUT_BASIC,              ZBEE_ZCL_CID_ANALOG_INPUT_BASIC,              "Analog Input (Basic)"},
+    { ZBEE_ZCL_CID_ANALOG_OUTPUT_BASIC,             ZBEE_ZCL_CID_ANALOG_OUTPUT_BASIC,             "Analog Output (Basic)"},
+    { ZBEE_ZCL_CID_ANALOG_VALUE_BASIC,              ZBEE_ZCL_CID_ANALOG_VALUE_BASIC,              "Analog Value (Basic)"},
+    { ZBEE_ZCL_CID_BINARY_INPUT_BASIC,              ZBEE_ZCL_CID_BINARY_INPUT_BASIC,              "Binary Input (Basic)"},
+    { ZBEE_ZCL_CID_BINARY_OUTPUT_BASIC,             ZBEE_ZCL_CID_BINARY_OUTPUT_BASIC,             "Binary Output (Basic)"},
+    { ZBEE_ZCL_CID_BINARY_VALUE_BASIC,              ZBEE_ZCL_CID_BINARY_VALUE_BASIC,              "Binary Value (Basic)"},
+    { ZBEE_ZCL_CID_MULTISTATE_INPUT_BASIC,          ZBEE_ZCL_CID_MULTISTATE_INPUT_BASIC,          "Multistate Input (Basic)"},
+    { ZBEE_ZCL_CID_MULTISTATE_OUTPUT_BASIC,         ZBEE_ZCL_CID_MULTISTATE_OUTPUT_BASIC,         "Multistate Output (Basic)"},
+    { ZBEE_ZCL_CID_MULTISTATE_VALUE_BASIC,          ZBEE_ZCL_CID_MULTISTATE_VALUE_BASIC,          "Multistate Value (Basic)"},
+    { ZBEE_ZCL_CID_COMMISSIONING,                   ZBEE_ZCL_CID_COMMISSIONING,                   "Commissioning"},
+    { ZBEE_ZCL_CID_PARTITION,                       ZBEE_ZCL_CID_PARTITION,                       "Partition"},
+    { ZBEE_ZCL_CID_OTA_UPGRADE,                     ZBEE_ZCL_CID_OTA_UPGRADE,                     "OTA Upgrade"},
+    { ZBEE_ZCL_CID_POLL_CONTROL,                    ZBEE_ZCL_CID_POLL_CONTROL,                    "Poll Control"},
+    { ZBEE_ZCL_CID_GP,                              ZBEE_ZCL_CID_GP,                              "Green Power"},
     /* */
-    { ZBEE_ZCL_CID_POWER_PROFILE,                    "Power Profile"},
-    { ZBEE_ZCL_CID_APPLIANCE_CONTROL,                "Appliance Control"},
+    { ZBEE_ZCL_CID_POWER_PROFILE,                    ZBEE_ZCL_CID_POWER_PROFILE,                    "Power Profile"},
+    { ZBEE_ZCL_CID_APPLIANCE_CONTROL,                ZBEE_ZCL_CID_APPLIANCE_CONTROL,                "Appliance Control"},
 
 /* Closures */
-    { ZBEE_ZCL_CID_SHADE_CONFIG,                    "Shade Configuration"},
-    { ZBEE_ZCL_CID_DOOR_LOCK,                       "Door Lock"},
+    { ZBEE_ZCL_CID_SHADE_CONFIG,                    ZBEE_ZCL_CID_SHADE_CONFIG,                    "Shade Configuration"},
+    { ZBEE_ZCL_CID_DOOR_LOCK,                       ZBEE_ZCL_CID_DOOR_LOCK,                       "Door Lock"},
+    { ZBEE_ZCL_CID_WINDOW_COVERING,                 ZBEE_ZCL_CID_WINDOW_COVERING,                 "Window Covering"},
 
 /* HVAC */
-    { ZBEE_ZCL_CID_PUMP_CONFIG_CONTROL,             "Pump Configuration Control"},
-    { ZBEE_ZCL_CID_THERMOSTAT,                      "Thermostat"},
-    { ZBEE_ZCL_CID_FAN_CONTROL,                     "Fan Control"},
-    { ZBEE_ZCL_CID_DEHUMIDIFICATION_CONTROL,        "Dehumidification Control"},
-    { ZBEE_ZCL_CID_THERMOSTAT_UI_CONFIG,            "Thermostat User Interface Configuration"},
+    { ZBEE_ZCL_CID_PUMP_CONFIG_CONTROL,             ZBEE_ZCL_CID_PUMP_CONFIG_CONTROL,             "Pump Configuration Control"},
+    { ZBEE_ZCL_CID_THERMOSTAT,                      ZBEE_ZCL_CID_THERMOSTAT,                      "Thermostat"},
+    { ZBEE_ZCL_CID_FAN_CONTROL,                     ZBEE_ZCL_CID_FAN_CONTROL,                     "Fan Control"},
+    { ZBEE_ZCL_CID_DEHUMIDIFICATION_CONTROL,        ZBEE_ZCL_CID_DEHUMIDIFICATION_CONTROL,        "Dehumidification Control"},
+    { ZBEE_ZCL_CID_THERMOSTAT_UI_CONFIG,            ZBEE_ZCL_CID_THERMOSTAT_UI_CONFIG,            "Thermostat User Interface Configuration"},
 
 /* Lighting */
-    { ZBEE_ZCL_CID_COLOR_CONTROL,                   "Color Control"},
-    { ZBEE_ZCL_CID_BALLAST_CONFIG,                  "Ballast Configuration"},
+    { ZBEE_ZCL_CID_COLOR_CONTROL,                   ZBEE_ZCL_CID_COLOR_CONTROL,                   "Color Control"},
+    { ZBEE_ZCL_CID_BALLAST_CONFIG,                  ZBEE_ZCL_CID_BALLAST_CONFIG,                  "Ballast Configuration"},
 
 /* Measurement and Sensing */
-    { ZBEE_ZCL_CID_ILLUMINANCE_MEASUREMENT,         "Illuminance Measurement"},
-    { ZBEE_ZCL_CID_ILLUMINANCE_LEVEL_SENSING,       "Illuminance Level Sensing"},
-    { ZBEE_ZCL_CID_TEMPERATURE_MEASUREMENT,         "Temperature Measurement"},
-    { ZBEE_ZCL_CID_PRESSURE_MEASUREMENT,            "Pressure Measurement"},
-    { ZBEE_ZCL_CID_FLOW_MEASUREMENT,                "Flow Measurement"},
-    { ZBEE_ZCL_CID_REL_HUMIDITY_MEASUREMENT,        "Relative Humidity Measurement"},
-    { ZBEE_ZCL_CID_OCCUPANCY_SENSING,               "Occupancy Sensing"},
+    { ZBEE_ZCL_CID_ILLUMINANCE_MEASUREMENT,         ZBEE_ZCL_CID_ILLUMINANCE_MEASUREMENT,         "Illuminance Measurement"},
+    { ZBEE_ZCL_CID_ILLUMINANCE_LEVEL_SENSING,       ZBEE_ZCL_CID_ILLUMINANCE_LEVEL_SENSING,       "Illuminance Level Sensing"},
+    { ZBEE_ZCL_CID_TEMPERATURE_MEASUREMENT,         ZBEE_ZCL_CID_TEMPERATURE_MEASUREMENT,         "Temperature Measurement"},
+    { ZBEE_ZCL_CID_PRESSURE_MEASUREMENT,            ZBEE_ZCL_CID_PRESSURE_MEASUREMENT,            "Pressure Measurement"},
+    { ZBEE_ZCL_CID_FLOW_MEASUREMENT,                ZBEE_ZCL_CID_FLOW_MEASUREMENT,                "Flow Measurement"},
+    { ZBEE_ZCL_CID_REL_HUMIDITY_MEASUREMENT,        ZBEE_ZCL_CID_REL_HUMIDITY_MEASUREMENT,        "Relative Humidity Measurement"},
+    { ZBEE_ZCL_CID_OCCUPANCY_SENSING,               ZBEE_ZCL_CID_OCCUPANCY_SENSING,               "Occupancy Sensing"},
+    { ZBEE_ZCL_CID_ELECTRICAL_MEASUREMENT,          ZBEE_ZCL_CID_ELECTRICAL_MEASUREMENT,          "Electrical Measurement"},
 
 /* Security and Safety */
-    { ZBEE_ZCL_CID_IAS_ZONE,                        "Intruder Alarm System Zone"},
-    { ZBEE_ZCL_CID_IAS_ACE,                         "Intruder Alarm System ACE"},
-    { ZBEE_ZCL_CID_IAS_WD,                          "Intruder Alarm System WD"},
+    { ZBEE_ZCL_CID_IAS_ZONE,                        ZBEE_ZCL_CID_IAS_ZONE,                        "Intruder Alarm System Zone"},
+    { ZBEE_ZCL_CID_IAS_ACE,                         ZBEE_ZCL_CID_IAS_ACE,                         "Intruder Alarm System ACE"},
+    { ZBEE_ZCL_CID_IAS_WD,                          ZBEE_ZCL_CID_IAS_WD,                          "Intruder Alarm System WD"},
 
 /* Protocol Interfaces */
-    { ZBEE_ZCL_CID_GENERIC_TUNNEL,                  "BACnet Generic Tunnel"},
-    { ZBEE_ZCL_CID_BACNET_PROTOCOL_TUNNEL,          "BACnet Protocol Tunnel"},
-    { ZBEE_ZCL_CID_BACNET_ANALOG_INPUT_REG,         "BACnet Analog Input (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_ANALOG_INPUT_EXT,         "BACnet Analog Input (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_ANALOG_OUTPUT_REG,        "BACnet Analog Output (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_ANALOG_OUTPUT_EXT,        "BACnet Analog Output (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_ANALOG_VALUE_REG,         "BACnet Analog Value (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_ANALOG_VALUE_EXT,         "BACnet Analog Value (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_BINARY_INPUT_REG,         "BACnet Binary Input (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_BINARY_INPUT_EXT,         "BACnet Binary Input (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_BINARY_OUTPUT_REG,        "BACnet Binary Output (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_BINARY_OUTPUT_EXT,        "BACnet Binary Output (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_BINARY_VALUE_REG,         "BACnet Binary Value (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_BINARY_VALUE_EXT,         "BACnet Binary Value (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_MULTISTATE_INPUT_REG,     "BACnet Multistage Input (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_MULTISTATE_INPUT_EXT,     "BACnet Multistage Input (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_MULTISTATE_OUTPUT_REG,    "BACnet Multistage Output (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_MULTISTATE_OUTPUT_EXT,    "BACnet Multistage Output (Extended)"},
-    { ZBEE_ZCL_CID_BACNET_MULTISTATE_VALUE_REG,     "BACnet Multistage Value (Regular)"},
-    { ZBEE_ZCL_CID_BACNET_MULTISTATE_VALUE_EXT,     "BACnet Multistage Value (Extended)"},
+    { ZBEE_ZCL_CID_GENERIC_TUNNEL,                  ZBEE_ZCL_CID_GENERIC_TUNNEL,                  "BACnet Generic Tunnel"},
+    { ZBEE_ZCL_CID_BACNET_PROTOCOL_TUNNEL,          ZBEE_ZCL_CID_BACNET_PROTOCOL_TUNNEL,          "BACnet Protocol Tunnel"},
+    { ZBEE_ZCL_CID_BACNET_ANALOG_INPUT_REG,         ZBEE_ZCL_CID_BACNET_ANALOG_INPUT_REG,         "BACnet Analog Input (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_ANALOG_INPUT_EXT,         ZBEE_ZCL_CID_BACNET_ANALOG_INPUT_EXT,         "BACnet Analog Input (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_ANALOG_OUTPUT_REG,        ZBEE_ZCL_CID_BACNET_ANALOG_OUTPUT_REG,        "BACnet Analog Output (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_ANALOG_OUTPUT_EXT,        ZBEE_ZCL_CID_BACNET_ANALOG_OUTPUT_EXT,        "BACnet Analog Output (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_ANALOG_VALUE_REG,         ZBEE_ZCL_CID_BACNET_ANALOG_VALUE_REG,         "BACnet Analog Value (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_ANALOG_VALUE_EXT,         ZBEE_ZCL_CID_BACNET_ANALOG_VALUE_EXT,         "BACnet Analog Value (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_BINARY_INPUT_REG,         ZBEE_ZCL_CID_BACNET_BINARY_INPUT_REG,         "BACnet Binary Input (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_BINARY_INPUT_EXT,         ZBEE_ZCL_CID_BACNET_BINARY_INPUT_EXT,         "BACnet Binary Input (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_BINARY_OUTPUT_REG,        ZBEE_ZCL_CID_BACNET_BINARY_OUTPUT_REG,        "BACnet Binary Output (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_BINARY_OUTPUT_EXT,        ZBEE_ZCL_CID_BACNET_BINARY_OUTPUT_EXT,        "BACnet Binary Output (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_BINARY_VALUE_REG,         ZBEE_ZCL_CID_BACNET_BINARY_VALUE_REG,         "BACnet Binary Value (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_BINARY_VALUE_EXT,         ZBEE_ZCL_CID_BACNET_BINARY_VALUE_EXT,         "BACnet Binary Value (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_MULTISTATE_INPUT_REG,     ZBEE_ZCL_CID_BACNET_MULTISTATE_INPUT_REG,     "BACnet Multistage Input (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_MULTISTATE_INPUT_EXT,     ZBEE_ZCL_CID_BACNET_MULTISTATE_INPUT_EXT,     "BACnet Multistage Input (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_MULTISTATE_OUTPUT_REG,    ZBEE_ZCL_CID_BACNET_MULTISTATE_OUTPUT_REG,    "BACnet Multistage Output (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_MULTISTATE_OUTPUT_EXT,    ZBEE_ZCL_CID_BACNET_MULTISTATE_OUTPUT_EXT,    "BACnet Multistage Output (Extended)"},
+    { ZBEE_ZCL_CID_BACNET_MULTISTATE_VALUE_REG,     ZBEE_ZCL_CID_BACNET_MULTISTATE_VALUE_REG,     "BACnet Multistage Value (Regular)"},
+    { ZBEE_ZCL_CID_BACNET_MULTISTATE_VALUE_EXT,     ZBEE_ZCL_CID_BACNET_MULTISTATE_VALUE_EXT,     "BACnet Multistage Value (Extended)"},
 
 /* ZCL Cluster IDs - Smart Energy */
-    { ZBEE_ZCL_CID_KEEP_ALIVE,                      "Keep-Alive"},
-    { ZBEE_ZCL_CID_PRICE,                           "Price"},
-    { ZBEE_ZCL_CID_DEMAND_RESPONSE_LOAD_CONTROL,    "Demand Response and Load Control"},
-    { ZBEE_ZCL_CID_SIMPLE_METERING,                 "Simple Metering"},
-    { ZBEE_ZCL_CID_MESSAGE,                         "Message"},
-    { ZBEE_ZCL_CID_TUNNELING,                       "Tunneling"},
-    { ZBEE_ZCL_CID_PRE_PAYMENT,                     "Pre-Payment"},
-    { ZBEE_ZCL_CID_ENERGY_MANAGEMENT,               "Energy Management"},
-    { ZBEE_ZCL_CID_CALENDAR,                        "Calendar"},
-    { ZBEE_ZCL_CID_DEVICE_MANAGEMENT,               "Device Management"},
-    { ZBEE_ZCL_CID_EVENTS,                          "Events"},
-    { ZBEE_ZCL_CID_MDU_PAIRING,                     "MDU Pairing"},
-    { ZBEE_ZCL_CID_SUB_GHZ,                         "Sub-Ghz"},
+    { ZBEE_ZCL_CID_KEEP_ALIVE,                      ZBEE_ZCL_CID_KEEP_ALIVE,                      "Keep-Alive"},
+    { ZBEE_ZCL_CID_PRICE,                           ZBEE_ZCL_CID_PRICE,                           "Price"},
+    { ZBEE_ZCL_CID_DEMAND_RESPONSE_LOAD_CONTROL,    ZBEE_ZCL_CID_DEMAND_RESPONSE_LOAD_CONTROL,    "Demand Response and Load Control"},
+    { ZBEE_ZCL_CID_SIMPLE_METERING,                 ZBEE_ZCL_CID_SIMPLE_METERING,                 "Simple Metering"},
+    { ZBEE_ZCL_CID_MESSAGE,                         ZBEE_ZCL_CID_MESSAGE,                         "Message"},
+    { ZBEE_ZCL_CID_TUNNELING,                       ZBEE_ZCL_CID_TUNNELING,                       "Tunneling"},
+    { ZBEE_ZCL_CID_PRE_PAYMENT,                     ZBEE_ZCL_CID_PRE_PAYMENT,                     "Pre-Payment"},
+    { ZBEE_ZCL_CID_ENERGY_MANAGEMENT,               ZBEE_ZCL_CID_ENERGY_MANAGEMENT,               "Energy Management"},
+    { ZBEE_ZCL_CID_CALENDAR,                        ZBEE_ZCL_CID_CALENDAR,                        "Calendar"},
+    { ZBEE_ZCL_CID_DEVICE_MANAGEMENT,               ZBEE_ZCL_CID_DEVICE_MANAGEMENT,               "Device Management"},
+    { ZBEE_ZCL_CID_EVENTS,                          ZBEE_ZCL_CID_EVENTS,                          "Events"},
+    { ZBEE_ZCL_CID_MDU_PAIRING,                     ZBEE_ZCL_CID_MDU_PAIRING,                     "MDU Pairing"},
+    { ZBEE_ZCL_CID_SUB_GHZ,                         ZBEE_ZCL_CID_SUB_GHZ,                         "Sub-Ghz"},
+    { ZBEE_ZCL_CID_DAILY_SCHEDULE,                  ZBEE_ZCL_CID_DAILY_SCHEDULE,                  "Daily Schedule"},
 
 /* ZCL Cluster IDs - Key Establishment */
-    { ZBEE_ZCL_CID_KE,                              "Key Establishment"},
+    { ZBEE_ZCL_CID_KE,                              ZBEE_ZCL_CID_KE,                              "Key Establishment"},
 
 /* ZCL Cluster IDs - Home Automation */
-    {ZBEE_ZCL_CID_APPLIANCE_IDENTIFICATION,         "Appliance Identification"},
-    {ZBEE_ZCL_CID_METER_IDENTIFICATION,             "Meter Identification"},
-    {ZBEE_ZCL_CID_APPLIANCE_EVENTS_AND_ALERT,       "Appliance Events And Alerts"},
-    {ZBEE_ZCL_CID_APPLIANCE_STATISTICS,             "Appliance Statistics"},
+    {ZBEE_ZCL_CID_APPLIANCE_IDENTIFICATION,         ZBEE_ZCL_CID_APPLIANCE_IDENTIFICATION,         "Appliance Identification"},
+    {ZBEE_ZCL_CID_METER_IDENTIFICATION,             ZBEE_ZCL_CID_METER_IDENTIFICATION,             "Meter Identification"},
+    {ZBEE_ZCL_CID_APPLIANCE_EVENTS_AND_ALERT,       ZBEE_ZCL_CID_APPLIANCE_EVENTS_AND_ALERT,       "Appliance Events And Alerts"},
+    {ZBEE_ZCL_CID_APPLIANCE_STATISTICS,             ZBEE_ZCL_CID_APPLIANCE_STATISTICS,             "Appliance Statistics"},
 
-    {ZBEE_ZCL_CID_ZLL,                              "ZLL Commissioning"},
-    { 0, NULL }
+    {ZBEE_ZCL_CID_ZLL,                              ZBEE_ZCL_CID_ZLL,                              "ZLL Commissioning"},
+
+/* ZCL Cluster IDs - Manufacturer Specific */
+    {ZBEE_ZCL_CID_MANUFACTURER_SPECIFIC_MIN,        ZBEE_ZCL_CID_MANUFACTURER_SPECIFIC_MAX,        "Manufacturer Specific"},
+    { 0, 0, NULL }
 };
 
 /* APS Test Profile #2 Cluster Names */
-const value_string zbee_aps_t2_cid_names[] = {
+static const value_string zbee_aps_t2_cid_names[] = {
     { ZBEE_APS_T2_CID_BR,         "Broadcast Request"},
     { ZBEE_APS_T2_CID_BTADR,      "Broadcast to All Devices Response"},
     { ZBEE_APS_T2_CID_BTARACR,    "Broadcast to All Routers and Coordinator Response"},
@@ -669,7 +680,7 @@ const value_string zbee_aps_t2_cid_names[] = {
 };
 
 /* APS Test Profile #2 Buffer Test Response Status Names */
-const value_string zbee_aps_t2_btres_status_names[] = {
+static const value_string zbee_aps_t2_btres_status_names[] = {
     { ZBEE_APS_T2_CID_BTRES_S_SBT,   "Successful Buffer Test"},
     { ZBEE_APS_T2_CID_BTRES_S_TFOFA, "Transmission Failure on First Attempt"},
 
@@ -686,6 +697,64 @@ const value_string zbee_aps_t2_btres_status_names[] = {
 #define ZBEE_APS_FRAG_BLOCK7_ACK    0x40
 #define ZBEE_APS_FRAG_BLOCK8_ACK    0x80
 
+/* calculate the extended counter - top 24 bits of the previous counter,
+ * plus our own; then correct for wrapping */
+static uint32_t
+zbee_aps_calculate_extended_counter(uint32_t previous_counter, uint8_t raw_counter)
+{
+    uint32_t counter = (previous_counter & 0xffffff00) | raw_counter;
+    if ((counter + 0x40) < previous_counter) {
+        counter += 0x100;
+    } else if ((previous_counter + 0x40) < counter) {
+        /* we got an out-of-order packet which happened to go backwards over the
+         * wrap boundary */
+        counter -= 0x100;
+    }
+    return counter;
+}
+
+static struct zbee_aps_node_packet_info*
+zbee_aps_node_packet_info(packet_info *pinfo,
+                          const zbee_nwk_packet *nwk, const zbee_nwk_hints_t *nwk_hints, const zbee_aps_packet *packet)
+{
+    struct zbee_aps_node_packet_info *node_data_packet;
+
+    node_data_packet = (struct zbee_aps_node_packet_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_zbee_aps, ZBEE_APS_NODE_PROTO_DATA);
+    if (node_data_packet == NULL) {
+        ieee802154_short_addr addr16;
+        struct zbee_aps_node_info *node_data;
+        uint32_t counter;
+
+        if (nwk_hints) {
+            addr16.pan = nwk_hints->src_pan;
+        }
+        else {
+            addr16.pan = 0x0000;
+        }
+        if (packet->type != ZBEE_APS_FCF_ACK) {
+            addr16.addr = nwk->src;
+        }
+        else {
+            addr16.addr = nwk->dst;
+        }
+        node_data = (struct zbee_aps_node_info*) g_hash_table_lookup(zbee_table_aps_extended_counters, &addr16);
+        if (node_data == NULL) {
+            node_data = wmem_new0(wmem_file_scope(), struct zbee_aps_node_info);
+            node_data->extended_counter = 0x100;
+            g_hash_table_insert(zbee_table_aps_extended_counters, wmem_memdup(wmem_file_scope(), &addr16, sizeof(addr16)), node_data);
+        }
+
+        node_data_packet = wmem_new(wmem_file_scope(), struct zbee_aps_node_packet_info);
+        p_add_proto_data(wmem_file_scope(), pinfo, proto_zbee_aps, ZBEE_APS_NODE_PROTO_DATA, node_data_packet);
+
+        counter = zbee_aps_calculate_extended_counter(node_data->extended_counter, packet->counter);
+        node_data->extended_counter = counter;
+        node_data_packet->extended_counter = counter;
+    }
+
+    return node_data_packet;
+}
+
 /**
  *ZigBee Application Support Sublayer dissector for wireshark.
  *
@@ -696,21 +765,24 @@ const value_string zbee_aps_t2_btres_status_names[] = {
 static int
 dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 {
-    tvbuff_t            *payload_tvb = NULL;
-    dissector_handle_t   profile_handle = NULL;
-    dissector_handle_t   zcl_handle = NULL;
+    tvbuff_t                                    *payload_tvb = NULL;
+    dissector_handle_t                          profile_handle = NULL;
+    dissector_handle_t                          zcl_handle = NULL;
 
-    proto_tree          *aps_tree;
-    proto_tree          *field_tree;
-    proto_item          *proto_root;
+    proto_tree                                  *aps_tree;
+    proto_tree                                  *field_tree;
+    proto_item                                  *proto_root;
 
-    zbee_aps_packet      packet;
-    zbee_nwk_packet     *nwk;
+    zbee_aps_packet                             packet;
+    zbee_nwk_packet                             *nwk;
+    zbee_nwk_hints_t                            *nwk_hints;
 
-    guint8               fcf;
-    guint8               offset = 0;
+    struct zbee_aps_node_packet_info            *node_data_packet;
 
-    static const int   * frag_ack_flags[] = {
+    uint8_t                                     fcf;
+    uint8_t                                     offset = 0;
+
+    static int * const frag_ack_flags[] = {
         &hf_zbee_aps_block_ack1,
         &hf_zbee_aps_block_ack2,
         &hf_zbee_aps_block_ack3,
@@ -730,6 +802,9 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
     /* Init. */
     memset(&packet, 0, sizeof(zbee_aps_packet));
 
+    nwk_hints = (zbee_nwk_hints_t *)p_get_proto_data(wmem_file_scope(), pinfo,
+        proto_get_id_by_filter_name(ZBEE_PROTOABBREV_NWK), 0);
+
     /*  Create the protocol tree */
     proto_root = proto_tree_add_protocol_format(tree, proto_zbee_aps, tvb, offset, tvb_captured_length(tvb), "ZigBee Application Support Layer");
     aps_tree = proto_item_add_subtree(proto_root, ett_zbee_aps);
@@ -738,7 +813,7 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "ZigBee");
 
     /*  Get the FCF */
-    fcf = tvb_get_guint8(tvb, offset);
+    fcf = tvb_get_uint8(tvb, offset);
     packet.type          = zbee_get_bit_field(fcf, ZBEE_APS_FCF_FRAME_TYPE);
     packet.delivery      = zbee_get_bit_field(fcf, ZBEE_APS_FCF_DELIVERY_MODE);
     packet.indirect_mode = zbee_get_bit_field(fcf, ZBEE_APS_FCF_INDIRECT_MODE);
@@ -799,8 +874,8 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
             break;
 
         case ZBEE_APS_FCF_INTERPAN:
-            packet.dst_present = FALSE;
-            packet.src_present = FALSE;
+            packet.dst_present = false;
+            packet.src_present = false;
             break;
 
         default:
@@ -818,8 +893,8 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
              * disagree with the presence of the endpoint in broadcast delivery
              * mode).
              */
-            packet.dst_present = TRUE;
-            packet.src_present = TRUE;
+            packet.dst_present = true;
+            packet.src_present = true;
         }
         else if ((packet.delivery == ZBEE_APS_FCF_INDIRECT) && (nwk->version <= ZBEE_VERSION_2004)) {
             /* Indirect addressing was removed in ZigBee 2006, basically because it
@@ -835,8 +910,8 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
             /* Group addressing was added in ZigBee 2006, and contains only the
              * source endpoint. (IMO, Broacast deliveries should do the same).
              */
-            packet.dst_present = FALSE;
-            packet.src_present = TRUE;
+            packet.dst_present = false;
+            packet.src_present = true;
         }
         else {
             /* Illegal Delivery Mode. */
@@ -847,7 +922,7 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 
         /* If the destination endpoint is present, get and display it. */
         if (packet.dst_present) {
-            packet.dst = tvb_get_guint8(tvb, offset);
+            packet.dst = tvb_get_uint8(tvb, offset);
             proto_tree_add_uint(aps_tree, hf_zbee_aps_dst, tvb, offset, 1, packet.dst);
             proto_item_append_text(proto_root, ", Dst Endpt: %d", packet.dst);
             offset += 1;
@@ -875,8 +950,9 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
         switch (tvb_get_letohs(tvb, offset + 2)) {
             case ZBEE_DEVICE_PROFILE:
                 proto_tree_add_uint_format(aps_tree, hf_zbee_aps_zdp_cluster, tvb, offset, 2, nwk->cluster_id,
-                    "%s (Cluster ID: 0x%04x)", val_to_str(nwk->cluster_id, zbee_zdp_cluster_names,
-                    "Unknown Device Profile Cluster"), nwk->cluster_id);
+                    "%s (Cluster ID: 0x%04x)",
+                    val_to_str_const(nwk->cluster_id, zbee_zdp_cluster_names, "Unknown Device Profile Cluster"),
+                    nwk->cluster_id);
                 break;
             case ZBEE_PROFILE_T2:
                 proto_tree_add_item(aps_tree, hf_zbee_aps_t2_cluster, tvb, offset, 2, ENC_LITTLE_ENDIAN);
@@ -894,7 +970,7 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
     }
     else {
         /* Cluster ID is 8-bits long in ZigBee 2004 and earlier. */
-        nwk->cluster_id = tvb_get_guint8(tvb, offset);
+        nwk->cluster_id = tvb_get_uint8(tvb, offset);
         proto_tree_add_uint_format_value(aps_tree, hf_zbee_aps_cluster, tvb, offset,
                 1, nwk->cluster_id, "0x%02x", nwk->cluster_id);
         offset += 1;
@@ -910,10 +986,10 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
      */
     offset +=2;
 
-    /* The source endpoint is present for all cases except indirect /w indirect_mode == FALSE */
+    /* The source endpoint is present for all cases except indirect /w indirect_mode == false */
     if (packet.type != ZBEE_APS_FCF_INTERPAN &&
         ((packet.delivery != ZBEE_APS_FCF_INDIRECT) || (!packet.indirect_mode))) {
-        packet.src = tvb_get_guint8(tvb, offset);
+        packet.src = tvb_get_uint8(tvb, offset);
         proto_tree_add_uint(aps_tree, hf_zbee_aps_src, tvb, offset, 1, packet.src);
         proto_item_append_text(proto_root, ", Src Endpt: %d", packet.src);
         offset += 1;
@@ -933,14 +1009,16 @@ dissect_zbee_aps_no_endpt:
 
     /* Get and display the APS counter. Only present on ZigBee 2007 and later. */
     if (nwk->version >= ZBEE_VERSION_2007 && packet.type != ZBEE_APS_FCF_INTERPAN) {
-        packet.counter = tvb_get_guint8(tvb, offset);
+        packet.counter = tvb_get_uint8(tvb, offset);
         proto_tree_add_uint(aps_tree, hf_zbee_aps_counter, tvb, offset, 1, packet.counter);
         offset += 1;
     }
 
+    node_data_packet = zbee_aps_node_packet_info(pinfo, nwk, nwk_hints, &packet);
+
     /* Get and display the extended header, if present. */
     if (packet.ext_header) {
-        fcf = tvb_get_guint8(tvb, offset);
+        fcf = tvb_get_uint8(tvb, offset);
         packet.fragmentation = fcf & ZBEE_APS_EXT_FCF_FRAGMENT;
         /* Create a subtree */
         field_tree = proto_tree_add_subtree_format(aps_tree, tvb, offset, 1, ett_zbee_aps_fcf, NULL, "Extended Frame Control Field (0x%02x)", fcf);
@@ -951,7 +1029,7 @@ dissect_zbee_aps_no_endpt:
 
         /* If fragmentation is enabled, get and display the block number. */
         if (packet.fragmentation != ZBEE_APS_EXT_FCF_FRAGMENT_NONE) {
-            packet.block_number = tvb_get_guint8(tvb, offset);
+            packet.block_number = tvb_get_uint8(tvb, offset);
             proto_tree_add_uint(field_tree, hf_zbee_aps_block_number, tvb, offset, 1, packet.block_number);
             offset += 1;
         }
@@ -984,20 +1062,23 @@ dissect_zbee_aps_no_endpt:
 
     /* If the payload exists, and the packet is fragmented, attempt reassembly. */
     if ((payload_tvb) && (packet.fragmentation != ZBEE_APS_EXT_FCF_FRAGMENT_NONE)) {
-        guint32         msg_id;
-        guint32         block_num;
-        guint32         num_blocks;
+        uint32_t        msg_id;
+        uint32_t        block_num;
+        uint32_t        num_blocks;
         fragment_head   *frag_msg = NULL;
         tvbuff_t        *new_tvb;
 
         /* Set the fragmented flag. */
-        pinfo->fragmented = TRUE;
+        pinfo->fragmented = true;
 
-        /* The source address and APS Counter pair form a unique identifier
-         * for each message (fragmented or not). Hash these two together to
+        /* The source address (short address and PAN ID) and APS Counter pair form a unique identifier
+         * for each message (fragmented or not). Hash these together to
          * create the message id for the fragmentation handler.
          */
-        msg_id = ((nwk->src)<<8) + packet.counter;
+        msg_id = ((nwk->src)<<16) + (node_data_packet->extended_counter & 0xffff);
+        if (nwk_hints) {
+            msg_id ^= (nwk_hints->src_pan)<<16;
+        }
 
         /* If this is the first block of a fragmented message, than the block
          * number field is the maximum number of blocks in the message. Otherwise
@@ -1015,7 +1096,7 @@ dissect_zbee_aps_no_endpt:
         /* Add this fragment to the reassembly handler. */
         frag_msg = fragment_add_seq_check(&zbee_aps_reassembly_table,
                 payload_tvb, 0, pinfo, msg_id, NULL,
-                block_num, tvb_captured_length(payload_tvb), TRUE);
+                block_num, tvb_captured_length(payload_tvb), true);
 
         if (num_blocks > 0) {
             fragment_set_tot_len(&zbee_aps_reassembly_table, pinfo, msg_id, NULL, num_blocks);
@@ -1105,16 +1186,16 @@ dissect_zbee_aps_no_endpt:
  *@param tvb pointer to buffer containing raw packet.
  *@param pinfo pointer to packet information fields
  *@param tree pointer to data tree Wireshark uses to display packet.
- *@param proto_root pointer to the root of the APS tree
+ *@param version version of APS
  *@param data raw packet private data.
 */
-static void dissect_zbee_aps_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint8 version, void *data)
+static void dissect_zbee_aps_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, uint8_t version, void *data)
 {
     proto_item  *cmd_root;
     proto_tree  *cmd_tree;
 
-    guint       offset = 0;
-    guint8      cmd_id = tvb_get_guint8(tvb, offset);
+    unsigned    offset = 0;
+    uint8_t     cmd_id = tvb_get_uint8(tvb, offset);
 
     /*  Create a subtree for the APS Command frame, and add the command ID to it. */
     cmd_tree = proto_tree_add_subtree_format(tree, tvb, offset, -1, ett_zbee_aps_cmd, &cmd_root,
@@ -1191,9 +1272,16 @@ static void dissect_zbee_aps_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
             offset = dissect_zbee_aps_confirm_key(tvb, pinfo, cmd_tree, offset);
             break;
 
+        case ZBEE_APS_CMD_RELAY_MSG_DOWNSTREAM:
+        case ZBEE_APS_CMD_RELAY_MSG_UPSTREAM:
+            break;
+
         default:
             break;
     } /* switch */
+
+    /* Dissect any TLVs */
+    offset = dissect_zbee_tlvs(tvb, pinfo, tree, offset, data, ZBEE_TLV_SRC_TYPE_ZBEE_APS, cmd_id);
 
     /* Check for any excess bytes. */
     if (offset < tvb_captured_length(tvb)) {
@@ -1221,8 +1309,8 @@ static void dissect_zbee_aps_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_skke_challenge(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_skke_challenge(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
     /* Get and display the initiator address. */
     proto_tree_add_item(tree, hf_zbee_aps_cmd_initiator, tvb, offset, 8, ENC_LITTLE_ENDIAN);
@@ -1249,8 +1337,8 @@ dissect_zbee_aps_skke_challenge(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tre
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_skke_data(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_skke_data(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
     /* Get and display the initiator address. */
     proto_tree_add_item(tree, hf_zbee_aps_cmd_initiator, tvb, offset, 8, ENC_LITTLE_ENDIAN);
@@ -1277,15 +1365,15 @@ dissect_zbee_aps_skke_data(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tr
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_transport_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_transport_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
-    guint8              key_type;
-    guint8              key[ZBEE_APS_CMD_KEY_LENGTH];
-    guint               i;
+    uint8_t             key_type;
+    uint8_t             key[ZBEE_APS_CMD_KEY_LENGTH];
+    unsigned            i;
 
     /* Get and display the key type. */
-    key_type = tvb_get_guint8(tvb, offset);
+    key_type = tvb_get_uint8(tvb, offset);
     proto_tree_add_uint(tree, hf_zbee_aps_cmd_key_type, tvb, offset, 1, key_type);
     offset += 1;
 
@@ -1293,7 +1381,7 @@ dissect_zbee_aps_transport_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
      * get and display it.
      */
     for (i=0; i<ZBEE_APS_CMD_KEY_LENGTH ; i++) {
-        key[i] = tvb_get_guint8(tvb, offset+i);
+        key[i] = tvb_get_uint8(tvb, offset+i);
     } /* for */
     proto_tree_add_item(tree, hf_zbee_aps_cmd_key, tvb, offset, ZBEE_APS_CMD_KEY_LENGTH, ENC_NA);
     offset += ZBEE_APS_CMD_KEY_LENGTH;
@@ -1307,10 +1395,10 @@ dissect_zbee_aps_transport_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
         case ZBEE_APS_CMD_KEY_HIGH_SEC_NWK:
             {
                 /* Network Key */
-                guint8  seqno;
+                uint8_t seqno;
 
                 /* Get and display the sequence number. */
-                seqno = tvb_get_guint8(tvb, offset);
+                seqno = tvb_get_uint8(tvb, offset);
                 proto_tree_add_uint(tree, hf_zbee_aps_cmd_seqno, tvb, offset, 1, seqno);
                 offset += 1;
 
@@ -1343,14 +1431,14 @@ dissect_zbee_aps_transport_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
         case ZBEE_APS_CMD_KEY_APP_LINK:
             {
                 /* Application master or link key, both have the same format. */
-                guint8  initiator;
+                uint8_t initiator;
 
                 /* get and display the partner address.  */
                 proto_tree_add_item(tree, hf_zbee_aps_cmd_partner, tvb, offset, 8, ENC_LITTLE_ENDIAN);
                 offset += 8;
 
                 /* get and display the initiator flag. */
-                initiator = tvb_get_guint8(tvb, offset);
+                initiator = tvb_get_uint8(tvb, offset);
                 proto_tree_add_boolean(tree, hf_zbee_aps_cmd_initiator_flag, tvb, offset, 1, initiator);
                 offset += 1;
 
@@ -1374,8 +1462,8 @@ dissect_zbee_aps_transport_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_verify_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_verify_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
     /* display the key type. */
     proto_tree_add_item(tree, hf_zbee_aps_cmd_key_type, tvb, offset, 1, ENC_NA);
@@ -1406,11 +1494,11 @@ dissect_zbee_aps_verify_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *t
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_confirm_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_confirm_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
     /* display status. */
-    guint status = tvb_get_guint8(tvb, offset);
+    unsigned status = tvb_get_uint8(tvb, offset);
     proto_tree_add_item(tree, hf_zbee_aps_cmd_status, tvb, offset, 1, ENC_LITTLE_ENDIAN);
     offset += 1;
     /* display the key type. */
@@ -1434,8 +1522,8 @@ dissect_zbee_aps_confirm_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_update_device(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset, guint8 version)
+static unsigned
+dissect_zbee_aps_update_device(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset, uint8_t version)
 {
     /* Get and display the device address. */
     proto_tree_add_item(tree, hf_zbee_aps_cmd_device, tvb, offset, 8, ENC_LITTLE_ENDIAN);
@@ -1464,8 +1552,8 @@ dissect_zbee_aps_update_device(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_remove_device(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_remove_device(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
     /* Get and display the device address. */
     proto_tree_add_item(tree, hf_zbee_aps_cmd_device, tvb, offset, 8, ENC_LITTLE_ENDIAN);
@@ -1484,13 +1572,13 @@ dissect_zbee_aps_remove_device(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_request_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_request_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
-    guint8  key_type;
+    uint8_t key_type;
 
     /* Get and display the key type. */
-    key_type = tvb_get_guint8(tvb, offset);
+    key_type = tvb_get_uint8(tvb, offset);
     proto_tree_add_uint(tree, hf_zbee_aps_cmd_key_type, tvb, offset, 1, key_type);
     offset += 1;
 
@@ -1513,13 +1601,13 @@ dissect_zbee_aps_request_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_switch_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_switch_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
-    guint8  seqno;
+    uint8_t seqno;
 
     /* Get and display the sequence number. */
-    seqno = tvb_get_guint8(tvb, offset);
+    seqno = tvb_get_uint8(tvb, offset);
     proto_tree_add_uint(tree, hf_zbee_aps_cmd_seqno, tvb, offset, 1, seqno);
     offset += 1;
 
@@ -1536,20 +1624,20 @@ dissect_zbee_aps_switch_key(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *t
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_auth_challenge(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_auth_challenge(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
-    guint8  key_type;
-    guint8  key_seqno;
+    uint8_t key_type;
+    uint8_t key_seqno;
 
     /* Get and display the key type. */
-    key_type = tvb_get_guint8(tvb, offset);
+    key_type = tvb_get_uint8(tvb, offset);
     proto_tree_add_uint(tree, hf_zbee_aps_cmd_ea_key_type, tvb, offset, 1, key_type);
     offset += 1;
 
     /* If using the network key, display the key sequence number. */
     if (key_type == ZBEE_APS_CMD_EA_KEY_NWK) {
-        key_seqno = tvb_get_guint8(tvb, offset);
+        key_seqno = tvb_get_uint8(tvb, offset);
         proto_tree_add_uint(tree, hf_zbee_aps_cmd_seqno, tvb, offset, 1, key_seqno);
         offset += 1;
     }
@@ -1579,17 +1667,17 @@ dissect_zbee_aps_auth_challenge(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tre
  *@param  offset into the tvb to begin dissection.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_auth_data(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, guint offset)
+static unsigned
+dissect_zbee_aps_auth_data(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, unsigned offset)
 {
-    guint8  data_type;
+    uint8_t data_type;
 
     /* Display the MAC. */
     proto_tree_add_item(tree, hf_zbee_aps_cmd_mac, tvb, offset, ZBEE_APS_CMD_EA_MAC_LENGTH, ENC_NA);
     offset += ZBEE_APS_CMD_EA_MAC_LENGTH;
 
     /* Get and display the data type. */
-    data_type = tvb_get_guint8(tvb, offset);
+    data_type = tvb_get_uint8(tvb, offset);
     /* Note! We're interpreting the DataType field to be the same as
      * KeyType field in the challenge frames. So far, this seems
      * consistent, although ZigBee appears to have left some holes
@@ -1617,8 +1705,8 @@ dissect_zbee_aps_auth_data(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tr
  *@param data raw packet private data.
  *@return offset after command dissection.
 */
-static guint
-dissect_zbee_aps_tunnel(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, guint offset, void *data)
+static unsigned
+dissect_zbee_aps_tunnel(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset, void *data)
 {
     proto_tree  *root;
     tvbuff_t    *tunnel_tvb;
@@ -1637,6 +1725,7 @@ dissect_zbee_aps_tunnel(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, gui
     return offset;
 } /* dissect_zbee_aps_tunnel */
 
+
 /**
  *ZigBee Application Framework dissector for Wireshark. Note
  *
@@ -1649,10 +1738,10 @@ static int dissect_zbee_apf(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     proto_tree  *apf_tree;
     proto_item  *proto_root;
 
-    guint8      count;
-    guint8      type;
-    guint       offset = 0;
-    guint       i;
+    uint8_t     count;
+    uint8_t     type;
+    unsigned    offset = 0;
+    unsigned    i;
 
     tvbuff_t    *app_tvb;
     dissector_handle_t  app_dissector = NULL;
@@ -1667,8 +1756,8 @@ static int dissect_zbee_apf(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     apf_tree = proto_item_add_subtree(proto_root, ett_zbee_apf);
 
     /* Get the count and type. */
-    count   = zbee_get_bit_field(tvb_get_guint8(tvb, offset), ZBEE_APP_COUNT);
-    type    = zbee_get_bit_field(tvb_get_guint8(tvb, offset), ZBEE_APP_TYPE);
+    count   = zbee_get_bit_field(tvb_get_uint8(tvb, offset), ZBEE_APP_COUNT);
+    type    = zbee_get_bit_field(tvb_get_uint8(tvb, offset), ZBEE_APP_TYPE);
     proto_tree_add_uint(apf_tree, hf_zbee_apf_count, tvb, offset, 1, count);
     proto_tree_add_uint(apf_tree, hf_zbee_apf_type, tvb, offset, 1, type);
     offset += 1;
@@ -1681,7 +1770,7 @@ static int dissect_zbee_apf(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
     /* Handle the transactions. */
     for (i=0; i<count; i++) {
-        guint       length;
+        unsigned    length;
 
         /* Create a tvb for this transaction. */
         length = zbee_apf_transaction_len(tvb, offset, type);
@@ -1711,18 +1800,18 @@ dissect_app_end:
  *@param tree pointer to the command subtree.
  *@param cluster_id ZigBee Test Profile #2 cluster ID.
 */
-static guint
-dissect_zbee_t2(tvbuff_t *tvb, proto_tree *tree, guint16 cluster_id)
+static unsigned
+dissect_zbee_t2(tvbuff_t *tvb, proto_tree *tree, uint16_t cluster_id)
 {
-    guint offset = 0;
-    guint8 payload_length;
+    unsigned offset = 0;
+    uint8_t payload_length;
     proto_tree *t2_tree;
 
     t2_tree = proto_tree_add_subtree(tree, tvb, 0, -1, ett_zbee_aps_t2, NULL, "ZigBee Test Profile #2");
 
     switch (cluster_id) {
         case ZBEE_APS_T2_CID_BTRES:
-            payload_length = tvb_get_guint8(tvb, offset);
+            payload_length = tvb_get_uint8(tvb, offset);
             proto_tree_add_uint(t2_tree, hf_zbee_aps_t2_btres_octet_sequence_length_requested, tvb, offset, 1,
                 payload_length);
             offset += 1;
@@ -1732,7 +1821,7 @@ dissect_zbee_t2(tvbuff_t *tvb, proto_tree *tree, guint16 cluster_id)
             offset += payload_length;
             break;
         case ZBEE_APS_T2_CID_BTREQ:
-            payload_length = tvb_get_guint8(tvb, offset);
+            payload_length = tvb_get_uint8(tvb, offset);
             proto_tree_add_uint(t2_tree, hf_zbee_aps_t2_btreq_octet_sequence_length, tvb, offset, 1, payload_length);
             offset += 1;
             break;
@@ -1747,17 +1836,17 @@ dissect_zbee_t2(tvbuff_t *tvb, proto_tree *tree, guint16 cluster_id)
  *@param offset offset into the buffer.
  *@param type message type: KVP or MSG.
 */
-static guint
-zbee_apf_transaction_len(tvbuff_t *tvb, guint offset, guint8 type)
+static unsigned
+zbee_apf_transaction_len(tvbuff_t *tvb, unsigned offset, uint8_t type)
 {
     if (type == ZBEE_APP_TYPE_KVP) {
         /* KVP Type. */
         /* | 1 Byte |    1 Byte     |  2 Bytes  | 0/1 Bytes  | Variable |
          * | SeqNo  | Cmd/Data Type | Attribute | Error Code |   Data   |
          */
-        guint8  kvp_cmd     = zbee_get_bit_field(tvb_get_guint8(tvb, offset+1), ZBEE_APP_KVP_CMD);
-        guint8  kvp_type    = zbee_get_bit_field(tvb_get_guint8(tvb, offset+1), ZBEE_APP_KVP_TYPE);
-        guint   kvp_len     = ZBEE_APP_KVP_OVERHEAD;
+        uint8_t kvp_cmd     = zbee_get_bit_field(tvb_get_uint8(tvb, offset+1), ZBEE_APP_KVP_CMD);
+        uint8_t kvp_type    = zbee_get_bit_field(tvb_get_uint8(tvb, offset+1), ZBEE_APP_KVP_TYPE);
+        unsigned   kvp_len     = ZBEE_APP_KVP_OVERHEAD;
 
         /* Add the length of the error code, if present. */
         switch (kvp_cmd) {
@@ -1804,7 +1893,7 @@ zbee_apf_transaction_len(tvbuff_t *tvb, guint offset, guint8 type)
             case ZBEE_APP_KVP_CHAR_STRING:
             case ZBEE_APP_KVP_OCT_STRING:
                 /* Variable Length Types, first byte is the length-1 */
-                kvp_len += tvb_get_guint8(tvb, offset+kvp_len)+1;
+                kvp_len += tvb_get_uint8(tvb, offset+kvp_len)+1;
                 break;
             case ZBEE_APP_KVP_NO_DATA:
             default:
@@ -1818,9 +1907,21 @@ zbee_apf_transaction_len(tvbuff_t *tvb, guint offset, guint8 type)
         /* | 1 Byte | 1 Byte | Length Bytes |
          * | SeqNo  | Length |   Message    |
          */
-        return (tvb_get_guint8(tvb, offset+1) + 2);
+        return (tvb_get_uint8(tvb, offset+1) + 2);
     }
 } /* zbee_apf_transaction_len */
+
+static void
+proto_init_zbee_aps(void)
+{
+    zbee_table_aps_extended_counters  = g_hash_table_new(ieee802154_short_addr_hash, ieee802154_short_addr_equal);
+}
+
+static void
+proto_cleanup_zbee_aps(void)
+{
+    g_hash_table_destroy(zbee_table_aps_extended_counters);
+}
 
 /* The ZigBee Smart Energy version in enum_val_t for the ZigBee Smart Energy version preferences. */
 static const enum_val_t zbee_zcl_protocol_version_enums[] = {
@@ -1832,7 +1933,15 @@ static const enum_val_t zbee_zcl_protocol_version_enums[] = {
     { NULL, NULL, 0 }
 };
 
-gint gPREF_zbee_se_protocol_version = ZBEE_SE_VERSION_1_4;
+int gPREF_zbee_se_protocol_version = ZBEE_SE_VERSION_1_4;
+
+void
+dissect_zbee_aps_status_code(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset)
+{
+    unsigned status = tvb_get_uint8(tvb, offset);
+    proto_tree_add_item(tree, hf_zbee_aps_cmd_status, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+    col_append_fstr(pinfo->cinfo, COL_INFO, ", %s", val_to_str_const(status, zbee_aps_status_names, "Unknown Status"));
+}
 
 /**
  *ZigBee APS protocol registration routine.
@@ -1854,7 +1963,7 @@ void proto_register_zbee_aps(void)
                 NULL, HFILL }},
 
             { &hf_zbee_aps_fcf_ack_format,
-            { "Acknowledgement Format",  "zbee_aps.ack_format", FT_BOOLEAN, 8, NULL, ZBEE_APS_FCF_ACK_FORMAT,
+            { "Acknowledgement Format", "zbee_aps.ack_format", FT_BOOLEAN, 8, NULL, ZBEE_APS_FCF_ACK_FORMAT,
                 NULL, HFILL }},
 
             { &hf_zbee_aps_fcf_security,
@@ -1878,8 +1987,8 @@ void proto_register_zbee_aps(void)
                 NULL, HFILL }},
 
             { &hf_zbee_aps_cluster,
-            { "Cluster",                "zbee_aps.cluster", FT_UINT16, BASE_HEX,
-                    VALS(zbee_aps_cid_names), 0x0, NULL, HFILL }},
+            { "Cluster",                "zbee_aps.cluster", FT_UINT16, BASE_HEX | BASE_RANGE_STRING,
+                    RVALS(zbee_aps_cid_names), 0x0, NULL, HFILL }},
 
             { &hf_zbee_aps_profile,
             { "Profile",                "zbee_aps.profile", FT_UINT16, BASE_HEX | BASE_RANGE_STRING,
@@ -1974,7 +2083,7 @@ void proto_register_zbee_aps(void)
                 NULL, HFILL }},
 
             { &hf_zbee_aps_cmd_key_hash,
-            { "Key Hash",                    "zbee_aps.cmd.key_hash", FT_BYTES, BASE_NONE, NULL, 0x0,
+            { "Key Hash",               "zbee_aps.cmd.key_hash", FT_BYTES, BASE_NONE, NULL, 0x0,
                 NULL, HFILL }},
 
             { &hf_zbee_aps_cmd_key_type,
@@ -1982,11 +2091,11 @@ void proto_register_zbee_aps(void)
                     VALS(zbee_aps_key_names), 0x0, NULL, HFILL }},
 
             { &hf_zbee_aps_cmd_dst,
-            { "Extended Destination",    "zbee_aps.cmd.dst", FT_EUI64, BASE_NONE, NULL, 0x0,
+            { "Extended Destination",   "zbee_aps.cmd.dst", FT_EUI64, BASE_NONE, NULL, 0x0,
                 NULL, HFILL }},
 
             { &hf_zbee_aps_cmd_src,
-            { "Extended Source",         "zbee_aps.cmd.src", FT_EUI64, BASE_NONE, NULL, 0x0,
+            { "Extended Source",        "zbee_aps.cmd.src", FT_EUI64, BASE_NONE, NULL, 0x0,
                 NULL, HFILL }},
 
             { &hf_zbee_aps_cmd_seqno,
@@ -2003,7 +2112,7 @@ void proto_register_zbee_aps(void)
                 "Update device status.", HFILL }},
 
             { &hf_zbee_aps_cmd_status,
-            { "Status",          "zbee_aps.cmd.status", FT_UINT8, BASE_HEX,
+            { "Status",                 "zbee_aps.cmd.status", FT_UINT8, BASE_HEX,
                     VALS(zbee_aps_status_names), 0x0,
                 "APS status.", HFILL }},
 
@@ -2090,7 +2199,7 @@ void proto_register_zbee_aps(void)
     };
 
     /*  APS subtrees */
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_zbee_aps,
         &ett_zbee_aps_fcf,
         &ett_zbee_aps_ext,
@@ -2101,7 +2210,7 @@ void proto_register_zbee_aps(void)
         &ett_zbee_aps_frag_ack
     };
 
-    static gint *ett_apf[] = {
+    static int *ett_apf[] = {
         &ett_zbee_apf
     };
 
@@ -2109,6 +2218,9 @@ void proto_register_zbee_aps(void)
         { &ei_zbee_aps_invalid_delivery_mode, { "zbee_aps.invalid_delivery_mode", PI_PROTOCOL, PI_WARN, "Invalid Delivery Mode", EXPFILL }},
         { &ei_zbee_aps_missing_payload, { "zbee_aps.missing_payload", PI_MALFORMED, PI_ERROR, "Missing Payload", EXPFILL }},
     };
+
+    register_init_routine(proto_init_zbee_aps);
+    register_cleanup_routine(proto_cleanup_zbee_aps);
 
     expert_module_t* expert_zbee_aps;
 
@@ -2129,7 +2241,7 @@ void proto_register_zbee_aps(void)
     prefs_register_enum_preference(zbee_se_prefs, "zbeeseversion", "ZigBee Smart Energy Version",
             "Specifies the ZigBee Smart Energy version used when dissecting "
             "ZigBee APS messages within the Smart Energy Profile",
-            &gPREF_zbee_se_protocol_version, zbee_zcl_protocol_version_enums, FALSE);
+            &gPREF_zbee_se_protocol_version, zbee_zcl_protocol_version_enums, false);
 
     /* Register reassembly table. */
     reassembly_table_register(&zbee_aps_reassembly_table,
@@ -2145,7 +2257,7 @@ void proto_register_zbee_aps(void)
 } /* proto_register_zbee_aps */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

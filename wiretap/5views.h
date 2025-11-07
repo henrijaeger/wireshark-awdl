@@ -1,4 +1,4 @@
-/* 5views.h
+/** @file
  *
  * Wiretap Library
  * Copyright (c) 1998 by Gilbert Ramirez <gram@alumni.rice.edu>
@@ -11,8 +11,6 @@
 #include <glib.h>
 #include "wtap.h"
 
-wtap_open_return_val _5views_open(wtap *wth, int *err, gchar **err_info);
-gboolean _5views_dump_open(wtap_dumper *wdh, int *err);
-int _5views_dump_can_write_encap(int encap);
+wtap_open_return_val _5views_open(wtap *wth, int *err, char **err_info);
 
 #endif

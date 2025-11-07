@@ -34,36 +34,103 @@ void DataPrinter::toClipboard(DataPrinter::DumpType type, IDataPrintable * print
 
     switch(type)
     {
-    case DP_PrintableText:
+    case DP_GoLiteral:
+        clipboard_text += QStringLiteral("[]byte{");
+        for (int i = 0; i < printData.length(); i++) {
+        if (i>0) clipboard_text += ", ";
+            clipboard_text += QStringLiteral("0x%1").arg((uint8_t) printData[i], 1, 16, QChar('0'));
+        }
+        clipboard_text += QStringLiteral("}");
+        break;
+    case DP_CArray:
+        clipboard_text += QStringLiteral("unsigned char bytes[] = {");
+        for (int i = 0; i < printData.length(); i++) {
+        if (i>0) clipboard_text += ", ";
+            clipboard_text += QStringLiteral("0x%1").arg((uint8_t) printData[i], 1, 16, QChar('0'));
+        }
+        clipboard_text += QStringLiteral("};");
+        break;
+    case DP_CString:
+        // Beginning quote
+        clipboard_text += QStringLiteral("\"");
+        for (int i = 0; i < printData.length(); i++) {
+            // backslash and double quote are printable but
+            // must be escaped in a C string.
+            char ch = printData[i];
+            switch (ch) {
+            case '\"':
+                clipboard_text += QStringLiteral("\\\"");
+                break;
+            case '\\':
+                clipboard_text += QStringLiteral("\\\\");
+                break;
+            case '\a':
+                clipboard_text += QStringLiteral("\\a");
+                break;
+            case '\b':
+                clipboard_text += QStringLiteral("\\b");
+                break;
+            case '\f':
+                clipboard_text += QStringLiteral("\\f");
+                break;
+            case '\n':
+                clipboard_text += QStringLiteral("\\n");
+                break;
+            case '\r':
+                clipboard_text += QStringLiteral("\\r");
+                break;
+            case '\t':
+                clipboard_text += QStringLiteral("\\t");
+                break;
+            case '\v':
+                clipboard_text += QStringLiteral("\\v");
+                break;
+            default:
+                // ASCII printable
+                if (ch >= 32 && ch <= 126) {
+                    clipboard_text += QChar(ch);
+                }
+                else {
+                    clipboard_text += QStringLiteral("\\%1").arg((uint8_t) printData[i], 3, 8, QChar('0'));
+                }
+            }
+        }
+        // End quote
+        clipboard_text += QStringLiteral("\"");
+        break;
+    case DP_HexStream:
+        for (int i = 0; i < printData.length(); i++)
+            clipboard_text += QStringLiteral("%1").arg((uint8_t) printData[i], 2, 16, QChar('0'));
+        break;
+    case DP_UTF8Text:
+        // This automatically compensates for invalid UTF-8 in the input
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+DIAG_OFF(stringop-overread)
+#endif
+        clipboard_text += QString::fromUtf8(printData);
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+DIAG_ON(stringop-overread)
+#endif
+        break;
+    case DP_ASCIIText:
+        // Copy valid 7-bit printable ASCII bytes, skip the rest
         for (int i = 0; i < printData.length(); i++) {
             QChar ch(printData[i]);
-            if (ch.isSpace() || ch.isPrint()) {
+            if (ch.isSpace() || (ch > (char)0x20 && ch < (char)0x7F)) {
                 clipboard_text += ch;
             }
         }
         break;
-    case DP_HexStream:
-        for (int i = 0; i < printData.length(); i++)
-            clipboard_text += QString("%1").arg((uint8_t) printData[i], 2, 16, QChar('0'));
+    case DP_Base64:
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+DIAG_OFF(stringop-overread)
+#endif
+        clipboard_text = printData.toBase64();
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+DIAG_ON(stringop-overread)
+#endif
         break;
-    case DP_EscapedString:
-        // Beginning quote
-        clipboard_text += QString("\"");
-
-        for (int i = 0; i < printData.length(); i++) {
-            // Terminate this line if it has reached 16 bytes,
-            // unless it is also the very last byte in the data,
-            // as the termination after this for loop will take
-            // care of that.
-            if (i % 16 == 0 && i != 0 && i != printData.length() - 1) {
-                clipboard_text += QString("\" \\\n\"");
-            }
-            clipboard_text += QString("\\x%1").arg((uint8_t) printData[i], 2, 16, QChar('0'));
-        }
-        // End quote
-        clipboard_text += QString("\"\n");
-        break;
-    case DP_Binary:
+    case DP_MimeData:
         binaryDump(printData);
         break;
     case DP_HexDump:
@@ -109,12 +176,29 @@ int DataPrinter::byteLineLength() const
 
 int DataPrinter::hexChars()
 {
-    int row_width = recent.gui_bytes_view == BYTES_HEX ? 16 : 8;
-    int chars_per_byte = recent.gui_bytes_view == BYTES_HEX ? 3 : 9;
+    int row_width, chars_per_byte;
+
+    switch (recent.gui_bytes_view) {
+    case BYTES_HEX:
+        row_width = 16;
+        chars_per_byte = 3;
+        break;
+    case BYTES_BITS:
+        row_width = 8;
+        chars_per_byte = 9;
+        break;
+    case BYTES_DEC:
+    case BYTES_OCT:
+        row_width = 16;
+        chars_per_byte = 4;
+        break;
+    default:
+        ws_assert_not_reached();
+    }
     return (row_width * chars_per_byte) + ((row_width - 1) / separatorInterval());
 }
 
-QString DataPrinter::hexTextDump(const QByteArray printData, bool showText)
+QString DataPrinter::hexTextDump(const QByteArray printData, bool showASCII)
 {
     QString clipboard_text;
 
@@ -122,39 +206,40 @@ QString DataPrinter::hexTextDump(const QByteArray printData, bool showText)
     QString dataStr;
 
     int cnt = 0;
-    while ( cnt < printData.length() )
+    while (cnt < printData.length())
     {
-        byteStr += QString(" %1").arg((uint8_t) printData[cnt], 2, 16, QChar('0'));
-        if ( showText )
+        byteStr += QStringLiteral(" %1").arg((uint8_t) printData[cnt], 2, 16, QChar('0'));
+        if (showASCII)
         {
             QChar ch(printData[cnt]);
-            if (!ch.isPrint())
-                ch = '.';
-            dataStr += ch;
+            if (g_ascii_isprint(printData[cnt]))
+                dataStr += printData[cnt];
+            else
+                dataStr += '.';
         }
         cnt++;
     }
 
-    int lines = printData.length() / byteLineLength_;
-    if ( printData.length() % byteLineLength_ > 0 )
+    int lines = static_cast<int>(printData.length()) / byteLineLength_;
+    if (printData.length() % byteLineLength_ > 0)
         lines++;
 
-    for ( cnt = 0; cnt < lines; cnt++ )
+    for (cnt = 0; cnt < lines; cnt++)
     {
         int offset = cnt * 0x10;
 
-        clipboard_text += QString("%1  ").arg(offset, 4, 16, QChar('0'));
+        clipboard_text += QStringLiteral("%1  ").arg(offset, 4, 16, QChar('0'));
         clipboard_text += byteStr.mid(offset * 3, byteLineLength_ * 3);
 
-        if ( showText )
+        if (showASCII)
         {
             /* separation bytes for byte and text */
             clipboard_text += QString(3, ' ');
 
             /* separation bytes last line */
-            if ( cnt == ( lines - 1 ) )
+            if (cnt == (lines - 1) )
             {
-                int remSpace = byteLineLength_ - dataStr.mid(offset, byteLineLength_).length();
+                int remSpace = byteLineLength_ - static_cast<int>(dataStr.mid(offset, byteLineLength_).length());
                 clipboard_text += QString(remSpace * 3, ' ');
             }
 
@@ -171,7 +256,7 @@ QString DataPrinter::hexTextDump(const QByteArray printData, bool showText)
 DataPrinter * DataPrinter::instance()
 {
     static DataPrinter * inst = Q_NULLPTR;
-    if ( inst == Q_NULLPTR )
+    if (inst == Q_NULLPTR)
         inst = new DataPrinter();
     return inst;
 }
@@ -180,86 +265,87 @@ QActionGroup * DataPrinter::copyActions(QObject * copyClass, QObject * data)
 {
     QActionGroup * actions = new QActionGroup(copyClass);
 
-    if ( ! data && ! dynamic_cast<IDataPrintable *>(copyClass) )
+    if (! data && ! dynamic_cast<IDataPrintable *>(copyClass))
         return actions;
 
     DataPrinter * dpi = DataPrinter::instance();
 
-    if ( data )
+    if (data)
         actions->setProperty("idataprintable", VariantPointer<QObject>::asQVariant(data));
     else
         actions->setProperty("idataprintable", VariantPointer<QObject>::asQVariant(copyClass));
 
     // Mostly duplicated from main_window.ui
-    QAction * action = new QAction(tr("Copy Bytes as Hex + ASCII Dump"), dpi);
+    QAction * action = new QAction(tr("Copy Bytes as Hex + ASCII Dump"), actions);
     action->setToolTip(tr("Copy packet bytes as a hex and ASCII dump."));
     action->setProperty("printertype", DataPrinter::DP_HexDump);
-    connect(action, SIGNAL(triggered(bool)), dpi, SLOT(copyIDataBytes(bool)));
-    actions->addAction(action);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
 
-    action = new QAction(tr(UTF8_HORIZONTAL_ELLIPSIS "as Hex Dump"), dpi);
+    action = new QAction(tr("…as Hex Dump"), actions);
     action->setToolTip(tr("Copy packet bytes as a hex dump."));
     action->setProperty("printertype", DataPrinter::DP_HexOnly);
-    connect(action, SIGNAL(triggered(bool)), dpi, SLOT(copyIDataBytes(bool)));
-    actions->addAction(action);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
 
-    action = new QAction(tr(UTF8_HORIZONTAL_ELLIPSIS "as Printable Text"), dpi);
-    action->setToolTip(tr("Copy only the printable text in the packet."));
-    action->setProperty("printertype", DataPrinter::DP_PrintableText);
-    connect(action, SIGNAL(triggered(bool)), dpi, SLOT(copyIDataBytes(bool)));
-    actions->addAction(action);
+    action = new QAction(tr("…as UTF-8 Text"), actions);
+    action->setToolTip(tr("Copy packet bytes as text, treating as UTF-8."));
+    action->setProperty("printertype", DataPrinter::DP_UTF8Text);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
 
-    action = new QAction(tr(UTF8_HORIZONTAL_ELLIPSIS "as a Hex Stream"), dpi);
+    action = new QAction(tr("…as ASCII Text"), actions);
+    action->setToolTip(tr("Copy packet bytes as text, treating as ASCII."));
+    action->setProperty("printertype", DataPrinter::DP_ASCIIText);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
+
+    action = new QAction(tr("…as a Hex Stream"), actions);
     action->setToolTip(tr("Copy packet bytes as a stream of hex."));
     action->setProperty("printertype", DataPrinter::DP_HexStream);
-    connect(action, SIGNAL(triggered(bool)), dpi, SLOT(copyIDataBytes(bool)));
-    actions->addAction(action);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
 
-    action = new QAction(tr(UTF8_HORIZONTAL_ELLIPSIS "as Raw Binary"), dpi);
+    action = new QAction(tr("…as a Base64 String"), actions);
+    action->setToolTip(tr("Copy packet bytes as a base64 encoded string."));
+    action->setProperty("printertype", DataPrinter::DP_Base64);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
+
+    action = new QAction(tr("…as MIME Data"), actions);
     action->setToolTip(tr("Copy packet bytes as application/octet-stream MIME data."));
-    action->setProperty("printertype", DataPrinter::DP_Binary);
-    connect(action, SIGNAL(triggered(bool)), dpi, SLOT(copyIDataBytes(bool)));
-    actions->addAction(action);
+    action->setProperty("printertype", DataPrinter::DP_MimeData);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
 
-    action = new QAction(tr(UTF8_HORIZONTAL_ELLIPSIS "as Escaped String"), dpi);
-    action->setToolTip(tr("Copy packet bytes as an escaped string."));
-    action->setProperty("printertype", DataPrinter::DP_EscapedString);
-    connect(action, SIGNAL(triggered(bool)), dpi, SLOT(copyIDataBytes(bool)));
-    actions->addAction(action);
+    action = new QAction(tr("…as C String"), actions);
+    action->setToolTip(tr("Copy packet bytes as printable ASCII characters and escape sequences."));
+    action->setProperty("printertype", DataPrinter::DP_CString);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
+
+    action = new QAction(tr("…as Go literal"), actions);
+    action->setToolTip(tr("Copy packet bytes as Go literal."));
+    action->setProperty("printertype", DataPrinter::DP_GoLiteral);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
+
+    action = new QAction(tr("…as C Array"), actions);
+    action->setToolTip(tr("Copy packet bytes as C Array."));
+    action->setProperty("printertype", DataPrinter::DP_CArray);
+    connect(action, &QAction::triggered, dpi, &DataPrinter::copyIDataBytes);
 
     return actions;
 }
 
 void DataPrinter::copyIDataBytes(bool /* state */)
 {
-    if ( ! dynamic_cast<QAction*>(sender()) )
+    if (! dynamic_cast<QAction*>(sender()))
         return;
 
     QAction * sendingAction = dynamic_cast<QAction *>(sender());
-    if ( ! sendingAction->actionGroup() || ! sendingAction->actionGroup()->property("idataprintable").isValid() )
+    if (! sendingAction->actionGroup() || ! sendingAction->actionGroup()->property("idataprintable").isValid())
         return;
 
     QObject * dataObject = VariantPointer<QObject>::asPtr(sendingAction->actionGroup()->property("idataprintable"));
-    if ( ! dataObject || ! dynamic_cast<IDataPrintable *>(dataObject) )
+    if (! dataObject || ! dynamic_cast<IDataPrintable *>(dataObject))
         return;
 
     int dump_type = sendingAction->property("printertype").toInt();
 
-    if (dump_type >= 0 && dump_type <= DataPrinter::DP_Binary) {
+    if (dump_type >= 0 && dump_type <= DataPrinter::DP_Base64) {
         DataPrinter printer;
         printer.toClipboard((DataPrinter::DumpType) dump_type, dynamic_cast<IDataPrintable *>(dataObject));
     }
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

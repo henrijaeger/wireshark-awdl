@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <extcap_argument.h>
 #include <extcap_argument_file.h>
@@ -30,14 +31,14 @@
 
 #include <extcap_parser.h>
 
-ExtcapArgumentFileSelection::ExtcapArgumentFileSelection (extcap_arg * argument) :
-    ExtcapArgument(argument), textBox(0)
+ExtcapArgumentFileSelection::ExtcapArgumentFileSelection (extcap_arg * argument, QObject *parent) :
+    ExtcapArgument(argument, parent), textBox(0)
 {
 }
 
 ExtcapArgumentFileSelection::~ExtcapArgumentFileSelection()
 {
-    if ( textBox != NULL )
+    if (textBox != NULL)
         delete textBox;
 }
 
@@ -45,37 +46,42 @@ QWidget * ExtcapArgumentFileSelection::createEditor(QWidget * parent)
 {
     QString text = defaultValue();
     QString buttonText(UTF8_HORIZONTAL_ELLIPSIS);
+    QString buttonClearText(tr("Clear"));
 
     QWidget * fileWidget = new QWidget(parent);
     QHBoxLayout * editLayout = new QHBoxLayout();
     QMargins margins = editLayout->contentsMargins();
     editLayout->setContentsMargins(0, 0, 0, margins.bottom());
     fileWidget->setContentsMargins(margins.left(), margins.right(), 0, margins.bottom());
-    QPushButton * button = new QPushButton(buttonText, fileWidget);
+    QPushButton * buttonSelect = new QPushButton(buttonText, fileWidget);
+    QPushButton * buttonClear = new QPushButton(buttonClearText, fileWidget);
 
     textBox = new QLineEdit(text, parent);
     textBox->setReadOnly(true);
 
-    const char *prefval = _argument->pref_valptr ? *_argument->pref_valptr : NULL;
+    /* Value is empty if no file is selected */
+    const char *prefval = (_argument->pref_valptr && (*_argument->pref_valptr)) ? *_argument->pref_valptr : NULL;
     if (prefval)
     {
         QString storeValue(prefval);
 
-        if ( storeValue.length() > 0 && storeValue.compare(text) != 0 )
+        if (storeValue.length() > 0 && storeValue.compare(text) != 0)
             text = storeValue.trimmed();
     }
     textBox->setText(text);
 
-    if ( _argument->tooltip != NULL )
+    if (_argument->tooltip != NULL)
     {
         textBox->setToolTip(QString().fromUtf8(_argument->tooltip));
-        button->setToolTip(QString().fromUtf8(_argument->tooltip));
+        buttonSelect->setToolTip(QString().fromUtf8(_argument->tooltip));
     }
 
-    connect(button, SIGNAL(clicked()), (QObject *)this, SLOT(openFileDialog()));
+    connect(buttonSelect, &QPushButton::clicked, this, &ExtcapArgumentFileSelection::openFileDialog);
+    connect(buttonClear, &QPushButton::clicked, this, &ExtcapArgumentFileSelection::clearFilename);
 
     editLayout->addWidget(textBox);
-    editLayout->addWidget(button);
+    editLayout->addWidget(buttonSelect);
+    editLayout->addWidget(buttonClear);
 
     fileWidget->setLayout(editLayout);
 
@@ -84,7 +90,7 @@ QWidget * ExtcapArgumentFileSelection::createEditor(QWidget * parent)
 
 QString ExtcapArgumentFileSelection::value()
 {
-    if ( textBox == 0 )
+    if (textBox == 0)
         return QString();
     return textBox->text();
 }
@@ -99,54 +105,66 @@ void ExtcapArgumentFileSelection::openFileDialog()
         workingDir = QFileInfo(filename).dir();
 
     QString fileExt(tr("All Files (" ALL_FILES_WILDCARD ")"));
-    if ( _argument->fileextension != NULL )
+    if (_argument->fileextension != NULL)
     {
         QString givenExt = QString().fromUtf8(_argument->fileextension);
-        if ( givenExt.length() != 0 )
+        if (givenExt.length() != 0)
             fileExt.prepend(";;").prepend(givenExt);
     }
 
-    filename = WiresharkFileDialog::getOpenFileName((QWidget *)(textBox->parent()),
-        QString().fromUtf8(_argument->display) + " " + tr("Open File"),
-        workingDir.absolutePath(), fileExt);
+    if (fileExists())
+    {
+        /* UI should check that the file exists */
+        filename = WiresharkFileDialog::getOpenFileName((QWidget*)(textBox->parent()),
+            tr("%1 Open File").arg(QString::fromUtf8(_argument->display)),
+            workingDir.absolutePath(), fileExt);
+    }
+    else
+    {
+        /* File might or might not exist. Actual overwrite handling is extcap specific
+         * (e.g. boolflag argument if user wants to always overwrite the file)
+         */
+        filename = WiresharkFileDialog::getSaveFileName((QWidget*)(textBox->parent()),
+            tr("%1 Select File").arg(QString::fromUtf8(_argument->display)),
+            workingDir.absolutePath(), fileExt, nullptr, QFileDialog::Option::DontConfirmOverwrite);
+    }
 
-    if ( ! fileExists() || QFileInfo(filename).exists() )
+    if (! filename.isEmpty() && (! fileExists() || QFileInfo(filename).exists()))
     {
         textBox->setText(filename);
         emit valueChanged();
     }
 }
 
+void ExtcapArgumentFileSelection::clearFilename()
+{
+    textBox->clear();
+    emit valueChanged();
+}
+
 bool ExtcapArgumentFileSelection::isValid()
 {
     bool valid = false;
 
-    if ( textBox->text().length() > 0 )
+    if (textBox->text().length() > 0)
     {
         if (_argument->fileexists)
             valid = QFileInfo(textBox->text()).exists();
         else
             valid = true;
     }
-    else if ( ! isRequired() )
+    else if (! isRequired())
         valid = true;
 
     QString lblInvalidColor = ColorUtils::fromColorT(prefs.gui_text_invalid).name();
     QString txtStyle("QLineEdit { background-color: %1; } ");
-    textBox->setStyleSheet( txtStyle.arg(valid ? QString("") : lblInvalidColor) );
+    textBox->setStyleSheet(txtStyle.arg(valid ? QString("") : lblInvalidColor));
 
     return valid;
 }
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+void ExtcapArgumentFileSelection::setDefaultValue()
+{
+    clearFilename();
+}
+

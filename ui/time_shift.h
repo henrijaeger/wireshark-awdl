@@ -1,11 +1,13 @@
-/* time_shift.h
+/** @file
+ *
  * Submitted by Edwin Groothuis <wireshark@mavetju.org>
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __TIME_SHIFT_H__
 #define __TIME_SHIFT_H__
@@ -40,7 +42,7 @@ extern "C" {
  * @return NULL on success or an error description on failure.
  */
 
-const gchar * time_string_parse(const gchar *time_text, int *year, int *month, int *day, gboolean *negative, int *hour, int *minute, long double *second);
+const char * time_string_parse(const char *time_text, int *year, int *month, int *day, bool *negative, int *hour, int *minute, long double *second);
 
 /** Shift all packets by an offset
  *
@@ -49,7 +51,7 @@ const gchar * time_string_parse(const gchar *time_text, int *year, int *month, i
  *
  * @return NULL on success or an error description on failure.
  */
-const gchar * time_shift_all(capture_file *cf, const gchar *offset_text);
+const char * time_shift_all(capture_file *cf, const char *offset_text);
 
 /* Set the time for a single packet
  *
@@ -59,7 +61,7 @@ const gchar * time_shift_all(capture_file *cf, const gchar *offset_text);
  *
  * @return NULL on success or an error description on failure.
  */
-const gchar * time_shift_settime(capture_file *cf, guint packet_num, const gchar *time_text);
+const char * time_shift_settime(capture_file *cf, unsigned packet_num, const char *time_text);
 
 /* Set the time for two packets and extrapolate the rest
  *
@@ -71,7 +73,7 @@ const gchar * time_shift_settime(capture_file *cf, guint packet_num, const gchar
  *
  * @return NULL on success or an error description on failure.
  */
-const gchar * time_shift_adjtime(capture_file *cf, guint packet1_num, const gchar *time1_text, guint packet2_num, const gchar *time2_text);
+const char * time_shift_adjtime(capture_file *cf, unsigned packet1_num, const char *time1_text, unsigned packet2_num, const char *time2_text);
 
 /* Reset the times for all packets
  *
@@ -79,23 +81,10 @@ const gchar * time_shift_adjtime(capture_file *cf, guint packet1_num, const gcha
  *
  * @return NULL on success or an error description on failure.
  */
-const gchar * time_shift_undo(capture_file *cf);
+const char * time_shift_undo(capture_file *cf);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
 #endif /* __TIME_SHIFT_H__ */
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

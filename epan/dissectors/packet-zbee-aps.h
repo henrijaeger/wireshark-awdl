@@ -53,6 +53,8 @@
 #define ZBEE_APS_CMD_TUNNEL                 0x0e
 #define ZBEE_APS_CMD_VERIFY_KEY             0x0f
 #define ZBEE_APS_CMD_CONFIRM_KEY            0x10
+#define ZBEE_APS_CMD_RELAY_MSG_DOWNSTREAM   0x11
+#define ZBEE_APS_CMD_RELAY_MSG_UPSTREAM     0x12
 
 #define ZBEE_APS_CMD_KEY_TC_MASTER          0x00
 #define ZBEE_APS_CMD_KEY_STANDARD_NWK       0x01
@@ -147,6 +149,7 @@
 /* ZCL Cluster IDs - Closures */
 #define ZBEE_ZCL_CID_SHADE_CONFIG                   0x0100
 #define ZBEE_ZCL_CID_DOOR_LOCK                      0X0101
+#define ZBEE_ZCL_CID_WINDOW_COVERING                0X0102
 
 /* ZCL Cluster IDs - HVAC */
 #define ZBEE_ZCL_CID_PUMP_CONFIG_CONTROL            0x0200
@@ -167,6 +170,7 @@
 #define ZBEE_ZCL_CID_FLOW_MEASUREMENT               0x0404
 #define ZBEE_ZCL_CID_REL_HUMIDITY_MEASUREMENT       0x0405
 #define ZBEE_ZCL_CID_OCCUPANCY_SENSING              0x0406
+#define ZBEE_ZCL_CID_ELECTRICAL_MEASUREMENT         0x0b04
 
 /* ZCL Cluster IDs - Security and Safety */
 #define ZBEE_ZCL_CID_IAS_ZONE                       0x0500
@@ -209,6 +213,7 @@
 #define ZBEE_ZCL_CID_EVENTS                         0x0709
 #define ZBEE_ZCL_CID_MDU_PAIRING                    0x070A
 #define ZBEE_ZCL_CID_SUB_GHZ                        0x070B
+#define ZBEE_ZCL_CID_DAILY_SCHEDULE                 0x070D
 
 /* ZCL Cluster IDs - Key Establishment */
 #define ZBEE_ZCL_CID_KE                             0x0800
@@ -220,6 +225,9 @@
 #define ZBEE_ZCL_CID_APPLIANCE_STATISTICS           0x0b03
 
 #define ZBEE_ZCL_CID_ZLL                            0x1000
+
+#define ZBEE_ZCL_CID_MANUFACTURER_SPECIFIC_MIN      0xFC00
+#define ZBEE_ZCL_CID_MANUFACTURER_SPECIFIC_MAX      0xFFFF
 
 /* ZCL Test Profile #2 Clusters */
 #define ZBEE_APS_T2_CID_TCP                         0x0001
@@ -262,34 +270,52 @@
 #define ZBEE_APP_STATUS_UNSECURED                   0xaf /*An ASDU was received without any security.*/
 #define ZBEE_APP_STATUS_UNSUPPORTED_ATTRIBUTE       0xb0 /*An APSME-GET.request or APSME-SET.request has been issued with an unknown attribute identifier.*/
 
+#define ZBEE_APS_NODE_PROTO_DATA                    0
+
 /*  Structure to contain the APS frame information */
 typedef struct{
-    gboolean    indirect_mode;  /* ZigBee 2004 and Earlier  */
-    guint8      type;
-    guint8      delivery;
-    gboolean    ack_format;     /* ZigBee 2007 and Later    */
-    gboolean    security;
-    gboolean    ack_req;
-    gboolean    ext_header;     /* ZigBee 2007 and Later    */
+    bool        indirect_mode;  /* ZigBee 2004 and Earlier  */
+    uint8_t     type;
+    uint8_t     delivery;
+    bool        ack_format;     /* ZigBee 2007 and Later    */
+    bool        security;
+    bool        ack_req;
+    bool        ext_header;     /* ZigBee 2007 and Later    */
 
-    guint8      dst;
-    guint16     group;          /* ZigBee 2006 and Later    */
-    guint16     profile;
-    guint8      src;
-    guint8      counter;
+    uint8_t     dst;
+    uint16_t    group;          /* ZigBee 2006 and Later    */
+    uint16_t    profile;
+    uint8_t     src;
+    uint8_t     counter;
 
     /* Fragmentation Fields. */
-    guint8      fragmentation;  /* ZigBee 2007 and Later    */
-    guint8      block_number;   /* ZigBee 2007 and Later    */
+    uint8_t     fragmentation;  /* ZigBee 2007 and Later    */
+    uint8_t     block_number;   /* ZigBee 2007 and Later    */
 
     /* Some helpers for the upper layers. */
-    gboolean    profile_present;
-    gboolean    dst_present;
-    gboolean    src_present;
+    bool        profile_present;
+    bool        dst_present;
+    bool        src_present;
 } zbee_aps_packet;
 
+/*  Structure to contain APS node information */
+struct zbee_aps_node_info
+{
+    uint32_t extended_counter;                         /**> the counter, extended to a 32-bit
+                                                       * int to guarantee it increasing monotonically
+                                                       */
+};
+
+/*  Structure to contain APS node information for a packet */
+struct zbee_aps_node_packet_info
+{
+    uint32_t extended_counter;                         /**> the counter, extended to a 32-bit
+                                                       * int to guarantee it increasing monotonically
+                                                       */
+};
+
 /* ZigBee Smart Energy version used for preferences */
-extern gint  gPREF_zbee_se_protocol_version;
+extern int   gPREF_zbee_se_protocol_version;
 
 enum {
     ZBEE_SE_VERSION_1_1B,
@@ -304,13 +330,13 @@ enum {
  **************************************
  */
 
-extern const value_string zbee_aps_cid_names[];
+extern const range_string zbee_aps_cid_names[];
 extern const range_string zbee_aps_apid_names[];
 
 #endif /* PACKET_ZBEE_APS_H*/
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

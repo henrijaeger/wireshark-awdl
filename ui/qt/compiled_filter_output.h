@@ -1,10 +1,11 @@
-/* compiled_filter_output.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef COMPILEDFILTEROUTPUT_H
 #define COMPILEDFILTEROUTPUT_H
@@ -18,6 +19,13 @@
 
 #include <glib.h>
 
+struct InterfaceFilter {
+    InterfaceFilter(QString intf, QString filt) : interface(intf), filter(filt) {}
+
+    QString interface;
+    QString filter;
+};
+
 namespace Ui {
 class CompiledFilterOutput;
 }
@@ -27,10 +35,9 @@ class CompiledFilterOutput : public GeometryStateDialog
     Q_OBJECT
 
 private:
-    QStringList intList_;
-    QString &compile_filter_;
+    QList<InterfaceFilter> intList_;
     Ui::CompiledFilterOutput *ui;
-    GMutex *pcap_compile_mtx;
+    GMutex pcap_compile_mtx_;
     QHash<QString, QString> compile_results;
     QListWidget *interface_list_;
     QPushButton *copy_bt_;
@@ -39,7 +46,7 @@ private:
 #endif
 
 public:
-    explicit CompiledFilterOutput(QWidget *parent = 0, QStringList &intList = *new QStringList(), QString &filter = *new QString());
+    explicit CompiledFilterOutput(QWidget *parent = 0, QList<InterfaceFilter> &intList = *new QList<InterfaceFilter>());
 
     ~CompiledFilterOutput();
 
@@ -49,16 +56,3 @@ private slots:
 };
 
 #endif // COMPILEDFILTEROUTPUT_H
-
-//
-// Editor modelines  -  http://www.wireshark.org/tools/modelines.html
-//
-// Local variables:
-// c-basic-offset: 4
-// tab-width: 8
-// indent-tabs-mode: nil
-// End:
-//
-// vi: set shiftwidth=4 tabstop=8 expandtab:
-// :indentSize=4:tabSize=8:noTabs=true:
-//

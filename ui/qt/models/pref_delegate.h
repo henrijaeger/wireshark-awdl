@@ -1,4 +1,5 @@
-/* pref_delegate.h
+/** @file
+ *
  * Delegates for editing prefereneces.
  *
  * Wireshark - Network traffic analyzer
@@ -20,8 +21,6 @@
 
 class AdvancedPrefDelegate : public QStyledItemDelegate
 {
-    Q_OBJECT
-
 public:
     AdvancedPrefDelegate(QObject *parent = 0);
 
@@ -36,16 +35,3 @@ private:
 };
 
 #endif // PREF_DELEGATE_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

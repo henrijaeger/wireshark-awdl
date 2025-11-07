@@ -1,10 +1,11 @@
-/* capture_file.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef CAPTURE_FILE_H
 #define CAPTURE_FILE_H
@@ -12,8 +13,6 @@
 #include <QObject>
 
 #include <config.h>
-
-#include <glib.h>
 
 #include "cfile.h"
 #include "capture_event.h"
@@ -34,13 +33,6 @@ public:
      * is closed.
      */
     bool isValid() const;
-
-    /** Get the current selected row
-     *
-     * @return the current selected index of the packet list if the capture
-     * file is open and a packet is selected, otherwise -1.
-     */
-    int currentRow();
 
     /** Return the full pathname.
      *
@@ -116,10 +108,14 @@ public:
      */
     void reload();
 
+    /** Return any set display filter
+     */
+    QString displayFilter() const;
+
     // XXX This shouldn't be needed.
     static capture_file *globalCapFile();
 
-    gpointer window();
+    void *window();
 
 signals:
     void captureEvent(CaptureEvent);
@@ -148,12 +144,12 @@ public slots:
     void setCaptureStopFlag(bool stop_flag = true);
 
 private:
-    static void captureFileCallback(gint event, gpointer data, gpointer user_data);
+    static void captureFileCallback(int event, void *data, void *user_data);
 #ifdef HAVE_LIBPCAP
-    static void captureCallback(gint event, capture_session *cap_session, gpointer user_data);
+    static void captureCallback(int event, capture_session *cap_session, void *user_data);
 #endif
 
-    void captureFileEvent(int event, gpointer data);
+    void captureFileEvent(int event, void *data);
     void captureSessionEvent(int event, capture_session *cap_session);
     const QString &getFileBasename();
 
@@ -164,16 +160,3 @@ private:
 };
 
 #endif // CAPTURE_FILE_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

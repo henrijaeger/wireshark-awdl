@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "expert_info_dialog.h"
 #include <ui_expert_info_dialog.h>
@@ -16,7 +17,8 @@
 #include <epan/stat_tap_ui.h>
 #include <epan/tap.h>
 
-#include "wireshark_application.h"
+#include "progress_frame.h"
+#include "main_application.h"
 
 #include <QAction>
 #include <QHash>
@@ -32,14 +34,18 @@
 //   down to one item, make sure it uses a single (or a few) base color(s), and generate
 //   icons on the fly.
 
-ExpertInfoDialog::ExpertInfoDialog(QWidget &parent, CaptureFile &capture_file) :
+ExpertInfoDialog::ExpertInfoDialog(QWidget &parent, CaptureFile &capture_file, QString displayFilter) :
     WiresharkDialog(parent, capture_file),
     ui(new Ui::ExpertInfoDialog),
     expert_info_model_(new ExpertInfoModel(capture_file)),
     proxyModel_(new ExpertInfoProxyModel(this)),
-    display_filter_(QString())
+    display_filter_(displayFilter)
 {
     ui->setupUi(this);
+    ui->hintLabel->setSmallText();
+    ui->limitCheckBox->setChecked(! display_filter_.isEmpty());
+    connect(ui->limitCheckBox, &QCheckBox::toggled,
+            this, &ExpertInfoDialog::limitCheckBoxToggled);
 
     proxyModel_->setSourceModel(expert_info_model_);
     ui->expertInfoTreeView->setModel(proxyModel_);
@@ -59,8 +65,7 @@ ExpertInfoDialog::ExpertInfoDialog(QWidget &parent, CaptureFile &capture_file) :
     ui->severitiesPushButton->setMenu(ui->menuShowExpert);
 
     ui->expertInfoTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(ui->expertInfoTreeView, SIGNAL(customContextMenuRequested(QPoint)),
-                SLOT(showExpertInfoMenu(QPoint)));
+    connect(ui->expertInfoTreeView, &ExpertInfoTreeView::customContextMenuRequested, this, &ExpertInfoDialog::showExpertInfoMenu);
 
     QMenu *submenu;
 
@@ -69,7 +74,7 @@ ExpertInfoDialog::ExpertInfoDialog(QWidget &parent, CaptureFile &capture_file) :
     foreach (FilterAction::ActionType at, FilterAction::actionTypes()) {
         FilterAction *fa = new FilterAction(submenu, cur_action, at);
         submenu->addAction(fa);
-        connect(fa, SIGNAL(triggered()), this, SLOT(filterActionTriggered()));
+        connect(fa, &FilterAction::triggered, this, &ExpertInfoDialog::filterActionTriggered);
     }
 
     cur_action = FilterAction::ActionPrepare;
@@ -77,7 +82,7 @@ ExpertInfoDialog::ExpertInfoDialog(QWidget &parent, CaptureFile &capture_file) :
     foreach (FilterAction::ActionType at, FilterAction::actionTypes()) {
         FilterAction *fa = new FilterAction(submenu, cur_action, at);
         submenu->addAction(fa);
-        connect(fa, SIGNAL(triggered()), this, SLOT(filterActionTriggered()));
+        connect(fa, &FilterAction::triggered, this, &ExpertInfoDialog::filterActionTriggered);
     }
 
     FilterAction *fa;
@@ -90,22 +95,24 @@ ExpertInfoDialog::ExpertInfoDialog(QWidget &parent, CaptureFile &capture_file) :
     foreach (FilterAction::Action extra_action, extra_actions) {
         fa = new FilterAction(&ctx_menu_, extra_action);
         ctx_menu_.addAction(fa);
-        connect(fa, SIGNAL(triggered()), this, SLOT(filterActionTriggered()));
+        connect(fa, &FilterAction::triggered, this, &ExpertInfoDialog::filterActionTriggered);
     }
 
     //Add collapse/expand all menu options
     QAction *collapse = new QAction(tr("Collapse All"), this);
     ctx_menu_.addAction(collapse);
-    connect(collapse, SIGNAL(triggered()), this, SLOT(collapseTree()));
+    connect(collapse, &QAction::triggered, this, &ExpertInfoDialog::collapseTree);
 
     QAction *expand = new QAction(tr("Expand All"), this);
     ctx_menu_.addAction(expand);
-    connect(expand, SIGNAL(triggered()), this, SLOT(expandTree()));
+    connect(expand, &QAction::triggered, this, &ExpertInfoDialog::expandTree);
 
-    connect(&cap_file_, SIGNAL(captureEvent(CaptureEvent)),
-            this, SLOT(captureEvent(CaptureEvent)));
-    setDisplayFilter();
-    QTimer::singleShot(0, this, SLOT(retapPackets()));
+    connect(&cap_file_, &CaptureFile::captureEvent, this, &ExpertInfoDialog::captureEvent);
+
+    ProgressFrame::addToButtonBox(ui->buttonBox, &parent);
+
+    updateWidgets();
+    QTimer::singleShot(0, this, &ExpertInfoDialog::retapPackets);
 }
 
 ExpertInfoDialog::~ExpertInfoDialog()
@@ -118,12 +125,6 @@ ExpertInfoDialog::~ExpertInfoDialog()
 void ExpertInfoDialog::clearAllData()
 {
     expert_info_model_->clear();
-}
-
-void ExpertInfoDialog::setDisplayFilter(const QString &display_filter)
-{
-    display_filter_ = display_filter;
-    updateWidgets();
 }
 
 ExpertInfoTreeView* ExpertInfoDialog::getExpertInfoView()
@@ -195,8 +196,6 @@ void ExpertInfoDialog::updateWidgets()
     }
 
     ui->limitCheckBox->setToolTip(tooltip);
-    hint.prepend("<small><i>");
-    hint.append("</i></small>");
     ui->hintLabel->setText(hint);
 
     ui->groupBySummaryCheckBox->setEnabled(!file_closed_);
@@ -274,11 +273,11 @@ void ExpertInfoDialog::filterActionTriggered()
     if (hf_index > -1) {
         QString filter_string;
         if (fa->action() == FilterAction::ActionWebLookup) {
-            filter_string = QString("%1 %2")
+            filter_string = QStringLiteral("%1 %2")
                     .arg(proxyModel_->data(modelIndex.sibling(modelIndex.row(), ExpertInfoModel::colProtocol), Qt::DisplayRole).toString())
                     .arg(proxyModel_->data(modelIndex.sibling(modelIndex.row(), ExpertInfoModel::colSummary), Qt::DisplayRole).toString());
         } else if (fa->action() == FilterAction::ActionCopy) {
-            filter_string = QString("%1 %2: %3")
+            filter_string = QStringLiteral("%1 %2: %3")
                     .arg(proxyModel_->data(modelIndex.sibling(modelIndex.row(), ExpertInfoModel::colPacket), Qt::DisplayRole).toUInt())
                     .arg(proxyModel_->data(modelIndex.sibling(modelIndex.row(), ExpertInfoModel::colProtocol), Qt::DisplayRole).toString())
                     .arg(proxyModel_->data(modelIndex.sibling(modelIndex.row(), ExpertInfoModel::colSummary), Qt::DisplayRole).toString());
@@ -302,7 +301,7 @@ void ExpertInfoDialog::expandTree()
     ui->expertInfoTreeView->expandAll();
 }
 
-void ExpertInfoDialog::on_limitCheckBox_toggled(bool)
+void ExpertInfoDialog::limitCheckBoxToggled(bool)
 {
     retapPackets();
 }
@@ -320,14 +319,14 @@ void ExpertInfoDialog::on_searchLineEdit_textChanged(const QString &search_re)
 
 void ExpertInfoDialog::on_buttonBox_helpRequested()
 {
-    wsApp->helpTopicAction(HELP_EXPERT_INFO_DIALOG);
+    mainApp->helpTopicAction(HELP_EXPERT_INFO_DIALOG);
 }
 
 // Stat command + args
 
 static void
 expert_info_init(const char *, void*) {
-    wsApp->emitStatCommandSignal("ExpertInfo", NULL, NULL);
+    mainApp->emitStatCommandSignal("ExpertInfo", NULL, NULL);
 }
 
 static stat_tap_ui expert_info_stat_ui = {
@@ -340,22 +339,13 @@ static stat_tap_ui expert_info_stat_ui = {
 };
 
 extern "C" {
+
+void register_tap_listener_qt_expert_info(void);
+
 void
 register_tap_listener_qt_expert_info(void)
 {
     register_stat_tap_ui(&expert_info_stat_ui, NULL);
 }
-}
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+}

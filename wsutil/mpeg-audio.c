@@ -81,8 +81,35 @@ mpa_padding(const struct mpa *mpa)
 	return(mpa->padding ? mpa_padding_data[mpa_layers[mpa->layer]] : 0);
 }
 
+/* Decode an ID3v2 synchsafe integer.
+ * See https://id3.org/id3v2.4.0-structure section 6.2.
+ */
+uint32_t
+decode_synchsafe_int(uint32_t input)
+{
+	uint32_t value;
+
+	/* High-order byte */
+	value = (input >> 24) & 0x7f;
+	/* Shift the result left to make room for the next 7 bits */
+	value <<= 7;
+
+	/* Now OR in the 2nd byte */
+	value |= (input >> 16) & 0x7f;
+	value <<= 7;
+
+	/* ... and the 3rd */
+	value |= (input >> 8) & 0x7f;
+	value <<= 7;
+
+	/* For the 4th byte don't do the shift */
+	value |= input & 0x7f;
+
+	return value;
+}
+
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

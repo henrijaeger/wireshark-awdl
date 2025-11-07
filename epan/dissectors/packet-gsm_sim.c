@@ -15,351 +15,353 @@
 #include "config.h"
 
 #include <epan/packet.h>
+#include <epan/tfs.h>
 
 #include "packet-gsmtap.h"
 
 void proto_register_gsm_sim(void);
 void proto_reg_handoff_gsm_sim(void);
 
-static int proto_gsm_sim = -1;
+static int proto_gsm_sim;
 
 /* ISO 7816-4 APDU */
-static int hf_apdu_cla_coding = -1;
-static int hf_apdu_cla_coding_ext = -1;
-static int hf_apdu_cla_secure_messaging_ind = -1;
-static int hf_apdu_cla_secure_messaging_ind_ext = -1;
-static int hf_apdu_cla_log_chan = -1;
-static int hf_apdu_cla_log_chan_ext = -1;
-static int hf_apdu_ins = -1;
-static int hf_apdu_p1 = -1;
-static int hf_apdu_p2 = -1;
-static int hf_apdu_p3 = -1;
-static int hf_apdu_data = -1;
-static int hf_apdu_sw = -1;
+static int hf_apdu_cla_coding;
+static int hf_apdu_cla_coding_ext;
+static int hf_apdu_cla_secure_messaging_ind;
+static int hf_apdu_cla_secure_messaging_ind_ext;
+static int hf_apdu_cla_log_chan;
+static int hf_apdu_cla_log_chan_ext;
+static int hf_apdu_ins;
+static int hf_apdu_p1;
+static int hf_apdu_p2;
+static int hf_apdu_p3;
+static int hf_apdu_data;
+static int hf_apdu_sw;
 
-static int hf_file_id = -1;
-static int hf_aid = -1;
-static int hf_bin_offset = -1;
-static int hf_record_nr = -1;
-static int hf_auth_rand = -1;
-static int hf_auth_sres = -1;
-static int hf_auth_kc = -1;
-static int hf_chan_op = -1;
-static int hf_chan_nr = -1;
-static int hf_le = -1;
+static int hf_file_id;
+static int hf_aid;
+static int hf_bin_offset;
+static int hf_sfi;
+static int hf_record_nr;
+static int hf_auth_rand;
+static int hf_auth_sres;
+static int hf_auth_kc;
+static int hf_chan_op;
+static int hf_chan_nr;
+static int hf_le;
 
 /* Chapter 5.2 TS 11.14 and TS 31.111 */
-static int hf_tprof_b1 = -1;
-static int hf_tprof_b2 = -1;
-static int hf_tprof_b3 = -1;
-static int hf_tprof_b4 = -1;
-static int hf_tprof_b5 = -1;
-static int hf_tprof_b6 = -1;
-static int hf_tprof_b7 = -1;
-static int hf_tprof_b8 = -1;
-static int hf_tprof_b9 = -1;
-static int hf_tprof_b10 = -1;
-static int hf_tprof_b11 = -1;
-static int hf_tprof_b12 = -1;
-static int hf_tprof_b13 = -1;
-static int hf_tprof_b14 = -1;
-static int hf_tprof_b15 = -1;
-static int hf_tprof_b16 = -1;
-static int hf_tprof_b17 = -1;
-static int hf_tprof_b18 = -1;
-static int hf_tprof_b19 = -1;
-static int hf_tprof_b20 = -1;
-static int hf_tprof_b21 = -1;
-static int hf_tprof_b22 = -1;
-static int hf_tprof_b23 = -1;
-static int hf_tprof_b24 = -1;
-static int hf_tprof_b25 = -1;
-static int hf_tprof_b26 = -1;
-static int hf_tprof_b27 = -1;
-static int hf_tprof_b28 = -1;
-static int hf_tprof_b29 = -1;
-static int hf_tprof_b30 = -1;
-static int hf_tprof_b31 = -1;
-static int hf_tprof_b32 = -1;
-static int hf_tprof_b33 = -1;
-static int hf_tprof_unknown_byte = -1;
+static int hf_tprof_b1;
+static int hf_tprof_b2;
+static int hf_tprof_b3;
+static int hf_tprof_b4;
+static int hf_tprof_b5;
+static int hf_tprof_b6;
+static int hf_tprof_b7;
+static int hf_tprof_b8;
+static int hf_tprof_b9;
+static int hf_tprof_b10;
+static int hf_tprof_b11;
+static int hf_tprof_b12;
+static int hf_tprof_b13;
+static int hf_tprof_b14;
+static int hf_tprof_b15;
+static int hf_tprof_b16;
+static int hf_tprof_b17;
+static int hf_tprof_b18;
+static int hf_tprof_b19;
+static int hf_tprof_b20;
+static int hf_tprof_b21;
+static int hf_tprof_b22;
+static int hf_tprof_b23;
+static int hf_tprof_b24;
+static int hf_tprof_b25;
+static int hf_tprof_b26;
+static int hf_tprof_b27;
+static int hf_tprof_b28;
+static int hf_tprof_b29;
+static int hf_tprof_b30;
+static int hf_tprof_b31;
+static int hf_tprof_b32;
+static int hf_tprof_b33;
+static int hf_tprof_unknown_byte;
 /* First byte */
-static int hf_tp_prof_dld = -1;
-static int hf_tp_sms_data_dld = -1;
-static int hf_tp_cb_data_dld = -1;
-static int hf_tp_menu_sel = -1;
-static int hf_tp_sms_data_dld_support = -1;
-static int hf_tp_timer_exp = -1;
-static int hf_tp_cc_sim_support = -1;
-static int hf_tp_cc_sim_support2 = -1;
+static int hf_tp_prof_dld;
+static int hf_tp_sms_data_dld;
+static int hf_tp_cb_data_dld;
+static int hf_tp_menu_sel;
+static int hf_tp_sms_data_dld_support;
+static int hf_tp_timer_exp;
+static int hf_tp_cc_sim_support;
+static int hf_tp_cc_sim_support2;
 /* Second byte (Other) */
-static int hf_tp_cmd_res = -1;
-static int hf_tp_cc_sim = -1;
-static int hf_tp_cc_sim_support3 = -1;
-static int hf_tp_mo_sms_sim = -1;
-static int hf_tp_cc_sim_support4 = -1;
-static int hf_tp_ucs2_entry = -1;
-static int hf_tp_ucs2_display = -1;
-static int hf_tp_display_ext = -1;
+static int hf_tp_cmd_res;
+static int hf_tp_cc_sim;
+static int hf_tp_cc_sim_support3;
+static int hf_tp_mo_sms_sim;
+static int hf_tp_cc_sim_support4;
+static int hf_tp_ucs2_entry;
+static int hf_tp_ucs2_display;
+static int hf_tp_display_ext;
 /* 3rd byte (Proactive SIM) */
-static int hf_tp_pa_display_text = -1;
-static int hf_tp_pa_get_inkey = -1;
-static int hf_tp_pa_get_input = -1;
-static int hf_tp_pa_more_time = -1;
-static int hf_tp_pa_play_tone = -1;
-static int hf_tp_pa_poll_intv = -1;
-static int hf_tp_pa_polling_off = -1;
-static int hf_tp_pa_refresh = -1;
+static int hf_tp_pa_display_text;
+static int hf_tp_pa_get_inkey;
+static int hf_tp_pa_get_input;
+static int hf_tp_pa_more_time;
+static int hf_tp_pa_play_tone;
+static int hf_tp_pa_poll_intv;
+static int hf_tp_pa_polling_off;
+static int hf_tp_pa_refresh;
 /* 4th byte (Proactive SIM) */
-static int hf_tp_pa_select_item = -1;
-static int hf_tp_pa_send_sms = -1;
-static int hf_tp_pa_send_ss = -1;
-static int hf_tp_pa_send_ussd = -1;
-static int hf_tp_pa_set_up_call = -1;
-static int hf_tp_pa_set_up_menu = -1;
-static int hf_tp_pa_prov_loci = -1;
-static int hf_tp_pa_prov_loci_nmr = -1;
+static int hf_tp_pa_select_item;
+static int hf_tp_pa_send_sms;
+static int hf_tp_pa_send_ss;
+static int hf_tp_pa_send_ussd;
+static int hf_tp_pa_set_up_call;
+static int hf_tp_pa_set_up_menu;
+static int hf_tp_pa_prov_loci;
+static int hf_tp_pa_prov_loci_nmr;
 /* 5th byte (Event drive information) */
-static int hf_tp_pa_evt_list = -1;
-static int hf_tp_ev_mt_call = -1;
-static int hf_tp_ev_call_connected = -1;
-static int hf_tp_ev_call_disconnected = -1;
-static int hf_tp_ev_location_status = -1;
-static int hf_tp_ev_user_activity = -1;
-static int hf_tp_ev_idle_screen = -1;
-static int hf_tp_ev_cardreader_status = -1;
+static int hf_tp_pa_evt_list;
+static int hf_tp_ev_mt_call;
+static int hf_tp_ev_call_connected;
+static int hf_tp_ev_call_disconnected;
+static int hf_tp_ev_location_status;
+static int hf_tp_ev_user_activity;
+static int hf_tp_ev_idle_screen;
+static int hf_tp_ev_cardreader_status;
 /* 6th byte (Event drive information extension) */
-static int hf_tp_ev_lang_sel = -1;
-static int hf_tp_ev_brows_term = -1;
-static int hf_tp_ev_data_avail = -1;
-static int hf_tp_ev_chan_status = -1;
-static int hf_tp_ev_access_techno_change = -1;
-static int hf_tp_ev_disp_params_changed = -1;
-static int hf_tp_ev_local_conn = -1;
-static int hf_tp_ev_nwk_search_mode_change = -1;
+static int hf_tp_ev_lang_sel;
+static int hf_tp_ev_brows_term;
+static int hf_tp_ev_data_avail;
+static int hf_tp_ev_chan_status;
+static int hf_tp_ev_access_techno_change;
+static int hf_tp_ev_disp_params_changed;
+static int hf_tp_ev_local_conn;
+static int hf_tp_ev_nwk_search_mode_change;
 /* 7th byte (Multiple card proactive commands) */
-static int hf_tp_pa_power_on = -1;
-static int hf_tp_pa_power_off = -1;
-static int hf_tp_pa_perform_card_apdu = -1;
-static int hf_tp_pa_get_reader_status = -1;
-static int hf_tp_pa_get_reader_status_id = -1;
-static int hf_tp_rfu = -1;
+static int hf_tp_pa_power_on;
+static int hf_tp_pa_power_off;
+static int hf_tp_pa_perform_card_apdu;
+static int hf_tp_pa_get_reader_status;
+static int hf_tp_pa_get_reader_status_id;
+static int hf_tp_rfu;
 /* 8th byte (Proactive SIM) */
-static int hf_tp_pa_timer_start_stop = -1;
-static int hf_tp_pa_timer_get_current = -1;
-static int hf_tp_pa_prov_loci_date_tz = -1;
-static int hf_tp_pa_get_inkey_binary = -1;
-static int hf_tp_pa_set_up_idle_mode_text = -1;
-static int hf_tp_pa_run_at_command = -1;
-static int hf_tp_pa_2nd_alpha_setup_call = -1;
-static int hf_tp_pa_2nd_cc_sim_support = -1;
+static int hf_tp_pa_timer_start_stop;
+static int hf_tp_pa_timer_get_current;
+static int hf_tp_pa_prov_loci_date_tz;
+static int hf_tp_pa_get_inkey_binary;
+static int hf_tp_pa_set_up_idle_mode_text;
+static int hf_tp_pa_run_at_command;
+static int hf_tp_pa_2nd_alpha_setup_call;
+static int hf_tp_pa_2nd_cc_sim_support;
 /* 9th byte */
-static int hf_tp_display_text = -1;
-static int hf_tp_send_dtmf_cmd = -1;
-static int hf_tp_pa_prov_loci_nmr2 = -1;
-static int hf_tp_pa_prov_loci_lang = -1;
-static int hf_tp_pa_prov_loci_ta = -1;
-static int hf_tp_pa_lang_notif = -1;
-static int hf_tp_pa_launch_browser = -1;
-static int hf_tp_pa_prov_loci_access_techno = -1;
+static int hf_tp_display_text;
+static int hf_tp_send_dtmf_cmd;
+static int hf_tp_pa_prov_loci_nmr2;
+static int hf_tp_pa_prov_loci_lang;
+static int hf_tp_pa_prov_loci_ta;
+static int hf_tp_pa_lang_notif;
+static int hf_tp_pa_launch_browser;
+static int hf_tp_pa_prov_loci_access_techno;
 /* 10th byte */
-static int hf_tp_soft_key_support_select_item = -1;
-static int hf_tp_soft_key_support_set_up_menu = -1;
-static int hf_tp_rfu2 = -1;
+static int hf_tp_soft_key_support_select_item;
+static int hf_tp_soft_key_support_set_up_menu;
+static int hf_tp_rfu2;
 /* 11th byte */
-static int hf_tp_soft_key_info_max_nb = -1;
+static int hf_tp_soft_key_info_max_nb;
 /* 12th byte (Proactive SIM) */
-static int hf_tp_pa_open_chan = -1;
-static int hf_tp_pa_close_chan = -1;
-static int hf_tp_pa_recv_data = -1;
-static int hf_tp_pa_send_data = -1;
-static int hf_tp_pa_get_chan_status = -1;
-static int hf_tp_pa_serv_search = -1;
-static int hf_tp_pa_get_serv_info = -1;
-static int hf_tp_pa_decl_serv = -1;
+static int hf_tp_pa_open_chan;
+static int hf_tp_pa_close_chan;
+static int hf_tp_pa_recv_data;
+static int hf_tp_pa_send_data;
+static int hf_tp_pa_get_chan_status;
+static int hf_tp_pa_serv_search;
+static int hf_tp_pa_get_serv_info;
+static int hf_tp_pa_decl_serv;
 /* 13th byte (Proactive SIM) */
-static int hf_tp_bip_csd = -1;
-static int hf_tp_bip_gprs = -1;
-static int hf_tp_bip_bluetooth = -1;
-static int hf_tp_bip_irda = -1;
-static int hf_tp_bip_rs232 = -1;
-static int hf_tp_num_chans = -1;
+static int hf_tp_bip_csd;
+static int hf_tp_bip_gprs;
+static int hf_tp_bip_bluetooth;
+static int hf_tp_bip_irda;
+static int hf_tp_bip_rs232;
+static int hf_tp_num_chans;
 /* 14th byte (Screen height) */
-static int hf_tp_char_height = -1;
-static int hf_tp_nd = -1;
-static int hf_tp_nk = -1;
-static int hf_tp_sizing_supp = -1;
+static int hf_tp_char_height;
+static int hf_tp_nd;
+static int hf_tp_nk;
+static int hf_tp_sizing_supp;
 /* 15th byte (Screen width) */
-static int hf_tp_char_width = -1;
-static int hf_tp_var_fonts = -1;
+static int hf_tp_char_width;
+static int hf_tp_var_fonts;
 /* 16th byte (Screen effects) */
-static int hf_tp_display_resize = -1;
-static int hf_tp_text_wrapping = -1;
-static int hf_tp_text_scrolling = -1;
-static int hf_tp_text_attributes = -1;
-static int hf_tp_rfu3 = -1;
-static int hf_tp_width_red_menu = -1;
+static int hf_tp_display_resize;
+static int hf_tp_text_wrapping;
+static int hf_tp_text_scrolling;
+static int hf_tp_text_attributes;
+static int hf_tp_rfu3;
+static int hf_tp_width_red_menu;
 /* 17th byte (Proactive SIM) */
-static int hf_tp_bip_tcp_remote = -1;
-static int hf_tp_bip_udp_remote = -1;
-static int hf_tp_bip_tcp_server = -1;
-static int hf_tp_bip_tcp_local = -1;
-static int hf_tp_bip_udp_local = -1;
-static int hf_tp_bip_direct_com = -1;
-static int hf_tp_bip_eutran = -1;
-static int hf_tp_bip_hsdpa = -1;
+static int hf_tp_bip_tcp_remote;
+static int hf_tp_bip_udp_remote;
+static int hf_tp_bip_tcp_server;
+static int hf_tp_bip_tcp_local;
+static int hf_tp_bip_udp_local;
+static int hf_tp_bip_direct_com;
+static int hf_tp_bip_eutran;
+static int hf_tp_bip_hsdpa;
 /* 18th byte */
-static int hf_tp_pa_display_text_var_time_out = -1;
-static int hf_tp_pa_get_inkey_help = -1;
-static int hf_tp_bip_usb = -1;
-static int hf_tp_pa_get_inkey_var_time_out = -1;
-static int hf_tp_pa_prov_loci_esn = -1;
-static int hf_tp_cc_gprs = -1;
-static int hf_tp_pa_prov_loci_imeisv = -1;
-static int hf_tp_pa_prov_loci_search_mode_change = -1;
+static int hf_tp_pa_display_text_var_time_out;
+static int hf_tp_pa_get_inkey_help;
+static int hf_tp_bip_usb;
+static int hf_tp_pa_get_inkey_var_time_out;
+static int hf_tp_pa_prov_loci_esn;
+static int hf_tp_cc_gprs;
+static int hf_tp_pa_prov_loci_imeisv;
+static int hf_tp_pa_prov_loci_search_mode_change;
 /* 19th byte (TIA/EIA-136) */
-static int hf_tp_tia_eia_version = -1;
-static int hf_tp_rfu4 = -1;
+static int hf_tp_tia_eia_version;
+static int hf_tp_rfu4;
 /* 20th byte (TIA/EIA/IS-820-A) */
-static int hf_tp_tia_iea_is820a_reserved = -1;
+static int hf_tp_tia_iea_is820a_reserved;
 /* 21th byte (Extended Launch Browser Capability) */
-static int hf_tp_ext_launch_browser_wml = -1;
-static int hf_tp_ext_launch_browser_xhtml = -1;
-static int hf_tp_ext_launch_browser_html = -1;
-static int hf_tp_ext_launch_browser_chtml = -1;
-static int hf_tp_rfu5 = -1;
+static int hf_tp_ext_launch_browser_wml;
+static int hf_tp_ext_launch_browser_xhtml;
+static int hf_tp_ext_launch_browser_html;
+static int hf_tp_ext_launch_browser_chtml;
+static int hf_tp_rfu5;
 /* 22th byte */
-static int hf_tp_utran_ps_ext_params = -1;
-static int hf_tp_pa_prov_loci_batt_state = -1;
-static int hf_tp_pa_play_tone_melody = -1;
-static int hf_tp_mm_call_set_up_call = -1;
-static int hf_tp_toolkit_initiated_gba = -1;
-static int hf_tp_pa_retrieve_mm_msg = -1;
-static int hf_tp_pa_submit_mm_msg = -1;
-static int hf_tp_pa_display_mm_msg = -1;
+static int hf_tp_utran_ps_ext_params;
+static int hf_tp_pa_prov_loci_batt_state;
+static int hf_tp_pa_play_tone_melody;
+static int hf_tp_mm_call_set_up_call;
+static int hf_tp_toolkit_initiated_gba;
+static int hf_tp_pa_retrieve_mm_msg;
+static int hf_tp_pa_submit_mm_msg;
+static int hf_tp_pa_display_mm_msg;
 /* 23th byte */
-static int hf_tp_pa_set_frames = -1;
-static int hf_tp_pa_get_frames_status = -1;
-static int hf_tp_mms_notif_download = -1;
-static int hf_tp_alpha_id_refresh_cmd = -1;
-static int hf_tp_geo_loc_report = -1;
-static int hf_tp_pa_prov_loci_meid = -1;
-static int hf_tp_pa_prov_loci_nmr_utran_eutran = -1;
-static int hf_tp_ussd_data_download = -1;
+static int hf_tp_pa_set_frames;
+static int hf_tp_pa_get_frames_status;
+static int hf_tp_mms_notif_download;
+static int hf_tp_alpha_id_refresh_cmd;
+static int hf_tp_geo_loc_report;
+static int hf_tp_pa_prov_loci_meid;
+static int hf_tp_pa_prov_loci_nmr_utran_eutran;
+static int hf_tp_ussd_data_download;
 /* 24th byte (Class "i") */
-static int hf_tp_class_i_max_nb_frames = -1;
-static int hf_tp_rfu6 = -1;
+static int hf_tp_class_i_max_nb_frames;
+static int hf_tp_rfu6;
 /* 25th byte (Event driven information extensions) */
-static int hf_tp_evt_browsing_status = -1;
-static int hf_tp_evt_mms_transfer_status = -1;
-static int hf_tp_evt_frame_info_changed = -1;
-static int hf_tp_evt_iwlan_access_status = -1;
-static int hf_tp_evt_nw_reject_geran_utran = -1;
-static int hf_tp_evt_hci_connectivity = -1;
-static int hf_tp_evt_nw_reject_eutran = -1;
-static int hf_tp_evt_mult_access_techno_change = -1;
+static int hf_tp_evt_browsing_status;
+static int hf_tp_evt_mms_transfer_status;
+static int hf_tp_evt_frame_info_changed;
+static int hf_tp_evt_iwlan_access_status;
+static int hf_tp_evt_nw_reject_geran_utran;
+static int hf_tp_evt_hci_connectivity;
+static int hf_tp_evt_nw_reject_eutran;
+static int hf_tp_evt_mult_access_techno_change;
 /* 26th byte (Event driven information extensions) */
-static int hf_tp_evt_csg_cell_select = -1;
-static int hf_tp_evt_contactless_state_req = -1;
-static int hf_tp_rfu7 = -1;
+static int hf_tp_evt_csg_cell_select;
+static int hf_tp_evt_contactless_state_req;
+static int hf_tp_rfu7;
 /* 27th byte (Event driven information extensions) */
-static int hf_tp_rfu8 = -1;
+static int hf_tp_rfu8;
 /* 28th byte (Text attributes) */
-static int hf_tp_text_align_left = -1;
-static int hf_tp_text_align_centre = -1;
-static int hf_tp_text_align_right = -1;
-static int hf_tp_text_font_size_normal = -1;
-static int hf_tp_text_font_size_large = -1;
-static int hf_tp_text_font_size_small = -1;
-static int hf_tp_rfu9 = -1;
+static int hf_tp_text_align_left;
+static int hf_tp_text_align_centre;
+static int hf_tp_text_align_right;
+static int hf_tp_text_font_size_normal;
+static int hf_tp_text_font_size_large;
+static int hf_tp_text_font_size_small;
+static int hf_tp_rfu9;
 /* 29th byte (Text attributes) */
-static int hf_tp_text_style_normal = -1;
-static int hf_tp_text_style_bold = -1;
-static int hf_tp_text_style_italic = -1;
-static int hf_tp_text_style_underlined = -1;
-static int hf_tp_text_style_strikethrough = -1;
-static int hf_tp_text_style_text_fg_colour = -1;
-static int hf_tp_text_style_text_bg_colour = -1;
-static int hf_tp_rfu10 = -1;
+static int hf_tp_text_style_normal;
+static int hf_tp_text_style_bold;
+static int hf_tp_text_style_italic;
+static int hf_tp_text_style_underlined;
+static int hf_tp_text_style_strikethrough;
+static int hf_tp_text_style_text_fg_colour;
+static int hf_tp_text_style_text_bg_colour;
+static int hf_tp_rfu10;
 /* 30th byte */
-static int hf_tp_bip_iwlan = -1;
-static int hf_tp_pa_prov_loci_wsid = -1;
-static int hf_tp_term_app = -1;
-static int hf_tp_steering_roaming_refresh = -1;
-static int hf_tp_pa_activate = -1;
-static int hf_tp_pa_geo_loc_req = -1;
-static int hf_tp_pa_prov_loci_broadcast_nw_info = -1;
-static int hf_tp_steering_roaming_iwlan_refresh = -1;
+static int hf_tp_bip_iwlan;
+static int hf_tp_pa_prov_loci_wsid;
+static int hf_tp_term_app;
+static int hf_tp_steering_roaming_refresh;
+static int hf_tp_pa_activate;
+static int hf_tp_pa_geo_loc_req;
+static int hf_tp_pa_prov_loci_broadcast_nw_info;
+static int hf_tp_steering_roaming_iwlan_refresh;
 /* 31th byte */
-static int hf_tp_pa_contactless_state_changed = -1;
-static int hf_tp_csg_cell_discovery = -1;
-static int hf_tp_cnf_params_support_open_chan_server_mode = -1;
-static int hf_tp_com_ctrl_ims = -1;
-static int hf_tp_cat_over_modem_itf = -1;
-static int hf_tp_evt_incoming_data_ims = -1;
-static int hf_tp_evt_ims_registration = -1;
-static int hf_tp_pa_prof_env_cont = -1;
+static int hf_tp_pa_contactless_state_changed;
+static int hf_tp_csg_cell_discovery;
+static int hf_tp_cnf_params_support_open_chan_server_mode;
+static int hf_tp_com_ctrl_ims;
+static int hf_tp_cat_over_modem_itf;
+static int hf_tp_evt_incoming_data_ims;
+static int hf_tp_evt_ims_registration;
+static int hf_tp_pa_prof_env_cont;
 /* 32th byte */
-static int hf_tp_bip_ims = -1;
-static int hf_tp_pa_prov_loci_henb_ip_addr = -1;
-static int hf_tp_pa_prov_loci_henb_surround_macro = -1;
-static int hf_tp_launch_params_support_open_chan_server_mode = -1;
-static int hf_tp_direct_com_support_open_chan_server_mode = -1;
-static int hf_tp_pa_sec_prof_env_cont = -1;
-static int hf_tp_cat_serv_list_ecat_client = -1;
-static int hf_tp_support_refresh_enforcement_policy = -1;
+static int hf_tp_bip_ims;
+static int hf_tp_pa_prov_loci_henb_ip_addr;
+static int hf_tp_pa_prov_loci_henb_surround_macro;
+static int hf_tp_launch_params_support_open_chan_server_mode;
+static int hf_tp_direct_com_support_open_chan_server_mode;
+static int hf_tp_pa_sec_prof_env_cont;
+static int hf_tp_cat_serv_list_ecat_client;
+static int hf_tp_support_refresh_enforcement_policy;
 /* 33th byte */
-static int hf_tp_support_dns_addr_req = -1;
-static int hf_tp_support_nw_access_name_reuse = -1;
-static int hf_tp_ev_poll_intv_nego = -1;
-static int hf_tp_rfu11 = -1;
+static int hf_tp_support_dns_addr_req;
+static int hf_tp_support_nw_access_name_reuse;
+static int hf_tp_ev_poll_intv_nego;
+static int hf_tp_rfu11;
 
-static int hf_cat_ber_tag = -1;
+static int hf_cat_ber_tag;
 
-static int hf_seek_mode = -1;
-static int hf_seek_type = -1;
-static int hf_seek_rec_nr = -1;
+static int hf_seek_mode;
+static int hf_seek_type;
+static int hf_seek_rec_nr;
 
-static int ett_sim = -1;
-static int ett_tprof_b1 = -1;
-static int ett_tprof_b2 = -1;
-static int ett_tprof_b3 = -1;
-static int ett_tprof_b4 = -1;
-static int ett_tprof_b5 = -1;
-static int ett_tprof_b6 = -1;
-static int ett_tprof_b7 = -1;
-static int ett_tprof_b8 = -1;
-static int ett_tprof_b9 = -1;
-static int ett_tprof_b10 = -1;
-static int ett_tprof_b11 = -1;
-static int ett_tprof_b12 = -1;
-static int ett_tprof_b13 = -1;
-static int ett_tprof_b14 = -1;
-static int ett_tprof_b15 = -1;
-static int ett_tprof_b16 = -1;
-static int ett_tprof_b17 = -1;
-static int ett_tprof_b18 = -1;
-static int ett_tprof_b19 = -1;
-static int ett_tprof_b20 = -1;
-static int ett_tprof_b21 = -1;
-static int ett_tprof_b22 = -1;
-static int ett_tprof_b23 = -1;
-static int ett_tprof_b24 = -1;
-static int ett_tprof_b25 = -1;
-static int ett_tprof_b26 = -1;
-static int ett_tprof_b27 = -1;
-static int ett_tprof_b28 = -1;
-static int ett_tprof_b29 = -1;
-static int ett_tprof_b30 = -1;
-static int ett_tprof_b31 = -1;
-static int ett_tprof_b32 = -1;
-static int ett_tprof_b33 = -1;
+static int ett_sim;
+static int ett_tprof_b1;
+static int ett_tprof_b2;
+static int ett_tprof_b3;
+static int ett_tprof_b4;
+static int ett_tprof_b5;
+static int ett_tprof_b6;
+static int ett_tprof_b7;
+static int ett_tprof_b8;
+static int ett_tprof_b9;
+static int ett_tprof_b10;
+static int ett_tprof_b11;
+static int ett_tprof_b12;
+static int ett_tprof_b13;
+static int ett_tprof_b14;
+static int ett_tprof_b15;
+static int ett_tprof_b16;
+static int ett_tprof_b17;
+static int ett_tprof_b18;
+static int ett_tprof_b19;
+static int ett_tprof_b20;
+static int ett_tprof_b21;
+static int ett_tprof_b22;
+static int ett_tprof_b23;
+static int ett_tprof_b24;
+static int ett_tprof_b25;
+static int ett_tprof_b26;
+static int ett_tprof_b27;
+static int ett_tprof_b28;
+static int ett_tprof_b29;
+static int ett_tprof_b30;
+static int ett_tprof_b31;
+static int ett_tprof_b32;
+static int ett_tprof_b33;
 
 static dissector_handle_t sub_handle_cap;
 static dissector_handle_t sim_handle, sim_part_handle;
 
 
-static const int *tprof_b1_fields[] = {
+static int * const tprof_b1_fields[] = {
 	&hf_tp_prof_dld,
 	&hf_tp_sms_data_dld,
 	&hf_tp_cb_data_dld,
@@ -371,7 +373,7 @@ static const int *tprof_b1_fields[] = {
 	NULL
 };
 
-static const int *tprof_b2_fields[] = {
+static int * const tprof_b2_fields[] = {
 	&hf_tp_cmd_res,
 	&hf_tp_cc_sim,
 	&hf_tp_cc_sim_support3,
@@ -383,7 +385,7 @@ static const int *tprof_b2_fields[] = {
 	NULL
 };
 
-static const int *tprof_b3_fields[] = {
+static int * const tprof_b3_fields[] = {
 	&hf_tp_pa_display_text,
 	&hf_tp_pa_get_inkey,
 	&hf_tp_pa_get_input,
@@ -395,7 +397,7 @@ static const int *tprof_b3_fields[] = {
 	NULL
 };
 
-static const int *tprof_b4_fields[] = {
+static int * const tprof_b4_fields[] = {
 	&hf_tp_pa_select_item,
 	&hf_tp_pa_send_sms,
 	&hf_tp_pa_send_ss,
@@ -407,7 +409,7 @@ static const int *tprof_b4_fields[] = {
 	NULL
 };
 
-static const int *tprof_b5_fields[] = {
+static int * const tprof_b5_fields[] = {
 	&hf_tp_pa_evt_list,
 	&hf_tp_ev_mt_call,
 	&hf_tp_ev_call_connected,
@@ -419,7 +421,7 @@ static const int *tprof_b5_fields[] = {
 	NULL
 };
 
-static const int *tprof_b6_fields[] = {
+static int * const tprof_b6_fields[] = {
 	&hf_tp_ev_lang_sel,
 	&hf_tp_ev_brows_term,
 	&hf_tp_ev_data_avail,
@@ -431,7 +433,7 @@ static const int *tprof_b6_fields[] = {
 	NULL
 };
 
-static const int *tprof_b7_fields[] = {
+static int * const tprof_b7_fields[] = {
 	&hf_tp_pa_power_on,
 	&hf_tp_pa_power_off,
 	&hf_tp_pa_perform_card_apdu,
@@ -441,7 +443,7 @@ static const int *tprof_b7_fields[] = {
 	NULL
 };
 
-static const int *tprof_b8_fields[] = {
+static int * const tprof_b8_fields[] = {
 	&hf_tp_pa_timer_start_stop,
 	&hf_tp_pa_timer_get_current,
 	&hf_tp_pa_prov_loci_date_tz,
@@ -453,7 +455,7 @@ static const int *tprof_b8_fields[] = {
 	NULL
 };
 
-static const int *tprof_b9_fields[] = {
+static int * const tprof_b9_fields[] = {
 	&hf_tp_display_text,
 	&hf_tp_send_dtmf_cmd,
 	&hf_tp_pa_prov_loci_nmr2,
@@ -465,19 +467,19 @@ static const int *tprof_b9_fields[] = {
 	NULL
 };
 
-static const int *tprof_b10_fields[] = {
+static int * const tprof_b10_fields[] = {
 	&hf_tp_soft_key_support_select_item,
 	&hf_tp_soft_key_support_set_up_menu,
 	&hf_tp_rfu2,
 	NULL
 };
 
-static const int *tprof_b11_fields[] = {
+static int * const tprof_b11_fields[] = {
 	&hf_tp_soft_key_info_max_nb,
 	NULL
 };
 
-static const int *tprof_b12_fields[] = {
+static int * const tprof_b12_fields[] = {
 	&hf_tp_pa_open_chan,
 	&hf_tp_pa_close_chan,
 	&hf_tp_pa_recv_data,
@@ -489,7 +491,7 @@ static const int *tprof_b12_fields[] = {
 	NULL
 };
 
-static const int *tprof_b13_fields[] = {
+static int * const tprof_b13_fields[] = {
 	&hf_tp_bip_csd,
 	&hf_tp_bip_gprs,
 	&hf_tp_bip_bluetooth,
@@ -499,7 +501,7 @@ static const int *tprof_b13_fields[] = {
 	NULL
 };
 
-static const int *tprof_b14_fields[] = {
+static int * const tprof_b14_fields[] = {
 	&hf_tp_char_height,
 	&hf_tp_nd,
 	&hf_tp_nk,
@@ -507,13 +509,13 @@ static const int *tprof_b14_fields[] = {
 	NULL
 };
 
-static const int *tprof_b15_fields[] = {
+static int * const tprof_b15_fields[] = {
 	&hf_tp_char_width,
 	&hf_tp_var_fonts,
 	NULL
 };
 
-static const int *tprof_b16_fields[] = {
+static int * const tprof_b16_fields[] = {
 	&hf_tp_display_resize,
 	&hf_tp_text_wrapping,
 	&hf_tp_text_scrolling,
@@ -522,7 +524,7 @@ static const int *tprof_b16_fields[] = {
 	&hf_tp_width_red_menu,
 	NULL
 };
-static const int *tprof_b17_fields[] = {
+static int * const tprof_b17_fields[] = {
 	&hf_tp_bip_tcp_remote,
 	&hf_tp_bip_udp_remote,
 	&hf_tp_bip_tcp_server,
@@ -533,7 +535,7 @@ static const int *tprof_b17_fields[] = {
 	&hf_tp_bip_hsdpa,
 	NULL
 };
-static const int *tprof_b18_fields[] = {
+static int * const tprof_b18_fields[] = {
 	&hf_tp_pa_display_text_var_time_out,
 	&hf_tp_pa_get_inkey_help,
 	&hf_tp_bip_usb,
@@ -544,18 +546,18 @@ static const int *tprof_b18_fields[] = {
 	&hf_tp_pa_prov_loci_search_mode_change,
 	NULL
 };
-static const int *tprof_b19_fields[] = {
+static int * const tprof_b19_fields[] = {
 	&hf_tp_tia_eia_version,
 	&hf_tp_rfu4,
 	NULL
 };
 
-static const int *tprof_b20_fields[] = {
+static int * const tprof_b20_fields[] = {
 	&hf_tp_tia_iea_is820a_reserved,
 	NULL
 };
 
-static const int *tprof_b21_fields[] = {
+static int * const tprof_b21_fields[] = {
 	&hf_tp_ext_launch_browser_wml,
 	&hf_tp_ext_launch_browser_xhtml,
 	&hf_tp_ext_launch_browser_html,
@@ -564,7 +566,7 @@ static const int *tprof_b21_fields[] = {
 	NULL
 };
 
-static const int *tprof_b22_fields[] = {
+static int * const tprof_b22_fields[] = {
 	&hf_tp_utran_ps_ext_params,
 	&hf_tp_pa_prov_loci_batt_state,
 	&hf_tp_pa_play_tone_melody,
@@ -576,7 +578,7 @@ static const int *tprof_b22_fields[] = {
 	NULL
 };
 
-static const int *tprof_b23_fields[] = {
+static int * const tprof_b23_fields[] = {
 	&hf_tp_pa_set_frames,
 	&hf_tp_pa_get_frames_status,
 	&hf_tp_mms_notif_download,
@@ -588,13 +590,13 @@ static const int *tprof_b23_fields[] = {
 	NULL
 };
 
-static const int *tprof_b24_fields[] = {
+static int * const tprof_b24_fields[] = {
 	&hf_tp_class_i_max_nb_frames,
 	&hf_tp_rfu6,
 	NULL
 };
 
-static const int *tprof_b25_fields[] = {
+static int * const tprof_b25_fields[] = {
 	&hf_tp_evt_browsing_status,
 	&hf_tp_evt_mms_transfer_status,
 	&hf_tp_evt_frame_info_changed,
@@ -606,19 +608,19 @@ static const int *tprof_b25_fields[] = {
 	NULL
 };
 
-static const int *tprof_b26_fields[] = {
+static int * const tprof_b26_fields[] = {
 	&hf_tp_evt_csg_cell_select,
 	&hf_tp_evt_contactless_state_req,
 	&hf_tp_rfu7,
 	NULL
 };
 
-static const int *tprof_b27_fields[] = {
+static int * const tprof_b27_fields[] = {
 	&hf_tp_rfu8,
 	NULL
 };
 
-static const int *tprof_b28_fields[] = {
+static int * const tprof_b28_fields[] = {
 	&hf_tp_text_align_left,
 	&hf_tp_text_align_centre,
 	&hf_tp_text_align_right,
@@ -629,7 +631,7 @@ static const int *tprof_b28_fields[] = {
 	NULL
 };
 
-static const int *tprof_b29_fields[] = {
+static int * const tprof_b29_fields[] = {
 	&hf_tp_text_style_normal,
 	&hf_tp_text_style_bold,
 	&hf_tp_text_style_italic,
@@ -641,7 +643,7 @@ static const int *tprof_b29_fields[] = {
 	NULL
 };
 
-static const int *tprof_b30_fields[] = {
+static int * const tprof_b30_fields[] = {
 	&hf_tp_bip_iwlan,
 	&hf_tp_pa_prov_loci_wsid,
 	&hf_tp_term_app,
@@ -653,7 +655,7 @@ static const int *tprof_b30_fields[] = {
 	NULL
 };
 
-static const int *tprof_b31_fields[] = {
+static int * const tprof_b31_fields[] = {
 	&hf_tp_pa_contactless_state_changed,
 	&hf_tp_csg_cell_discovery,
 	&hf_tp_cnf_params_support_open_chan_server_mode,
@@ -665,7 +667,7 @@ static const int *tprof_b31_fields[] = {
 	NULL
 };
 
-static const int *tprof_b32_fields[] = {
+static int * const tprof_b32_fields[] = {
 	&hf_tp_bip_ims,
 	&hf_tp_pa_prov_loci_henb_ip_addr,
 	&hf_tp_pa_prov_loci_henb_surround_macro,
@@ -677,7 +679,7 @@ static const int *tprof_b32_fields[] = {
 	NULL
 };
 
-static const int *tprof_b33_fields[] = {
+static int * const tprof_b33_fields[] = {
 	&hf_tp_support_dns_addr_req,
 	&hf_tp_support_nw_access_name_reuse,
 	&hf_tp_ev_poll_intv_nego,
@@ -709,6 +711,11 @@ static const value_string ber_tlv_cat_tag_vals[] = {
 static const value_string chan_op_vals[] = {
 	{ 0x00, "Open Channel" },
 	{ 0x80, "Close Channel" },
+	{ 0, NULL }
+};
+
+static const value_string apdu_le_vals[] = {
+	{ 0x00,	"Any number in the range 1 to 256" },
 	{ 0, NULL }
 };
 
@@ -753,8 +760,8 @@ static const value_string apdu_ins_vals[] = {
 	{ 0x26, "DISABLE CHV" },
 	{ 0x28, "ENABLE CHV" },
 	{ 0x2C, "UNBLOCK CHV" },
-	{ 0x04, "INVALIDATE" },
-	{ 0x44, "REHABILITATE" },
+	{ 0x04, "INVALIDATE / REHABILITATE" },
+	{ 0x44, "REHABILITATE / ACTIVATE" },
 	{ 0x88, "RUN GSM ALGORITHM / AUTHENTICATE" },
 	{ 0xFA, "SLEEP" },
 	{ 0xC0, "GET RESPONSE" },
@@ -771,6 +778,16 @@ static const value_string apdu_ins_vals[] = {
 	{ 0x70, "MANAGE CHANNEL" },
 	{ 0x73, "MANAGE SECURE CHANNEL" },
 	{ 0x75, "TRANSACT DATA" },
+	/* TS 102 221 v15.11.0 */
+	{ 0x78, "GET IDENTITY" },
+	/* GSMA SGP.02 v4.2 */
+	{ 0xCA, "GET DATA" },
+	/* TS TS 102 222 */
+	{ 0xE0, "CREATE FILE" },
+	{ 0xE4, "DELETE FILE" },
+	{ 0xE6, "TERMINATE DF" },
+	{ 0xE8, "TERMINATE EF" },
+	{ 0xFE, "TERMINATE CARD USAGE" },
 	{ 0, NULL }
 };
 
@@ -798,6 +815,8 @@ static const value_string seek_mode_vals[] = {
  * current work-around is to simply merge all of them into one value_string
  * array */
 
+/* N.B. this combined value_string has lots of duplicate values... */
+
 /* Files at the MF level */
 static const value_string mf_dfs[] = {
 	{ 0x3f00, "MF" },
@@ -805,6 +824,7 @@ static const value_string mf_dfs[] = {
 	{ 0x7f20, "DF.GSM" },
 	{ 0x7f22, "DF.IS-41" },
 	{ 0x7f23, "DF.FP-CTS" },
+	{ 0x7f25, "DF.CDMA" },
 	{ 0x7f31, "DF.iDEN" },
 	{ 0x7f80, "DF.PDC" },
 	{ 0x7f90, "DF.TETRA" },
@@ -815,8 +835,10 @@ static const value_string mf_dfs[] = {
 static const value_string mf_efs[] = {
 #endif
 	{ 0x2f00, "EF.DIR" },
-	{ 0x2f05, "EF.ELP" },
-	{ 0x2f06, "EF.PL" },
+//	{ 0x2f05, "EF.ELP" },
+	{ 0x2f05, "EF.PL" },
+	{ 0x2f06, "EF.ARR" },
+	{ 0x2f08, "EF.UMPC" },
 	{ 0x2fe2, "EF.ICCID" },
 #if 0
 	{ 0, NULL }
@@ -897,7 +919,7 @@ static const value_string df_gsm_dfs[] = {
 	{ 0x5f32, "DF.ICO" },
 	{ 0x5f33, "DF.ACeS" },
 	{ 0x5f3c, "DF.MExE" },
-	{ 0x5f40, "DF.EIA/TIA-533" },
+	{ 0x5f40, "DF.EIA/TIA-533/DF.WLAN" },
 	{ 0x5f60, "DF.CTS" },
 	{ 0x5f70, "DF.SoLSA" },
 #if 0
@@ -908,12 +930,25 @@ static const value_string adf_usim_dfs[] = {
 #endif
 	{ 0x5f3a, "DF.PHONEBOOK" },
 	{ 0x5f3b, "DF.GSM-ACCESS" },
+//	{ 0x5f3c, "DF.MexE" },
+//	{ 0x5f70, "DF.SoLSA" },
+//	{ 0x5f40, "DF.WLAN" },
+	{ 0x5f50, "DF.HNB" },
+	{ 0x5f90, "DF.ProSe" },
+	{ 0x5fa0, "DF.ACDC" },
+	{ 0x5fb0, "DF.TV" },
+	{ 0x5fc0, "DF.5GS" },
 #if 0
 	{ 0, NULL }
 };
 
 static const value_string adf_usim_efs[] = {
 #endif
+	{ 0x6f00, "EF.5GAuthKeys" },
+	{ 0x6f01, "EF.5GS3GPPAccessNASSecCtxt" },
+	{ 0x6f02, "EF.5GSnon3GPPAccessNASSecCtxt" },
+	{ 0x6f03, "EF.SCICI" },
+	{ 0x6f04, "EF.UACAcessIdConfig" },
 	{ 0x6f06, "EF.ARR" },
 	{ 0x6f07, "EF.IMSI" },
 	{ 0x6f08, "EF.Keys" },
@@ -995,14 +1030,53 @@ static const value_string adf_usim_efs[] = {
 	{ 0x6fe2, "EF.NCP-IP" },
 	{ 0x6fe3, "EF.EPSLOCI" },
 	{ 0x6fe4, "EF.EPSNSC" },
+	{ 0x6fe6, "EF.UFC" },
+	{ 0x6fe7, "EF.UICCIARI" },
+	{ 0x6fec, "EF.PWS" },
+	{ 0x6fed, "EF.FDNURI" },
+	{ 0x6fee, "EF.BDNURI" },
+	{ 0x6fef, "EF.SDNURI" },
+	{ 0x6ff0, "EF.IWL" },
+	{ 0x6ff1, "EF.IPS" },
+	{ 0x6ff2, "EF.IPD" },
+	{ 0x6ff3, "EF.ePDGId" },
+	{ 0x6ff4, "EF.ePDGSelection" },
+	{ 0x6ff5, "EF.ePDGIdEm" },
+	{ 0x6ff6, "EF.ePDGSelection" },
+	{ 0x6ff7, "EF.FromPreferred" },
+	{ 0x6ff9, "EF.3GPPPSDATAOFF" },
+	{ 0x6ffa, "EF.3GPPPSDATAOFFservicelist" },
+	{ 0x6ffb, "EF.TVCONFIG" },
+	{ 0x6ffc, "EF.XCAPConfigData" },
+	{ 0x6ffd, "EF.EARFCNList" },
+	{ 0x6ffe, "EF.5GS3GPPLocationInformation" },
+	{ 0x6fff, "EF.5GSnon3GPPLocationInformation" },
+#if 0
+	{ 0, NULL }
+};
+
+static const value_string adf_5gs_efs[] = {
+#endif
+	{ 0x4f01, "EF.5GS3GPPLOCI" },
+	{ 0x4f02, "EF.5GSN3GPPLOCI" },
+	{ 0x4f03, "EF.5GS3GPPNSC" },
+	{ 0x4f04, "EF.5GSN3GPPNSC" },
+	{ 0x4f05, "EF.5GAUTHKEYS" },
+	{ 0x4f06, "EF.UAC_AIC" },
+	{ 0x4f07, "EF.SUCI_Calc_Info" },
+	{ 0x4f08, "EF.OPL5G" },
+	{ 0x4f09, "EF.EFSUPI_NAI/EF.PBC" },
+	{ 0x4f0a, "EF.Routing_Indicator/EF.PBC1" },
+	{ 0x4f0b, "EF.URSP" },
+	{ 0x4f0c, "EF.TN3GPPSNN" },
 #if 0
 	{ 0, NULL }
 };
 
 static const value_string df_phonebook_efs[] = {
 #endif
-	{ 0x4f09, "EF.PBC" },
-	{ 0x4f0a, "EF.PBC1" },
+//	{ 0x4f09, "EF.PBC" },
+//	{ 0x4f0a, "EF.PBC1" },
 	{ 0x4f11, "EF.ANRA" },
 	{ 0x4f12, "EF.ANRA1" },
 	{ 0x4f13, "EF.ANRB" },
@@ -1037,7 +1111,7 @@ static const value_string sw_vals[] = {
 	{ 0x9240, "Memory problem" },
 	{ 0x9400, "No EF selected" },
 	{ 0x9402, "Out of range (invalid address)" },
-	{ 0x0404, "File ID not found" },
+	{ 0x9404, "File ID not found" },
 	{ 0x9408, "File is inconsistent with the command" },
 	{ 0x9802, "No CHV initialized" },
 	{ 0x9804, "Access condition not fulfilled / authentication failed" },
@@ -1094,9 +1168,10 @@ static const value_string sw_vals[] = {
 	{ 0, NULL }
 };
 
-static const gchar *get_sw_string(guint16 sw)
+static const char *get_sw_string(wmem_allocator_t *scope, uint16_t sw)
 {
-	guint8 sw1 = sw >> 8;
+	uint8_t sw1 = sw >> 8;
+	uint8_t sw2 = sw & 0xFF;
 
 	switch (sw1) {
 	case 0x91:
@@ -1104,13 +1179,20 @@ static const gchar *get_sw_string(guint16 sw)
 	case 0x9e:
 		return "Length of the response data given / SIM data download error";
 	case 0x9f:
-		return "Length of the response data";
+		return wmem_strdup_printf(scope, "Length of the response data, Length is %u", sw2);
 	case 0x92:
 		if ((sw & 0xf0) == 0x00)
 			return "Command successful but after internal retry routine";
 		break;
+	case 0x61:
+		return wmem_strdup_printf(scope, "Response ready, Response length is %u", sw2);
 	case 0x67:
-		return "Incorrect parameter P3";
+		if (sw2 == 0x00)
+			return "Wrong length"; /* TS 102.221 / Section 10.2.1.5 */
+		else
+			return "Incorrect parameter P3"; /* TS 51.011 / Section 9.4.6 */
+	case 0x6c:
+		return wmem_strdup_printf(scope, "Terminal should repeat command, Length for repeated command is %u", sw2);
 	case 0x6d:
 		return "Unknown instruction code";
 	case 0x6e:
@@ -1118,7 +1200,7 @@ static const gchar *get_sw_string(guint16 sw)
 	case 0x6f:
 		return "Technical problem with no diagnostic";
 	}
-	return val_to_str(sw, sw_vals, "%04x");
+	return val_to_str(sw, sw_vals, "Unknown status word: %04x");
 }
 
 static int
@@ -1127,20 +1209,20 @@ dissect_bertlv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
 	unsigned int pos = 0;
 
 	while (pos < tvb_reported_length(tvb)) {
-		guint8 tag;
-		guint32 len;
+		uint8_t tag;
+		uint32_t len;
 		tvbuff_t *subtvb;
 
 		proto_tree_add_item(tree, hf_cat_ber_tag, tvb, pos, 1, ENC_BIG_ENDIAN);
 
 		/* FIXME: properly follow BER coding rules */
-		tag = tvb_get_guint8(tvb, pos++);
+		tag = tvb_get_uint8(tvb, pos++);
 		col_append_fstr(pinfo->cinfo, COL_INFO, "%s ",
 				val_to_str(tag, ber_tlv_cat_tag_vals, "%02x "));
-		len = tvb_get_guint8(tvb, pos++);
+		len = tvb_get_uint8(tvb, pos++);
 		switch (len) {
 		case 0x81:
-			len = tvb_get_guint8(tvb, pos++);
+			len = tvb_get_uint8(tvb, pos++);
 			break;
 		case 0x82:
 			len = tvb_get_ntohs(tvb, pos);
@@ -1160,7 +1242,7 @@ dissect_bertlv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
 		case 0xD1:	/* sms-pp download */
 		case 0xD6:	/* event download */
 		case 0xD7:	/* timer expiration */
-			call_dissector_with_data(sub_handle_cap, subtvb, pinfo, tree, GUINT_TO_POINTER((guint)tag));
+			call_dissector_with_data(sub_handle_cap, subtvb, pinfo, tree, GUINT_TO_POINTER((unsigned)tag));
 			break;
 		}
 
@@ -1179,18 +1261,61 @@ dissect_bertlv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
 #define P3_OFFS		2
 #define DATA_OFFS	3
 
+static const value_string sfi_vals[] = {
+	{ 0x01, "Emergency call codes" },
+	{ 0x02, "Language indication" },
+	{ 0x03, "Administrative data" },
+	{ 0x04, "USIM service table" },
+	{ 0x05, "Enabled services table" },
+	{ 0x06, "Access control class" },
+	{ 0x07, "IMSI" },
+	{ 0x08, "Ciphering and integrity keys" },
+	{ 0x09, "Ciphering and integrity keys for packet switched domain" },
+	{ 0x0A, "User PLMN selector" },
+	{ 0x0B, "Location information" },
+	{ 0x0C, "Packet switched location information" },
+	{ 0x0D, "Forbidden PLMNs" },
+	{ 0x0E, "CBMID" },
+	{ 0x0F, "Hyperframe number" },
+	{ 0x10, "Maximum value of hyperframe number" },
+	{ 0x11, "Operator PLMN selector" },
+	{ 0x12, "Higher Priority PLMN search period" },
+	{ 0x13, "Preferred HPLMN access technology" },
+	{ 0x14, "Incoming call information" },
+	{ 0x15, "Outgoing call information" },
+	{ 0x16, "Capability configuration parameters 2" },
+	{ 0x17, "Access Rule Reference" },
+	{ 0x18, "EPS NAS Security Context" },
+	{ 0x19, "PLMN Network Name" },
+	{ 0x1A, "Operator Network List" },
+	{ 0x1B, "Service Provider Display Information" },
+	{ 0x1C, "Accumulated Call Meter" },
+	{ 0x1D, "Equivalent HPLMN" },
+	{ 0x1E, "EPS location information" },
+	{ 0, NULL }
+};
+
 static int
-dissect_gsm_apdu(guint8 ins, guint8 p1, guint8 p2, guint8 p3, tvbuff_t *tvb,
-		 int offset, packet_info *pinfo, proto_tree *tree, gboolean isSIMtrace)
+dissect_gsm_apdu(uint8_t ins, uint8_t p1, uint8_t p2, uint8_t p3, tvbuff_t *tvb,
+		 int offset, packet_info *pinfo, proto_tree *tree, bool isSIMtrace)
 {
-	guint8 g8;
-	guint16 g16;
+	uint16_t g16;
 	tvbuff_t *subtvb;
 	int i, start_offset;
 
 	col_append_fstr(pinfo->cinfo, COL_INFO, "%s ",
 			val_to_str(ins, apdu_ins_vals, "%02x"));
 
+	/*
+	 * If isSIMtrace is true, we expect the response data to follow in
+	 * many of these commands. However, if there's no data (the status
+	 * word having already been removed) it might be that the command
+	 * failed, in which case we don't want to try to add the data and
+	 * throw an exception; displaying the status word is more useful.
+	 *
+	 * XXX - What if there's a partial response? Perhaps we should always
+	 * just add what data we have and not throw an exception.
+	 */
 	switch (ins) {
 	case 0xA4: /* SELECT */
 		if (p3 < 2)
@@ -1201,7 +1326,7 @@ dissect_gsm_apdu(guint8 ins, guint8 p1, guint8 p2, guint8 p3, tvbuff_t *tvb,
 			break;
 		case 0x04:	/* select by AID */
 			col_append_fstr(pinfo->cinfo, COL_INFO, "Application %s ",
-					tvb_bytes_to_str(wmem_packet_scope(), tvb, offset+DATA_OFFS, p3));
+					tvb_bytes_to_str(pinfo->pool, tvb, offset+DATA_OFFS, p3));
 			proto_tree_add_item(tree, hf_aid, tvb, offset+DATA_OFFS, p3, ENC_NA);
 			break;
 
@@ -1231,23 +1356,35 @@ dissect_gsm_apdu(guint8 ins, guint8 p1, guint8 p2, guint8 p3, tvbuff_t *tvb,
 		/* FIXME: parse response */
 		break;
 	case 0xB0: /* READ BINARY */
-		col_append_fstr(pinfo->cinfo, COL_INFO, "Offset=%u ", p1 << 8 | p2);
-		proto_tree_add_item(tree, hf_bin_offset, tvb, offset+P1_OFFS, 2, ENC_BIG_ENDIAN);
+		if (p1 & 0x80) {
+			proto_tree_add_item(tree, hf_sfi, tvb, offset+P1_OFFS, 1, ENC_BIG_ENDIAN);
+			col_append_fstr(pinfo->cinfo, COL_INFO, "Offset=%u ", p2);
+			proto_tree_add_item(tree, hf_bin_offset, tvb, offset+P2_OFFS, 1, ENC_BIG_ENDIAN);
+		} else {
+			col_append_fstr(pinfo->cinfo, COL_INFO, "Offset=%u ", p1 << 8 | p2);
+			proto_tree_add_item(tree, hf_bin_offset, tvb, offset+P1_OFFS, 2, ENC_BIG_ENDIAN);
+		}
 		proto_tree_add_item(tree, hf_le, tvb, offset+P3_OFFS, 1, ENC_BIG_ENDIAN);
-		if (isSIMtrace) {
+		if (isSIMtrace && tvb_reported_length_remaining(tvb, offset+DATA_OFFS)) {
 			proto_tree_add_item(tree, hf_apdu_data, tvb, offset+DATA_OFFS, p3, ENC_NA);
 		}
 		break;
 	case 0xD6: /* UPDATE BINARY */
-		col_append_fstr(pinfo->cinfo, COL_INFO, "Offset=%u ", p1 << 8 | p2);
-		proto_tree_add_item(tree, hf_bin_offset, tvb, offset+P1_OFFS, 2, ENC_BIG_ENDIAN);
+		if (p1 & 0x80) {
+			proto_tree_add_item(tree, hf_sfi, tvb, offset+P1_OFFS, 1, ENC_BIG_ENDIAN);
+			col_append_fstr(pinfo->cinfo, COL_INFO, "Offset=%u ", p2);
+			proto_tree_add_item(tree, hf_bin_offset, tvb, offset+P2_OFFS, 1, ENC_BIG_ENDIAN);
+		} else {
+			col_append_fstr(pinfo->cinfo, COL_INFO, "Offset=%u ", p1 << 8 | p2);
+			proto_tree_add_item(tree, hf_bin_offset, tvb, offset+P1_OFFS, 2, ENC_BIG_ENDIAN);
+		}
 		proto_tree_add_item(tree, hf_apdu_data, tvb, offset+DATA_OFFS, p3, ENC_NA);
 		break;
 	case 0xB2: /* READ RECORD */
 		col_append_fstr(pinfo->cinfo, COL_INFO, "RecordNr=%u ", p1);
 		proto_tree_add_item(tree, hf_record_nr, tvb, offset+P1_OFFS, 1, ENC_BIG_ENDIAN);
 		proto_tree_add_item(tree, hf_le, tvb, offset+P3_OFFS, 1, ENC_BIG_ENDIAN);
-		if (isSIMtrace) {
+		if (isSIMtrace && tvb_reported_length_remaining(tvb, offset+DATA_OFFS)) {
 			proto_tree_add_item(tree, hf_apdu_data, tvb, offset+DATA_OFFS, p3, ENC_NA);
 		}
 		break;
@@ -1277,10 +1414,14 @@ dissect_gsm_apdu(guint8 ins, guint8 p1, guint8 p2, guint8 p3, tvbuff_t *tvb,
 		/* FIXME: actual PIN/PUK code */
 		break;
 	case 0x88: /* RUN GSM ALGO */
+		/* XXX - See ETSI TS 131 102 7.1 AUTHENTICATE and
+		 * ETSI TS 102 221 11.1.16 AUTHENTICATE, this needs to
+		 * be updated for non GSM (#17299)
+		 */
 		offset += DATA_OFFS;
 		proto_tree_add_item(tree, hf_auth_rand, tvb, offset, 16, ENC_NA);
 		offset += 16;
-		if (isSIMtrace) {
+		if (isSIMtrace && tvb_reported_length_remaining(tvb, offset)) {
 			proto_tree_add_item(tree, hf_auth_sres, tvb, offset, 4, ENC_NA);
 			offset += 4;
 			proto_tree_add_item(tree, hf_auth_kc, tvb, offset, 8, ENC_NA);
@@ -1329,7 +1470,7 @@ dissect_gsm_apdu(guint8 ins, guint8 p1, guint8 p2, guint8 p3, tvbuff_t *tvb,
 		break;
 	case 0x12: /* FETCH */
 		proto_tree_add_item(tree, hf_le, tvb, offset+P3_OFFS, 1, ENC_BIG_ENDIAN);
-		if (isSIMtrace) {
+		if (isSIMtrace && tvb_reported_length_remaining(tvb, offset+DATA_OFFS)) {
 			subtvb = tvb_new_subset_length(tvb, offset+DATA_OFFS, (p3 == 0) ? 256 : p3);
 			dissect_bertlv(subtvb, pinfo, tree, NULL);
 		}
@@ -1339,26 +1480,25 @@ dissect_gsm_apdu(guint8 ins, guint8 p1, guint8 p2, guint8 p3, tvbuff_t *tvb,
 		call_dissector_with_data(sub_handle_cap, subtvb, pinfo, tree, GUINT_TO_POINTER(0x14));
 		break;
 	case 0x70: /* MANAGE CHANNEL */
-		proto_tree_add_item(tree, hf_chan_op, tvb, offset-3, 1, ENC_BIG_ENDIAN);
+		proto_tree_add_item(tree, hf_chan_op, tvb, offset+P1_OFFS, 1, ENC_BIG_ENDIAN);
 		col_append_fstr(pinfo->cinfo, COL_INFO, "Operation=%s ",
 				val_to_str(p1, chan_op_vals, "%02x"));
-		switch (p1) {
-		case 0x00: /* OPEN */
-			/* Logical channels are assigned by the card, so in 'open' they are
-			 * in the DATA, whereas in close their number is in P2 */
-			proto_tree_add_item(tree, hf_chan_nr, tvb, offset+DATA_OFFS, 1, ENC_BIG_ENDIAN);
-			g8 = tvb_get_guint8(tvb, offset+DATA_OFFS);
-			col_append_fstr(pinfo->cinfo, COL_INFO, "Channel=%d ", g8);
-			break;
-		case 0x80: /* CLOSE */
-			proto_tree_add_item(tree, hf_chan_nr, tvb, offset-2, 1, ENC_BIG_ENDIAN);
-			col_append_fstr(pinfo->cinfo, COL_INFO, "Channel=%d ", p2);
-			break;
+		proto_tree_add_item(tree, hf_chan_nr, tvb, offset+P2_OFFS, 1, ENC_BIG_ENDIAN);
+		if (p1 == 0) { /* OPEN */
+			proto_tree_add_item(tree, hf_le, tvb, offset+P3_OFFS, 1, ENC_BIG_ENDIAN);
+		}
+		if (p1 == 0 && p2 == 0) {
+			/* Logical channels are assigned by the card when P2 is 0. */
+			col_append_str(pinfo->cinfo, COL_INFO, "(assign channel) ");
+		} else {
+			col_append_fstr(pinfo->cinfo, COL_INFO, "(channel: %d) ", p2);
 		}
 		break;
+	case 0x78: /* GET IDENTITY */
 	case 0xC0: /* GET RESPONSE */
+	case 0xCA: /* GET DATA */
 		proto_tree_add_item(tree, hf_le, tvb, offset+P3_OFFS, 1, ENC_BIG_ENDIAN);
-		if (isSIMtrace) {
+		if (isSIMtrace && tvb_reported_length_remaining(tvb, offset+DATA_OFFS)) {
 			proto_tree_add_item(tree, hf_apdu_data, tvb, offset+DATA_OFFS, p3, ENC_NA);
 		}
 		break;
@@ -1377,12 +1517,12 @@ dissect_gsm_apdu(guint8 ins, guint8 p1, guint8 p2, guint8 p3, tvbuff_t *tvb,
 	return offset;
 }
 
-static gint
-dissect_rsp_apdu_tvb(tvbuff_t *tvb, gint offset, packet_info *pinfo, proto_tree *tree, proto_tree *sim_tree)
+static int
+dissect_rsp_apdu_tvb(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, proto_tree *sim_tree)
 {
-	guint16 sw;
-	proto_item *ti;
-	guint tvb_len = tvb_reported_length(tvb);
+	uint16_t sw;
+	proto_item *ti = NULL;
+	unsigned tvb_len = tvb_reported_length(tvb);
 
 	if (tree && !sim_tree) {
 		ti = proto_tree_add_item(tree, proto_gsm_sim, tvb, 0, -1, ENC_NA);
@@ -1396,41 +1536,52 @@ dissect_rsp_apdu_tvb(tvbuff_t *tvb, gint offset, packet_info *pinfo, proto_tree 
 
 	/* obtain status word */
 	sw = tvb_get_ntohs(tvb, offset);
-	/* proto_tree_add_item(sim_tree, hf_apdu_sw, tvb, offset, 2, ENC_BIG_ENDIAN); */
 	proto_tree_add_uint_format(sim_tree, hf_apdu_sw, tvb, offset, 2, sw,
-							"Status Word: %04x %s", sw, get_sw_string(sw));
+							"Status Word: %04x %s", sw, get_sw_string(pinfo->pool, sw));
+	/* XXX - Add a PI_RESPONSE_CODE expert info for a non normal sw */
+
 	offset += 2;
 
-	switch (sw >> 8) {
-	case 0x61:
-	case 0x90:
-	case 0x91:
-	case 0x92:
-	case 0x9e:
-	case 0x9f:
-		break;
-	default:
-		col_append_fstr(pinfo->cinfo, COL_INFO, ": %s ", get_sw_string(sw));
-		break;
+	if (ti) {
+		/* Always show status in info column when response only */
+		col_add_fstr(pinfo->cinfo, COL_INFO, "Response, %s ", get_sw_string(pinfo->pool, sw));
+	} else {
+		switch (sw >> 8) {
+		case 0x90:
+		case 0x91:
+		case 0x92:
+		case 0x9e:
+		case 0x9f:
+			break;
+		default:
+			col_append_fstr(pinfo->cinfo, COL_INFO, ": %s ", get_sw_string(pinfo->pool, sw));
+			break;
+		}
 	}
 
 	return offset;
 }
 
-static gint
-dissect_cmd_apdu_tvb(tvbuff_t *tvb, gint offset, packet_info *pinfo, proto_tree *tree, gboolean isSIMtrace)
+static int
+dissect_cmd_apdu_tvb(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, bool isSIMtrace)
 {
-	guint8 cla, ins, p1, p2, p3;
+	uint8_t cla, ins, p1, p2, p3;
 	proto_item *ti;
 	proto_tree *sim_tree = NULL;
-	gint rc = -1;
-	guint tvb_len = tvb_reported_length(tvb);
+	int rc = -1;
+	unsigned tvb_len = tvb_reported_length(tvb);
 
-	cla = tvb_get_guint8(tvb, offset);
-	ins = tvb_get_guint8(tvb, offset+1);
-	p1 = tvb_get_guint8(tvb, offset+2);
-	p2 = tvb_get_guint8(tvb, offset+3);
-	p3 = tvb_get_guint8(tvb, offset+4);
+	cla = tvb_get_uint8(tvb, offset);
+	ins = tvb_get_uint8(tvb, offset+1);
+	p1 = tvb_get_uint8(tvb, offset+2);
+	p2 = tvb_get_uint8(tvb, offset+3);
+
+	if (tvb_reported_length_remaining(tvb, offset+3) > 1) {
+		p3 = tvb_get_uint8(tvb, offset+4);
+	} else {
+		/* Parameter 3 not present. */
+		p3 = 0;
+	}
 
 	if (tree) {
 		ti = proto_tree_add_item(tree, proto_gsm_sim, tvb, 0, -1, ENC_NA);
@@ -1457,18 +1608,38 @@ dissect_cmd_apdu_tvb(tvbuff_t *tvb, gint offset, packet_info *pinfo, proto_tree 
 				val_to_str(cla>>4, apdu_cla_coding_vals, "%01x"));
 	}
 
-	rc = dissect_gsm_apdu(ins, p1, p2, p3, tvb, offset, pinfo, sim_tree, isSIMtrace);
+	/* If isSIMtrace is true, then the tvb contains the command followed by
+	 * the response. The response consists of response data followed by the
+	 * 2 octet status word. The interpretation of the response data depends
+	 * on the command, so for ease we dissect it in dissect_gsm_apdu.
+	 * Slice off the status word first, though.
+	 */
+	tvbuff_t *next_tvb = tvb;
+	if (isSIMtrace) {
+		/* We already retrieved ins, p1, p2, so tvb_len > 2 */
+		next_tvb = tvb_new_subset_length(tvb, 0, tvb_len - 2);
+	}
+	rc = dissect_gsm_apdu(ins, p1, p2, p3, next_tvb, offset, pinfo, sim_tree, isSIMtrace);
 
 	if (rc == -1 && sim_tree) {
 		/* default dissector */
-		proto_tree_add_item(sim_tree, hf_apdu_p1, tvb, offset+0, 1, ENC_BIG_ENDIAN);
-		proto_tree_add_item(sim_tree, hf_apdu_p2, tvb, offset+1, 1, ENC_BIG_ENDIAN);
-		proto_tree_add_item(sim_tree, hf_apdu_p3, tvb, offset+2, 1, ENC_BIG_ENDIAN);
-		if (p3 && (p3 <= tvb_reported_length_remaining(tvb, offset+3))) {
-			proto_tree_add_item(sim_tree, hf_apdu_data, tvb, offset+3, p3, ENC_NA);
+		proto_tree_add_item(sim_tree, hf_apdu_p1, tvb, offset, 1, ENC_BIG_ENDIAN);
+		offset += 1;
+		proto_tree_add_item(sim_tree, hf_apdu_p2, tvb, offset, 1, ENC_BIG_ENDIAN);
+		offset += 1;
+		proto_tree_add_item(sim_tree, hf_apdu_p3, tvb, offset, 1, ENC_BIG_ENDIAN);
+		offset += 1;
+		if (p3 && (p3 <= tvb_reported_length_remaining(tvb, offset))) {
+			proto_tree_add_item(sim_tree, hf_apdu_data, tvb, offset, p3, ENC_NA);
+			offset += p3;
+			if (!isSIMtrace && tvb_reported_length_remaining(tvb, offset)) {
+				proto_tree_add_item(sim_tree, hf_le, tvb, offset, 1, ENC_NA);
+				offset += 1;
+			}
 		}
+	} else {
+		offset += 3+p3;
 	}
-	offset += 3+p3;
 
 	if (isSIMtrace) {
 		return dissect_rsp_apdu_tvb(tvb, tvb_len-2, pinfo, tree, sim_tree);
@@ -1481,7 +1652,7 @@ static int
 dissect_gsm_sim(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "GSM SIM");
-	dissect_cmd_apdu_tvb(tvb, 0, pinfo, tree, TRUE);
+	dissect_cmd_apdu_tvb(tvb, 0, pinfo, tree, true);
 	return tvb_captured_length(tvb);
 }
 
@@ -1489,7 +1660,7 @@ static int
 dissect_gsm_sim_command(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "GSM SIM");
-	dissect_cmd_apdu_tvb(tvb, 0, pinfo, tree, FALSE);
+	dissect_cmd_apdu_tvb(tvb, 0, pinfo, tree, false);
 	return tvb_captured_length(tvb);
 }
 
@@ -1532,7 +1703,7 @@ proto_register_gsm_sim(void)
 			  "ISO 7816-4 APDU CLA (Class) Byte", HFILL }
 		},
 		{ &hf_apdu_cla_secure_messaging_ind_ext,
-			{ "Secure Messaging Indication", "gsm_sim.apdu.cla.secure_messaging_ind",
+			{ "Secure Messaging Indication", "gsm_sim.apdu.cla.secure_messaging_ind.ext",
 			  FT_BOOLEAN, 8, TFS(&apdu_cla_secure_messaging_ind_ext_val), 0x20,
 			  "ISO 7816-4 APDU CLA (Class) Byte", HFILL }
 		},
@@ -1591,6 +1762,11 @@ proto_register_gsm_sim(void)
 			  FT_UINT16, BASE_DEC, NULL, 0,
 			  "Offset into binary file", HFILL }
 		},
+		{ &hf_sfi,
+			{ "SFI", "gsm_sim.sfi",
+			  FT_UINT8, BASE_HEX, VALS(sfi_vals), 0x1f,
+			  NULL, HFILL }
+		},
 		{ &hf_record_nr,
 			{ "Record number", "gsm_sim.record_nr",
 			  FT_UINT8, BASE_DEC, NULL, 0,
@@ -1617,8 +1793,9 @@ proto_register_gsm_sim(void)
 			  "ISO 7816-4 Logical Channel Number", HFILL }
 		},
 		{ &hf_le,
+			// XXX - Should the abbrev be gsm_sim.apdu.le ?
 			{ "Length of Expected Response Data", "gsm_sim.le",
-			  FT_UINT8, BASE_DEC, NULL, 0,
+			  FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(apdu_le_vals), 0,
 			  NULL, HFILL }
 		},
 		{ &hf_chan_op,
@@ -1647,7 +1824,7 @@ proto_register_gsm_sim(void)
 		{ &hf_tp_cb_data_dld,
 			{ "CB Data Download", "gsm_sim.tp.cb_data_dld",
 			  FT_BOOLEAN, 8, TFS(&tfs_supported_not_supported), 0x04,
-			  "TP Cell Broadcast Data Downolad", HFILL }
+			  "TP Cell Broadcast Data Download", HFILL }
 		},
 		{ &hf_tp_menu_sel,
 			{ "Menu Selection", "gsm_sim.tp.menu_sel",
@@ -2873,7 +3050,7 @@ proto_register_gsm_sim(void)
 			  FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL },
 		},
 	};
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_sim,
 		&ett_tprof_b1,
 		&ett_tprof_b2,
@@ -2917,6 +3094,10 @@ proto_register_gsm_sim(void)
 
 	proto_register_subtree_array(ett, array_length(ett));
 
+	/* This dissector is for SIMtrace, which always combines the command
+	 * & response APDUs into one packet before sending it to GSMTAP. Cf.
+	 * https://github.com/yarrick/scsniff/issues/1#issuecomment-2295835330
+	 */
 	sim_handle = register_dissector("gsm_sim", dissect_gsm_sim, proto_gsm_sim);
 	register_dissector("gsm_sim.command", dissect_gsm_sim_command, proto_gsm_sim);
 	register_dissector("gsm_sim.response", dissect_gsm_sim_response, proto_gsm_sim);
@@ -2927,15 +3108,13 @@ proto_register_gsm_sim(void)
 void
 proto_reg_handoff_gsm_sim(void)
 {
-	dissector_add_uint("gsmtap.type", GSMTAP_TYPE_SIM, sim_handle);
-
 	dissector_add_for_decode_as("usbccid.subdissector", sim_part_handle);
 
 	sub_handle_cap = find_dissector_add_dependency("etsi_cat", proto_gsm_sim);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

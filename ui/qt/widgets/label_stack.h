@@ -1,17 +1,18 @@
-/* label_stack.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef LABEL_STACK_H
 #define LABEL_STACK_H
 
 #include <QLabel>
 #include <QStack>
-#include <QTime>
+#include <QElapsedTimer>
 #include <QTimer>
 
 class LabelStack : public QLabel
@@ -20,7 +21,7 @@ class LabelStack : public QLabel
 public:
     explicit LabelStack(QWidget *parent = 0);
     void setTemporaryContext(const int ctx);
-    void pushText(const QString &text, int ctx);
+    void pushText(const QString &text, int ctx, const QString &tooltip = QString());
     void setShrinkable(bool shrinkable = true);
 
 protected:
@@ -34,13 +35,14 @@ protected:
 private:
     typedef struct _StackItem {
         QString text;
+        QString tooltip;
         int ctx;
     } StackItem;
 
     int temporary_ctx_;
     QList<StackItem> labels_;
     bool shrinkable_;
-    QTime  temporary_epoch_;
+    QElapsedTimer temporary_epoch_;
     QTimer temporary_timer_;
 
     void fillLabel();
@@ -57,16 +59,3 @@ private slots:
 };
 
 #endif // LABEL_STACK_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

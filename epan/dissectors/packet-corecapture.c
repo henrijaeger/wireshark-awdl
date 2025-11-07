@@ -112,7 +112,7 @@ static int dissect_corecapture(tvbuff_t *tvb, packet_info *pinfo,
   corecapture_tree = proto_item_add_subtree (ti, ett_corecapture);
   
   ti = proto_tree_add_item (corecapture_tree, hf_cc_frame_type, tvb, offset, 4, ENC_LITTLE_ENDIAN);
-  guint32 frame_type = tvb_get_guint32(tvb, 0, ENC_LITTLE_ENDIAN);
+  guint32 frame_type = tvb_get_uint32(tvb, 0, ENC_LITTLE_ENDIAN);
   
   proto_item_append_text(ti, ": %s", val_to_str_ext(frame_type, &cc_frame_type_ext, "Unknown (%d)"));
   offset+=4;
@@ -122,7 +122,7 @@ static int dissect_corecapture(tvbuff_t *tvb, packet_info *pinfo,
   int remaining_length = tvb_reported_length_remaining (tvb, offset) + CC_STREAM_HDR_LENGTH;
   payload_tvb = tvb_new_subset_length(tvb, offset, remaining_length);
   tvb_new_subset_remaining(tvb, offset);
-  parsed = dissector_try_uint_new(streamheader_field_table, frame_type, payload_tvb, pinfo, tree, FALSE, NULL);
+  parsed = dissector_try_uint_with_data(streamheader_field_table, frame_type, payload_tvb, pinfo, tree, FALSE, NULL);
   
   if (!parsed) {
     //TODO: expert info

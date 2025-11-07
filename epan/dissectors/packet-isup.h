@@ -18,12 +18,13 @@
 #define ISUP_MAX_NUM_MESSAGE_TYPES  256
 
 typedef struct _isup_tap_rec_t {
-    guint8      message_type;
+    uint8_t     message_type;
+    uint8_t     itu_isup_variant;
     /* added for VoIP calls analysis, see ui/voip_calls.c*/
-    gchar           *called_number;
-    gchar           *calling_number;
-    guint8          cause_value;
-    guint32         circuit_id;
+    char            *called_number;
+    char            *calling_number;
+    uint8_t         cause_value;
+    uint32_t        circuit_id;
 } isup_tap_rec_t;
 
 
@@ -117,7 +118,7 @@ WS_DLL_PUBLIC value_string_ext q850_cause_code_vals_ext;
 #define PARAM_TYPE_UID_ACTION_IND             116
 #define PARAM_TYPE_UID_CAPAB_IND              117
 #define PARAM_TYPE_REDIRECT_COUNTER           119
-#define PARAM_TYPE_APPLICATON_TRANS           120
+#define PARAM_TYPE_APPLICATION_TRANS          120
 #define PARAM_TYPE_COLLECT_CALL_REQ           121
 #define PARAM_TYPE_CALLING_GEODETIC_LOCATION  129     /* ANSI is the same */
 #define PARAM_TYPE_GENERIC_NR                 192
@@ -158,11 +159,14 @@ WS_DLL_PUBLIC value_string_ext isup_calling_partys_category_value_ext;
 /*
  * Export dissection of some parameters
  */
-void dissect_nsap(tvbuff_t *parameter_tvb,gint offset,gint len, proto_tree *parameter_tree);
+WS_DLL_PUBLIC
+void dissect_nsap(tvbuff_t *parameter_tvb, int offset, int len, proto_tree *parameter_tree);
 WS_DLL_PUBLIC
 void dissect_isup_called_party_number_parameter(tvbuff_t *parameter_tvb, packet_info *pinfo, proto_tree *parameter_tree, proto_item *parameter_item);
 WS_DLL_PUBLIC
 void dissect_isup_calling_party_number_parameter(tvbuff_t *parameter_tvb, packet_info *pinfo, proto_tree *parameter_tree, proto_item *parameter_item);
+WS_DLL_PUBLIC
+void dissect_isup_calling_geodetic_location_parameter(tvbuff_t *parameter_tvb, packet_info *pinfo, proto_tree *parameter_tree, proto_item *parameter_item _U_);
 void dissect_isup_cause_indicators_parameter(tvbuff_t *parameter_tvb, proto_tree *parameter_tree, proto_item *parameter_item);
 WS_DLL_PUBLIC
 void dissect_isup_redirection_information_parameter(tvbuff_t *parameter_tvb, proto_tree *parameter_tree, proto_item *parameter_item);
@@ -174,6 +178,7 @@ void dissect_isup_redirecting_number_parameter(tvbuff_t *parameter_tvb, packet_i
 void dissect_isup_location_number_parameter(tvbuff_t *parameter_tvb, packet_info *pinfo, proto_tree *parameter_tree, proto_item *parameter_item);
 
 void dissect_isup_generic_number_parameter(tvbuff_t *parameter_tvb, packet_info *pinfo, proto_tree *parameter_tree, proto_item *parameter_item);
+void dissect_isup_generic_digits_parameter(tvbuff_t *parameter_tvb, proto_tree *parameter_tree, proto_item *parameter_item _U_);
 
 void dissect_japan_isup_additonal_user_cat(tvbuff_t *parameter_tvb, packet_info *pinfo, proto_tree *parameter_tree, proto_item *parameter_item);
 extern int dissect_codec_mode(proto_tree *tree, tvbuff_t *tvb, int offset, int len);

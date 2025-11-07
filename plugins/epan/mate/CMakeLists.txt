@@ -22,8 +22,6 @@ set(DISSECTOR_SUPPORT_SRC
 	mate_util.c
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
 add_lemon_files(LEMON_FILES GENERATED_FILES
 	mate_grammar.lemon
 )
@@ -39,7 +37,8 @@ set(PLUGIN_FILES
 )
 
 set_source_files_properties(
-	${PLUGIN_FILES}
+	${DISSECTOR_SRC}
+	${DISSECTOR_SUPPORT_SRC}
 	PROPERTIES
 	COMPILE_FLAGS "${WERROR_COMMON_FLAGS}"
 )
@@ -50,7 +49,7 @@ register_plugin_files(plugin.c
 	${DISSECTOR_SUPPORT_SRC}
 )
 
-add_plugin_library(mate epan)
+add_wireshark_plugin_library(mate epan)
 
 target_link_libraries(mate epan)
 
@@ -61,7 +60,8 @@ CHECKAPI(
 	NAME
 	  mate
 	SWITCHES
-	  -g abort -g termoutput -build
+	  --group dissectors-prohibited
+	  --group dissectors-restricted
 	SOURCES
 	  ${DISSECTOR_SRC}
 	  ${DISSECTOR_SUPPORT_SRC}
@@ -72,7 +72,7 @@ CHECKAPI(
 )
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

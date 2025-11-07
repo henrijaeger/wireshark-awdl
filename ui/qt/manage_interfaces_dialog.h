@@ -1,18 +1,18 @@
-/* manage_interfaces_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef MANAGE_INTERFACES_DIALOG_H
 #define MANAGE_INTERFACES_DIALOG_H
 
 #include <config.h>
 
-#include <glib.h>
-#include "capture_opts.h"
+#include <ui/capture_opts.h>
 
 #include <ui/qt/models/interface_tree_cache_model.h>
 #include <ui/qt/models/interface_sort_filter_model.h>
@@ -47,6 +47,10 @@ private:
     InterfaceSortFilterModel * pipeProxyModel;
 
     void showRemoteInterfaces();
+#ifdef HAVE_PCAP_REMOTE
+    void addRemote(const QVariantMap&&);
+    void populateExistingRemotes();
+#endif
 
 signals:
     void ifsChanged();
@@ -58,14 +62,10 @@ signals:
 private slots:
     void updateWidgets();
 
-    void on_buttonBox_accepted();
-
 #ifdef HAVE_LIBPCAP
     void on_addPipe_clicked();
     void on_delPipe_clicked();
 #endif
-
-    void onSelectionChanged(const QItemSelection &sel, const QItemSelection &desel);
 
 #ifdef HAVE_PCAP_REMOTE
     void on_addRemote_clicked();
@@ -83,16 +83,3 @@ private slots:
 };
 
 #endif // MANAGE_INTERFACES_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

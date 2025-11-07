@@ -19,7 +19,7 @@
 
 #include "config.h"
 
-#include <stdio.h>
+#include <stdio.h>		/* for sscanf() */
 
 #include <epan/packet.h>
 #include <epan/conversation.h>
@@ -30,6 +30,9 @@
 
 /* Forward declarations */
 void proto_register_afs(void);
+
+/* Defragment (reassemble) fragmented AFS traffic */
+static bool afs_defragment;
 
 #define AFS_PORT_FS     7000
 #define AFS_PORT_CB     7001
@@ -42,6 +45,7 @@ void proto_register_afs(void);
 #define AFS_PORT_UPDATE 7008
 #define AFS_PORT_RMTSYS 7009
 #define AFS_PORT_BACKUP 7021
+#define AFS_PORT_BUTC	7025		/* and up */
 
 #ifndef AFSNAMEMAX
 #define AFSNAMEMAX 256
@@ -80,372 +84,375 @@ void proto_register_afs(void);
 #define FILE_TYPE_LINK 3
 
 struct afs_header {
-	guint32 opcode;
+	uint32_t opcode;
 };
 
 struct afs_volsync {
-	guint32 spare1;
-	guint32 spare2;
-	guint32 spare3;
-	guint32 spare4;
-	guint32 spare5;
-	guint32 spare6;
+	uint32_t spare1;
+	uint32_t spare2;
+	uint32_t spare3;
+	uint32_t spare4;
+	uint32_t spare5;
+	uint32_t spare6;
 };
 
 struct afs_status {
-	guint32 InterfaceVersion;
-	guint32 FileType;
-	guint32 LinkCount;
-	guint32 Length;
-	guint32 DataVersion;
-	guint32 Author;
-	guint32 Owner;
-	guint32 CallerAccess;
-	guint32 AnonymousAccess;
-	guint32 UnixModeBits;
-	guint32 ParentVnode;
-	guint32 ParentUnique;
-	guint32 SegSize;
-	guint32 ClientModTime;
-	guint32 ServerModTime;
-	guint32 Group;
-	guint32 SyncCount;
-	guint32 spare1;
-	guint32 spare2;
-	guint32 spare3;
-	guint32 spare4;
+	uint32_t InterfaceVersion;
+	uint32_t FileType;
+	uint32_t LinkCount;
+	uint32_t Length;
+	uint32_t DataVersion;
+	uint32_t Author;
+	uint32_t Owner;
+	uint32_t CallerAccess;
+	uint32_t AnonymousAccess;
+	uint32_t UnixModeBits;
+	uint32_t ParentVnode;
+	uint32_t ParentUnique;
+	uint32_t SegSize;
+	uint32_t ClientModTime;
+	uint32_t ServerModTime;
+	uint32_t Group;
+	uint32_t SyncCount;
+	uint32_t spare1;
+	uint32_t spare2;
+	uint32_t spare3;
+	uint32_t spare4;
 };
 
 struct afs_volumeinfo {
-	guint32 Vid;
-	guint32 Type;
-	guint32 Type0;
-	guint32 Type1;
-	guint32 Type2;
-	guint32 Type3;
-	guint32 Type4;
-	guint32 ServerCount;
-	guint32 Server0;
-	guint32 Server1;
-	guint32 Server2;
-	guint32 Server3;
-	guint32 Server4;
-	guint32 Server5;
-	guint32 Server6;
-	guint32 Server7;
-	guint16 Part0;
-	guint16 Part1;
-	guint16 Part2;
-	guint16 Part3;
-	guint16 Part4;
-	guint16 Part5;
-	guint16 Part6;
-	guint16 Part7;
+	uint32_t Vid;
+	uint32_t Type;
+	uint32_t Type0;
+	uint32_t Type1;
+	uint32_t Type2;
+	uint32_t Type3;
+	uint32_t Type4;
+	uint32_t ServerCount;
+	uint32_t Server0;
+	uint32_t Server1;
+	uint32_t Server2;
+	uint32_t Server3;
+	uint32_t Server4;
+	uint32_t Server5;
+	uint32_t Server6;
+	uint32_t Server7;
+	uint16_t Part0;
+	uint16_t Part1;
+	uint16_t Part2;
+	uint16_t Part3;
+	uint16_t Part4;
+	uint16_t Part5;
+	uint16_t Part6;
+	uint16_t Part7;
 };
 
-static int proto_afs = -1;
-static int hf_afs_fs = -1;
-static int hf_afs_cb = -1;
-static int hf_afs_prot = -1;
-static int hf_afs_vldb = -1;
-static int hf_afs_kauth = -1;
-static int hf_afs_vol = -1;
-static int hf_afs_error = -1;
-static int hf_afs_bos = -1;
-static int hf_afs_update = -1;
-static int hf_afs_rmtsys = -1;
-static int hf_afs_ubik = -1;
-static int hf_afs_backup = -1;
-static int hf_afs_service = -1;
+static int proto_afs;
+static int hf_afs_fs;
+static int hf_afs_cb;
+static int hf_afs_prot;
+static int hf_afs_vldb;
+static int hf_afs_kauth;
+static int hf_afs_vol;
+static int hf_afs_error;
+static int hf_afs_bos;
+static int hf_afs_update;
+static int hf_afs_rmtsys;
+static int hf_afs_ubik;
+static int hf_afs_backup;
+static int hf_afs_butc;
+static int hf_afs_service;
 
-static int hf_afs_fs_opcode = -1;
-static int hf_afs_cb_opcode = -1;
-static int hf_afs_prot_opcode = -1;
-static int hf_afs_vldb_opcode = -1;
-static int hf_afs_kauth_opcode = -1;
-static int hf_afs_vol_opcode = -1;
-static int hf_afs_error_opcode = -1;
-static int hf_afs_bos_opcode = -1;
-static int hf_afs_update_opcode = -1;
-static int hf_afs_rmtsys_opcode = -1;
-static int hf_afs_ubik_opcode = -1;
-static int hf_afs_backup_opcode = -1;
+static int hf_afs_fs_opcode;
+static int hf_afs_cb_opcode;
+static int hf_afs_prot_opcode;
+static int hf_afs_vldb_opcode;
+static int hf_afs_kauth_opcode;
+static int hf_afs_vol_opcode;
+static int hf_afs_error_opcode;
+static int hf_afs_bos_opcode;
+static int hf_afs_update_opcode;
+static int hf_afs_rmtsys_opcode;
+static int hf_afs_ubik_opcode;
+static int hf_afs_backup_opcode;
+static int hf_afs_butc_opcode;
 
-static int hf_afs_fs_fid_volume = -1;
-static int hf_afs_fs_fid_vnode = -1;
-static int hf_afs_fs_fid_uniqifier = -1;
-static int hf_afs_fs_offset = -1;
-static int hf_afs_fs_length = -1;
-static int hf_afs_fs_flength = -1;
-static int hf_afs_fs_offset64 = -1;
-static int hf_afs_fs_length64 = -1;
-static int hf_afs_fs_flength64 = -1;
-static int hf_afs_fs_errcode = -1;
-static int hf_afs_fs_data = -1;
-static int hf_afs_fs_name = -1;
-static int hf_afs_fs_oldname = -1;
-static int hf_afs_fs_newname = -1;
-static int hf_afs_fs_symlink_name = -1;
-static int hf_afs_fs_symlink_content = -1;
-static int hf_afs_fs_volid = -1;
-static int hf_afs_fs_volname = -1;
-static int hf_afs_fs_timestamp = -1;
-static int hf_afs_fs_offlinemsg = -1;
-static int hf_afs_fs_motd = -1;
-static int hf_afs_fs_xstats_version = -1;
-static int hf_afs_fs_xstats_timestamp = -1;
-static int hf_afs_fs_xstats_clientversion = -1;
-static int hf_afs_fs_xstats_collnumber = -1;
-static int hf_afs_fs_cps_spare1 = -1;
-static int hf_afs_fs_cps_spare2 = -1;
-static int hf_afs_fs_cps_spare3 = -1;
-static int hf_afs_fs_vicelocktype = -1;
-static int hf_afs_fs_viceid = -1;
-static int hf_afs_fs_ipaddr = -1;
-static int hf_afs_fs_token = -1;
+static int hf_afs_fs_fid_volume;
+static int hf_afs_fs_fid_vnode;
+static int hf_afs_fs_fid_uniqifier;
+static int hf_afs_fs_offset;
+static int hf_afs_fs_length;
+static int hf_afs_fs_flength;
+static int hf_afs_fs_offset64;
+static int hf_afs_fs_length64;
+static int hf_afs_fs_flength64;
+static int hf_afs_fs_errcode;
+static int hf_afs_fs_data;
+static int hf_afs_fs_name;
+static int hf_afs_fs_oldname;
+static int hf_afs_fs_newname;
+static int hf_afs_fs_symlink_name;
+static int hf_afs_fs_symlink_content;
+static int hf_afs_fs_volid;
+static int hf_afs_fs_volname;
+static int hf_afs_fs_timestamp;
+static int hf_afs_fs_offlinemsg;
+static int hf_afs_fs_motd;
+static int hf_afs_fs_xstats_version;
+static int hf_afs_fs_xstats_timestamp;
+static int hf_afs_fs_xstats_clientversion;
+static int hf_afs_fs_xstats_collnumber;
+static int hf_afs_fs_cps_spare1;
+static int hf_afs_fs_cps_spare2;
+static int hf_afs_fs_cps_spare3;
+static int hf_afs_fs_vicelocktype;
+static int hf_afs_fs_viceid;
+static int hf_afs_fs_ipaddr;
+static int hf_afs_fs_token;
 
-static int hf_afs_fs_status_anonymousaccess = -1;
-static int hf_afs_fs_status_author = -1;
-static int hf_afs_fs_status_calleraccess = -1;
-static int hf_afs_fs_status_clientmodtime = -1;
-static int hf_afs_fs_status_dataversion = -1;
-static int hf_afs_fs_status_dataversionhigh = -1;
-static int hf_afs_fs_status_filetype = -1;
-static int hf_afs_fs_status_group = -1;
-static int hf_afs_fs_status_interfaceversion = -1;
-static int hf_afs_fs_status_length = -1;
-static int hf_afs_fs_status_linkcount = -1;
-static int hf_afs_fs_status_mask = -1;
-static int hf_afs_fs_status_mask_fsync = -1;
-static int hf_afs_fs_status_mask_setgroup = -1;
-static int hf_afs_fs_status_mask_setmode = -1;
-static int hf_afs_fs_status_mask_setmodtime = -1;
-static int hf_afs_fs_status_mask_setowner = -1;
-static int hf_afs_fs_status_mask_setsegsize = -1;
-static int hf_afs_fs_status_mode = -1;
-static int hf_afs_fs_status_owner = -1;
-static int hf_afs_fs_status_parentunique = -1;
-static int hf_afs_fs_status_parentvnode = -1;
-static int hf_afs_fs_status_segsize = -1;
-static int hf_afs_fs_status_servermodtime = -1;
-static int hf_afs_fs_status_spare2 = -1;
-static int hf_afs_fs_status_spare3 = -1;
-static int hf_afs_fs_status_spare4 = -1;
-static int hf_afs_fs_status_synccounter = -1;
+static int hf_afs_fs_status_anonymousaccess;
+static int hf_afs_fs_status_author;
+static int hf_afs_fs_status_calleraccess;
+static int hf_afs_fs_status_clientmodtime;
+static int hf_afs_fs_status_dataversion;
+static int hf_afs_fs_status_dataversionhigh;
+static int hf_afs_fs_status_filetype;
+static int hf_afs_fs_status_group;
+static int hf_afs_fs_status_interfaceversion;
+static int hf_afs_fs_status_length;
+static int hf_afs_fs_status_linkcount;
+static int hf_afs_fs_status_mask;
+static int hf_afs_fs_status_mask_fsync;
+static int hf_afs_fs_status_mask_setgroup;
+static int hf_afs_fs_status_mask_setmode;
+static int hf_afs_fs_status_mask_setmodtime;
+static int hf_afs_fs_status_mask_setowner;
+static int hf_afs_fs_status_mask_setsegsize;
+static int hf_afs_fs_status_mode;
+static int hf_afs_fs_status_owner;
+static int hf_afs_fs_status_parentunique;
+static int hf_afs_fs_status_parentvnode;
+static int hf_afs_fs_status_segsize;
+static int hf_afs_fs_status_servermodtime;
+static int hf_afs_fs_status_spare2;
+static int hf_afs_fs_status_spare3;
+static int hf_afs_fs_status_spare4;
+static int hf_afs_fs_status_synccounter;
 
-static int hf_afs_fs_volsync_spare1 = -1;
-static int hf_afs_fs_volsync_spare2 = -1;
-static int hf_afs_fs_volsync_spare3 = -1;
-static int hf_afs_fs_volsync_spare4 = -1;
-static int hf_afs_fs_volsync_spare5 = -1;
-static int hf_afs_fs_volsync_spare6 = -1;
+static int hf_afs_fs_volsync_spare1;
+static int hf_afs_fs_volsync_spare2;
+static int hf_afs_fs_volsync_spare3;
+static int hf_afs_fs_volsync_spare4;
+static int hf_afs_fs_volsync_spare5;
+static int hf_afs_fs_volsync_spare6;
 
-static int hf_afs_fs_acl_datasize = -1;
-static int hf_afs_fs_acl_count_negative = -1;
-static int hf_afs_fs_acl_count_positive = -1;
-static int hf_afs_fs_acl_entity = -1;
-static int hf_afs_fs_acl_r = -1;
-static int hf_afs_fs_acl_l = -1;
-static int hf_afs_fs_acl_i = -1;
-static int hf_afs_fs_acl_d = -1;
-static int hf_afs_fs_acl_w = -1;
-static int hf_afs_fs_acl_k = -1;
-static int hf_afs_fs_acl_a = -1;
+static int hf_afs_fs_acl_datasize;
+static int hf_afs_fs_acl_count_negative;
+static int hf_afs_fs_acl_count_positive;
+static int hf_afs_fs_acl_entity;
+static int hf_afs_fs_acl_r;
+static int hf_afs_fs_acl_l;
+static int hf_afs_fs_acl_i;
+static int hf_afs_fs_acl_d;
+static int hf_afs_fs_acl_w;
+static int hf_afs_fs_acl_k;
+static int hf_afs_fs_acl_a;
 
-static int hf_afs_fs_callback_version = -1;
-static int hf_afs_fs_callback_expires = -1;
-static int hf_afs_fs_callback_type = -1;
+static int hf_afs_fs_callback_version;
+static int hf_afs_fs_callback_expires;
+static int hf_afs_fs_callback_type;
 
-static int hf_afs_bos_errcode = -1;
-static int hf_afs_bos_type = -1;
-static int hf_afs_bos_instance = -1;
-static int hf_afs_bos_status = -1;
-static int hf_afs_bos_statusdesc = -1;
-static int hf_afs_bos_num = -1;
-static int hf_afs_bos_size = -1;
-static int hf_afs_bos_flags = -1;
-static int hf_afs_bos_date = -1;
-static int hf_afs_bos_content = -1;
-static int hf_afs_bos_user = -1;
-static int hf_afs_bos_key = -1;
-static int hf_afs_bos_path = -1;
-static int hf_afs_bos_file = -1;
-static int hf_afs_bos_cmd = -1;
-static int hf_afs_bos_error = -1;
-static int hf_afs_bos_spare1 = -1;
-static int hf_afs_bos_spare2 = -1;
-static int hf_afs_bos_spare3 = -1;
-static int hf_afs_bos_parm = -1;
-static int hf_afs_bos_kvno = -1;
-static int hf_afs_bos_cell = -1;
-static int hf_afs_bos_host = -1;
-static int hf_afs_bos_newtime = -1;
-static int hf_afs_bos_baktime = -1;
-static int hf_afs_bos_oldtime = -1;
-static int hf_afs_bos_data = -1;
-static int hf_afs_bos_keymodtime = -1;
-static int hf_afs_bos_keychecksum = -1;
-static int hf_afs_bos_keyspare2 = -1;
+static int hf_afs_bos_errcode;
+static int hf_afs_bos_type;
+static int hf_afs_bos_instance;
+static int hf_afs_bos_status;
+static int hf_afs_bos_statusdesc;
+static int hf_afs_bos_num;
+static int hf_afs_bos_size;
+static int hf_afs_bos_flags;
+static int hf_afs_bos_date;
+static int hf_afs_bos_content;
+static int hf_afs_bos_user;
+static int hf_afs_bos_key;
+static int hf_afs_bos_path;
+static int hf_afs_bos_file;
+static int hf_afs_bos_cmd;
+static int hf_afs_bos_error;
+static int hf_afs_bos_spare1;
+static int hf_afs_bos_spare2;
+static int hf_afs_bos_spare3;
+static int hf_afs_bos_parm;
+static int hf_afs_bos_kvno;
+static int hf_afs_bos_cell;
+static int hf_afs_bos_host;
+static int hf_afs_bos_newtime;
+static int hf_afs_bos_baktime;
+static int hf_afs_bos_oldtime;
+static int hf_afs_bos_data;
+static int hf_afs_bos_keymodtime;
+static int hf_afs_bos_keychecksum;
+static int hf_afs_bos_keyspare2;
 
-static int hf_afs_vldb_errcode = -1;
-static int hf_afs_vldb_name = -1;
-static int hf_afs_vldb_name_uint_string = -1;
-static int hf_afs_vldb_id = -1;
-static int hf_afs_vldb_type = -1;
-static int hf_afs_vldb_bump = -1;
-static int hf_afs_vldb_index = -1;
-static int hf_afs_vldb_nextindex = -1;
-static int hf_afs_vldb_count = -1;
-static int hf_afs_vldb_numservers = -1;
-static int hf_afs_vldb_server = -1;
-static int hf_afs_vldb_serveruuid = -1;
-static int hf_afs_vldb_serveruniq = -1;
-static int hf_afs_vldb_serverflags = -1;
-static int hf_afs_vldb_serverip = -1;
-static int hf_afs_vldb_partition = -1;
-static int hf_afs_vldb_rovol = -1;
-static int hf_afs_vldb_rwvol = -1;
-static int hf_afs_vldb_bkvol = -1;
-static int hf_afs_vldb_clonevol = -1;
-static int hf_afs_vldb_flags = -1;
-static int hf_afs_vldb_flags_rwexists = -1;
-static int hf_afs_vldb_flags_roexists = -1;
-static int hf_afs_vldb_flags_bkexists = -1;
-static int hf_afs_vldb_flags_dfsfileset = -1;
+static int hf_afs_vldb_errcode;
+static int hf_afs_vldb_name;
+static int hf_afs_vldb_name_uint_string;
+static int hf_afs_vldb_id;
+static int hf_afs_vldb_type;
+static int hf_afs_vldb_bump;
+static int hf_afs_vldb_index;
+static int hf_afs_vldb_nextindex;
+static int hf_afs_vldb_count;
+static int hf_afs_vldb_numservers;
+static int hf_afs_vldb_server;
+static int hf_afs_vldb_serveruuid;
+static int hf_afs_vldb_serveruniq;
+static int hf_afs_vldb_serverflags;
+static int hf_afs_vldb_serverip;
+static int hf_afs_vldb_partition;
+static int hf_afs_vldb_rovol;
+static int hf_afs_vldb_rwvol;
+static int hf_afs_vldb_bkvol;
+static int hf_afs_vldb_clonevol;
+static int hf_afs_vldb_flags;
+static int hf_afs_vldb_flags_rwexists;
+static int hf_afs_vldb_flags_roexists;
+static int hf_afs_vldb_flags_bkexists;
+static int hf_afs_vldb_flags_dfsfileset;
 
-static int hf_afs_vldb_spare1 = -1;
-static int hf_afs_vldb_spare2 = -1;
-static int hf_afs_vldb_spare3 = -1;
-static int hf_afs_vldb_spare4 = -1;
-static int hf_afs_vldb_spare5 = -1;
-static int hf_afs_vldb_spare6 = -1;
-static int hf_afs_vldb_spare7 = -1;
-static int hf_afs_vldb_spare8 = -1;
-static int hf_afs_vldb_spare9 = -1;
+static int hf_afs_vldb_spare1;
+static int hf_afs_vldb_spare2;
+static int hf_afs_vldb_spare3;
+static int hf_afs_vldb_spare4;
+static int hf_afs_vldb_spare5;
+static int hf_afs_vldb_spare6;
+static int hf_afs_vldb_spare7;
+static int hf_afs_vldb_spare8;
+static int hf_afs_vldb_spare9;
 
-static int hf_afs_kauth_errcode = -1;
-static int hf_afs_kauth_princ = -1;
-static int hf_afs_kauth_realm = -1;
-static int hf_afs_kauth_domain = -1;
-static int hf_afs_kauth_kvno = -1;
-static int hf_afs_kauth_name = -1;
-static int hf_afs_kauth_data = -1;
+static int hf_afs_kauth_errcode;
+static int hf_afs_kauth_princ;
+static int hf_afs_kauth_realm;
+static int hf_afs_kauth_domain;
+static int hf_afs_kauth_kvno;
+static int hf_afs_kauth_name;
+static int hf_afs_kauth_data;
 
-static int hf_afs_vol_errcode = -1;
-static int hf_afs_vol_count = -1;
-static int hf_afs_vol_id = -1;
-static int hf_afs_vol_name = -1;
+static int hf_afs_vol_errcode;
+static int hf_afs_vol_count;
+static int hf_afs_vol_id;
+static int hf_afs_vol_name;
 
-static int hf_afs_cb_errcode = -1;
-static int hf_afs_cb_callback_version = -1;
-static int hf_afs_cb_callback_type = -1;
-static int hf_afs_cb_callback_expires = -1;
-static int hf_afs_cb_fid_volume = -1;
-static int hf_afs_cb_fid_vnode = -1;
-static int hf_afs_cb_fid_uniqifier = -1;
+static int hf_afs_cb_errcode;
+static int hf_afs_cb_callback_version;
+static int hf_afs_cb_callback_type;
+static int hf_afs_cb_callback_expires;
+static int hf_afs_cb_fid_volume;
+static int hf_afs_cb_fid_vnode;
+static int hf_afs_cb_fid_uniqifier;
 
-static int hf_afs_cm_uuid = -1;
-static int hf_afs_cm_numint = -1;
-static int hf_afs_cm_ipaddr = -1;
-static int hf_afs_cm_netmask = -1;
-static int hf_afs_cm_mtu = -1;
-static int hf_afs_cm_numcap = -1;
-static int hf_afs_cm_capabilities = -1;
-static int hf_afs_cm_cap_errortrans = -1;
+static int hf_afs_cm_uuid;
+static int hf_afs_cm_numint;
+static int hf_afs_cm_ipaddr;
+static int hf_afs_cm_netmask;
+static int hf_afs_cm_mtu;
+static int hf_afs_cm_numcap;
+static int hf_afs_cm_capabilities;
+static int hf_afs_cm_cap_errortrans;
 
-static int hf_afs_prot_errcode = -1;
-static int hf_afs_prot_name = -1;
-static int hf_afs_prot_name_uint_string = -1;
-static int hf_afs_prot_id = -1;
-static int hf_afs_prot_count = -1;
-static int hf_afs_prot_oldid = -1;
-static int hf_afs_prot_newid = -1;
-static int hf_afs_prot_pos = -1;
-static int hf_afs_prot_flag = -1;
-static int hf_afs_prot_uid = -1;
-static int hf_afs_prot_gid = -1;
-static int hf_afs_prot_maxuid = -1;
-static int hf_afs_prot_maxgid = -1;
+static int hf_afs_prot_errcode;
+static int hf_afs_prot_name;
+static int hf_afs_prot_name_uint_string;
+static int hf_afs_prot_id;
+static int hf_afs_prot_count;
+static int hf_afs_prot_oldid;
+static int hf_afs_prot_newid;
+static int hf_afs_prot_pos;
+static int hf_afs_prot_flag;
+static int hf_afs_prot_uid;
+static int hf_afs_prot_gid;
+static int hf_afs_prot_maxuid;
+static int hf_afs_prot_maxgid;
 
-static int hf_afs_backup_errcode = -1;
+static int hf_afs_backup_errcode;
+static int hf_afs_butc_errcode;
 
-/* static int hf_afs_ubik_errcode = -1; */
-static int hf_afs_ubik_version_epoch = -1;
-static int hf_afs_ubik_version_counter = -1;
-static int hf_afs_ubik_votestart = -1;
-static int hf_afs_ubik_state = -1;
-static int hf_afs_ubik_site = -1;
-static int hf_afs_ubik_interface = -1;
-static int hf_afs_ubik_null_addresses = -1;
-static int hf_afs_ubik_file = -1;
-static int hf_afs_ubik_pos = -1;
-static int hf_afs_ubik_length = -1;
-static int hf_afs_ubik_locktype = -1;
-/* static int hf_afs_ubik_voteend = -1; */
-/* static int hf_afs_ubik_votetype = -1; */
+/* static int hf_afs_ubik_errcode; */
+static int hf_afs_ubik_version_epoch;
+static int hf_afs_ubik_version_counter;
+static int hf_afs_ubik_votestart;
+static int hf_afs_ubik_state;
+static int hf_afs_ubik_site;
+static int hf_afs_ubik_interface;
+static int hf_afs_ubik_null_addresses;
+static int hf_afs_ubik_file;
+static int hf_afs_ubik_pos;
+static int hf_afs_ubik_length;
+static int hf_afs_ubik_locktype;
+/* static int hf_afs_ubik_voteend; */
+/* static int hf_afs_ubik_votetype; */
 
-static int hf_afs_ubik_now = -1;
-static int hf_afs_ubik_lastyestime = -1;
-static int hf_afs_ubik_lastyeshost = -1;
-static int hf_afs_ubik_lastyesstate = -1;
-static int hf_afs_ubik_lastyesclaim = -1;
-static int hf_afs_ubik_lowesthost = -1;
-static int hf_afs_ubik_lowesttime = -1;
-static int hf_afs_ubik_synchost = -1;
-static int hf_afs_ubik_synctime = -1;
-static int hf_afs_ubik_amsyncsite = -1;
-static int hf_afs_ubik_syncsiteuntil = -1;
-static int hf_afs_ubik_nservers = -1;
-static int hf_afs_ubik_lockedpages = -1;
-static int hf_afs_ubik_writelockedpages = -1;
-static int hf_afs_ubik_activewrite = -1;
-static int hf_afs_ubik_tidcounter = -1;
-static int hf_afs_ubik_anyreadlocks = -1;
-static int hf_afs_ubik_anywritelocks = -1;
-static int hf_afs_ubik_recoverystate = -1;
-static int hf_afs_ubik_currenttrans = -1;
-static int hf_afs_ubik_writetrans = -1;
-static int hf_afs_ubik_epochtime = -1;
-static int hf_afs_ubik_isclone = -1;
-static int hf_afs_ubik_addr = -1;
-static int hf_afs_ubik_lastvotetime = -1;
-static int hf_afs_ubik_lastbeaconsent = -1;
-static int hf_afs_ubik_lastvote = -1;
-static int hf_afs_ubik_currentdb = -1;
-static int hf_afs_ubik_beaconsincedown = -1;
-static int hf_afs_ubik_up = -1;
-static int hf_afs_repframe = -1;
-static int hf_afs_reqframe = -1;
-static int hf_afs_time = -1;
+static int hf_afs_ubik_now;
+static int hf_afs_ubik_lastyestime;
+static int hf_afs_ubik_lastyeshost;
+static int hf_afs_ubik_lastyesstate;
+static int hf_afs_ubik_lastyesclaim;
+static int hf_afs_ubik_lowesthost;
+static int hf_afs_ubik_lowesttime;
+static int hf_afs_ubik_synchost;
+static int hf_afs_ubik_synctime;
+static int hf_afs_ubik_amsyncsite;
+static int hf_afs_ubik_syncsiteuntil;
+static int hf_afs_ubik_nservers;
+static int hf_afs_ubik_lockedpages;
+static int hf_afs_ubik_writelockedpages;
+static int hf_afs_ubik_activewrite;
+static int hf_afs_ubik_tidcounter;
+static int hf_afs_ubik_anyreadlocks;
+static int hf_afs_ubik_anywritelocks;
+static int hf_afs_ubik_recoverystate;
+static int hf_afs_ubik_currenttrans;
+static int hf_afs_ubik_writetrans;
+static int hf_afs_ubik_epochtime;
+static int hf_afs_ubik_isclone;
+static int hf_afs_ubik_addr;
+static int hf_afs_ubik_lastvotetime;
+static int hf_afs_ubik_lastbeaconsent;
+static int hf_afs_ubik_lastvote;
+static int hf_afs_ubik_currentdb;
+static int hf_afs_ubik_beaconsincedown;
+static int hf_afs_ubik_up;
+static int hf_afs_repframe;
+static int hf_afs_reqframe;
+static int hf_afs_time;
 
-static int hf_afs_fragments = -1;
-static int hf_afs_fragment = -1;
-static int hf_afs_fragment_overlap = -1;
-static int hf_afs_fragment_overlap_conflicts = -1;
-static int hf_afs_fragment_multiple_tails = -1;
-static int hf_afs_fragment_too_long_fragment = -1;
-static int hf_afs_fragment_error = -1;
-static int hf_afs_fragment_count = -1;
-static int hf_afs_reassembled_in = -1;
-static int hf_afs_reassembled_length = -1;
+static int hf_afs_fragments;
+static int hf_afs_fragment;
+static int hf_afs_fragment_overlap;
+static int hf_afs_fragment_overlap_conflicts;
+static int hf_afs_fragment_multiple_tails;
+static int hf_afs_fragment_too_long_fragment;
+static int hf_afs_fragment_error;
+static int hf_afs_fragment_count;
+static int hf_afs_reassembled_in;
+static int hf_afs_reassembled_length;
 
-static gint ett_afs = -1;
-static gint ett_afs_op = -1;
-static gint ett_afs_acl = -1;
-static gint ett_afs_fid = -1;
-static gint ett_afs_callback = -1;
-static gint ett_afs_ubikver = -1;
-static gint ett_afs_status = -1;
-static gint ett_afs_status_mask = -1;
-static gint ett_afs_volsync = -1;
-static gint ett_afs_volumeinfo = -1;
-static gint ett_afs_vicestat = -1;
-static gint ett_afs_vldb_flags = -1;
+static int ett_afs;
+static int ett_afs_op;
+static int ett_afs_acl;
+static int ett_afs_fid;
+static int ett_afs_callback;
+static int ett_afs_ubikver;
+static int ett_afs_status;
+static int ett_afs_status_mask;
+static int ett_afs_volsync;
+static int ett_afs_volumeinfo;
+static int ett_afs_vicestat;
+static int ett_afs_vldb_flags;
 
-static gint ett_afs_fragment = -1;
-static gint ett_afs_fragments = -1;
-static gint ett_afs_cm_interfaces = -1;
-static gint ett_afs_cm_capabilities = -1;
+static int ett_afs_fragment;
+static int ett_afs_fragments;
+static int ett_afs_cm_interfaces;
+static int ett_afs_cm_capabilities;
 
 static const fragment_items afs_frag_items = {
 	/* Fragment subtrees */
@@ -483,7 +490,7 @@ static const fragment_items afs_frag_items = {
 static void OUT_RXArray8(ptvcursor_t *cursor, int field, int field_size, int encoding)
 {
 	unsigned int i,
-		size = tvb_get_guint8(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
+		size = tvb_get_uint8(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
 
 	ptvcursor_advance(cursor, 1);
 	for (i=0; i<size; i++) {
@@ -506,12 +513,7 @@ static void OUT_RXArray8(ptvcursor_t *cursor, int field, int field_size, int enc
    nstime_t */
 static void OUT_TIMESTAMP(ptvcursor_t *cursor, int field)
 {
-	nstime_t ts;
-
-	ts.secs = tvb_get_ntohl(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
-	ts.nsecs = tvb_get_ntohl(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor)+4)*1000;
-
-	proto_tree_add_time(ptvcursor_tree(cursor), field, ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor), 8, &ts);
+	proto_tree_add_item(ptvcursor_tree(cursor), field, ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor), 8, ENC_TIME_SECS_USECS|ENC_BIG_ENDIAN);
 	ptvcursor_advance(cursor, 8);
 }
 
@@ -520,11 +522,7 @@ static void OUT_TIMESTAMP(ptvcursor_t *cursor, int field)
    relative time in seconds */
 static void OUT_TIMESECS(ptvcursor_t *cursor, int field)
 {
-	nstime_t ts;
-
-	ts.secs = tvb_get_ntohl(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
-	ts.nsecs = 0;
-	proto_tree_add_time(ptvcursor_tree(cursor), field, ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor), 4, &ts);
+	proto_tree_add_item(ptvcursor_tree(cursor), field, ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor), 4, ENC_TIME_SECS|ENC_BIG_ENDIAN);
 	ptvcursor_advance(cursor, 4);
 }
 
@@ -539,25 +537,31 @@ static void OUT_RXString(ptvcursor_t *cursor, int field)
 	new_offset = ptvcursor_current_offset(cursor);
 
 	/* strings are padded to 32-bit boundary */
-	ptvcursor_advance(cursor, 4-((new_offset-offset)&3));
+	if ((new_offset-offset)&3)
+		ptvcursor_advance(cursor, 4-((new_offset-offset)&3));
 }
 
 /* Output a fixed length vectorized string (each char is a 32 bit int) */
-static void OUT_RXStringV(ptvcursor_t *cursor, int field, guint32 length)
+static void OUT_RXStringV(ptvcursor_t *cursor, int field, uint32_t length)
 {
 	tvbuff_t* tvb = ptvcursor_tvbuff(cursor);
-	char* str = (char*)wmem_alloc(wmem_packet_scope(), length+1);
+	wmem_strbuf_t *strbuf = wmem_strbuf_new_sized(wmem_packet_scope(), length+1);
 	int offset = ptvcursor_current_offset(cursor),
 		start_offset = offset;
-	guint32 idx;
+	uint32_t idx;
 
 	for (idx = 0; idx<length; idx++)
 	{
-		str[idx] = (char)tvb_get_ntohl(tvb, offset);
+		wmem_strbuf_append_c(strbuf, (char)tvb_get_ntohl(tvb, offset));
 		offset += 4;
 	}
-	str[length] = '\0';
-	proto_tree_add_string(ptvcursor_tree(cursor), field, tvb, start_offset, length*4, str);
+	/* XXX: There's no indication what encoding this string has.
+	 * Treat it as UTF-8 for now.
+	 */
+	if (!wmem_strbuf_utf8_validate(strbuf, NULL)) {
+		wmem_strbuf_utf8_make_valid(strbuf);
+	}
+	proto_tree_add_string(ptvcursor_tree(cursor), field, tvb, start_offset, length*4, wmem_strbuf_finalize(strbuf));
 	ptvcursor_advance(cursor, length*4);
 }
 
@@ -646,7 +650,7 @@ static void OUT_CB_AFSFid(ptvcursor_t *cursor, const char* label)
 /* Output a StoreStatus */
 static void OUT_FS_AFSStoreStatus(ptvcursor_t *cursor, const char* label)
 {
-	static const int * status_mask_flags[] = {
+	static int * const status_mask_flags[] = {
 		&hf_afs_fs_status_mask_setmodtime,
 		&hf_afs_fs_status_mask_setowner,
 		&hf_afs_fs_status_mask_setgroup,
@@ -723,13 +727,13 @@ static void OUT_FS_AFSVolSync(ptvcursor_t *cursor)
 		int acllen; \
 		char tmp[10]; \
 		tmp[0] = 0; \
-		if ( acl & PRSFS_READ ) g_strlcat(tmp, "r", 10);	\
-		if ( acl & PRSFS_LOOKUP ) g_strlcat(tmp, "l", 10);	\
-		if ( acl & PRSFS_INSERT ) g_strlcat(tmp, "i", 10);	\
-		if ( acl & PRSFS_DELETE ) g_strlcat(tmp, "d", 10);	\
-		if ( acl & PRSFS_WRITE ) g_strlcat(tmp, "w", 10);	\
-		if ( acl & PRSFS_LOCK ) g_strlcat(tmp, "k", 10);	\
-		if ( acl & PRSFS_ADMINISTER ) g_strlcat(tmp, "a", 10);  \
+		if ( acl & PRSFS_READ ) (void) g_strlcat(tmp, "r", 10);	\
+		if ( acl & PRSFS_LOOKUP ) (void) g_strlcat(tmp, "l", 10);	\
+		if ( acl & PRSFS_INSERT ) (void) g_strlcat(tmp, "i", 10);	\
+		if ( acl & PRSFS_DELETE ) (void) g_strlcat(tmp, "d", 10);	\
+		if ( acl & PRSFS_WRITE ) (void) g_strlcat(tmp, "w", 10);	\
+		if ( acl & PRSFS_LOCK ) (void) g_strlcat(tmp, "k", 10);	\
+		if ( acl & PRSFS_ADMINISTER ) (void) g_strlcat(tmp, "a", 10);  \
 		save = tree; \
 		tree = proto_tree_add_subtree_format(tree, tvb, offset, bytes, \
 			ett_afs_acl, NULL, "ACL:  %s %s%s", \
@@ -894,12 +898,16 @@ static const value_string fs_req[] = {
 	{ 161,		"dfs-lookup" },
 	{ 162,		"dfs-flushcps" },
 	{ 163,		"dfs-symlink" },
+	/* 164-219 are reserved legacy space */
 	{ 220,		"residency" },
+	/* 221-65535 are reserved legacy space */
 	{ 65536, 	"inline-bulk-status" },
 	{ 65537, 	"fetch-data-64" },
 	{ 65538, 	"store-data-64" },
 	{ 65539, 	"give-up-all-callbacks" },
 	{ 65540, 	"get-capabilities" },
+	{ 65541,	"call-back-rxconn-addr" },
+	{ 65542,	"get-statistics-64" },
 	{ 0,		NULL },
 };
 static value_string_ext fs_req_ext = VALUE_STRING_EXT_INIT(fs_req);
@@ -920,6 +928,7 @@ static const value_string cb_req[] = {
 	{ 216,		"get-cellservdb" },
 	{ 217,		"get-local-cell" },
 	{ 218,		"get-cache-config" },
+	/* 219-65535 reserved legacy space */
 	{ 65536,	"get-ce-64" },
 	{ 65537,	"get-cell-by-num" },
 	{ 65538,	"get-capabilities" },
@@ -950,6 +959,8 @@ static const value_string prot_req[] = {
 	{ 519,		"get-host-cps" },
 	{ 520,		"update-entry" },
 	{ 521,		"list-entries" },
+	/* 522-529 are reserved legacy space */
+	{ 530,		"list-supergroups" },
 	{ 0,		NULL },
 };
 static value_string_ext prot_req_ext = VALUE_STRING_EXT_INIT(prot_req);
@@ -1048,6 +1059,8 @@ static const value_string vol_req[] = {
 	{ 128,		"forward-multiple" },
 	{ 65536,	"convert-ro" },
 	{ 65537,	"getsize" },
+	{ 65538,	"dump-v2" },
+	{ 65539,	"partition-info-64" },
 	{ 0,		NULL },
 };
 static value_string_ext vol_req_ext = VALUE_STRING_EXT_INIT(vol_req);
@@ -1109,6 +1122,42 @@ static const value_string rmtsys_req[] = {
 static value_string_ext rmtsys_req_ext = VALUE_STRING_EXT_INIT(rmtsys_req);
 
 static const value_string backup_req[] = {
+	{ 0,		"add-volume" },
+	{ 1,		"create-dump" },
+	{ 2,		"delete-dump" },
+	{ 3,		"delete-tape" },
+	{ 4,		"delete-vdp" },
+	{ 5,		"find-clone" },
+	{ 6,		"find-dump" },
+	{ 7,		"find-latest-dump" },
+	{ 8,		"make-dump-appended" },
+	{ 9,		"find-last-tape" },
+	{ 10,		"finish-dump" },
+	{ 11,		"finish-tape" },
+	{ 12,		"get-dumps" },
+	{ 13,		"get-tapes" },
+	{ 14,		"get-volumes" },
+	{ 15,		"use-tape" },
+	{ 16,		"get-text" },
+	{ 17,		"get-text-version" },
+	{ 18,		"save-text" },
+	{ 19,		"free-all-locks" },
+	{ 20,		"free-lock" },
+	{ 21,		"get-instance-id" },
+	{ 22,		"get-lock" },
+	{ 23,		"db-verify" },
+	{ 24,		"dump-db" },
+	{ 25,		"restore-db-header" },
+	{ 26,		"t-get-version" },
+	{ 27,		"t-dump-hash-table" },
+	{ 28,		"t-dump-database" },
+	{ 29,		"add-volumes" },
+	{ 30,		"list-dumps" },
+	{ 0,		NULL },
+};
+static value_string_ext backup_req_ext = VALUE_STRING_EXT_INIT(backup_req);
+
+static const value_string butc_req[] = {
 	{ 100,		"perform-dump" },
 	{ 101,		"perform-restore" },
 	{ 102,		"check-dump" },
@@ -1130,7 +1179,7 @@ static const value_string backup_req[] = {
 	{ 118,		"delete-dump" },
 	{ 0,		NULL },
 };
-static value_string_ext backup_req_ext = VALUE_STRING_EXT_INIT(backup_req);
+static value_string_ext butc_req_ext = VALUE_STRING_EXT_INIT(butc_req);
 
 static const value_string ubik_req[] = {
 	{ 10000,	"vote-beacon" },
@@ -1298,6 +1347,7 @@ static const value_string port_types[] = {
 	{ AFS_PORT_UPDATE, "Update? Server" },
 	{ AFS_PORT_RMTSYS, "Rmtsys? Server" },
 	{ AFS_PORT_BACKUP, "Backup Server" },
+	{ AFS_PORT_BUTC,   "Backup Tape Controller" },
 	{ 0, NULL }
 };
 static value_string_ext port_types_ext = VALUE_STRING_EXT_INIT(port_types);
@@ -1314,6 +1364,7 @@ static const value_string port_types_short[] = {
 	{ AFS_PORT_UPDATE, "UPD" },
 	{ AFS_PORT_RMTSYS, "RMT" },
 	{ AFS_PORT_BACKUP, "BKUP" },
+	{ AFS_PORT_BUTC,   "BUTC" },
 	{ 0, NULL }
 };
 static value_string_ext port_types_short_ext = VALUE_STRING_EXT_INIT(port_types_short);
@@ -1349,28 +1400,25 @@ static const value_string volume_types[] = {
 };
 
 struct afs_request_key {
-	guint32 conversation, epoch, cid, callnumber;
-	guint16 service;
+	uint32_t conversation, epoch, cid, callnumber;
+	uint16_t service;
 };
 
 struct afs_request_val {
-	guint32 opcode;
-	guint req_num;
-	guint rep_num;
+	uint32_t opcode;
+	unsigned req_num;
+	unsigned rep_num;
 	nstime_t req_time;
 };
 
-static wmem_map_t *afs_request_hash = NULL;
-
-/*static GHashTable *afs_fragment_table = NULL; */
-/*static GHashTable *afs_reassembled_table = NULL; */
+static wmem_map_t *afs_request_hash;
 static reassembly_table afs_reassembly_table;
 
 /*
  * Hash Functions
  */
-static gint
-afs_equal(gconstpointer v, gconstpointer w)
+static int
+afs_equal(const void *v, const void *w)
 {
 	const struct afs_request_key *v1 = (const struct afs_request_key *)v;
 	const struct afs_request_key *v2 = (const struct afs_request_key *)w;
@@ -1386,11 +1434,11 @@ afs_equal(gconstpointer v, gconstpointer w)
 	return 0;
 }
 
-static guint
-afs_hash (gconstpointer v)
+static unsigned
+afs_hash (const void *v)
 {
 	const struct afs_request_key *key = (const struct afs_request_key *)v;
-	guint val;
+	unsigned val;
 
 	val = key -> conversation + key -> epoch + key -> cid + key -> callnumber;
 
@@ -1409,7 +1457,7 @@ afs_hash (gconstpointer v)
  *
  * "positive" and "negative" are integers which contain the number of
  * positive and negative ACL's in the string.  The uid/aclbits pair are
- * ASCII strings containing the UID/PTS record and and a ascii number
+ * ASCII strings containing the UID/PTS record and a ascii number
  * representing a logical OR of all the ACL permission bits
  */
 /*
@@ -1419,13 +1467,13 @@ afs_hash (gconstpointer v)
  *
  * Should this just scan the string itself, rather than using "sscanf()"?
  */
-#define GETSTR (tvb_format_text(tvb,ptvcursor_current_offset(cursor),tvb_captured_length_remaining(tvb,ptvcursor_current_offset(cursor))))
+#define GETSTR (tvb_format_text(wmem_packet_scope(),tvb,ptvcursor_current_offset(cursor),tvb_captured_length_remaining(tvb,ptvcursor_current_offset(cursor))))
 
 static void
 dissect_acl(ptvcursor_t *cursor, struct rxinfo *rxinfo _U_)
 {
 	int old_offset = ptvcursor_current_offset(cursor), offset;
-	gint32 bytes;
+	int32_t bytes;
 	int i, n, pos, neg, acl;
 	proto_tree* tree = ptvcursor_tree(cursor);
 	tvbuff_t* tvb = ptvcursor_tvbuff(cursor);
@@ -1527,7 +1575,7 @@ dissect_fs_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode)
 				OUT_FS_AFSFid(cursor, "Symlink");
 				break;
 			case 140: /* link */
-				OUT_FS_AFSFetchStatus(cursor, "Symlink Status");
+				OUT_FS_AFSFetchStatus(cursor, "Link Status");
 				break;
 			case 142: /* rmdir */
 				OUT_FS_AFSFetchStatus(cursor, "Directory Status");
@@ -2309,7 +2357,7 @@ dissect_prot_request(ptvcursor_t *cursor, struct rxinfo *rxinfo _U_, int opcode)
 static void
 dissect_vldb_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode)
 {
-	static const int * vldb_flags[] = {
+	static int * const vldb_flags[] = {
 		&hf_afs_vldb_flags_rwexists,
 		&hf_afs_vldb_flags_roexists,
 		&hf_afs_vldb_flags_bkexists,
@@ -2328,7 +2376,8 @@ dissect_vldb_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode)
 			case 503: /* get entry by id */
 			case 504: /* get entry by name */
 				{
-					int nservers,i,j;
+					int nservers,i;
+					unsigned int j;
 					OUT_RXStringV(cursor, hf_afs_vldb_name, VLNAMEMAX);
 					ptvcursor_advance(cursor, 4);
 					nservers = tvb_get_ntohl(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
@@ -2377,7 +2426,8 @@ dissect_vldb_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode)
 			case 518: /* get entry by id n */
 			case 519: /* get entry by name N */
 				{
-					int nservers,i,j;
+					int nservers,i;
+					unsigned int j;
 					OUT_RXStringV(cursor, hf_afs_vldb_name, VLNAMEMAX);
 					nservers = tvb_get_ntohl(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
 					ptvcursor_add(cursor, hf_afs_vldb_numservers, 4, ENC_BIG_ENDIAN);
@@ -2413,7 +2463,8 @@ dissect_vldb_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode)
 			case 526: /* get entry by id u */
 			case 527: /* get entry by name u */
 				{
-					int nservers,i,j;
+					int nservers,i;
+					unsigned int j;
 					OUT_RXStringV(cursor, hf_afs_vldb_name, VLNAMEMAX);
 					nservers = tvb_get_ntohl(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
 					ptvcursor_add(cursor, hf_afs_vldb_numservers, 4, ENC_BIG_ENDIAN);
@@ -2662,31 +2713,35 @@ dissect_ubik_request(ptvcursor_t *cursor, struct rxinfo *rxinfo _U_, int opcode)
  * BACKUP Helpers
  */
 static void
-dissect_backup_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode)
+dissect_backup_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode _U_)
 {
-	if ( rxinfo->type == RX_PACKET_TYPE_DATA )
-	{
-		switch ( opcode )
-		{
-		}
-	}
-	else if ( rxinfo->type == RX_PACKET_TYPE_ABORT )
+	if ( rxinfo->type == RX_PACKET_TYPE_ABORT )
 	{
 		ptvcursor_add(cursor, hf_afs_backup_errcode, 4, ENC_BIG_ENDIAN);
 	}
 }
 
 static void
-dissect_backup_request(ptvcursor_t *cursor, struct rxinfo *rxinfo _U_, int opcode)
+dissect_backup_request(ptvcursor_t *cursor, struct rxinfo *rxinfo _U_, int opcode _U_)
 {
 	ptvcursor_advance(cursor, 4); /* skip the opcode */
-
-	switch ( opcode )
-	{
-	}
 }
 
 
+static void
+dissect_butc_reply(ptvcursor_t *cursor, struct rxinfo *rxinfo, int opcode _U_)
+{
+	if ( rxinfo->type == RX_PACKET_TYPE_ABORT )
+	{
+		ptvcursor_add(cursor, hf_afs_butc_errcode, 4, ENC_BIG_ENDIAN);
+	}
+}
+
+static void
+dissect_butc_request(ptvcursor_t *cursor, struct rxinfo *rxinfo _U_, int opcode _U_)
+{
+	ptvcursor_advance(cursor, 4); /* skip the opcode */
+}
 /*
  * Dissection routines
  */
@@ -2705,7 +2760,7 @@ dissect_afs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 	value_string_ext *vals_ext;
 	int offset = 0;
 	nstime_t delta_ts;
-	guint8 save_fragmented;
+	uint8_t save_fragmented;
 	int reassembled = 0;
 	ptvcursor_t *cursor;
 
@@ -2747,7 +2802,7 @@ dissect_afs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 
 	/* only allocate a new hash element when it's a request */
 	opcode = 0;
-	if(!pinfo->fd->flags.visited){
+	if(!pinfo->fd->visited){
 		if ( !request_val && !reply) {
 			new_request_key = wmem_new(wmem_file_scope(), struct afs_request_key);
 			*new_request_key = request_key;
@@ -2841,6 +2896,14 @@ dissect_afs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 			vals_ext = &backup_req_ext;
 			dissector = reply ? dissect_backup_reply : dissect_backup_request;
 			break;
+		default:
+			if (port >= AFS_PORT_BUTC) {
+				typenode = hf_afs_butc;
+				node = hf_afs_butc_opcode;
+				vals_ext = &butc_req_ext;
+				dissector = reply ? dissect_butc_reply : dissect_butc_request;
+			}
+			break;
 	}
 
 	if ( (opcode >= VOTE_LOW && opcode <= VOTE_HIGH) ||
@@ -2879,11 +2942,11 @@ dissect_afs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 	afs_tree = proto_item_add_subtree(ti, ett_afs);
 
 	save_fragmented = pinfo->fragmented;
-	if( (! (rxinfo->flags & RX_LAST_PACKET) || rxinfo->seq > 1 )) {   /* Fragmented */
+	if( (afs_defragment && (!(rxinfo->flags & RX_LAST_PACKET) || rxinfo->seq > 1 ))) {   /* Fragmented */
 		tvbuff_t * new_tvb = NULL;
 		fragment_head * frag_msg = NULL;
-		guint32 afs_seqid = rxinfo->callnumber ^ rxinfo->cid;
-		pinfo->fragmented = TRUE;
+		uint32_t afs_seqid = rxinfo->callnumber ^ rxinfo->cid;
+		pinfo->fragmented = true;
 
 		frag_msg = fragment_add_seq_check(&afs_reassembly_table,
 				tvb, offset, pinfo, afs_seqid, NULL,
@@ -2902,7 +2965,6 @@ dissect_afs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 			return tvb_captured_length(tvb);
 		}
 	}
-
 	pinfo->fragmented = save_fragmented;
 
 	if (tree) {
@@ -2955,13 +3017,13 @@ dissect_afs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 			if ( typenode != 0 ) {
 				/* indicate the type of request */
 				hidden_item = proto_tree_add_boolean(afs_tree, typenode, tvb, offset, 0, 1);
-				PROTO_ITEM_SET_HIDDEN(hidden_item);
+				proto_item_set_hidden(hidden_item);
 			}
 
 			/* Process the packet according to what service it is */
 			/* Only for first packet in an rx data stream or the full reassembled stream */
 			if ( dissector && ( rxinfo->seq == 1 || reassembled ) ) {
-				cursor = ptvcursor_new(afs_op_tree, tvb, offset);
+				cursor = ptvcursor_new(pinfo->pool, afs_op_tree, tvb, offset);
 				(*dissector)(cursor, rxinfo, opcode);
 			}
 		}
@@ -3009,6 +3071,8 @@ proto_register_afs(void)
 		FT_BOOLEAN, BASE_NONE, 0, 0x0, NULL, HFILL }},
 	{ &hf_afs_backup, { "Backup", "afs.backup",
 		FT_BOOLEAN, BASE_NONE, 0, 0x0, "Backup Server", HFILL }},
+	{ &hf_afs_butc, { "BackupTC", "afs.butc",
+		FT_BOOLEAN, BASE_NONE, 0, 0x0, "Backup Tape Controller", HFILL }},
 	{ &hf_afs_service, { "Service", "afs.service",
 		FT_UINT32, BASE_DEC, NULL, 0, NULL, HFILL }},
 	{ &hf_afs_fs_opcode, { "Operation", "afs.fs.opcode",
@@ -3044,6 +3108,9 @@ proto_register_afs(void)
 	{ &hf_afs_backup_opcode, { "Operation", "afs.backup.opcode",
 		FT_UINT32, BASE_DEC|BASE_EXT_STRING,
 		&backup_req_ext, 0, NULL, HFILL }},
+	{ &hf_afs_butc_opcode, { "Operation", "afs.butc.opcode",
+		FT_UINT32, BASE_DEC|BASE_EXT_STRING,
+		&butc_req_ext, 0, NULL, HFILL }},
 	{ &hf_afs_ubik_opcode, { "Operation", "afs.ubik.opcode",
 		FT_UINT32, BASE_DEC|BASE_EXT_STRING,
 		&ubik_req_ext, 0, NULL, HFILL }},
@@ -3360,13 +3427,13 @@ proto_register_afs(void)
 		FT_UINT32, BASE_HEX, 0, 0, NULL, HFILL }},
 
 	{ &hf_afs_vldb_flags_rwexists, { "Read/Write Exists", "afs.vldb.flags.rwexists",
-		FT_BOOLEAN, 32, 0, 0x1000, NULL, HFILL }},
+		FT_BOOLEAN, 32, 0, 0x00001000, NULL, HFILL }},
 	{ &hf_afs_vldb_flags_roexists, { "Read-Only Exists", "afs.vldb.flags.roexists",
-		FT_BOOLEAN, 32, 0, 0x2000, NULL, HFILL }},
+		FT_BOOLEAN, 32, 0, 0x00002000, NULL, HFILL }},
 	{ &hf_afs_vldb_flags_bkexists, { "Backup Exists", "afs.vldb.flags.bkexists",
-		FT_BOOLEAN, 32, 0, 0x4000, NULL, HFILL }},
+		FT_BOOLEAN, 32, 0, 0x00004000, NULL, HFILL }},
 	{ &hf_afs_vldb_flags_dfsfileset, { "DFS Fileset", "afs.vldb.flags.dfsfileset",
-		FT_BOOLEAN, 32, 0, 0x8000, NULL, HFILL }},
+		FT_BOOLEAN, 32, 0, 0x00008000, NULL, HFILL }},
 
 	{ &hf_afs_vldb_spare1, { "Spare 1", "afs.vldb.spare1",
 		FT_UINT32, BASE_DEC, 0, 0, NULL, HFILL }},
@@ -3389,6 +3456,8 @@ proto_register_afs(void)
 
 /* BACKUP Server Fields */
 	{ &hf_afs_backup_errcode, { "Error Code", "afs.backup.errcode",
+		FT_UINT32, BASE_DEC|BASE_EXT_STRING, &afs_errors_ext, 0, NULL, HFILL }},
+	{ &hf_afs_butc_errcode, { "Error Code", "afs.butc.errcode",
 		FT_UINT32, BASE_DEC|BASE_EXT_STRING, &afs_errors_ext, 0, NULL, HFILL }},
 
 /* CB Server Fields */
@@ -3424,7 +3493,7 @@ proto_register_afs(void)
 	{ &hf_afs_cm_capabilities, { "Capabilities", "afs.cm.capabilities",
 		FT_UINT32, BASE_HEX, 0, 0, NULL, HFILL }},
 	{ &hf_afs_cm_cap_errortrans, { "ERRORTRANS", "afs.cm.capabilities.errortrans",
-		FT_BOOLEAN, 32, 0, 0x0001, NULL, HFILL }},
+		FT_BOOLEAN, 32, 0, 0x00000001, NULL, HFILL }},
 
 /* PROT Server Fields */
 	{ &hf_afs_prot_errcode, { "Error Code", "afs.prot.errcode",
@@ -3551,9 +3620,9 @@ proto_register_afs(void)
 	{ &hf_afs_ubik_isclone, { "Is Clone", "afs.ubik.isclone",
 		FT_UINT32, BASE_HEX, 0, 0, NULL, HFILL }},
 	{ &hf_afs_reqframe, { "Request Frame", "afs.reqframe",
-		FT_FRAMENUM, BASE_NONE, NULL, 0, NULL, HFILL }},
+		FT_FRAMENUM, BASE_NONE, FRAMENUM_TYPE(FT_FRAMENUM_REQUEST), 0, NULL, HFILL }},
 	{ &hf_afs_repframe, { "Reply Frame", "afs.repframe",
-		FT_FRAMENUM, BASE_NONE,	NULL, 0, NULL, HFILL }},
+		FT_FRAMENUM, BASE_NONE,	FRAMENUM_TYPE(FT_FRAMENUM_RESPONSE), 0, NULL, HFILL }},
 	{ &hf_afs_time, { "Time from request", "afs.time",
 		FT_RELATIVE_TIME, BASE_NONE, NULL, 0, "Time between Request and Reply for AFS calls", HFILL }},
 
@@ -3562,13 +3631,13 @@ proto_register_afs(void)
 	{&hf_afs_fragment, {"Message fragment", "afs.fragment",
 		FT_FRAMENUM, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 	{&hf_afs_fragment_overlap, {"Message fragment overlap", "afs.fragment.overlap",
-		FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+		FT_BOOLEAN, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 	{&hf_afs_fragment_overlap_conflicts, {"Message fragment overlapping with conflicting data", "afs.fragment.overlap.conflicts",
-		FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+		FT_BOOLEAN, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 	{&hf_afs_fragment_multiple_tails, {"Message has multiple tail fragments", "afs.fragment.multiple_tails",
-		FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+		FT_BOOLEAN, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 	{&hf_afs_fragment_too_long_fragment, {"Message fragment too long", "afs.fragment.too_long_fragment",
-		FT_BOOLEAN, 0, NULL, 0x00, NULL, HFILL } },
+		FT_BOOLEAN, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 	{&hf_afs_fragment_error, {"Message defragmentation error", "afs.fragment.error",
 		FT_FRAMENUM, BASE_NONE, NULL, 0x00, NULL, HFILL } },
 	{&hf_afs_fragment_count, {"Message fragment count", "afs.fragment.count",
@@ -3579,7 +3648,7 @@ proto_register_afs(void)
 		FT_UINT32, BASE_DEC, NULL, 0x00, NULL, HFILL } },
 	};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_afs,
 		&ett_afs_op,
 		&ett_afs_acl,
@@ -3598,6 +3667,8 @@ proto_register_afs(void)
 		&ett_afs_cm_capabilities,
 	};
 
+	module_t *afs_module;
+
 	proto_afs = proto_register_protocol("Andrew File System (AFS)",
 	    "AFS (RX)", "afs");
 	proto_register_field_array(proto_afs, hf, array_length(hf));
@@ -3608,11 +3679,17 @@ proto_register_afs(void)
 
 	afs_request_hash = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(), afs_hash, afs_equal);
 
+	afs_module = prefs_register_protocol(proto_afs, NULL);
+	prefs_register_bool_preference(afs_module, "defragment",
+		    "Reassemble fragmented AFS PDUs",
+		        "Whether fragmented AFS PDUs should be reassembled", &afs_defragment);
+
 	register_dissector("afs", dissect_afs, proto_afs);
+
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

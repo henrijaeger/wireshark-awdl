@@ -37,7 +37,7 @@
  * Add GSS-API authentication per rfc-1961
  * Add CHAP authentication
  * Decode FLAG bits per
- *  http://archive.socks.permeo.com/draft/draft-ietf-aft-socks-pro-v5-04.txt
+ *  https://tools.ietf.org/html/draft-ietf-aft-socks-pro-v5-04
  * In call_next_dissector, could load the destination address into
  *  pinfo->src or pinfo->dst structure before calling next dissector.
 */
@@ -53,6 +53,8 @@
 
 #include "packet-tcp.h"
 #include "packet-udp.h"
+#include "packet-tls.h"
+
 #include <epan/strutil.h>
 
 #define TCP_PORT_SOCKS 1080
@@ -80,45 +82,46 @@ void proto_reg_handoff_socks(void);
 
 /*********** Header field identifiers *************/
 
-static int proto_socks = -1;
+static int proto_socks;
 
-static int ett_socks = -1;
-static int ett_socks_auth = -1;
-static int ett_socks_name = -1;
+static int ett_socks;
+static int ett_socks_auth;
+static int ett_socks_name;
 
-static int hf_socks_ver = -1;
-static int hf_socks_ip_dst = -1;
-static int hf_socks_ip6_dst = -1;
-static int hf_gssapi_payload = -1;
-static int hf_gssapi_command = -1;
-static int hf_gssapi_length = -1;
-static int hf_v4a_dns_name = -1;
-static int hf_socks_dstport = -1;
-static int hf_socks_cmd = -1;
-static int hf_socks_results_4 = -1;
-static int hf_socks_results_5 = -1;
-static int hf_client_auth_method_count = -1;
-static int hf_client_auth_method = -1;
-static int hf_socks_reserved = -1;
-static int hf_socks_reserved2 = -1;
-static int hf_client_port = -1;
-static int hf_server_accepted_auth_method = -1;
-static int hf_server_auth_status = -1;
-static int hf_server_remote_host_port = -1;
-static int hf_socks_subnegotiation_version = -1;
-static int hf_socks_username = -1;
-static int hf_socks_password = -1;
-static int hf_socks_remote_name = -1;
-static int hf_socks_address_type = -1;
-static int hf_socks_fragment_number = -1;
-static int hf_socks_ping_end_command = -1;
-static int hf_socks_ping_results = -1;
-static int hf_socks_traceroute_end_command = -1;
-static int hf_socks_traceroute_results = -1;
+static int hf_socks_ver;
+static int hf_socks_ip_dst;
+static int hf_socks_ip6_dst;
+static int hf_gssapi_payload;
+static int hf_gssapi_command;
+static int hf_gssapi_length;
+static int hf_v4a_dns_name;
+static int hf_socks_dstport;
+static int hf_socks_cmd;
+static int hf_socks_results_4;
+static int hf_socks_results_5;
+static int hf_client_auth_method_count;
+static int hf_client_auth_method;
+static int hf_socks_reserved;
+static int hf_socks_reserved2;
+static int hf_client_port;
+static int hf_server_accepted_auth_method;
+static int hf_server_auth_status;
+static int hf_server_remote_host_port;
+static int hf_socks_subnegotiation_version;
+static int hf_socks_username;
+static int hf_socks_password;
+static int hf_socks_remote_name;
+static int hf_socks_address_type;
+static int hf_socks_fragment_number;
+static int hf_socks_ping_end_command;
+static int hf_socks_ping_results;
+static int hf_socks_traceroute_end_command;
+static int hf_socks_traceroute_results;
 
 /************* Dissector handles ***********/
 
 static dissector_handle_t socks_handle;
+static dissector_handle_t socks_handle_tls;
 static dissector_handle_t socks_udp_handle;
 
 /************* State Machine names ***********/
@@ -158,13 +161,13 @@ typedef struct {
     int     version;
     int     command;
     int     authentication_method;
-    guint32 server_port;
-    guint32 port;
-    guint32 udp_port;
-    guint32 udp_remote_port;
+    uint32_t server_port;
+    uint32_t port;
+    uint32_t udp_port;
+    uint32_t udp_remote_port;
     address dst_addr;
 
-    guint32 start_done_frame;
+    uint32_t start_done_frame;
 }socks_hash_entry_t;
 
 
@@ -218,7 +221,7 @@ static const value_string gssapi_command_table[] = {
 
 /************************* Support routines ***************************/
 
-static const char *get_auth_method_name( guint Number){
+static const char *get_auth_method_name( unsigned Number){
 
 /* return the name of the authentication method */
 
@@ -235,11 +238,11 @@ static const char *get_auth_method_name( guint Number){
     return "Bad method number (not 0-0xff)";
 }
 
-static int display_address(tvbuff_t *tvb, int offset, proto_tree *tree) {
+static int display_address(packet_info *pinfo, tvbuff_t *tvb, int offset, proto_tree *tree) {
 
 /* decode and display the v5 address, return offset of next byte */
 
-    int a_type = tvb_get_guint8(tvb, offset);
+    int a_type = tvb_get_uint8(tvb, offset);
 
     proto_tree_add_item( tree, hf_socks_address_type, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
@@ -252,11 +255,11 @@ static int display_address(tvbuff_t *tvb, int offset, proto_tree *tree) {
         break;
     case 3: /* domain name address */
         {
-        guint8 len;
-        gchar* str;
+        uint8_t len;
+        char* str;
 
-        len = tvb_get_guint8(tvb, offset);
-        str = tvb_get_string_enc(wmem_packet_scope(), tvb, offset+1, len, ENC_ASCII);
+        len = tvb_get_uint8(tvb, offset);
+        str = tvb_get_string_enc(pinfo->pool, tvb, offset+1, len, ENC_ASCII);
         proto_tree_add_string(tree, hf_socks_remote_name, tvb, offset, len+1, str);
         offset += (len+1);
         }
@@ -278,7 +281,7 @@ static int get_address_v5(tvbuff_t *tvb, int offset,
     int     a_type;
     address addr;
 
-    a_type = tvb_get_guint8(tvb, offset);
+    a_type = tvb_get_uint8(tvb, offset);
     offset += 1;
 
     switch(a_type)
@@ -300,7 +303,7 @@ static int get_address_v5(tvbuff_t *tvb, int offset,
         break;
 
     case 3: /* domain name address */
-        offset += tvb_get_guint8(tvb, offset) + 1;
+        offset += tvb_get_uint8(tvb, offset) + 1;
         break;
     }
 
@@ -318,7 +321,7 @@ socks_udp_dissector(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
 /* decode routine to  handle the payload.               */
 
     int                 offset = 0;
-    guint32            *ptr;
+    uint32_t           *ptr;
     socks_hash_entry_t *hash_info;
     conversation_t     *conversation;
     proto_tree         *socks_tree;
@@ -344,7 +347,7 @@ socks_udp_dissector(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
         proto_tree_add_item(socks_tree, hf_socks_fragment_number, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        offset = display_address( tvb, offset, socks_tree);
+        offset = display_address(pinfo, tvb, offset, socks_tree);
         hash_info->udp_remote_port = tvb_get_ntohs(tvb, offset);
 
         proto_tree_add_uint( socks_tree, hf_socks_dstport, tvb,
@@ -376,7 +379,7 @@ socks_udp_dissector(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
 static void
 new_udp_conversation( socks_hash_entry_t *hash_info, packet_info *pinfo){
 
-    conversation_t *conversation = conversation_new( pinfo->num, &pinfo->src, &pinfo->dst, ENDPOINT_UDP,
+    conversation_t *conversation = conversation_new( pinfo->num, &pinfo->src, &pinfo->dst, CONVERSATION_UDP,
             hash_info->udp_port, hash_info->port, 0);
 
     DISSECTOR_ASSERT( conversation);
@@ -415,7 +418,7 @@ display_socks_v4(tvbuff_t *tvb, int offset, packet_info *pinfo,
 /* stored frame information to decide what to do with the row.  */
 
     unsigned char ipaddr[4];
-    guint         str_len;
+    unsigned      str_len;
 
     /* Either there is an error, or we're done with the state machine
       (so there's nothing to display) */
@@ -444,14 +447,14 @@ display_socks_v4(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
             /* display user name */
             str_len = tvb_strsize(tvb, offset);
-            proto_tree_add_item( tree, hf_socks_username, tvb, offset, str_len, ENC_ASCII|ENC_NA);
+            proto_tree_add_item( tree, hf_socks_username, tvb, offset, str_len, ENC_ASCII);
             offset += str_len;
 
             if ( ipaddr[0] == 0 && ipaddr[1] == 0 &&
                  ipaddr[2] == 0 && ipaddr[3] != 0) {
                 /* 0.0.0.x , where x!=0 means v4a support */
                 str_len = tvb_strsize(tvb, offset);
-                proto_tree_add_item( tree, hf_v4a_dns_name, tvb, offset, str_len, ENC_ASCII|ENC_NA);
+                proto_tree_add_item( tree, hf_v4a_dns_name, tvb, offset, str_len, ENC_ASCII);
             }
             break;
         default:
@@ -481,6 +484,7 @@ display_socks_v4(tvbuff_t *tvb, int offset, packet_info *pinfo,
 }
 
 static void
+// NOLINTNEXTLINE(misc-no-recursion)
 client_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
     proto_tree *tree, socks_hash_entry_t *hash_info, sock_state_t* state_info) {
 
@@ -503,7 +507,7 @@ client_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
     if (state_info->client == clientStart)
     {
         proto_tree      *AuthTree;
-        guint8 num_auth_methods, auth;
+        uint8_t num_auth_methods, auth;
 
         col_append_str(pinfo->cinfo, COL_INFO, " Connect to server request");
 
@@ -512,14 +516,14 @@ client_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
         AuthTree = proto_tree_add_subtree( tree, tvb, offset, -1, ett_socks_auth, &ti, "Client Authentication Methods");
 
-        num_auth_methods = tvb_get_guint8(tvb, offset);
+        num_auth_methods = tvb_get_uint8(tvb, offset);
         proto_item_set_len(ti, num_auth_methods+1);
 
         proto_tree_add_item( AuthTree, hf_client_auth_method_count, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
         for( i = 0; i  < num_auth_methods; ++i) {
-            auth = tvb_get_guint8( tvb, offset);
+            auth = tvb_get_uint8( tvb, offset);
             AuthMethodStr = get_auth_method_name(auth);
 
             proto_tree_add_uint_format(AuthTree, hf_client_auth_method, tvb, offset, 1, auth,
@@ -529,10 +533,12 @@ client_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
         if ((num_auth_methods == 1) &&
             (tvb_bytes_exist(tvb, offset + 2, 1)) &&
-            (tvb_get_guint8(tvb, offset + 2) == 0) &&
+            (tvb_get_uint8(tvb, offset + 2) == 0) &&
             (tvb_reported_length_remaining(tvb, offset + 2 + num_auth_methods) > 0)) {
                 new_state_info.client = clientV5Command;
+                increment_dissection_depth(pinfo);
                 client_display_socks_v5(tvb, offset, pinfo, tree, hash_info, &new_state_info);
+                decrement_dissection_depth(pinfo);
         }
     }
     else if (state_info->client == clientV5Command) {
@@ -548,16 +554,16 @@ client_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
         proto_tree_add_item( tree, hf_socks_reserved, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        offset = display_address(tvb, offset, tree);
+        offset = display_address(pinfo, tvb, offset, tree);
         proto_tree_add_item( tree, hf_client_port, tvb, offset, 2, ENC_BIG_ENDIAN);
     }
     else if ((state_info->client == clientWaitForAuthReply) &&
              (state_info->server == serverInitReply)) {
-        guint16 len;
-        gchar* str;
+        uint16_t len;
+        char* str;
 
         ti = proto_tree_add_uint( tree, hf_socks_ver, tvb, offset, 0, 5);
-        PROTO_ITEM_SET_GENERATED(ti);
+        proto_item_set_generated(ti);
 
         proto_tree_add_item( tree, hf_socks_subnegotiation_version, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
@@ -570,13 +576,13 @@ client_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
             col_append_str(pinfo->cinfo, COL_INFO, " User authentication request");
 
             /* process user name */
-            len = tvb_get_guint8(tvb, offset);
-            str = tvb_get_string_enc(wmem_packet_scope(), tvb, offset+1, len, ENC_ASCII);
+            len = tvb_get_uint8(tvb, offset);
+            str = tvb_get_string_enc(pinfo->pool, tvb, offset+1, len, ENC_ASCII);
             proto_tree_add_string(tree, hf_socks_username, tvb, offset, len+1, str);
             offset += (len+1);
 
-            len = tvb_get_guint8(tvb, offset);
-            str = tvb_get_string_enc(wmem_packet_scope(), tvb, offset+1, len, ENC_ASCII);
+            len = tvb_get_uint8(tvb, offset);
+            str = tvb_get_string_enc(pinfo->pool, tvb, offset+1, len, ENC_ASCII);
             proto_tree_add_string(tree, hf_socks_password, tvb, offset, len+1, str);
             /* offset += (len+1); */
             break;
@@ -601,7 +607,7 @@ client_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
 }
 
 static void
-server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
+server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo,
     proto_tree *tree, socks_hash_entry_t *hash_info _U_, sock_state_t* state_info) {
 
 /* Display the protocol tree for the version. This routine uses the */
@@ -611,7 +617,7 @@ server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
 /* so messy.                                */
 
     const char *AuthMethodStr;
-    guint8      auth, auth_status;
+    uint8_t     auth, auth_status;
     proto_item *ti;
 
     /* Either there is an error, or we're done with the state machine
@@ -627,7 +633,7 @@ server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
         proto_tree_add_item( tree, hf_socks_ver, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        auth = tvb_get_guint8( tvb, offset);
+        auth = tvb_get_uint8( tvb, offset);
         AuthMethodStr = get_auth_method_name(auth);
 
         proto_tree_add_uint_format_value(tree, hf_server_accepted_auth_method, tvb, offset, 1, auth,
@@ -638,12 +644,12 @@ server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
         col_append_str(pinfo->cinfo, COL_INFO, " User authentication reply");
 
         ti = proto_tree_add_uint( tree, hf_socks_ver, tvb, offset, 0, 5);
-        PROTO_ITEM_SET_GENERATED(ti);
+        proto_item_set_generated(ti);
 
         proto_tree_add_item( tree, hf_socks_subnegotiation_version, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        auth_status = tvb_get_guint8(tvb, offset);
+        auth_status = tvb_get_uint8(tvb, offset);
         ti = proto_tree_add_item(tree, hf_server_auth_status, tvb, offset, 1, ENC_BIG_ENDIAN);
         if(auth_status != 0)
             proto_item_append_text(ti, " (failure)");
@@ -655,15 +661,15 @@ server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
         col_append_str(pinfo->cinfo, COL_INFO, " GSSAPI authentication reply");
 
         ti = proto_tree_add_uint( tree, hf_socks_ver, tvb, offset, 0, 5);
-        PROTO_ITEM_SET_GENERATED(ti);
+        proto_item_set_generated(ti);
 
         proto_tree_add_item( tree, hf_socks_subnegotiation_version, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        auth_status = tvb_get_guint8(tvb, offset);
+        auth_status = tvb_get_uint8(tvb, offset);
         proto_tree_add_item( tree, hf_gssapi_command, tvb, offset, 1, ENC_BIG_ENDIAN);
         if (auth_status != 0xFF) {
-            guint16 len;
+            uint16_t len;
 
             proto_tree_add_item( tree, hf_gssapi_length, tvb, offset+1, 2, ENC_BIG_ENDIAN);
             len = tvb_get_ntohs(tvb, offset+1);
@@ -685,7 +691,7 @@ server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
         proto_tree_add_item( tree, hf_socks_reserved, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        offset = display_address(tvb, offset, tree);
+        offset = display_address(pinfo, tvb, offset, tree);
         proto_tree_add_item( tree, hf_client_port, tvb, offset, 2, ENC_BIG_ENDIAN);
         break;
 
@@ -701,7 +707,7 @@ server_display_socks_v5(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
         proto_tree_add_item( tree, hf_socks_reserved, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
-        offset = display_address(tvb, offset, tree);
+        offset = display_address(pinfo, tvb, offset, tree);
         proto_tree_add_item( tree, hf_server_remote_host_port, tvb, offset, 2, ENC_BIG_ENDIAN);
         break;
 
@@ -737,7 +743,7 @@ state_machine_v4( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
         /* Client side, only a single request */
         col_append_str(pinfo->cinfo, COL_INFO, " Connect to server request");
 
-        hash_info->command = tvb_get_guint8(tvb, offset + 1);
+        hash_info->command = tvb_get_uint8(tvb, offset + 1);
 
         /* get remote port */
         if ( hash_info->command == CONNECT_COMMAND)
@@ -752,7 +758,7 @@ state_machine_v4( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
     else {
         col_append_str(pinfo->cinfo, COL_INFO, " Connect Response");
 
-        if (tvb_get_guint8(tvb, offset + 1) == 90)
+        if (tvb_get_uint8(tvb, offset + 1) == 90)
             hash_info->serverState = serverDone;
         else
             hash_info->serverState = serverError;
@@ -760,8 +766,9 @@ state_machine_v4( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
 }
 
 static void
+// NOLINTNEXTLINE(misc-no-recursion)
 client_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
-    int offset, packet_info *pinfo, gboolean start_of_frame) {
+    int offset, packet_info *pinfo, bool start_of_frame) {
 
 /* Decode client side of V5 protocol.  This is done on the first pass through the   */
 /* list.  Based upon the current state, decode the packet and determine */
@@ -774,18 +781,20 @@ client_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
 
     if (hash_info->clientState == clientStart)
     {
-        guint8 num_auth_methods;
+        uint8_t num_auth_methods;
 
-        num_auth_methods = tvb_get_guint8(tvb, offset + 1);
+        num_auth_methods = tvb_get_uint8(tvb, offset + 1);
                         /* skip past auth methods */
 
         if ((num_auth_methods == 0) ||
             ((num_auth_methods == 1) &&
-             (tvb_get_guint8(tvb, offset + 2) == 0))) {
+             (tvb_get_uint8(tvb, offset + 2) == 0))) {
             /* No authentication needed */
             hash_info->clientState = clientV5Command;
             if (tvb_reported_length_remaining(tvb, offset + 2 + num_auth_methods) > 0) {
-                client_state_machine_v5(hash_info, tvb, offset + 2 + num_auth_methods, pinfo, FALSE);
+                increment_dissection_depth(pinfo);
+                client_state_machine_v5(hash_info, tvb, offset + 2 + num_auth_methods, pinfo, false);
+                decrement_dissection_depth(pinfo);
             }
         } else {
             hash_info->clientState = clientWaitForAuthReply;
@@ -812,13 +821,13 @@ client_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
             break;
         }
     } else if (hash_info->clientState == clientV5Command) {
-        hash_info->command = tvb_get_guint8(tvb, offset + 1); /* get command */
+        hash_info->command = tvb_get_uint8(tvb, offset + 1); /* get command */
 
         offset += 3;            /* skip to address type */
 
         offset = get_address_v5(tvb, offset, hash_info);
 
-        /** temp = tvb_get_guint8(tvb, offset);  XX: what was this for ? **/
+        /** temp = tvb_get_uint8(tvb, offset);  XX: what was this for ? **/
 
         if (( hash_info->command == CONNECT_COMMAND) ||
             ( hash_info->command == UDP_ASSOCIATE_COMMAND))
@@ -831,7 +840,7 @@ client_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
 
 static void
 server_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
-    int offset, packet_info *pinfo, gboolean start_of_frame) {
+    int offset, packet_info *pinfo, bool start_of_frame) {
 
 /* Decode server side of V5 protocol.  This is done on the first pass through the   */
 /* list.  Based upon the current state, decode the packet and determine */
@@ -842,7 +851,7 @@ server_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
 
     switch (hash_info->serverState) {
     case serverStart:
-        hash_info->authentication_method = tvb_get_guint8(tvb, offset + 1);
+        hash_info->authentication_method = tvb_get_uint8(tvb, offset + 1);
         switch (hash_info->authentication_method)
         {
         case NO_AUTHENTICATION:
@@ -865,7 +874,7 @@ server_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
         hash_info->serverState = serverCommandReply;
         break;
     case serverGssApiReply:
-        if (tvb_get_guint8(tvb, offset+1) == 0xFF) {
+        if (tvb_get_uint8(tvb, offset+1) == 0xFF) {
             hash_info->serverState = serverError;
         } else {
             if (tvb_get_ntohs(tvb, offset+2) == 0)
@@ -883,10 +892,10 @@ server_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
 
         case BIND_COMMAND:
             hash_info->serverState = serverBindReply;
-            if ((tvb_get_guint8(tvb, offset + 2) == 0) &&
+            if ((tvb_get_uint8(tvb, offset + 2) == 0) &&
                 (tvb_reported_length_remaining(tvb, offset) > 5)) {
-                    offset = display_address(tvb, offset, NULL);
-                    client_state_machine_v5(hash_info, tvb, offset, pinfo, FALSE);
+                    offset = display_address(pinfo, tvb, offset, NULL);
+                    client_state_machine_v5(hash_info, tvb, offset, pinfo, false);
             }
             break;
 
@@ -897,7 +906,7 @@ server_state_machine_v5( socks_hash_entry_t *hash_info, tvbuff_t *tvb,
             /* save server udp port and create udp conversation */
             hash_info->udp_port =  tvb_get_ntohs(tvb, offset);
 
-            if (!pinfo->fd->flags.visited)
+            if (!pinfo->fd->visited)
                 new_udp_conversation( hash_info, pinfo);
 
             break;
@@ -916,8 +925,8 @@ display_ping_and_tracert(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tr
 
 /* Display the ping/trace_route conversation */
 
-    const guchar *data, *dataend;
-    const guchar *lineend, *eol;
+    const unsigned char *data, *dataend;
+    const unsigned char *lineend, *eol;
     int           linelen;
 
                 /* handle the end command */
@@ -966,11 +975,10 @@ static void call_next_dissector(tvbuff_t *tvb, int offset, packet_info *pinfo,
 /* change pinfo port to the remote port, call next dissector to decode  */
 /* the payload, and restore the pinfo port after that is done.      */
 
-    guint32 *ptr;
-    guint16 save_can_desegment;
+    uint32_t *ptr;
+    uint16_t save_can_desegment;
     struct tcp_analysis *tcpd=NULL;
 
-    tcpd=get_tcp_conversation_data(NULL,pinfo);
 
     if (( hash_info->command  == PING_COMMAND) ||
         ( hash_info->command  == TRACERT_COMMAND))
@@ -981,13 +989,15 @@ static void call_next_dissector(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 /*XXX may want to load dest address here */
 
-        if ( pinfo->destport  == TCP_PORT_SOCKS)
-                ptr = &pinfo->destport;
-        else
-                ptr = &pinfo->srcport;
+        if (pinfo->destport == TCP_PORT_SOCKS) {
+            ptr = &pinfo->destport;
+        } else {
+            ptr = &pinfo->srcport;
+        }
 
-            *ptr = hash_info->port;
+        *ptr = hash_info->port;
 
+        tcpd = get_tcp_conversation_data(NULL, pinfo);
 /* 2003-09-18 JCFoster Fixed problem with socks tunnel in socks tunnel */
 
         state_info->in_socks_dissector_flag = 1; /* avoid recursive overflow */
@@ -1017,7 +1027,7 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
     socks_hash_entry_t *hash_info;
     conversation_t     *conversation;
     sock_state_t*       state_info;
-    guint8              version;
+    uint8_t             version;
     struct tcpinfo     *tcpinfo    = (struct tcpinfo*)data;
 
     state_info = (sock_state_t *)p_get_proto_data(wmem_file_scope(), pinfo, proto_socks, 0);
@@ -1038,29 +1048,31 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
     if (conversation == NULL) {
         /* If we don't already have a conversation, make sure the first
            byte is a valid version number */
-        version = tvb_get_guint8(tvb, offset);
+        version = tvb_get_uint8(tvb, offset);
         if ((version != 4) && (version != 5))
             return 0;
 
         conversation = conversation_new(pinfo->num, &pinfo->src, &pinfo->dst,
-                                        conversation_pt_to_endpoint_type(pinfo->ptype), pinfo->srcport, pinfo->destport, 0);
+                                        conversation_pt_to_conversation_type(pinfo->ptype), pinfo->srcport, pinfo->destport, 0);
     }
 
     hash_info = (socks_hash_entry_t *)conversation_get_proto_data(conversation,proto_socks);
     if (hash_info == NULL){
         hash_info = wmem_new0(wmem_file_scope(), socks_hash_entry_t);
-        hash_info->start_done_frame = G_MAXINT;
+        hash_info->start_done_frame = INT_MAX;
         hash_info->clientState = clientStart;
         hash_info->serverState = serverStart;
 
         hash_info->server_port = pinfo->destport;
         hash_info->port = 0;
-        hash_info->version = tvb_get_guint8(tvb, offset); /* get version*/
+        hash_info->version = tvb_get_uint8(tvb, offset); /* get version*/
 
         conversation_add_proto_data(conversation, proto_socks, hash_info);
 
                         /* set dissector for now */
-        conversation_set_dissector(conversation, socks_handle);
+        if (conversation_get_dissector(conversation, pinfo->num) != NULL) {
+            conversation_set_dissector(conversation, socks_handle);
+        }
     }
 
     /* display summary window information  */
@@ -1080,7 +1092,7 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
         col_append_str(pinfo->cinfo, COL_INFO, ", Traceroute Req");
 
     /* run state machine if needed */
-    if ((!pinfo->fd->flags.visited) &&
+    if ((!pinfo->fd->visited) &&
         (!((hash_info->clientState == clientDone) &&
            (hash_info->serverState == serverDone)))) {
 
@@ -1091,7 +1103,7 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
                 if ( hash_info->version == 4) {
                     state_machine_v4( hash_info, tvb, offset, pinfo);
                 } else if ( hash_info->version == 5) {
-                    client_state_machine_v5( hash_info, tvb, offset, pinfo, TRUE);
+                    client_state_machine_v5( hash_info, tvb, offset, pinfo, true);
                 }
             }
         } else {
@@ -1100,7 +1112,7 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
                 if ( hash_info->version == 4) {
                     state_machine_v4( hash_info, tvb, offset, pinfo);
                 } else if ( hash_info->version == 5) {
-                    server_state_machine_v5( hash_info, tvb, offset, pinfo, TRUE);
+                    server_state_machine_v5( hash_info, tvb, offset, pinfo, true);
                 }
             }
         }
@@ -1120,19 +1132,19 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
         if ( pinfo->num > hash_info->start_done_frame){
                         /*  add info to tree */
             ti = proto_tree_add_uint( socks_tree, hf_socks_ver, tvb, offset, 0, hash_info->version);
-            PROTO_ITEM_SET_GENERATED(ti);
+            proto_item_set_generated(ti);
 
             ti = proto_tree_add_uint( socks_tree, hf_socks_cmd, tvb, offset, 0, hash_info->command);
-            PROTO_ITEM_SET_GENERATED(ti);
+            proto_item_set_generated(ti);
 
             if (hash_info->dst_addr.type == AT_IPv4) {
                 ti = proto_tree_add_ipv4( socks_tree, hf_socks_ip_dst, tvb,
-                    offset, 0, *((const guint32*)hash_info->dst_addr.data));
-                PROTO_ITEM_SET_GENERATED(ti);
+                    offset, 0, *((const uint32_t*)hash_info->dst_addr.data));
+                proto_item_set_generated(ti);
             } else if (hash_info->dst_addr.type == AT_IPv6) {
                 ti = proto_tree_add_ipv6( socks_tree, hf_socks_ip6_dst, tvb,
                     offset, 0, (const ws_in6_addr *)hash_info->dst_addr.data);
-                PROTO_ITEM_SET_GENERATED(ti);
+                proto_item_set_generated(ti);
             }
 
                 /* no fake address for ping & traceroute */
@@ -1140,7 +1152,7 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
             if (( hash_info->command != PING_COMMAND) &&
                 ( hash_info->command != TRACERT_COMMAND)){
                 ti = proto_tree_add_uint( socks_tree, hf_socks_dstport, tvb, offset, 0, hash_info->port);
-                PROTO_ITEM_SET_GENERATED(ti);
+                proto_item_set_generated(ti);
             }
         } else {
             if (hash_info->server_port == pinfo->destport) {
@@ -1171,11 +1183,27 @@ dissect_socks(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
 }
 
 
+static int
+dissect_socks_tls(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data) {
+    if (data != NULL) {
+        return dissect_socks(tvb, pinfo, tree, data);
+    } else {
+        /* lets fake a tcpinfo, which TLS does not give us */
+        struct tcpinfo tmp;
+        tmp.flags = 0;
+        tmp.is_reassembled = false;
+        tmp.lastackseq = 0;
+        tmp.nxtseq = 0;
+        tmp.seq = 0;
+        tmp.urgent_pointer = 0;
+        return dissect_socks(tvb, pinfo, tree, &tmp);
+    }
+}
 
 void
 proto_register_socks( void){
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_socks,
         &ett_socks_auth,
         &ett_socks_name
@@ -1280,7 +1308,7 @@ proto_register_socks( void){
             }
         },
         { &hf_socks_subnegotiation_version,
-            { "Subnegotiation Version", "socks.subnegotation_version", FT_UINT8, BASE_DEC, NULL,
+            { "Subnegotiation Version", "socks.subnegotiation_version", FT_UINT8, BASE_DEC, NULL,
                 0x0, NULL, HFILL
             }
         },
@@ -1335,6 +1363,10 @@ proto_register_socks( void){
 
     proto_register_field_array(proto_socks, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
+
+    socks_udp_handle = register_dissector_with_description("socks_udp", "SOCKS over UDP", socks_udp_dissector, proto_socks);
+    socks_handle = register_dissector_with_description("socks_tcp", "SOCKS over TCP", dissect_socks, proto_socks);
+    socks_handle_tls = register_dissector_with_description("socks_tls", "SOCKS over TLS", dissect_socks_tls, proto_socks);
 }
 
 
@@ -1342,14 +1374,14 @@ void
 proto_reg_handoff_socks(void) {
 
     /* dissector install routine */
-    socks_udp_handle = create_dissector_handle(socks_udp_dissector, proto_socks);
-    socks_handle = create_dissector_handle(dissect_socks, proto_socks);
 
     dissector_add_uint_with_preference("tcp.port", TCP_PORT_SOCKS, socks_handle);
+
+    ssl_dissector_add(0, socks_handle_tls);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -20,7 +21,7 @@
 
 InterfaceToolbarLineEdit::InterfaceToolbarLineEdit(QWidget *parent, QString validation_regex, bool is_required) :
     QLineEdit(parent),
-    regex_expr_(validation_regex),
+    regex_expr_(validation_regex, QRegularExpression::UseUnicodePropertiesOption),
     is_required_(is_required),
     text_edited_(false)
 {
@@ -39,10 +40,10 @@ InterfaceToolbarLineEdit::InterfaceToolbarLineEdit(QWidget *parent, QString vali
 
     updateStyleSheet(isValid());
 
-    connect(this, SIGNAL(textChanged(const QString &)), this, SLOT(validateText()));
-    connect(this, SIGNAL(textEdited(const QString &)), this, SLOT(validateEditedText()));
-    connect(this, SIGNAL(returnPressed()), this, SLOT(applyEditedText()));
-    connect(apply_button_, SIGNAL(clicked()), this, SLOT(applyEditedText()));
+    connect(this, &InterfaceToolbarLineEdit::textChanged, this, &InterfaceToolbarLineEdit::validateText);
+    connect(this, &InterfaceToolbarLineEdit::textEdited, this, &InterfaceToolbarLineEdit::validateEditedText);
+    connect(this, &InterfaceToolbarLineEdit::returnPressed, this, &InterfaceToolbarLineEdit::applyEditedText);
+    connect(apply_button_, &StockIconToolButton::clicked, this, &InterfaceToolbarLineEdit::applyEditedText);
 }
 
 void InterfaceToolbarLineEdit::validateText()
@@ -82,9 +83,9 @@ bool InterfaceToolbarLineEdit::isValid()
         valid = false;
     }
 
-    if (!regex_expr_.isEmpty() && text().length() > 0)
+    if (!regex_expr_.pattern().isEmpty() && text().length() > 0)
     {
-        if (!regex_expr_.isValid() || regex_expr_.indexIn(text(), 0) == -1)
+        if (!regex_expr_.isValid() || !regex_expr_.match(text()).hasMatch())
         {
             valid = false;
         }
@@ -98,7 +99,7 @@ void InterfaceToolbarLineEdit::updateStyleSheet(bool is_valid)
     int frameWidth = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
     QSize apsz = apply_button_->sizeHint();
 
-    QString style_sheet = QString(
+    QString style_sheet = QStringLiteral(
             "InterfaceToolbarLineEdit {"
             "  padding-right: %1px;"
             "  background-color: %2;"
@@ -106,6 +107,15 @@ void InterfaceToolbarLineEdit::updateStyleSheet(bool is_valid)
             )
             .arg(apsz.width() + frameWidth)
             .arg(is_valid || !isEnabled() ? QString("") : ColorUtils::fromColorT(prefs.gui_text_invalid).name());
+
+#ifdef Q_OS_MAC
+    style_sheet += QStringLiteral(
+            "InterfaceToolbarLineEdit {"
+            "  border: 1px solid palette(%1);"
+            "  border-radius: 3px;"
+            "}"
+            ).arg(ColorUtils::themeIsDark() ? QStringLiteral("light") : QStringLiteral("dark"));
+#endif
 
     setStyleSheet(style_sheet);
 }
@@ -120,16 +130,3 @@ void InterfaceToolbarLineEdit::resizeEvent(QResizeEvent *)
     apply_button_->setMinimumHeight(contentsRect().height());
     apply_button_->setMaximumHeight(contentsRect().height());
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

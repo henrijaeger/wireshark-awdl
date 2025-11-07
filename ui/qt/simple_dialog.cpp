@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "simple_dialog.h"
 
@@ -16,15 +17,17 @@
 #include "ui/commandline.h"
 
 #include <wsutil/utf8_entities.h>
+#include <wsutil/wslog.h>
 
+#include <ui/qt/main_window.h>
 #include <ui/qt/utils/qt_ui_utils.h>
-#include "wireshark_application.h"
+#include "main_application.h"
 
-#if (QT_VERSION > QT_VERSION_CHECK(5, 2, 0))
+#include <functional>
 #include <QCheckBox>
-#endif
 #include <QMessageBox>
-#include <QRegExp>
+#include <QMutex>
+#include <QRegularExpression>
 #include <QTextCodec>
 
 /* Simple dialog function - Displays a dialog box with the supplied message
@@ -43,16 +46,31 @@
 QList<MessagePair> message_queue_;
 ESD_TYPE_E max_severity_ = ESD_TYPE_INFO;
 
-const char *primary_delimiter_ = "__CB754A38-94A2-4E59-922D-DD87EDC80E22__";
+struct VisibleAsyncMessage
+{
+    QMessageBox *box;
+    int counter;
 
-const char *
-simple_dialog_primary_start(void) {
-    return primary_delimiter_;
-}
+    VisibleAsyncMessage(QMessageBox *box) : box(box), counter(0) {}
+};
 
-const char *
-simple_dialog_primary_end(void) {
-    return primary_delimiter_;
+static QList<VisibleAsyncMessage> visible_messages;
+static QMutex visible_messages_mutex;
+
+static void visible_message_finished(QMessageBox *box, int result _U_)
+{
+    visible_messages_mutex.lock();
+    for (int i = 0; i < visible_messages.size(); i++) {
+        if (visible_messages[i].box == box) {
+            if (visible_messages[i].counter) {
+                ws_log(LOG_DOMAIN_MAIN, LOG_LEVEL_WARNING, "%d duplicates of \"%s\" were suppressed",
+                    visible_messages[i].counter, box->text().toStdString().c_str());
+            }
+            visible_messages.removeAt(i);
+            break;
+        }
+    }
+    visible_messages_mutex.unlock();
 }
 
 char *
@@ -61,16 +79,29 @@ simple_dialog_format_message(const char *msg)
     return g_strdup(msg);
 }
 
-gpointer
-simple_dialog(ESD_TYPE_E type, gint btn_mask, const gchar *msg_format, ...)
+void *
+simple_dialog(ESD_TYPE_E type, int btn_mask, const char *msg_format, ...)
 {
     va_list ap;
 
     va_start(ap, msg_format);
-    SimpleDialog sd(wsApp->mainWindow(), type, btn_mask, msg_format, ap);
+    SimpleDialog sd(mainApp->mainWindow(), type, btn_mask, msg_format, ap);
     va_end(ap);
 
     sd.exec();
+    return NULL;
+}
+
+void *
+simple_dialog_async(ESD_TYPE_E type, int btn_mask, const char *msg_format, ...)
+{
+    va_list ap;
+
+    va_start(ap, msg_format);
+    SimpleDialog sd(mainApp->mainWindow(), type, btn_mask, msg_format, ap);
+    va_end(ap);
+
+    sd.show();
     return NULL;
 }
 
@@ -79,7 +110,7 @@ simple_dialog(ESD_TYPE_E type, gint btn_mask, const gchar *msg_format, ...)
  * and checkbox, and optional secondary text.
  */
 void
-simple_message_box(ESD_TYPE_E type, gboolean *notagain,
+simple_message_box(ESD_TYPE_E type, bool *notagain,
                    const char *secondary_msg, const char *msg_format, ...)
 {
     if (notagain && *notagain) {
@@ -89,28 +120,24 @@ simple_message_box(ESD_TYPE_E type, gboolean *notagain,
     va_list ap;
 
     va_start(ap, msg_format);
-    SimpleDialog sd(wsApp->mainWindow(), type, ESD_BTN_OK, msg_format, ap);
+    SimpleDialog sd(mainApp->mainWindow(), type, ESD_BTN_OK, msg_format, ap);
     va_end(ap);
 
-    sd.setDetailedText(secondary_msg);
+    sd.setInformativeText(secondary_msg);
 
-#if (QT_VERSION > QT_VERSION_CHECK(5, 2, 0))
     QCheckBox *cb = NULL;
     if (notagain) {
         cb = new QCheckBox();
         cb->setChecked(true);
-        cb->setText(QObject::tr("Don't show this message again."));
+        cb->setText(SimpleDialog::dontShowThisAgain());
         sd.setCheckBox(cb);
     }
-#endif
 
     sd.exec();
 
-#if (QT_VERSION > QT_VERSION_CHECK(5, 2, 0))
     if (notagain && cb) {
         *notagain = cb->isChecked();
     }
-#endif
 }
 
 /*
@@ -126,8 +153,8 @@ vsimple_error_message_box(const char *msg_format, va_list ap)
         exit(0);
 #endif
 
-    SimpleDialog sd(wsApp->mainWindow(), ESD_TYPE_ERROR, ESD_BTN_OK, msg_format, ap);
-    sd.exec();
+    SimpleDialog sd(mainApp->mainWindow(), ESD_TYPE_ERROR, ESD_BTN_OK, msg_format, ap);
+    sd.show();
 }
 
 /*
@@ -143,8 +170,8 @@ vsimple_warning_message_box(const char *msg_format, va_list ap)
         exit(0);
 #endif
 
-    SimpleDialog sd(wsApp->mainWindow(), ESD_TYPE_WARN, ESD_BTN_OK, msg_format, ap);
-    sd.exec();
+    SimpleDialog sd(mainApp->mainWindow(), ESD_TYPE_WARN, ESD_BTN_OK, msg_format, ap);
+    sd.show();
 }
 
 /*
@@ -161,29 +188,39 @@ simple_error_message_box(const char *msg_format, ...)
 }
 
 SimpleDialog::SimpleDialog(QWidget *parent, ESD_TYPE_E type, int btn_mask, const char *msg_format, va_list ap) :
-#if (QT_VERSION > QT_VERSION_CHECK(5, 2, 0))
     check_box_(0),
-#endif
     message_box_(0)
 {
-    gchar *vmessage;
+    char *vmessage;
     QString message;
 
-    vmessage = g_strdup_vprintf(msg_format, ap);
+    vmessage = ws_strdup_vprintf(msg_format, ap);
+#ifdef _WIN32
+    //
+    // On Windows, filename strings inside Wireshark are UTF-8 strings,
+    // so error messages containing file names are UTF-8 strings.  Convert
+    // from UTF-8, not from the local code page.
+    //
+    message = QString().fromUtf8(vmessage, -1);
+#else
+    //
+    // On UN*X, who knows?  Assume the locale's encoding.
+    //
     message = QTextCodec::codecForLocale()->toUnicode(vmessage);
+#endif
     g_free(vmessage);
 
-    MessagePair msg_pair = splitMessage(message);
+    MessagePair msg_pair(message, QString());
     // Remove leading and trailing whitespace along with excessive newline runs.
     QString primary = msg_pair.first.trimmed();
     QString secondary = msg_pair.second.trimmed();
-    secondary.replace(QRegExp("\n\n+"), "\n\n");
+    secondary.replace(QRegularExpression("\n\n+"), "\n\n");
 
     if (primary.isEmpty()) {
         return;
     }
 
-    if (!parent || !wsApp->isInitialized() || wsApp->isReloadingLua()) {
+    if (!parent || !mainApp->isInitialized() || mainApp->isReloadingLua()) {
         message_queue_ << msg_pair;
         if (type > max_severity_) {
             max_severity_ = type;
@@ -193,10 +230,7 @@ SimpleDialog::SimpleDialog(QWidget *parent, ESD_TYPE_E type, int btn_mask, const
 
     message_box_ = new QMessageBox(parent);
     message_box_->setTextFormat(Qt::PlainText);
-#if QT_VERSION >= QT_VERSION_CHECK(5, 1, 0)
     message_box_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-#endif
-
 
     switch(type) {
     case ESD_TYPE_ERROR:
@@ -254,7 +288,7 @@ void SimpleDialog::displayQueuedMessages(QWidget *parent)
         return;
     }
 
-    QMessageBox mb(parent ? parent : wsApp->mainWindow());
+    QMessageBox mb(parent ? parent : mainApp->mainWindow());
 
     switch(max_severity_) {
     case ESD_TYPE_ERROR:
@@ -300,20 +334,25 @@ void SimpleDialog::displayQueuedMessages(QWidget *parent)
     mb.exec();
 }
 
+QString SimpleDialog::dontShowThisAgain()
+{
+    return QObject::tr("Don't show this message again.");
+}
+
 int SimpleDialog::exec()
 {
     if (!message_box_) {
         return 0;
     }
 
+    message_box_->setInformativeText(informative_text_);
     message_box_->setDetailedText(detailed_text_);
-#if (QT_VERSION > QT_VERSION_CHECK(5, 2, 0))
     message_box_->setCheckBox(check_box_);
-#endif
 
     int status = message_box_->exec();
     delete message_box_;
     message_box_ = 0;
+    informative_text_ = QString();
     detailed_text_ = QString();
 
     switch (status) {
@@ -333,32 +372,50 @@ int SimpleDialog::exec()
     }
 }
 
-const MessagePair SimpleDialog::splitMessage(QString &message) const
+void SimpleDialog::show()
 {
-    if (message.startsWith(primary_delimiter_)) {
-        QStringList parts = message.split(primary_delimiter_, QString::SkipEmptyParts);
-        switch (parts.length()) {
-        case 0:
-            return MessagePair(QString(), QString());
-        case 1:
-            return MessagePair(parts[0], QString());
-        default:
-            QString first = parts.takeFirst();
-            return MessagePair(first, parts.join(" "));
+    if (!message_box_) {
+        return;
+    }
+
+    message_box_->setInformativeText(informative_text_);
+    message_box_->setDetailedText(detailed_text_);
+    message_box_->setCheckBox(check_box_);
+
+    visible_messages_mutex.lock();
+    bool found = false;
+    for (int i = 0; i < visible_messages.size(); i++) {
+        VisibleAsyncMessage &msg = visible_messages[i];
+        if ((msg.box->icon() == message_box_->icon()) &&
+            (msg.box->checkBox() == message_box_->checkBox()) &&
+            (msg.box->text() == message_box_->text()) &&
+            (msg.box->informativeText() == message_box_->informativeText()) &&
+            (msg.box->detailedText() == message_box_->detailedText()))
+        {
+            /* Message box of same type with same text is already visible. */
+            msg.counter++;
+            found = true;
+            break;
         }
     }
-    return MessagePair(message, QString());
-}
+    if (!found) {
+        visible_messages.append(VisibleAsyncMessage(message_box_));
+    }
+    visible_messages_mutex.unlock();
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+    if (found)
+    {
+        delete message_box_;
+    }
+    else
+    {
+        QObject::connect(message_box_, &QMessageBox::finished,
+            std::bind(visible_message_finished,message_box_,std::placeholders::_1));
+        message_box_->setModal(Qt::WindowModal);
+        message_box_->setAttribute(Qt::WA_DeleteOnClose);
+        message_box_->show();
+    }
+
+    /* Message box was shown and will be deleted once user closes it */
+    message_box_ = 0;
+}

@@ -1,11 +1,8 @@
 /* Do not modify this file. Changes will be overwritten.                      */
 /* Generated automatically by the ASN.1 to Wireshark dissector compiler       */
 /* packet-charging_ase.c                                                      */
-/* asn2wrs.py -b -p charging_ase -c ./charging_ase.cnf -s ./packet-charging_ase-template -D . -O ../.. Tariffing-Data-Types.asn */
+/* asn2wrs.py -b -q -L -p charging_ase -c ./charging_ase.cnf -s ./packet-charging_ase-template -D . -O ../.. Tariffing-Data-Types.asn */
 
-/* Input file: packet-charging_ase-template.c */
-
-#line 1 "./asn1/charging_ase/packet-charging_ase-template.c"
 /* packet-charging_ase-template.c
  * Copyright 2009 , Anders Broman <anders.broman [AT] ericsson.com>
  *
@@ -22,7 +19,7 @@
 #include <epan/packet.h>
 #include <epan/expert.h>
 #include <epan/asn1.h>
-
+#include <wsutil/array.h>
 #include "packet-ber.h"
 #include "packet-charging_ase.h"
 
@@ -34,134 +31,119 @@ void proto_register_charging_ase(void);
 void proto_reg_handoff_charging_ase(void);
 
 /* Define the Charging ASE proto */
-static int proto_charging_ase = -1;
+static int proto_charging_ase;
 
-
-/*--- Included file: packet-charging_ase-hf.c ---*/
-#line 1 "./asn1/charging_ase/packet-charging_ase-hf.c"
-static int hf_charging_ase_charging_ase_ChargingMessageType_PDU = -1;  /* ChargingMessageType */
-static int hf_charging_ase_crgt = -1;             /* ChargingTariffInformation */
-static int hf_charging_ase_aocrg = -1;            /* AddOnChargingInformation */
-static int hf_charging_ase_crga = -1;             /* ChargingAcknowledgementInformation */
-static int hf_charging_ase_start = -1;            /* StartCharging */
-static int hf_charging_ase_stop = -1;             /* StopCharging */
-static int hf_charging_ase_acknowledgementIndicators = -1;  /* T_acknowledgementIndicators */
-static int hf_charging_ase_extensions = -1;       /* SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField */
-static int hf_charging_ase_extensions_item = -1;  /* ExtensionField */
-static int hf_charging_ase_originationIdentification = -1;  /* ChargingReferenceIdentification */
-static int hf_charging_ase_destinationIdentification = -1;  /* ChargingReferenceIdentification */
-static int hf_charging_ase_chargingControlIndicators = -1;  /* ChargingControlIndicators */
-static int hf_charging_ase_addOncharge = -1;      /* T_addOncharge */
-static int hf_charging_ase_addOnChargeCurrency = -1;  /* CurrencyFactorScale */
-static int hf_charging_ase_addOnChargePulse = -1;  /* PulseUnits */
-static int hf_charging_ase_currency = -1;         /* Currency */
-static int hf_charging_ase_chargingTariff = -1;   /* T_chargingTariff */
-static int hf_charging_ase_tariffCurrency = -1;   /* TariffCurrency */
-static int hf_charging_ase_tariffPulse = -1;      /* TariffPulse */
-static int hf_charging_ase_local = -1;            /* INTEGER */
-static int hf_charging_ase_global = -1;           /* OBJECT_IDENTIFIER */
-static int hf_charging_ase_currencyFactorScale = -1;  /* CurrencyFactorScale */
-static int hf_charging_ase_tariffDuration = -1;   /* TariffDuration */
-static int hf_charging_ase_subTariffControl = -1;  /* SubTariffControl */
-static int hf_charging_ase_pulseUnits = -1;       /* PulseUnits */
-static int hf_charging_ase_chargeUnitTimeInterval = -1;  /* ChargeUnitTimeInterval */
-static int hf_charging_ase_currencyFactor = -1;   /* CurrencyFactor */
-static int hf_charging_ase_currencyScale = -1;    /* CurrencyScale */
-static int hf_charging_ase_type = -1;             /* Code */
-static int hf_charging_ase_criticality = -1;      /* CriticalityType */
-static int hf_charging_ase_value = -1;            /* T_value */
-static int hf_charging_ase_networkOperators = -1;  /* SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification */
-static int hf_charging_ase_networkOperators_item = -1;  /* NetworkIdentification */
-static int hf_charging_ase_stopIndicators = -1;   /* T_stopIndicators */
-static int hf_charging_ase_currentTariffCurrency = -1;  /* TariffCurrencyFormat */
-static int hf_charging_ase_tariffSwitchCurrency = -1;  /* TariffSwitchCurrency */
-static int hf_charging_ase_nextTariffCurrency = -1;  /* TariffCurrencyFormat */
-static int hf_charging_ase_tariffSwitchoverTime = -1;  /* TariffSwitchoverTime */
-static int hf_charging_ase_communicationChargeSequenceCurrency = -1;  /* SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency */
-static int hf_charging_ase_communicationChargeSequenceCurrency_item = -1;  /* CommunicationChargeCurrency */
-static int hf_charging_ase_tariffControlIndicators = -1;  /* T_tariffControlIndicators */
-static int hf_charging_ase_callAttemptChargeCurrency = -1;  /* CurrencyFactorScale */
-static int hf_charging_ase_callSetupChargeCurrency = -1;  /* CurrencyFactorScale */
-static int hf_charging_ase_currentTariffPulse = -1;  /* TariffPulseFormat */
-static int hf_charging_ase_tariffSwitchPulse = -1;  /* TariffSwitchPulse */
-static int hf_charging_ase_nextTariffPulse = -1;  /* TariffPulseFormat */
-static int hf_charging_ase_communicationChargeSequencePulse = -1;  /* SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse */
-static int hf_charging_ase_communicationChargeSequencePulse_item = -1;  /* CommunicationChargePulse */
-static int hf_charging_ase_tariffControlIndicators_01 = -1;  /* T_tariffControlIndicators_01 */
-static int hf_charging_ase_callAttemptChargePulse = -1;  /* PulseUnits */
-static int hf_charging_ase_callSetupChargePulse = -1;  /* PulseUnits */
-static int hf_charging_ase_networkIdentification = -1;  /* NetworkIdentification */
-static int hf_charging_ase_referenceID = -1;      /* ReferenceID */
+static int hf_charging_ase_charging_ase_ChargingMessageType_PDU;  /* ChargingMessageType */
+static int hf_charging_ase_crgt;                  /* ChargingTariffInformation */
+static int hf_charging_ase_aocrg;                 /* AddOnChargingInformation */
+static int hf_charging_ase_crga;                  /* ChargingAcknowledgementInformation */
+static int hf_charging_ase_start;                 /* StartCharging */
+static int hf_charging_ase_stop;                  /* StopCharging */
+static int hf_charging_ase_acknowledgementIndicators;  /* T_acknowledgementIndicators */
+static int hf_charging_ase_extensions;            /* SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField */
+static int hf_charging_ase_extensions_item;       /* ExtensionField */
+static int hf_charging_ase_originationIdentification;  /* ChargingReferenceIdentification */
+static int hf_charging_ase_destinationIdentification;  /* ChargingReferenceIdentification */
+static int hf_charging_ase_chargingControlIndicators;  /* ChargingControlIndicators */
+static int hf_charging_ase_addOncharge;           /* T_addOncharge */
+static int hf_charging_ase_addOnChargeCurrency;   /* CurrencyFactorScale */
+static int hf_charging_ase_addOnChargePulse;      /* PulseUnits */
+static int hf_charging_ase_currency;              /* Currency */
+static int hf_charging_ase_chargingTariff;        /* T_chargingTariff */
+static int hf_charging_ase_tariffCurrency;        /* TariffCurrency */
+static int hf_charging_ase_tariffPulse;           /* TariffPulse */
+static int hf_charging_ase_local;                 /* INTEGER */
+static int hf_charging_ase_global;                /* OBJECT_IDENTIFIER */
+static int hf_charging_ase_currencyFactorScale;   /* CurrencyFactorScale */
+static int hf_charging_ase_tariffDuration;        /* TariffDuration */
+static int hf_charging_ase_subTariffControl;      /* SubTariffControl */
+static int hf_charging_ase_pulseUnits;            /* PulseUnits */
+static int hf_charging_ase_chargeUnitTimeInterval;  /* ChargeUnitTimeInterval */
+static int hf_charging_ase_currencyFactor;        /* CurrencyFactor */
+static int hf_charging_ase_currencyScale;         /* CurrencyScale */
+static int hf_charging_ase_type;                  /* Code */
+static int hf_charging_ase_criticality;           /* CriticalityType */
+static int hf_charging_ase_value;                 /* T_value */
+static int hf_charging_ase_networkOperators;      /* SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification */
+static int hf_charging_ase_networkOperators_item;  /* NetworkIdentification */
+static int hf_charging_ase_stopIndicators;        /* T_stopIndicators */
+static int hf_charging_ase_currentTariffCurrency;  /* TariffCurrencyFormat */
+static int hf_charging_ase_tariffSwitchCurrency;  /* TariffSwitchCurrency */
+static int hf_charging_ase_nextTariffCurrency;    /* TariffCurrencyFormat */
+static int hf_charging_ase_tariffSwitchoverTime;  /* TariffSwitchoverTime */
+static int hf_charging_ase_communicationChargeSequenceCurrency;  /* SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency */
+static int hf_charging_ase_communicationChargeSequenceCurrency_item;  /* CommunicationChargeCurrency */
+static int hf_charging_ase_tariffControlIndicators;  /* T_tariffControlIndicators */
+static int hf_charging_ase_callAttemptChargeCurrency;  /* CurrencyFactorScale */
+static int hf_charging_ase_callSetupChargeCurrency;  /* CurrencyFactorScale */
+static int hf_charging_ase_currentTariffPulse;    /* TariffPulseFormat */
+static int hf_charging_ase_tariffSwitchPulse;     /* TariffSwitchPulse */
+static int hf_charging_ase_nextTariffPulse;       /* TariffPulseFormat */
+static int hf_charging_ase_communicationChargeSequencePulse;  /* SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse */
+static int hf_charging_ase_communicationChargeSequencePulse_item;  /* CommunicationChargePulse */
+static int hf_charging_ase_tariffControlIndicators_01;  /* T_tariffControlIndicators_01 */
+static int hf_charging_ase_callAttemptChargePulse;  /* PulseUnits */
+static int hf_charging_ase_callSetupChargePulse;  /* PulseUnits */
+static int hf_charging_ase_networkIdentification;  /* NetworkIdentification */
+static int hf_charging_ase_referenceID;           /* ReferenceID */
 /* named bits */
-static int hf_charging_ase_T_acknowledgementIndicators_accepted = -1;
-static int hf_charging_ase_ChargingControlIndicators_subscriberCharge = -1;
-static int hf_charging_ase_ChargingControlIndicators_immediateChangeOfActuallyAppliedTariff = -1;
-static int hf_charging_ase_ChargingControlIndicators_delayUntilStart = -1;
-static int hf_charging_ase_T_stopIndicators_callAttemptChargesApplicable = -1;
-static int hf_charging_ase_SubTariffControl_oneTimeCharge = -1;
-static int hf_charging_ase_T_tariffControlIndicators_non_cyclicTariff = -1;
-static int hf_charging_ase_T_tariffControlIndicators_01_non_cyclicTariff = -1;
+static int hf_charging_ase_T_acknowledgementIndicators_accepted;
+static int hf_charging_ase_ChargingControlIndicators_subscriberCharge;
+static int hf_charging_ase_ChargingControlIndicators_immediateChangeOfActuallyAppliedTariff;
+static int hf_charging_ase_ChargingControlIndicators_delayUntilStart;
+static int hf_charging_ase_T_stopIndicators_callAttemptChargesApplicable;
+static int hf_charging_ase_SubTariffControl_oneTimeCharge;
+static int hf_charging_ase_T_tariffControlIndicators_non_cyclicTariff;
+static int hf_charging_ase_T_tariffControlIndicators_01_non_cyclicTariff;
 
-/*--- End of included file: packet-charging_ase-hf.c ---*/
-#line 32 "./asn1/charging_ase/packet-charging_ase-template.c"
+static int ett_charging_ase;
+static int ett_charging_ase_ChargingMessageType;
+static int ett_charging_ase_ChargingAcknowledgementInformation;
+static int ett_charging_ase_T_acknowledgementIndicators;
+static int ett_charging_ase_SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField;
+static int ett_charging_ase_ChargingControlIndicators;
+static int ett_charging_ase_AddOnChargingInformation;
+static int ett_charging_ase_T_addOncharge;
+static int ett_charging_ase_ChargingTariffInformation;
+static int ett_charging_ase_T_chargingTariff;
+static int ett_charging_ase_Code;
+static int ett_charging_ase_CommunicationChargeCurrency;
+static int ett_charging_ase_CommunicationChargePulse;
+static int ett_charging_ase_CurrencyFactorScale;
+static int ett_charging_ase_ExtensionField;
+static int ett_charging_ase_StartCharging;
+static int ett_charging_ase_SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification;
+static int ett_charging_ase_StopCharging;
+static int ett_charging_ase_T_stopIndicators;
+static int ett_charging_ase_SubTariffControl;
+static int ett_charging_ase_TariffCurrency;
+static int ett_charging_ase_TariffSwitchCurrency;
+static int ett_charging_ase_TariffCurrencyFormat;
+static int ett_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency;
+static int ett_charging_ase_T_tariffControlIndicators;
+static int ett_charging_ase_TariffPulse;
+static int ett_charging_ase_TariffSwitchPulse;
+static int ett_charging_ase_TariffPulseFormat;
+static int ett_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse;
+static int ett_charging_ase_T_tariffControlIndicators_01;
+static int ett_charging_ase_ChargingReferenceIdentification;
 
-static int ett_charging_ase = -1;
-
-/*--- Included file: packet-charging_ase-ett.c ---*/
-#line 1 "./asn1/charging_ase/packet-charging_ase-ett.c"
-static gint ett_charging_ase_ChargingMessageType = -1;
-static gint ett_charging_ase_ChargingAcknowledgementInformation = -1;
-static gint ett_charging_ase_T_acknowledgementIndicators = -1;
-static gint ett_charging_ase_SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField = -1;
-static gint ett_charging_ase_ChargingControlIndicators = -1;
-static gint ett_charging_ase_AddOnChargingInformation = -1;
-static gint ett_charging_ase_T_addOncharge = -1;
-static gint ett_charging_ase_ChargingTariffInformation = -1;
-static gint ett_charging_ase_T_chargingTariff = -1;
-static gint ett_charging_ase_Code = -1;
-static gint ett_charging_ase_CommunicationChargeCurrency = -1;
-static gint ett_charging_ase_CommunicationChargePulse = -1;
-static gint ett_charging_ase_CurrencyFactorScale = -1;
-static gint ett_charging_ase_ExtensionField = -1;
-static gint ett_charging_ase_StartCharging = -1;
-static gint ett_charging_ase_SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification = -1;
-static gint ett_charging_ase_StopCharging = -1;
-static gint ett_charging_ase_T_stopIndicators = -1;
-static gint ett_charging_ase_SubTariffControl = -1;
-static gint ett_charging_ase_TariffCurrency = -1;
-static gint ett_charging_ase_TariffSwitchCurrency = -1;
-static gint ett_charging_ase_TariffCurrencyFormat = -1;
-static gint ett_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency = -1;
-static gint ett_charging_ase_T_tariffControlIndicators = -1;
-static gint ett_charging_ase_TariffPulse = -1;
-static gint ett_charging_ase_TariffSwitchPulse = -1;
-static gint ett_charging_ase_TariffPulseFormat = -1;
-static gint ett_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse = -1;
-static gint ett_charging_ase_T_tariffControlIndicators_01 = -1;
-static gint ett_charging_ase_ChargingReferenceIdentification = -1;
-
-/*--- End of included file: packet-charging_ase-ett.c ---*/
-#line 35 "./asn1/charging_ase/packet-charging_ase-template.c"
-
-static expert_field ei_charging_ase_extensions_not_dissected = EI_INIT;
+static expert_field ei_charging_ase_extensions_not_dissected;
 
 static dissector_handle_t charging_ase_handle;
 
 
-/*--- Included file: packet-charging_ase-fn.c ---*/
-#line 1 "./asn1/charging_ase/packet-charging_ase-fn.c"
-
-static const asn_namedbit ChargingControlIndicators_bits[] = {
-  {  0, &hf_charging_ase_ChargingControlIndicators_subscriberCharge, -1, -1, "subscriberCharge", NULL },
-  {  1, &hf_charging_ase_ChargingControlIndicators_immediateChangeOfActuallyAppliedTariff, -1, -1, "immediateChangeOfActuallyAppliedTariff", NULL },
-  {  2, &hf_charging_ase_ChargingControlIndicators_delayUntilStart, -1, -1, "delayUntilStart", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const ChargingControlIndicators_bits[] = {
+  &hf_charging_ase_ChargingControlIndicators_subscriberCharge,
+  &hf_charging_ase_ChargingControlIndicators_immediateChangeOfActuallyAppliedTariff,
+  &hf_charging_ase_ChargingControlIndicators_delayUntilStart,
+  NULL
 };
 
 static int
-dissect_charging_ase_ChargingControlIndicators(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ChargingControlIndicators(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    ChargingControlIndicators_bits, hf_index, ett_charging_ase_ChargingControlIndicators,
+                                    ChargingControlIndicators_bits, 3, hf_index, ett_charging_ase_ChargingControlIndicators,
                                     NULL);
 
   return offset;
@@ -170,7 +152,7 @@ dissect_charging_ase_ChargingControlIndicators(gboolean implicit_tag _U_, tvbuff
 
 
 static int
-dissect_charging_ase_CurrencyFactor(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_CurrencyFactor(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -180,7 +162,7 @@ dissect_charging_ase_CurrencyFactor(gboolean implicit_tag _U_, tvbuff_t *tvb _U_
 
 
 static int
-dissect_charging_ase_CurrencyScale(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_CurrencyScale(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -195,7 +177,7 @@ static const ber_sequence_t CurrencyFactorScale_sequence[] = {
 };
 
 static int
-dissect_charging_ase_CurrencyFactorScale(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_CurrencyFactorScale(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    CurrencyFactorScale_sequence, hf_index, ett_charging_ase_CurrencyFactorScale);
 
@@ -205,7 +187,7 @@ dissect_charging_ase_CurrencyFactorScale(gboolean implicit_tag _U_, tvbuff_t *tv
 
 
 static int
-dissect_charging_ase_TariffDuration(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffDuration(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -213,15 +195,15 @@ dissect_charging_ase_TariffDuration(gboolean implicit_tag _U_, tvbuff_t *tvb _U_
 }
 
 
-static const asn_namedbit SubTariffControl_bits[] = {
-  {  0, &hf_charging_ase_SubTariffControl_oneTimeCharge, -1, -1, "oneTimeCharge", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const SubTariffControl_bits[] = {
+  &hf_charging_ase_SubTariffControl_oneTimeCharge,
+  NULL
 };
 
 static int
-dissect_charging_ase_SubTariffControl(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_SubTariffControl(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    SubTariffControl_bits, hf_index, ett_charging_ase_SubTariffControl,
+                                    SubTariffControl_bits, 1, hf_index, ett_charging_ase_SubTariffControl,
                                     NULL);
 
   return offset;
@@ -236,7 +218,7 @@ static const ber_sequence_t CommunicationChargeCurrency_sequence[] = {
 };
 
 static int
-dissect_charging_ase_CommunicationChargeCurrency(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_CommunicationChargeCurrency(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    CommunicationChargeCurrency_sequence, hf_index, ett_charging_ase_CommunicationChargeCurrency);
 
@@ -249,7 +231,7 @@ static const ber_sequence_t SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunica
 };
 
 static int
-dissect_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency_sequence_of, hf_index, ett_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargeCurrency);
 
@@ -257,15 +239,15 @@ dissect_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTar
 }
 
 
-static const asn_namedbit T_tariffControlIndicators_bits[] = {
-  {  0, &hf_charging_ase_T_tariffControlIndicators_non_cyclicTariff, -1, -1, "non-cyclicTariff", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const T_tariffControlIndicators_bits[] = {
+  &hf_charging_ase_T_tariffControlIndicators_non_cyclicTariff,
+  NULL
 };
 
 static int
-dissect_charging_ase_T_tariffControlIndicators(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_T_tariffControlIndicators(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    T_tariffControlIndicators_bits, hf_index, ett_charging_ase_T_tariffControlIndicators,
+                                    T_tariffControlIndicators_bits, 1, hf_index, ett_charging_ase_T_tariffControlIndicators,
                                     NULL);
 
   return offset;
@@ -281,7 +263,7 @@ static const ber_sequence_t TariffCurrencyFormat_sequence[] = {
 };
 
 static int
-dissect_charging_ase_TariffCurrencyFormat(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffCurrencyFormat(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    TariffCurrencyFormat_sequence, hf_index, ett_charging_ase_TariffCurrencyFormat);
 
@@ -291,7 +273,7 @@ dissect_charging_ase_TariffCurrencyFormat(gboolean implicit_tag _U_, tvbuff_t *t
 
 
 static int
-dissect_charging_ase_TariffSwitchoverTime(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffSwitchoverTime(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
                                        NULL);
 
@@ -306,7 +288,7 @@ static const ber_sequence_t TariffSwitchCurrency_sequence[] = {
 };
 
 static int
-dissect_charging_ase_TariffSwitchCurrency(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffSwitchCurrency(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    TariffSwitchCurrency_sequence, hf_index, ett_charging_ase_TariffSwitchCurrency);
 
@@ -321,7 +303,7 @@ static const ber_sequence_t TariffCurrency_sequence[] = {
 };
 
 static int
-dissect_charging_ase_TariffCurrency(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffCurrency(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    TariffCurrency_sequence, hf_index, ett_charging_ase_TariffCurrency);
 
@@ -331,7 +313,7 @@ dissect_charging_ase_TariffCurrency(gboolean implicit_tag _U_, tvbuff_t *tvb _U_
 
 
 static int
-dissect_charging_ase_PulseUnits(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_PulseUnits(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
                                        NULL);
 
@@ -341,7 +323,7 @@ dissect_charging_ase_PulseUnits(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_charging_ase_ChargeUnitTimeInterval(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ChargeUnitTimeInterval(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
                                        NULL);
 
@@ -357,7 +339,7 @@ static const ber_sequence_t CommunicationChargePulse_sequence[] = {
 };
 
 static int
-dissect_charging_ase_CommunicationChargePulse(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_CommunicationChargePulse(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    CommunicationChargePulse_sequence, hf_index, ett_charging_ase_CommunicationChargePulse);
 
@@ -370,7 +352,7 @@ static const ber_sequence_t SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunica
 };
 
 static int
-dissect_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse_sequence_of, hf_index, ett_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse);
 
@@ -378,15 +360,15 @@ dissect_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTar
 }
 
 
-static const asn_namedbit T_tariffControlIndicators_01_bits[] = {
-  {  0, &hf_charging_ase_T_tariffControlIndicators_01_non_cyclicTariff, -1, -1, "non-cyclicTariff", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const T_tariffControlIndicators_01_bits[] = {
+  &hf_charging_ase_T_tariffControlIndicators_01_non_cyclicTariff,
+  NULL
 };
 
 static int
-dissect_charging_ase_T_tariffControlIndicators_01(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_T_tariffControlIndicators_01(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    T_tariffControlIndicators_01_bits, hf_index, ett_charging_ase_T_tariffControlIndicators_01,
+                                    T_tariffControlIndicators_01_bits, 1, hf_index, ett_charging_ase_T_tariffControlIndicators_01,
                                     NULL);
 
   return offset;
@@ -402,7 +384,7 @@ static const ber_sequence_t TariffPulseFormat_sequence[] = {
 };
 
 static int
-dissect_charging_ase_TariffPulseFormat(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffPulseFormat(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    TariffPulseFormat_sequence, hf_index, ett_charging_ase_TariffPulseFormat);
 
@@ -417,7 +399,7 @@ static const ber_sequence_t TariffSwitchPulse_sequence[] = {
 };
 
 static int
-dissect_charging_ase_TariffSwitchPulse(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffSwitchPulse(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    TariffSwitchPulse_sequence, hf_index, ett_charging_ase_TariffSwitchPulse);
 
@@ -432,7 +414,7 @@ static const ber_sequence_t TariffPulse_sequence[] = {
 };
 
 static int
-dissect_charging_ase_TariffPulse(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_TariffPulse(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    TariffPulse_sequence, hf_index, ett_charging_ase_TariffPulse);
 
@@ -453,7 +435,7 @@ static const ber_choice_t T_chargingTariff_choice[] = {
 };
 
 static int
-dissect_charging_ase_T_chargingTariff(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_T_chargingTariff(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  T_chargingTariff_choice, hf_index, ett_charging_ase_T_chargingTariff,
                                  NULL);
@@ -464,7 +446,7 @@ dissect_charging_ase_T_chargingTariff(gboolean implicit_tag _U_, tvbuff_t *tvb _
 
 
 static int
-dissect_charging_ase_INTEGER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_INTEGER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -474,7 +456,7 @@ dissect_charging_ase_INTEGER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_charging_ase_OBJECT_IDENTIFIER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_OBJECT_IDENTIFIER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier(implicit_tag, actx, tree, tvb, offset, hf_index, NULL);
 
   return offset;
@@ -494,7 +476,7 @@ static const ber_choice_t Code_choice[] = {
 };
 
 static int
-dissect_charging_ase_Code(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_Code(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Code_choice, hf_index, ett_charging_ase_Code,
                                  NULL);
@@ -511,7 +493,7 @@ static const value_string charging_ase_CriticalityType_vals[] = {
 
 
 static int
-dissect_charging_ase_CriticalityType(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_CriticalityType(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                   NULL);
 
@@ -521,12 +503,10 @@ dissect_charging_ase_CriticalityType(gboolean implicit_tag _U_, tvbuff_t *tvb _U
 
 
 static int
-dissect_charging_ase_T_value(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 13 "./asn1/charging_ase/charging_ase.cnf"
+dissect_charging_ase_T_value(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
 	proto_tree_add_expert(tree, actx->pinfo, &ei_charging_ase_extensions_not_dissected, tvb, offset, -1);
 	return tvb_reported_length(tvb);
-
 
   return offset;
 }
@@ -540,7 +520,7 @@ static const ber_sequence_t ExtensionField_sequence[] = {
 };
 
 static int
-dissect_charging_ase_ExtensionField(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ExtensionField(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ExtensionField_sequence, hf_index, ett_charging_ase_ExtensionField);
 
@@ -553,7 +533,7 @@ static const ber_sequence_t SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField_se
 };
 
 static int
-dissect_charging_ase_SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField_sequence_of, hf_index, ett_charging_ase_SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField);
 
@@ -563,7 +543,7 @@ dissect_charging_ase_SEQUENCE_SIZE_1_numOfExtensions_OF_ExtensionField(gboolean 
 
 
 static int
-dissect_charging_ase_NetworkIdentification(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_NetworkIdentification(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier(implicit_tag, actx, tree, tvb, offset, hf_index, NULL);
 
   return offset;
@@ -572,7 +552,7 @@ dissect_charging_ase_NetworkIdentification(gboolean implicit_tag _U_, tvbuff_t *
 
 
 static int
-dissect_charging_ase_ReferenceID(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ReferenceID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -587,7 +567,7 @@ static const ber_sequence_t ChargingReferenceIdentification_sequence[] = {
 };
 
 static int
-dissect_charging_ase_ChargingReferenceIdentification(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ChargingReferenceIdentification(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ChargingReferenceIdentification_sequence, hf_index, ett_charging_ase_ChargingReferenceIdentification);
 
@@ -629,7 +609,7 @@ static const value_string charging_ase_Currency_vals[] = {
 
 
 static int
-dissect_charging_ase_Currency(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_Currency(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                   NULL);
 
@@ -648,7 +628,7 @@ static const ber_sequence_t ChargingTariffInformation_sequence[] = {
 };
 
 static int
-dissect_charging_ase_ChargingTariffInformation(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ChargingTariffInformation(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ChargingTariffInformation_sequence, hf_index, ett_charging_ase_ChargingTariffInformation);
 
@@ -669,7 +649,7 @@ static const ber_choice_t T_addOncharge_choice[] = {
 };
 
 static int
-dissect_charging_ase_T_addOncharge(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_T_addOncharge(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  T_addOncharge_choice, hf_index, ett_charging_ase_T_addOncharge,
                                  NULL);
@@ -689,7 +669,7 @@ static const ber_sequence_t AddOnChargingInformation_sequence[] = {
 };
 
 static int
-dissect_charging_ase_AddOnChargingInformation(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_AddOnChargingInformation(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    AddOnChargingInformation_sequence, hf_index, ett_charging_ase_AddOnChargingInformation);
 
@@ -697,15 +677,15 @@ dissect_charging_ase_AddOnChargingInformation(gboolean implicit_tag _U_, tvbuff_
 }
 
 
-static const asn_namedbit T_acknowledgementIndicators_bits[] = {
-  {  0, &hf_charging_ase_T_acknowledgementIndicators_accepted, -1, -1, "accepted", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const T_acknowledgementIndicators_bits[] = {
+  &hf_charging_ase_T_acknowledgementIndicators_accepted,
+  NULL
 };
 
 static int
-dissect_charging_ase_T_acknowledgementIndicators(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_T_acknowledgementIndicators(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    T_acknowledgementIndicators_bits, hf_index, ett_charging_ase_T_acknowledgementIndicators,
+                                    T_acknowledgementIndicators_bits, 1, hf_index, ett_charging_ase_T_acknowledgementIndicators,
                                     NULL);
 
   return offset;
@@ -721,7 +701,7 @@ static const ber_sequence_t ChargingAcknowledgementInformation_sequence[] = {
 };
 
 static int
-dissect_charging_ase_ChargingAcknowledgementInformation(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ChargingAcknowledgementInformation(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ChargingAcknowledgementInformation_sequence, hf_index, ett_charging_ase_ChargingAcknowledgementInformation);
 
@@ -734,7 +714,7 @@ static const ber_sequence_t SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdenti
 };
 
 static int
-dissect_charging_ase_SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification_sequence_of, hf_index, ett_charging_ase_SEQUENCE_SIZE_1_maxNetworkOperators_OF_NetworkIdentification);
 
@@ -750,7 +730,7 @@ static const ber_sequence_t StartCharging_sequence[] = {
 };
 
 static int
-dissect_charging_ase_StartCharging(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_StartCharging(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    StartCharging_sequence, hf_index, ett_charging_ase_StartCharging);
 
@@ -758,15 +738,15 @@ dissect_charging_ase_StartCharging(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 }
 
 
-static const asn_namedbit T_stopIndicators_bits[] = {
-  {  0, &hf_charging_ase_T_stopIndicators_callAttemptChargesApplicable, -1, -1, "callAttemptChargesApplicable", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const T_stopIndicators_bits[] = {
+  &hf_charging_ase_T_stopIndicators_callAttemptChargesApplicable,
+  NULL
 };
 
 static int
-dissect_charging_ase_T_stopIndicators(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_T_stopIndicators(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    T_stopIndicators_bits, hf_index, ett_charging_ase_T_stopIndicators,
+                                    T_stopIndicators_bits, 1, hf_index, ett_charging_ase_T_stopIndicators,
                                     NULL);
 
   return offset;
@@ -782,7 +762,7 @@ static const ber_sequence_t StopCharging_sequence[] = {
 };
 
 static int
-dissect_charging_ase_StopCharging(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_StopCharging(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    StopCharging_sequence, hf_index, ett_charging_ase_StopCharging);
 
@@ -809,7 +789,7 @@ static const ber_choice_t ChargingMessageType_choice[] = {
 };
 
 int
-dissect_charging_ase_ChargingMessageType(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_charging_ase_ChargingMessageType(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  ChargingMessageType_choice, hf_index, ett_charging_ase_ChargingMessageType,
                                  NULL);
@@ -822,14 +802,11 @@ dissect_charging_ase_ChargingMessageType(gboolean implicit_tag _U_, tvbuff_t *tv
 int dissect_charging_ase_ChargingMessageType_PDU(tvbuff_t *tvb _U_, packet_info *pinfo _U_, proto_tree *tree _U_, void *data _U_) {
   int offset = 0;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
-  offset = dissect_charging_ase_ChargingMessageType(FALSE, tvb, offset, &asn1_ctx, tree, hf_charging_ase_charging_ase_ChargingMessageType_PDU);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
+  offset = dissect_charging_ase_ChargingMessageType(false, tvb, offset, &asn1_ctx, tree, hf_charging_ase_charging_ase_ChargingMessageType_PDU);
   return offset;
 }
 
-
-/*--- End of included file: packet-charging_ase-fn.c ---*/
-#line 41 "./asn1/charging_ase/packet-charging_ase-template.c"
 
 static int
 dissect_charging_ase(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
@@ -853,9 +830,6 @@ proto_register_charging_ase(void)
 {
   /* List of fields */
   static hf_register_info hf[] = {
-
-/*--- Included file: packet-charging_ase-hfarr.c ---*/
-#line 1 "./asn1/charging_ase/packet-charging_ase-hfarr.c"
     { &hf_charging_ase_charging_ase_ChargingMessageType_PDU,
       { "ChargingMessageType", "charging_ase.ChargingMessageType",
         FT_UINT32, BASE_DEC, VALS(charging_ase_ChargingMessageType_vals), 0,
@@ -1069,48 +1043,42 @@ proto_register_charging_ase(void)
         FT_UINT32, BASE_DEC, NULL, 0,
         NULL, HFILL }},
     { &hf_charging_ase_T_acknowledgementIndicators_accepted,
-      { "accepted", "charging_ase.accepted",
+      { "accepted", "charging.ase.T.acknowledgementIndicators.accepted",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_charging_ase_ChargingControlIndicators_subscriberCharge,
-      { "subscriberCharge", "charging_ase.subscriberCharge",
+      { "subscriberCharge", "charging.ase.ChargingControlIndicators.subscriberCharge",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_charging_ase_ChargingControlIndicators_immediateChangeOfActuallyAppliedTariff,
-      { "immediateChangeOfActuallyAppliedTariff", "charging_ase.immediateChangeOfActuallyAppliedTariff",
+      { "immediateChangeOfActuallyAppliedTariff", "charging.ase.ChargingControlIndicators.immediateChangeOfActuallyAppliedTariff",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_charging_ase_ChargingControlIndicators_delayUntilStart,
-      { "delayUntilStart", "charging_ase.delayUntilStart",
+      { "delayUntilStart", "charging.ase.ChargingControlIndicators.delayUntilStart",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_charging_ase_T_stopIndicators_callAttemptChargesApplicable,
-      { "callAttemptChargesApplicable", "charging_ase.callAttemptChargesApplicable",
+      { "callAttemptChargesApplicable", "charging.ase.T.stopIndicators.callAttemptChargesApplicable",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_charging_ase_SubTariffControl_oneTimeCharge,
-      { "oneTimeCharge", "charging_ase.oneTimeCharge",
+      { "oneTimeCharge", "charging.ase.SubTariffControl.oneTimeCharge",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_charging_ase_T_tariffControlIndicators_non_cyclicTariff,
-      { "non-cyclicTariff", "charging_ase.non-cyclicTariff",
+      { "non-cyclicTariff", "charging.ase.T.tariffControlIndicators.non.cyclicTariff",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_charging_ase_T_tariffControlIndicators_01_non_cyclicTariff,
-      { "non-cyclicTariff", "charging_ase.non-cyclicTariff",
+      { "non-cyclicTariff", "charging.ase.T.tariffControlIndicators.01.non.cyclicTariff",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
-
-/*--- End of included file: packet-charging_ase-hfarr.c ---*/
-#line 65 "./asn1/charging_ase/packet-charging_ase-template.c"
   };
 
   /* List of subtrees */
-    static gint *ett[] = {
+    static int *ett[] = {
     &ett_charging_ase,
-
-/*--- Included file: packet-charging_ase-ettarr.c ---*/
-#line 1 "./asn1/charging_ase/packet-charging_ase-ettarr.c"
     &ett_charging_ase_ChargingMessageType,
     &ett_charging_ase_ChargingAcknowledgementInformation,
     &ett_charging_ase_T_acknowledgementIndicators,
@@ -1141,9 +1109,6 @@ proto_register_charging_ase(void)
     &ett_charging_ase_SEQUENCE_SIZE_minCommunicationTariffNum_maxCommunicationTariffNum_OF_CommunicationChargePulse,
     &ett_charging_ase_T_tariffControlIndicators_01,
     &ett_charging_ase_ChargingReferenceIdentification,
-
-/*--- End of included file: packet-charging_ase-ettarr.c ---*/
-#line 71 "./asn1/charging_ase/packet-charging_ase-template.c"
         };
 
   static ei_register_info ei[] = {
@@ -1158,12 +1123,12 @@ proto_register_charging_ase(void)
   proto_register_subtree_array(ett, array_length(ett));
   expert_charging_ase = expert_register_protocol(proto_charging_ase);
   expert_register_field_array(expert_charging_ase, ei, array_length(ei));
+  charging_ase_handle = register_dissector("charging_ase", dissect_charging_ase, proto_charging_ase);
 }
 
 /* The registration hand-off routine */
 void
 proto_reg_handoff_charging_ase(void)
 {
-  charging_ase_handle = create_dissector_handle(dissect_charging_ase, proto_charging_ase);
 }
 

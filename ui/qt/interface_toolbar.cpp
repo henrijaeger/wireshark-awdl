@@ -4,22 +4,41 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
 #include <errno.h>
 
+#include <ws_diag_control.h>
+
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+DIAG_OFF(stringop-overflow)
+#if WS_IS_AT_LEAST_GNUC_VERSION(13,0)
+DIAG_OFF(restrict)
+#endif
+#endif
 #include "interface_toolbar.h"
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+DIAG_ON(stringop-overflow)
+#if WS_IS_AT_LEAST_GNUC_VERSION(13,0)
+DIAG_ON(restrict)
+#endif
+#endif
 #include <ui/qt/widgets/interface_toolbar_lineedit.h>
 #include "simple_dialog.h"
-#include "ui/main_statusbar.h"
+#include "main_application.h"
 #include <ui_interface_toolbar.h>
 
-#include "capture_opts.h"
+#include "ui/capture_opts.h"
 #include "ui/capture_globals.h"
 #include "sync_pipe.h"
 #include "wsutil/file_util.h"
+
+#ifdef _WIN32
+#include <wsutil/win32-utils.h>
+#endif
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -60,7 +79,7 @@ InterfaceToolbar::InterfaceToolbar(QWidget *parent, const iface_toolbar *toolbar
     // Fill inn interfaces list and initialize default interface values
     for (GList *walker = toolbar->ifnames; walker; walker = walker->next)
     {
-        QString ifname((gchar *)walker->data);
+        QString ifname((char *)walker->data);
         interface_[ifname].reader_thread = NULL;
         interface_[ifname].out_fd = -1;
     }
@@ -165,7 +184,11 @@ QWidget *InterfaceToolbar::createCheckbox(iface_toolbar_control *control)
         setDefaultValue(control->num, default_value);
     }
 
-    connect(checkbox, SIGNAL(stateChanged(int)), this, SLOT(onCheckBoxChanged(int)));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    connect(checkbox, &QCheckBox::checkStateChanged, this, &InterfaceToolbar::onCheckBoxChanged);
+#else
+    connect(checkbox, &QCheckBox::stateChanged, this, &InterfaceToolbar::onCheckBoxChanged);
+#endif
 
     ui->leftLayout->addWidget(checkbox);
 
@@ -174,19 +197,19 @@ QWidget *InterfaceToolbar::createCheckbox(iface_toolbar_control *control)
 
 QWidget *InterfaceToolbar::createButton(iface_toolbar_control *control)
 {
-    QPushButton *button = new QPushButton(QString().fromUtf8((gchar *)control->display));
+    QPushButton *button = new QPushButton(QString().fromUtf8((char *)control->display));
     button->setMaximumHeight(27);
     button->setToolTip(QString().fromUtf8(control->tooltip));
 
     switch (control->ctrl_role)
     {
         case INTERFACE_ROLE_CONTROL:
-            setDefaultValue(control->num, (gchar *)control->display);
-            connect(button, SIGNAL(pressed()), this, SLOT(onControlButtonPressed()));
+            setDefaultValue(control->num, (char *)control->display);
+            connect(button, &QPushButton::clicked, this, &InterfaceToolbar::onControlButtonClicked);
             break;
 
         case INTERFACE_ROLE_HELP:
-            connect(button, SIGNAL(pressed()), this, SLOT(onHelpButtonPressed()));
+            connect(button, &QPushButton::clicked, this, &InterfaceToolbar::onHelpButtonClicked);
             if (help_link_.isEmpty())
             {
                 // No help URL provided
@@ -195,11 +218,11 @@ QWidget *InterfaceToolbar::createButton(iface_toolbar_control *control)
             break;
 
         case INTERFACE_ROLE_LOGGER:
-            connect(button, SIGNAL(pressed()), this, SLOT(onLogButtonPressed()));
+            connect(button, &QPushButton::clicked, this, &InterfaceToolbar::onLogButtonClicked);
             break;
 
         case INTERFACE_ROLE_RESTORE:
-            connect(button, SIGNAL(pressed()), this, SLOT(onRestoreButtonPressed()));
+            connect(button, &QPushButton::clicked, this, &InterfaceToolbar::onRestoreButtonClicked);
             break;
 
         default:
@@ -223,36 +246,28 @@ QWidget *InterfaceToolbar::createSelector(iface_toolbar_control *control)
     for (GList *walker = control->values; walker; walker = walker->next)
     {
         iface_toolbar_value *val = (iface_toolbar_value *)walker->data;
-        QString value = QString().fromUtf8((gchar *)val->value);
+        QString value = QString().fromUtf8((char *)val->value);
         if (value.isEmpty())
         {
             // Invalid value
             continue;
         }
-        QString display = QString().fromUtf8((gchar *)val->display);
+        QString display = QString().fromUtf8((char *)val->display);
         QByteArray interface_value;
 
-        interface_value.append(value);
+        interface_value.append(value.toUtf8());
         if (display.isEmpty())
         {
             display = value;
         }
         else
         {
-            interface_value.append('\0' + display);
+            interface_value.append(QString('\0' + display).toUtf8());
         }
         combobox->addItem(display, value);
         if (val->is_default)
         {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
             combobox->setCurrentText(display);
-#else
-            int new_index = combobox->findText(display);
-            if (new_index >= 0)
-            {
-                combobox->setCurrentIndex(new_index);
-            }
-#endif
             setDefaultValue(control->num, value.toUtf8());
         }
         foreach (QString ifname, interface_.keys())
@@ -263,7 +278,11 @@ QWidget *InterfaceToolbar::createSelector(iface_toolbar_control *control)
         default_list_[control->num].append(interface_value);
     }
 
-    connect(combobox, SIGNAL(currentIndexChanged(int)), this, SLOT(onComboBoxChanged(int)));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    connect(combobox, &QComboBox::currentIndexChanged, this, &InterfaceToolbar::onComboBoxChanged);
+#else
+    connect(combobox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &InterfaceToolbar::onComboBoxChanged);
+#endif
 
     ui->leftLayout->addWidget(label);
     ui->leftLayout->addWidget(combobox);
@@ -286,7 +305,7 @@ QWidget *InterfaceToolbar::createString(iface_toolbar_control *control)
         setDefaultValue(control->num, control->default_value.string);
     }
 
-    connect(lineedit, SIGNAL(editedTextApplied()), this, SLOT(onLineEditChanged()));
+    connect(lineedit, &InterfaceToolbarLineEdit::editedTextApplied, this, &InterfaceToolbar::onLineEditChanged);
 
     ui->leftLayout->addWidget(label);
     ui->leftLayout->addWidget(lineedit);
@@ -298,7 +317,14 @@ QWidget *InterfaceToolbar::createString(iface_toolbar_control *control)
 
 void InterfaceToolbar::setWidgetValue(QWidget *widget, int command, QByteArray payload)
 {
-    if (QComboBox *combobox = dynamic_cast<QComboBox *>(widget))
+    // The QString(const QByteArray&) constructor will implicitly convert
+    // payload to a QString. In Qt5 this truncates at the first '\0'.
+    // (So string array payloads must be split first before converting.)
+    // In Qt6 those are converted to UTF-16 U+0000. (So convert then split is OK.)
+    // Other functions, like QComboBox::findData(), take a QVariant.
+    // In Qt5 QVariants from QStrings and QByteArrays compare equal if the
+    // QByteArray would convert to the same string; in Qt6 they don't.
+    if (QComboBox *combobox = qobject_cast<QComboBox *>(widget))
     {
         combobox->blockSignals(true);
         switch (command)
@@ -315,8 +341,8 @@ void InterfaceToolbar::setWidgetValue(QWidget *widget, int command, QByteArray p
 
             case commandControlAdd:
             {
-                QString value;
-                QString display;
+                QByteArray value;
+                QByteArray display;
                 if (payload.contains('\0'))
                 {
                     // The payload contains "value\0display"
@@ -364,7 +390,7 @@ void InterfaceToolbar::setWidgetValue(QWidget *widget, int command, QByteArray p
         }
         combobox->blockSignals(false);
     }
-    else if (InterfaceToolbarLineEdit *lineedit = dynamic_cast<InterfaceToolbarLineEdit *>(widget))
+    else if (InterfaceToolbarLineEdit *lineedit = qobject_cast<InterfaceToolbarLineEdit *>(widget))
     {
         // We don't block signals here because changes are applied with enter or apply button,
         // and we want InterfaceToolbarLineEdit to always syntax check the text.
@@ -379,7 +405,7 @@ void InterfaceToolbar::setWidgetValue(QWidget *widget, int command, QByteArray p
                 break;
         }
     }
-    else if (QCheckBox *checkbox = dynamic_cast<QCheckBox *>(widget))
+    else if (QCheckBox *checkbox = qobject_cast<QCheckBox *>(widget))
     {
         checkbox->blockSignals(true);
         switch (command)
@@ -400,7 +426,7 @@ void InterfaceToolbar::setWidgetValue(QWidget *widget, int command, QByteArray p
         }
         checkbox->blockSignals(false);
     }
-    else if (QPushButton *button = dynamic_cast<QPushButton *>(widget))
+    else if (QPushButton *button = qobject_cast<QPushButton *>(widget))
     {
         if ((command == commandControlSet) &&
             widget->property(interface_role_property).toInt() == INTERFACE_ROLE_CONTROL)
@@ -412,7 +438,11 @@ void InterfaceToolbar::setWidgetValue(QWidget *widget, int command, QByteArray p
 
 void InterfaceToolbar::setInterfaceValue(QString ifname, QWidget *widget, int num, int command, QByteArray payload)
 {
-    if (dynamic_cast<QComboBox *>(widget))
+    if (!widget) {
+        return;
+    }
+
+    if (qobject_cast<QComboBox *>(widget))
     {
         switch (command)
         {
@@ -456,7 +486,7 @@ void InterfaceToolbar::setInterfaceValue(QString ifname, QWidget *widget, int nu
                 break;
         }
     }
-    else if (dynamic_cast<InterfaceToolbarLineEdit *>(widget))
+    else if (qobject_cast<InterfaceToolbarLineEdit *>(widget))
     {
         switch (command)
         {
@@ -489,7 +519,13 @@ void InterfaceToolbar::setInterfaceValue(QString ifname, QWidget *widget, int nu
             {
                 interface_[ifname].log_dialog[num]->appendText(payload);
             }
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+            DIAG_OFF(stringop-overread)
+#endif
             interface_[ifname].log_text[num].append(payload);
+#if WS_IS_AT_LEAST_GNUC_VERSION(12,1)
+            DIAG_ON(stringop-overread)
+#endif
         }
     }
     else if (widget->property(interface_role_property).toInt() == INTERFACE_ROLE_CONTROL)
@@ -553,19 +589,19 @@ void InterfaceToolbar::controlReceived(QString ifname, int num, int command, QBy
             break;
 
         case commandStatusMessage:
-            statusbar_push_temporary_msg("%s", payload.data());
+            mainApp->pushStatus(MainApplication::TemporaryStatus, payload);
             break;
 
         case commandInformationMessage:
-            simple_dialog(ESD_TYPE_INFO, ESD_BTN_OK, "%s", payload.data());
+            simple_dialog_async(ESD_TYPE_INFO, ESD_BTN_OK, "%s", payload.data());
             break;
 
         case commandWarningMessage:
-            simple_dialog(ESD_TYPE_WARN, ESD_BTN_OK, "%s", payload.data());
+            simple_dialog_async(ESD_TYPE_WARN, ESD_BTN_OK, "%s", payload.data());
             break;
 
         case commandErrorMessage:
-            simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", payload.data());
+            simple_dialog_async(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", payload.data());
             break;
 
         default:
@@ -605,13 +641,13 @@ void InterfaceToolbar::controlSend(QString ifname, int num, int command, const Q
 
     if (ws_write(interface_[ifname].out_fd, ba.data(), ba.length()) != ba.length())
     {
-        simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK,
-                      "Unable to send control message:\n%s.",
-                      g_strerror(errno));
+        simple_dialog_async(ESD_TYPE_ERROR, ESD_BTN_OK,
+                            "Unable to send control message:\n%s.",
+                            g_strerror(errno));
     }
 }
 
-void InterfaceToolbar::onControlButtonPressed()
+void InterfaceToolbar::onControlButtonClicked()
 {
     const QString &ifname = ui->interfacesComboBox->currentText();
     QPushButton *button = static_cast<QPushButton *>(sender());
@@ -657,7 +693,7 @@ void InterfaceToolbar::onLineEditChanged()
     interface_[ifname].value_changed[num] = true;
 }
 
-void InterfaceToolbar::onLogButtonPressed()
+void InterfaceToolbar::onLogButtonClicked()
 {
     const QString &ifname = ui->interfacesComboBox->currentText();
     QPushButton *button = static_cast<QPushButton *>(sender());
@@ -665,9 +701,9 @@ void InterfaceToolbar::onLogButtonPressed()
 
     if (!interface_[ifname].log_dialog.contains(num))
     {
-        interface_[ifname].log_dialog[num] = new FunnelTextDialog(ifname + " " + button->text());
-        connect(interface_[ifname].log_dialog[num], SIGNAL(accepted()), this, SLOT(closeLog()));
-        connect(interface_[ifname].log_dialog[num], SIGNAL(rejected()), this, SLOT(closeLog()));
+        interface_[ifname].log_dialog[num] = new FunnelTextDialog(window(), ifname + " " + button->text());
+        connect(interface_[ifname].log_dialog[num], &FunnelTextDialog::accepted, this, &InterfaceToolbar::closeLog);
+        connect(interface_[ifname].log_dialog[num], &FunnelTextDialog::rejected, this, &InterfaceToolbar::closeLog);
 
         interface_[ifname].log_dialog[num]->setText(interface_[ifname].log_text[num]);
     }
@@ -677,7 +713,7 @@ void InterfaceToolbar::onLogButtonPressed()
     interface_[ifname].log_dialog[num]->activateWindow();
 }
 
-void InterfaceToolbar::onHelpButtonPressed()
+void InterfaceToolbar::onHelpButtonClicked()
 {
     QUrl help_url(help_link_);
 
@@ -710,12 +746,11 @@ void InterfaceToolbar::startReaderThread(QString ifname, void *control_in)
     InterfaceToolbarReader *reader = new InterfaceToolbarReader(ifname, control_in);
     reader->moveToThread(thread);
 
-    connect(thread, SIGNAL(started()), reader, SLOT(loop()));
-    connect(reader, SIGNAL(finished()), thread, SLOT(quit()));
-    connect(reader, SIGNAL(finished()), reader, SLOT(deleteLater()));
-    connect(thread, SIGNAL(finished()), reader, SLOT(deleteLater()));
-    connect(reader, SIGNAL(received(QString, int, int, QByteArray)),
-            this, SLOT(controlReceived(QString, int, int, QByteArray)));
+    connect(thread, &QThread::started, reader, &InterfaceToolbarReader::loop);
+    connect(reader, &InterfaceToolbarReader::finished, thread, &QThread::quit);
+    connect(reader, &InterfaceToolbarReader::finished, reader, &InterfaceToolbarReader::deleteLater);
+    connect(thread, &QThread::finished, reader, &InterfaceToolbarReader::deleteLater);
+    connect(reader, &InterfaceToolbarReader::received, this, &InterfaceToolbar::controlReceived);
 
     interface_[ifname].reader_thread = thread;
 
@@ -731,7 +766,7 @@ void InterfaceToolbar::startCapture(GArray *ifaces)
     QString first_capturing_ifname;
     bool selected_found = false;
 
-    for (guint i = 0; i < ifaces->len; i++)
+    for (unsigned i = 0; i < ifaces->len; i++)
     {
         interface_options *interface_opts = &g_array_index(ifaces, interface_options, i);
         QString ifname(interface_opts->name);
@@ -753,7 +788,22 @@ void InterfaceToolbar::startCapture(GArray *ifaces)
         // Open control out channel
 #ifdef _WIN32
         startReaderThread(ifname, interface_opts->extcap_control_in_h);
-        interface_[ifname].out_fd = _open_osfhandle((intptr_t)interface_opts->extcap_control_out_h, O_APPEND | O_BINARY);
+        // Duplicate control out handle and pass the duplicate handle to _open_osfhandle().
+        // This allows the C run-time file descriptor (out_fd) and the extcap_control_out_h to be closed independently.
+        // The duplicated handle will get closed at the same time the file descriptor is closed.
+        // The control out pipe will close when both out_fd and extcap_control_out_h are closed.
+        HANDLE duplicate_out_handle = INVALID_HANDLE_VALUE;
+        if (!DuplicateHandle(GetCurrentProcess(), interface_opts->extcap_control_out_h,
+                             GetCurrentProcess(), &duplicate_out_handle, 0, true, DUPLICATE_SAME_ACCESS))
+        {
+            simple_dialog_async(ESD_TYPE_ERROR, ESD_BTN_OK,
+                                "Failed to duplicate extcap control out handle: %s\n.",
+                                win32strerror(GetLastError()));
+        }
+        else
+        {
+            interface_[ifname].out_fd = _open_osfhandle((intptr_t)duplicate_out_handle, O_APPEND | O_BINARY);
+        }
 #else
         startReaderThread(ifname, interface_opts->extcap_control_in);
         interface_[ifname].out_fd = ws_open(interface_opts->extcap_control_out, O_WRONLY | O_BINARY, 0);
@@ -764,15 +814,7 @@ void InterfaceToolbar::startCapture(GArray *ifaces)
 
     if (!selected_found && !first_capturing_ifname.isEmpty())
     {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
         ui->interfacesComboBox->setCurrentText(first_capturing_ifname);
-#else
-        int new_index = ui->interfacesComboBox->findText(first_capturing_ifname);
-        if (new_index >= 0)
-        {
-            ui->interfacesComboBox->setCurrentIndex(new_index);
-        }
-#endif
     }
     else
     {
@@ -786,17 +828,17 @@ void InterfaceToolbar::stopCapture()
     {
         if (interface_[ifname].reader_thread)
         {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
-            interface_[ifname].reader_thread->requestInterruption();
-#endif
+            if (!interface_[ifname].reader_thread->isFinished())
+            {
+                interface_[ifname].reader_thread->requestInterruption();
+            }
             interface_[ifname].reader_thread = NULL;
         }
 
         if (interface_[ifname].out_fd != -1)
         {
-#ifndef _WIN32
-            ws_close (interface_[ifname].out_fd);
-#endif
+            ws_close_if_possible (interface_[ifname].out_fd);
+
             interface_[ifname].out_fd = -1;
         }
 
@@ -838,7 +880,7 @@ void InterfaceToolbar::sendChangedValues(QString ifname)
     }
 }
 
-void InterfaceToolbar::onRestoreButtonPressed()
+void InterfaceToolbar::onRestoreButtonClicked()
 {
     const QString &ifname = ui->interfacesComboBox->currentText();
 
@@ -940,27 +982,19 @@ void InterfaceToolbar::interfaceListChanged()
     ui->interfacesComboBox->blockSignals(true);
     ui->interfacesComboBox->clear();
 
-    for (guint i = 0; i < global_capture_opts.all_ifaces->len; i++)
+    for (unsigned i = 0; i < global_capture_opts.all_ifaces->len; i++)
     {
         interface_t *device = &g_array_index(global_capture_opts.all_ifaces, interface_t, i);
         if (device->hidden)
             continue;
 
-        if (interface_.keys().contains(device->name))
+        if (interface_.contains(device->name))
         {
             ui->interfacesComboBox->addItem(device->name);
             if (selected_ifname.compare(device->name) == 0)
             {
                 // Keep selected interface
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
                 ui->interfacesComboBox->setCurrentText(device->name);
-#else
-                int new_index = ui->interfacesComboBox->findText(device->name);
-                if (new_index >= 0)
-                {
-                    ui->interfacesComboBox->setCurrentIndex(new_index);
-                }
-#endif
                 keep_selected = true;
             }
         }
@@ -971,14 +1005,14 @@ void InterfaceToolbar::interfaceListChanged()
     if (!keep_selected)
     {
         // Select the first interface
-        on_interfacesComboBox_currentIndexChanged(ui->interfacesComboBox->currentText());
+        on_interfacesComboBox_currentTextChanged(ui->interfacesComboBox->currentText());
     }
 
     updateWidgets();
 #endif
 }
 
-void InterfaceToolbar::on_interfacesComboBox_currentIndexChanged(const QString &ifname)
+void InterfaceToolbar::on_interfacesComboBox_currentTextChanged(const QString &ifname)
 {
     foreach (int num, control_widget_.keys())
     {
@@ -1002,16 +1036,3 @@ void InterfaceToolbar::on_interfacesComboBox_currentIndexChanged(const QString &
 
     updateWidgets();
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

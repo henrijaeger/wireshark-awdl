@@ -15,7 +15,9 @@
 #include <epan/packet.h>
 #include <epan/prefs.h>
 #include <epan/tap.h>
+#include <wiretap/wtap.h>
 #include "packet-actrace.h"
+
 #define UDP_PORT_ACTRACE 2428 /* Not IANA registered */
 
 #define NOT_ACTRACE  0
@@ -27,34 +29,35 @@
 void proto_register_actrace(void);
 void proto_reg_handoff_actrace(void);
 
+static dissector_handle_t actrace_handle;
 
 /* Define the actrace proto */
-static int proto_actrace = -1;
+static int proto_actrace;
 
 /* Define many headers for actrace */
 /* ISDN headers */
-static int hf_actrace_isdn_direction = -1;
-static int hf_actrace_isdn_trunk = -1;
-static int hf_actrace_isdn_length = -1;
+static int hf_actrace_isdn_direction;
+static int hf_actrace_isdn_trunk;
+static int hf_actrace_isdn_length;
 
 
 /* CAS headers */
-static int hf_actrace_cas_time = -1;
-static int hf_actrace_cas_source = -1;
-static int hf_actrace_cas_current_state = -1;
-static int hf_actrace_cas_event = -1;
-static int hf_actrace_cas_next_state = -1;
-static int hf_actrace_cas_function = -1;
-static int hf_actrace_cas_par0 = -1;
-static int hf_actrace_cas_par1 = -1;
-static int hf_actrace_cas_par2 = -1;
-static int hf_actrace_cas_trunk = -1;
-static int hf_actrace_cas_bchannel = -1;
-static int hf_actrace_cas_connection_id = -1;
+static int hf_actrace_cas_time;
+static int hf_actrace_cas_source;
+static int hf_actrace_cas_current_state;
+static int hf_actrace_cas_event;
+static int hf_actrace_cas_next_state;
+static int hf_actrace_cas_function;
+static int hf_actrace_cas_par0;
+static int hf_actrace_cas_par1;
+static int hf_actrace_cas_par2;
+static int hf_actrace_cas_trunk;
+static int hf_actrace_cas_bchannel;
+static int hf_actrace_cas_connection_id;
 
 
 
-static dissector_handle_t lapd_handle;
+static dissector_handle_t lapd_phdr_handle;
 
 #define ACTRACE_CAS_SOURCE_DSP		0
 #define ACTRACE_CAS_SOURCE_USER		1
@@ -406,16 +409,16 @@ static const value_string actrace_isdn_direction_vals[] = {
 /*
  * Define the tree for actrace
  */
-static int ett_actrace = -1;
+static int ett_actrace;
 
 /*
  * Define the tap for actrace
  */
-static int actrace_tap = -1;
+static int actrace_tap;
 static actrace_info_t *actrace_pi;
 
 /* Some basic utility functions that are specific to this dissector */
-static int is_actrace(tvbuff_t *tvb, gint offset);
+static int is_actrace(tvbuff_t *tvb, int offset);
 
 /*
  * The dissect functions
@@ -477,9 +480,9 @@ static int dissect_actrace(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
 static void dissect_actrace_cas(tvbuff_t *tvb, packet_info *pinfo, proto_tree *actrace_tree)
 {
 	/* Declare variables */
-	gint32       value, function, trunk, bchannel, source, event, curr_state, next_state;
-	gint32       par0, par1, par2;
-	const gchar *frame_label = NULL;
+	int32_t      value, function, trunk, bchannel, source, event, curr_state, next_state;
+	int32_t      par0, par1, par2;
+	const char *frame_label = NULL;
 	int          direction   = 0;
 	int          offset      = 0;
 
@@ -578,42 +581,42 @@ static void dissect_actrace_cas(tvbuff_t *tvb, packet_info *pinfo, proto_tree *a
 	if (source == ACTRACE_CAS_SOURCE_DSP) {
 		direction = 1;
 		if ( (event >= ACTRACE_CAS_EV_11) && (event <= ACTRACE_CAS_EV_00 ) ) {
-			frame_label = wmem_strdup_printf(wmem_packet_scope(), "AB: %s", val_to_str_const(event, actrace_cas_event_ab_vals, "ERROR") );
+			frame_label = wmem_strdup_printf(pinfo->pool, "AB: %s", val_to_str_const(event, actrace_cas_event_ab_vals, "ERROR") );
 		} else if ( (event >= 32) && (event <= 46 ) ) { /* is an MF tone */
-			frame_label = wmem_strdup_printf(wmem_packet_scope(), "MF: %s", val_to_str_ext_const(event, &actrace_cas_mf_vals_ext, "ERROR") );
+			frame_label = wmem_strdup_printf(pinfo->pool, "MF: %s", val_to_str_ext_const(event, &actrace_cas_mf_vals_ext, "ERROR") );
 		} else if ( (event == ACTRACE_CAS_EV_DTMF ) || (event == ACTRACE_CAS_EV_FIRST_DIGIT ) ) { /* DTMF digit */
-			frame_label = wmem_strdup_printf(wmem_packet_scope(), "DTMF: %u", par0 );
+			frame_label = wmem_strdup_printf(pinfo->pool, "DTMF: %u", par0 );
 		}
 	} else if (source == ACTRACE_CAS_SOURCE_TABLE) {
 		direction = 0;
 		if (function == SEND_MF) {
 			if (par0 == SEND_TYPE_SPECIFIC ) {
-				frame_label = wmem_strdup_printf(wmem_packet_scope(), "MF: %u", par1);
+				frame_label = wmem_strdup_printf(pinfo->pool, "MF: %u", par1);
 			} else if (par0 == SEND_TYPE_ADDRESS ) {
-				frame_label = wmem_strdup(wmem_packet_scope(), "MF: DNIS digit");
+				frame_label = wmem_strdup(pinfo->pool, "MF: DNIS digit");
 			} else if (par0 == SEND_TYPE_ANI  ) {
-				frame_label = wmem_strdup(wmem_packet_scope(), "MF: ANI digit");
+				frame_label = wmem_strdup(pinfo->pool, "MF: ANI digit");
 			} else if (par0 == SEND_TYPE_SOURCE_CATEGORY ) {
-				frame_label = wmem_strdup(wmem_packet_scope(), "MF: src_category");
+				frame_label = wmem_strdup(pinfo->pool, "MF: src_category");
 			} else if (par0 == SEND_TYPE_TRANSFER_CAPABILITY ) {
-				frame_label = wmem_strdup(wmem_packet_scope(), "MF: trf_capability");
+				frame_label = wmem_strdup(pinfo->pool, "MF: trf_capability");
 			} else if (par0 == SEND_TYPE_INTER_EXCHANGE_SWITCH ) {
-				frame_label = wmem_strdup(wmem_packet_scope(), "MF: inter_exch_sw");
+				frame_label = wmem_strdup(pinfo->pool, "MF: inter_exch_sw");
 			}
 		} else if (function == SEND_CAS) {
-			frame_label = wmem_strdup_printf(wmem_packet_scope(), "AB: %s", val_to_str_const(ACTRACE_CAS_EV_00-par0, actrace_cas_event_ab_vals, "ERROR"));
+			frame_label = wmem_strdup_printf(pinfo->pool, "AB: %s", val_to_str_const(ACTRACE_CAS_EV_00-par0, actrace_cas_event_ab_vals, "ERROR"));
 		} else if (function == SEND_DEST_NUM) {
 			if (par0 == SEND_TYPE_ADDRESS ) {
-				frame_label = wmem_strdup(wmem_packet_scope(), "DTMF/MF: sending DNIS");
+				frame_label = wmem_strdup(pinfo->pool, "DTMF/MF: sending DNIS");
 			} else if (par0 == SEND_TYPE_ANI ) {
-				frame_label = wmem_strdup(wmem_packet_scope(), "DTMF/MF: sending ANI");
+				frame_label = wmem_strdup(pinfo->pool, "DTMF/MF: sending ANI");
 			}
 		}
 	}
 
 	if (frame_label != NULL) {
 		/* Initialise packet info for passing to tap */
-		actrace_pi = wmem_new(wmem_packet_scope(), actrace_info_t);
+		actrace_pi = wmem_new(pinfo->pool, actrace_info_t);
 
 		actrace_pi->type = ACTRACE_CAS;
 		actrace_pi->direction = direction;
@@ -630,28 +633,34 @@ static void dissect_actrace_isdn(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
 				 proto_tree *actrace_tree)
 {
 	/* Declare variables */
-	gint      len;
-	gint32    value, trunk;
+	int       len;
+	int32_t   value, trunk;
 	tvbuff_t *next_tvb;
 	int       offset = 0;
+	struct isdn_phdr isdn;
 
-	len = tvb_get_ntohs(tvb, 44);
+	offset += 4;
 
 	value = tvb_get_ntohl(tvb, offset+4);
-	proto_tree_add_int(actrace_tree, hf_actrace_isdn_direction, tvb, offset+4, 4, value);
+	proto_tree_add_int(actrace_tree, hf_actrace_isdn_direction, tvb, offset, 4, value);
+	offset += 4;
+	/* PSTN = Network */
+	isdn.uton = (value==BLADE_TO_PSTN);
+	isdn.channel = 0; /* D channel */
 
-	offset += 8;
 	trunk = tvb_get_ntohs(tvb, offset);
 	proto_tree_add_int(actrace_tree, hf_actrace_isdn_trunk, tvb, offset, 2, trunk);
+	offset += 4;
 
-	offset = 44;
+	offset += 32;
+
+	len = tvb_get_ntohs(tvb, offset);
 	proto_tree_add_int(actrace_tree, hf_actrace_isdn_length, tvb, offset, 2, len);
-
 
 	/* if it is a q931 packet (we don't want LAPD packets for Voip Graph) add tap info */
 	if (len > 4) {
 		/* Initialise packet info for passing to tap */
-		actrace_pi = wmem_new(wmem_packet_scope(), actrace_info_t);
+		actrace_pi = wmem_new(pinfo->pool, actrace_info_t);
 
 		actrace_pi->type = ACTRACE_ISDN;
 		actrace_pi->direction = (value==PSTN_TO_BLADE?1:0);
@@ -664,7 +673,7 @@ static void dissect_actrace_isdn(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
 	/* Dissect lapd payload */
 	offset += 2 ;
 	next_tvb = tvb_new_subset_length(tvb, offset, len);
-	call_dissector(lapd_handle, next_tvb, pinfo, tree);
+	call_dissector_with_data(lapd_phdr_handle, next_tvb, pinfo, tree, &isdn);
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "AC_ISDN");
 	col_prepend_fstr(pinfo->cinfo, COL_INFO, "Trunk:%d  Blade %s PSTN "
@@ -685,10 +694,10 @@ static void dissect_actrace_isdn(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
  * in tvb, ACTRACE_CAS if there's a CAS packet there, ACTRACE_ISDN if
  * there's an ISDN packet there.
  */
-static int is_actrace(tvbuff_t *tvb, gint offset)
+static int is_actrace(tvbuff_t *tvb, int offset)
 {
-	gint   tvb_len;
-	gint32 source, isdn_header;
+	int    tvb_len;
+	int32_t source, isdn_header;
 
 	tvb_len = tvb_reported_length(tvb);
 
@@ -763,7 +772,7 @@ void proto_register_actrace(void)
 			    NULL, HFILL }},
 		};
 
-	static gint *ett[] =
+	static int *ett[] =
 		{
 			&ett_actrace,
 		};
@@ -780,23 +789,21 @@ void proto_register_actrace(void)
 
 	prefs_register_obsolete_preference(actrace_module, "display_dissect_tree");
 
+	actrace_handle = register_dissector("actrace", dissect_actrace, proto_actrace);
 	actrace_tap = register_tap("actrace");
 }
 
 /* The registration hand-off routine */
 void proto_reg_handoff_actrace(void)
 {
-	dissector_handle_t actrace_handle;
+	/* Get a handle for the LAPD-with-pseudoheader dissector. */
+	lapd_phdr_handle = find_dissector_add_dependency("lapd-phdr", proto_actrace);
 
-	/* Get a handle for the lapd dissector. */
-	lapd_handle = find_dissector_add_dependency("lapd", proto_actrace);
-
-	actrace_handle = create_dissector_handle(dissect_actrace, proto_actrace);
 	dissector_add_uint_with_preference("udp.port", UDP_PORT_ACTRACE, actrace_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

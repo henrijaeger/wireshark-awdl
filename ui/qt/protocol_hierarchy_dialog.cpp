@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "protocol_hierarchy_dialog.h"
 #include <ui_protocol_hierarchy_dialog.h>
@@ -18,7 +19,10 @@
 #include <wsutil/utf8_entities.h>
 
 #include <ui/qt/utils/qt_ui_utils.h>
-#include "wireshark_application.h"
+#include "main_application.h"
+
+#include <epan/proto.h>
+#include <epan/disabled_protos.h>
 
 #include <QClipboard>
 #include <QPushButton>
@@ -45,6 +49,12 @@ const int bandwidth_col_ = 5;
 const int end_packets_col_ = 6;
 const int end_bytes_col_ = 7;
 const int end_bandwidth_col_ = 8;
+const int pdus_col_ = 9;
+
+struct addTreeNodeData {
+    QSet<QString> *protos;
+    QTreeWidgetItem *widget;
+};
 
 class ProtocolHierarchyTreeWidgetItem : public QTreeWidgetItem
 {
@@ -52,6 +62,7 @@ public:
     ProtocolHierarchyTreeWidgetItem(QTreeWidgetItem *parent, ph_stats_node_t& ph_stats_node) :
         QTreeWidgetItem(parent),
         total_packets_(ph_stats_node.num_pkts_total),
+        total_pdus_(ph_stats_node.num_pdus_total),
         last_packets_(ph_stats_node.num_pkts_last),
         total_bytes_(ph_stats_node.num_bytes_total),
         last_bytes_(ph_stats_node.num_bytes_last),
@@ -77,6 +88,7 @@ public:
         }
 
         setText(protocol_col_, ph_stats_node.hfinfo->name);
+        setToolTip(protocol_col_, QStringLiteral("%1").arg(ph_stats_node.hfinfo->abbrev));
         setData(pct_packets_col_, Qt::UserRole, percent_packets_);
         setText(packets_col_, QString::number(total_packets_));
         setData(pct_bytes_col_, Qt::UserRole, percent_bytes_);
@@ -85,6 +97,7 @@ public:
         setText(end_packets_col_, QString::number(last_packets_));
         setText(end_bytes_col_, QString::number(last_bytes_));
         setText(end_bandwidth_col_, seconds > 0.0 ? bits_s_to_qstring(end_bits_s_) : UTF8_EM_DASH);
+        setText(pdus_col_, QString::number(total_pdus_));
     }
 
     // Return a QString, int, double, or invalid QVariant representing the raw column data.
@@ -108,6 +121,8 @@ public:
             return last_bytes_;
         case (end_bandwidth_col_):
             return end_bits_s_;
+        case (pdus_col_):
+            return total_pdus_;
         default:
             break;
         }
@@ -135,6 +150,8 @@ public:
             return last_bytes_ < other_phtwi.last_bytes_;
         case end_bandwidth_col_:
             return end_bits_s_ < other_phtwi.end_bits_s_;
+        case pdus_col_:
+            return total_pdus_ < other_phtwi.total_pdus_;
         default:
             break;
         }
@@ -148,6 +165,7 @@ public:
 private:
     QString filter_name_;
     unsigned total_packets_;
+    unsigned total_pdus_;
     unsigned last_packets_;
     unsigned total_bytes_;
     unsigned last_bytes_;
@@ -171,7 +189,8 @@ ProtocolHierarchyDialog::ProtocolHierarchyDialog(QWidget &parent, CaptureFile &c
     ph_stats_t *ph_stats = ph_stats_new(cap_file_.capFile());
     if (ph_stats) {
         ui->hierStatsTreeWidget->invisibleRootItem()->setData(0, Qt::UserRole, VariantPointer<ph_stats_t>::asQVariant(ph_stats));
-        g_node_children_foreach(ph_stats->stats_tree, G_TRAVERSE_ALL, addTreeNode, ui->hierStatsTreeWidget->invisibleRootItem());
+        addTreeNodeData atnd { &used_protos_, ui->hierStatsTreeWidget->invisibleRootItem() };
+        g_node_children_foreach(ph_stats->stats_tree, G_TRAVERSE_ALL, addTreeNode, (void *)&atnd);
         ph_stats_free(ph_stats);
     }
 
@@ -216,17 +235,32 @@ ProtocolHierarchyDialog::ProtocolHierarchyDialog(QWidget &parent, CaptureFile &c
     ctx_menu_.addAction(ui->actionCopyAsCsv);
     ctx_menu_.addAction(ui->actionCopyAsYaml);
 
-    copy_button_ = ui->buttonBox->addButton(tr("Copy"), QDialogButtonBox::ApplyRole);
+    QPushButton *copy_button = ui->buttonBox->addButton(tr("Copy"), QDialogButtonBox::ApplyRole);
 
-    QMenu *copy_menu = new QMenu(copy_button_);
+    QMenu *copy_menu = new QMenu(copy_button);
     QAction *ca;
     ca = copy_menu->addAction(tr("as CSV"));
     ca->setToolTip(ui->actionCopyAsCsv->toolTip());
-    connect(ca, SIGNAL(triggered()), this, SLOT(on_actionCopyAsCsv_triggered()));
+    connect(ca, &QAction::triggered, this, &ProtocolHierarchyDialog::on_actionCopyAsCsv_triggered);
     ca = copy_menu->addAction(tr("as YAML"));
     ca->setToolTip(ui->actionCopyAsYaml->toolTip());
+    connect(ca, &QAction::triggered, this, &ProtocolHierarchyDialog::on_actionCopyAsYaml_triggered);
+    copy_button->setMenu(copy_menu);
     connect(ca, SIGNAL(triggered()), this, SLOT(on_actionCopyAsYaml_triggered()));
-    copy_button_->setMenu(copy_menu);
+    ca = copy_menu->addAction(tr("protocol short names"));
+    ca->setToolTip(ui->actionCopyProtoList->toolTip());
+    connect(ca, SIGNAL(triggered()), this, SLOT(on_actionCopyProtoList_triggered()));
+    copy_button->setMenu(copy_menu);
+
+    QPushButton *protos_button = ui->buttonBox->addButton(tr("Protocols"), QDialogButtonBox::ApplyRole);
+    QMenu *protos_menu = new QMenu(protos_button);
+    proto_disable_ = protos_menu->addAction(tr("Disable unused"));
+    proto_disable_->setToolTip(ui->actionDisableProtos->toolTip());
+    connect(proto_disable_, SIGNAL(triggered()), this, SLOT(on_actionDisableProtos_triggered()));
+    proto_revert_ = protos_menu->addAction(tr("Revert changes"));
+    proto_revert_->setToolTip(ui->actionRevertProtos->toolTip());
+    connect(proto_revert_, SIGNAL(triggered()), this, SLOT(on_actionRevertProtos_triggered()));
+    protos_button->setMenu(protos_menu);
 
     QPushButton *close_bt = ui->buttonBox->button(QDialogButtonBox::Close);
     if (close_bt) {
@@ -271,17 +305,21 @@ void ProtocolHierarchyDialog::filterActionTriggered()
     emit filterAction(filter_name, fa->action(), fa->actionType());
 }
 
-void ProtocolHierarchyDialog::addTreeNode(GNode *node, gpointer data)
+void ProtocolHierarchyDialog::addTreeNode(GNode *node, void *data)
 {
     ph_stats_node_t *stats = (ph_stats_node_t *)node->data;
     if (!stats) return;
 
-    QTreeWidgetItem *parent_ti = static_cast<QTreeWidgetItem *>(data);
+    addTreeNodeData *atndp = (addTreeNodeData *)data;
+    QTreeWidgetItem *parent_ti = atndp->widget;
     if (!parent_ti) return;
 
-    ProtocolHierarchyTreeWidgetItem *phti = new ProtocolHierarchyTreeWidgetItem(parent_ti, *stats);
+    atndp->protos->insert(QString(stats->hfinfo->abbrev));
 
-    g_node_children_foreach(node, G_TRAVERSE_ALL, addTreeNode, phti);
+    ProtocolHierarchyTreeWidgetItem *phti = new ProtocolHierarchyTreeWidgetItem(parent_ti, *stats);
+    addTreeNodeData atnd { atndp->protos, phti };
+
+    g_node_children_foreach(node, G_TRAVERSE_ALL, addTreeNode, (void *)&atnd);
 
 }
 
@@ -295,6 +333,8 @@ void ProtocolHierarchyDialog::updateWidgets()
     }
     hint += "</i></small>";
     ui->hintLabel->setText(hint);
+
+    proto_revert_->setEnabled(enabled_protos_unsaved_changes());
 
     WiresharkDialog::updateWidgets();
 }
@@ -330,18 +370,18 @@ void ProtocolHierarchyDialog::on_actionCopyAsCsv_triggered()
         foreach (QVariant v, protoHierRowData(item)) {
             if (!v.isValid()) {
                 separated_value << "\"\"";
-            } else if (v.type() == QVariant::String) {
-                separated_value << QString("\"%1\"").arg(v.toString());
+            } else if (v.userType() == QMetaType::QString) {
+                separated_value << QStringLiteral("\"%1\"").arg(v.toString());
             } else {
                 separated_value << v.toString();
             }
         }
-        stream << separated_value.join(",") << endl;
+        stream << separated_value.join(",") << '\n';
 
         if (!first) ++iter;
         first = false;
     }
-    wsApp->clipboard()->setText(stream.readAll());
+    mainApp->clipboard()->setText(stream.readAll());
 }
 
 void ProtocolHierarchyDialog::on_actionCopyAsYaml_triggered()
@@ -351,34 +391,74 @@ void ProtocolHierarchyDialog::on_actionCopyAsYaml_triggered()
     QTreeWidgetItemIterator iter(ui->hierStatsTreeWidget);
     bool first = true;
 
-    stream << "---" << endl;
+    stream << "---" << '\n';
     while (*iter) {
         QTreeWidgetItem *item = first ? NULL : (*iter);
 
-        stream << "-" << endl;
+        stream << "-" << '\n';
         foreach (QVariant v, protoHierRowData(item)) {
-            stream << " - " << v.toString() << endl;
+            stream << " - " << v.toString() << '\n';
         }
         if (!first) ++iter;
         first = false;
     }
-    wsApp->clipboard()->setText(stream.readAll());
+    mainApp->clipboard()->setText(stream.readAll());
+}
+
+void ProtocolHierarchyDialog::on_actionCopyProtoList_triggered()
+{
+    QString plist;
+    QTextStream stream(&plist, QIODevice::Text);
+    bool first = true;
+    QSetIterator<QString> iter(used_protos_);
+    while (iter.hasNext()) {
+        if (!first) stream << ',';
+        stream << iter.next();
+        first = false;
+    }
+    mainApp->clipboard()->setText(stream.readAll());
+}
+
+void ProtocolHierarchyDialog::on_actionDisableProtos_triggered()
+{
+    proto_disable_all();
+
+    QSetIterator<QString> iter(used_protos_);
+    while (iter.hasNext()) {
+        proto_enable_proto_by_name(iter.next().toStdString().c_str());
+    }
+    /* Note that we aren't saving the changes here; they only apply
+     * to the current dissection.
+     * (Though if the user goes to the Enabled Protocols dialog and
+     * makes changes, these changes as well as the user's will be saved.)
+     */
+    proto_revert_->setEnabled(enabled_protos_unsaved_changes());
+
+    QString hint = "<small><i>"
+        + tr("Unused protocols have been disabled.")
+        + "</i></small>";
+    ui->hintLabel->setText(hint);
+
+    // If we've done everything right, nothing should change.
+    //wsApp->emitAppSignal(WiresharkApplication::PacketDissectionChanged);
+}
+
+void ProtocolHierarchyDialog::on_actionRevertProtos_triggered()
+{
+    proto_reenable_all();
+    read_enabled_and_disabled_lists();
+
+    proto_revert_->setEnabled(enabled_protos_unsaved_changes());
+    QString hint = "<small><i>"
+        + tr("Protocol changes have been reverted.")
+        + "</i></small>";
+    ui->hintLabel->setText(hint);
+
+    // If we've done everything right, nothing should change.
+    //wsApp->emitAppSignal(WiresharkApplication::PacketDissectionChanged);
 }
 
 void ProtocolHierarchyDialog::on_buttonBox_helpRequested()
 {
-    wsApp->helpTopicAction(HELP_STATS_PROTO_HIERARCHY_DIALOG);
+    mainApp->helpTopicAction(HELP_STATS_PROTO_HIERARCHY_DIALOG);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -16,23 +16,25 @@
 void proto_register_x29(void);
 void proto_reg_handoff_x29(void);
 
-static int proto_x29 = -1;
-static int hf_msg_code = -1;
-static int hf_error_type = -1;
-static int hf_inv_msg_code = -1;
+static dissector_handle_t x29_handle;
+
+static int proto_x29;
+static int hf_msg_code;
+static int hf_error_type;
+static int hf_inv_msg_code;
 
 /* Generated from convert_proto_tree_add_text.pl */
-static int hf_x29_pad_message_data = -1;
-static int hf_x29_type_reference_value = -1;
-static int hf_x29_type_reference = -1;
-static int hf_x29_data = -1;
-static int hf_x29_type_of_aspect = -1;
-static int hf_x29_reselection_message_data = -1;
-static int hf_x29_break_value = -1;
-static int hf_x29_parameter = -1;
-static int hf_x29_value = -1;
+static int hf_x29_pad_message_data;
+static int hf_x29_type_reference_value;
+static int hf_x29_type_reference;
+static int hf_x29_data;
+static int hf_x29_type_of_aspect;
+static int hf_x29_reselection_message_data;
+static int hf_x29_break_value;
+static int hf_x29_parameter;
+static int hf_x29_value;
 
-static gint ett_x29 = -1;
+static int ett_x29;
 
 /*
  * PAD messages.
@@ -83,17 +85,17 @@ dissect_x29(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 	int         offset = 0;
 	proto_tree *x29_tree;
 	proto_item *ti;
-	gboolean   *q_bit_set;
-	guint8      msg_code;
-	guint8      error_type;
-	guint8      type_ref;
-	gint        next_offset;
+	bool       *q_bit_set;
+	uint8_t     msg_code;
+	uint8_t     error_type;
+	uint8_t     type_ref;
+	int         next_offset;
 	int         linelen;
 
 	/* Reject the packet if data is NULL */
 	if (data == NULL)
 		return 0;
-	q_bit_set = (gboolean *)data;
+	q_bit_set = (bool *)data;
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "X.29");
 	col_clear(pinfo->cinfo, COL_INFO);
@@ -105,7 +107,7 @@ dissect_x29(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 		/*
 		 * Q bit set - this is a PAD message.
 		 */
-		msg_code = tvb_get_guint8(tvb, offset);
+		msg_code = tvb_get_uint8(tvb, offset);
 		col_add_fstr(pinfo->cinfo, COL_INFO, "%s PAD message",
 			    val_to_str(msg_code, message_code_vals,
 			        "Unknown (0x%02x)"));
@@ -138,7 +140,7 @@ dissect_x29(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 			break;
 
 		case ERROR_MSG:
-			error_type = tvb_get_guint8(tvb, offset);
+			error_type = tvb_get_uint8(tvb, offset);
 			proto_tree_add_uint(x29_tree, hf_error_type, tvb,
 			    offset, 1, error_type);
 			offset++;
@@ -150,7 +152,7 @@ dissect_x29(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 
 		case BREAK_IND_MSG:
 			if (tvb_reported_length_remaining(tvb, offset) > 0) {
-				type_ref = tvb_get_guint8(tvb, offset);
+				type_ref = tvb_get_uint8(tvb, offset);
 				proto_tree_add_item(x29_tree, hf_x29_type_reference, tvb, offset, 1, ENC_BIG_ENDIAN);
 				offset++;
 				switch (type_ref) {
@@ -206,7 +208,7 @@ dissect_x29(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 				 * Find the end of the line.
 				 */
 				tvb_find_line_end(tvb, offset, -1,
-				    &next_offset, FALSE);
+				    &next_offset, false);
 
 				/*
 				 * Now compute the length of the line
@@ -252,11 +254,12 @@ proto_register_x29(void)
 		{ &hf_x29_parameter, { "Parameter", "x29.parameter", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
 		{ &hf_x29_value, { "Value", "x29.value", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
 	};
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_x29,
 	};
 
 	proto_x29 = proto_register_protocol("X.29", "X.29", "x29");
+	x29_handle = register_dissector("x29", dissect_x29, proto_x29);
 	proto_register_field_array(proto_x29, hf, array_length(hf));
 	proto_register_subtree_array(ett, array_length(ett));
 }
@@ -264,14 +267,11 @@ proto_register_x29(void)
 void
 proto_reg_handoff_x29(void)
 {
-	dissector_handle_t x29_handle;
-
-	x29_handle = create_dissector_handle(dissect_x29, proto_x29);
 	dissector_add_uint("x.25.spi", NLPID_SPI_X_29, x29_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

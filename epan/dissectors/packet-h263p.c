@@ -26,32 +26,28 @@
 void proto_reg_handoff_h263P(void);
 void proto_register_h263P(void);
 
-static int proto_h263P = -1;
+static int proto_h263P;
 
 /* H.263 RFC 4629 fields */
-static int hf_h263P_payload = -1;
-static int hf_h263P_rr = -1;
-static int hf_h263P_pbit = -1;
-static int hf_h263P_vbit = -1;
-static int hf_h263P_plen = -1;
-static int hf_h263P_pebit = -1;
-static int hf_h263P_tid = -1;
-static int hf_h263P_trun = -1;
-static int hf_h263P_s = -1;
-static int hf_h263P_extra_hdr = -1;
-/* static int hf_h263P_PSC = -1; */
-/* static int hf_h263P_TR = -1; */
+static int hf_h263P_payload;
+static int hf_h263P_rr;
+static int hf_h263P_pbit;
+static int hf_h263P_vbit;
+static int hf_h263P_plen;
+static int hf_h263P_pebit;
+static int hf_h263P_tid;
+static int hf_h263P_trun;
+static int hf_h263P_s;
+static int hf_h263P_extra_hdr;
+/* static int hf_h263P_PSC; */
+/* static int hf_h263P_TR; */
 
 
 /* H.263-1998 fields defining a sub tree */
-static gint ett_h263P = -1;
-static gint ett_h263P_extra_hdr = -1;
-static gint ett_h263P_payload   = -1;
-static gint ett_h263P_data = -1;
-
-/* The dynamic payload type which will be dissected as H.263-1998/H263-2000 */
-
-static guint temp_dynamic_payload_type = 0;
+static int ett_h263P;
+static int ett_h263P_extra_hdr;
+static int ett_h263P_payload;
+static int ett_h263P_data;
 
 static dissector_handle_t h263P_handle;
 
@@ -66,8 +62,8 @@ dissect_h263P( tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
     proto_tree *h263P_extr_hdr_tree = NULL;
     proto_tree *h263P_data_tree     = NULL;
     unsigned int offset             = 0;
-    guint16 data16, plen;
-    guint8 startcode;
+    uint16_t data16, plen;
+    uint8_t startcode;
 
     /*
     tvbuff_t *next_tvb;
@@ -138,7 +134,7 @@ dissect_h263P( tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
       if (plen != 0){
           extra_hdr_item = proto_tree_add_item( h263P_tree, hf_h263P_extra_hdr, tvb, offset, plen, ENC_NA );
           h263P_extr_hdr_tree = proto_item_add_subtree( extra_hdr_item, ett_h263P_extra_hdr );
-          dissect_h263_picture_layer( tvb, pinfo, h263P_extr_hdr_tree, offset, plen, TRUE);
+          dissect_h263_picture_layer( tvb, pinfo, h263P_extr_hdr_tree, offset, plen, true);
           offset += plen;
       }
       if ((data16&0x0400)!=0){
@@ -146,7 +142,7 @@ dissect_h263P( tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
           data_item = proto_tree_add_item( h263P_tree, hf_h263P_payload, tvb, offset, -1, ENC_NA );
           h263P_data_tree = proto_item_add_subtree( data_item, ett_h263P_data );
           /* Startc code holds bit 17 -23 of the codeword */
-          startcode = tvb_get_guint8(tvb,offset)&0xfe;
+          startcode = tvb_get_uint8(tvb,offset)&0xfe;
           if (startcode & 0x80){
               /* All picture, slice, and EOSBS start codes
                * shall be byte aligned, and GOB and EOS start codes may be byte aligned.
@@ -164,7 +160,7 @@ dissect_h263P( tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
                    * ( 1000 00x.)
                    */
                   col_append_str( pinfo->cinfo, COL_INFO, "(PSC) ");
-                  dissect_h263_picture_layer( tvb, pinfo, h263P_data_tree, offset, -1, TRUE);
+                  dissect_h263_picture_layer( tvb, pinfo, h263P_data_tree, offset, -1, true);
                   break;
               case 0xfc:
               case 0xfe:
@@ -176,7 +172,7 @@ dissect_h263P( tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
                    * Slice Start Code (SSC)
                    */
                   col_append_str( pinfo->cinfo, COL_INFO, "(GBSC) ");
-                  dissect_h263_group_of_blocks_layer( tvb, h263P_data_tree, offset,TRUE);
+                  dissect_h263_group_of_blocks_layer( tvb, h263P_data_tree, offset,true);
                   break;
               }
           }else{
@@ -192,23 +188,9 @@ dissect_h263P( tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
 void
 proto_reg_handoff_h263P(void)
 {
-    static guint dynamic_payload_type;
-    static gboolean h263P_prefs_initialized = FALSE;
-
-    if (!h263P_prefs_initialized) {
-        dissector_add_string("rtp_dyn_payload_type","H263-1998", h263P_handle);
-        dissector_add_string("rtp_dyn_payload_type","H263-2000", h263P_handle);
-        h263P_prefs_initialized = TRUE;
-      }
-    else {
-        if ( dynamic_payload_type > 95 )
-            dissector_delete_uint("rtp.pt", dynamic_payload_type, h263P_handle);
-    }
-    dynamic_payload_type = temp_dynamic_payload_type;
-
-    if ( dynamic_payload_type > 95 ){
-        dissector_add_uint("rtp.pt", dynamic_payload_type, h263P_handle);
-    }
+    dissector_add_string("rtp_dyn_payload_type","H263-1998", h263P_handle);
+    dissector_add_string("rtp_dyn_payload_type","H263-2000", h263P_handle);
+    dissector_add_uint_range_with_preference("rtp.pt", "", h263P_handle);
 }
 
 
@@ -372,7 +354,7 @@ proto_register_h263P(void)
 
     };
 
-    static gint *ett[] =
+    static int *ett[] =
     {
         &ett_h263P,
         &ett_h263P_extra_hdr,
@@ -382,26 +364,20 @@ proto_register_h263P(void)
 
 
     proto_h263P = proto_register_protocol("ITU-T Recommendation H.263 RTP Payload header (RFC4629)",
-        "H263P", "h263p");
+        "H.263P", "h263p");
 
     proto_register_field_array(proto_h263P, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
 
-    h263P_module = prefs_register_protocol(proto_h263P, proto_reg_handoff_h263P);
+    h263P_module = prefs_register_protocol(proto_h263P, NULL);
 
-    prefs_register_uint_preference(h263P_module,
-                       "dynamic.payload.type",
-                       "H263-1998 and H263-2000 dynamic payload type",
-                       "The dynamic payload type which will be interpreted as H264"
-                       "; The value must be greater than 95",
-                       10,
-                       &temp_dynamic_payload_type);
+    prefs_register_obsolete_preference(h263P_module, "dynamic.payload.type");
 
     h263P_handle = register_dissector("h263P", dissect_h263P, proto_h263P);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

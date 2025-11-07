@@ -27,7 +27,7 @@ InfoProxyModel::~InfoProxyModel()
 
 void InfoProxyModel::appendInfo(QString info)
 {
-    if ( ! infos_.contains(info) )
+    if (! infos_.contains(info))
         infos_ << info;
 }
 
@@ -38,26 +38,25 @@ void InfoProxyModel::clearInfos()
 
 int InfoProxyModel::rowCount(const QModelIndex &parent) const
 {
-    return sourceModel()->rowCount(parent) + infos_.count();
+    return static_cast<int>(sourceModel()->rowCount(parent) + infos_.count());
 }
 
 QVariant InfoProxyModel::data (const QModelIndex &index, int role) const
 {
-    if ( ! index.isValid() )
+    if (! index.isValid())
         return QVariant();
 
-    if ( index.row() < sourceModel()->rowCount() )
+    if (index.row() < sourceModel()->rowCount())
         return sourceModel()->data(mapToSource(index), role);
 
     int ifIdx = index.row() - sourceModel()->rowCount();
-    if ( index.column() != column_ || ifIdx < 0 || ifIdx >= infos_.count() )
+    if (index.column() != column_ || ifIdx < 0 || ifIdx >= infos_.count())
         return QVariant();
 
-    switch ( role )
+    switch (role)
     {
     case Qt::DisplayRole:
         return infos_.at(ifIdx);
-        break;
     case Qt::FontRole:
         QFont font = QIdentityProxyModel::data(index, Qt::FontRole).value<QFont>();
         font.setItalic(true);
@@ -69,15 +68,15 @@ QVariant InfoProxyModel::data (const QModelIndex &index, int role) const
 
 Qt::ItemFlags InfoProxyModel::flags(const QModelIndex &index) const
 {
-    if ( index.row() < sourceModel()->rowCount() )
+    if (index.row() < sourceModel()->rowCount())
         return sourceModel()->flags(mapToSource(index));
 
-    return 0;
+    return Qt::ItemFlags();
 }
 
 QModelIndex InfoProxyModel::index(int row, int column, const QModelIndex &parent) const
 {
-    if ( row >= sourceModel()->rowCount() && row < rowCount() )
+    if (row >= sourceModel()->rowCount() && row < rowCount())
         return createIndex(row, column);
 
     return QIdentityProxyModel::index(row, column, parent);
@@ -85,10 +84,10 @@ QModelIndex InfoProxyModel::index(int row, int column, const QModelIndex &parent
 
 QModelIndex InfoProxyModel::mapToSource(const QModelIndex &proxyIndex) const
 {
-    if ( ! proxyIndex.isValid() )
+    if (! proxyIndex.isValid())
         return QModelIndex();
 
-    if ( proxyIndex.row() >= sourceModel()->rowCount() )
+    if (proxyIndex.row() >= sourceModel()->rowCount())
         return QModelIndex();
 
     return QIdentityProxyModel::mapToSource(proxyIndex);
@@ -104,39 +103,16 @@ void InfoProxyModel::setColumn(int column)
     int old_column = column_;
     column_ = column;
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     QVector<int> roles;
     roles << Qt::DisplayRole;
-#endif
 
     if (old_column >= 0) {
         //Notify old column has changed
-        emit dataChanged(index(0, old_column), index(rowCount(), old_column)
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-                         , roles
-#endif
-        );
+        emit dataChanged(index(0, old_column), index(rowCount(), old_column), roles);
     }
 
     if (column_ >= 0) {
         //Notify new column has changed
-        emit dataChanged(index(0, column_), index(rowCount(), column_)
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-                         , roles
-#endif
-        );
+        emit dataChanged(index(0, column_), index(rowCount(), column_), roles);
     }
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

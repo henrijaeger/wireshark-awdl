@@ -1,5 +1,4 @@
-/*
- *  crc6.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -11,9 +10,8 @@
 #ifndef __CRC6_H__
 #define __CRC6_H__
 
-#include "ws_symbol_export.h"
+#include <wireshark.h>
 
-WS_DLL_PUBLIC guint16 update_crc6_by_bytes(guint16 crc6, guint8 byte1, guint8 byte2);
-WS_DLL_PUBLIC guint16 crc6_compute(const guint8 *data_blk_ptr, int data_blk_size);
+WS_DLL_PUBLIC uint16_t crc6_0X6F(uint16_t crc6, const uint8_t *data_blk_ptr, int data_blk_size);
 
 #endif /* __CRC6_H__ */

@@ -10,12 +10,9 @@
 #ifndef __PACKET_TFTP_H__
 #define __PACKET_TFTP_H__
 
-#include <epan/packet.h>
-
-/* When export file data, store list of separate blocks */
-typedef struct file_block_t {
-  void *data;
-  guint length;
-} file_block_t;
+/* Private data passed from the TFTP dissector to subdissectors. */
+struct tftpinfo {
+    const char *filename;
+};
 
 #endif /* __PACKET_TFTP_H__ */

@@ -3,8 +3,10 @@
  * STANAG 4607 file reading
  *
  * http://www.nato.int/structur/AC/224/standard/4607/4607e_JAS_ED3.pdf
- * (that is now missing from that site, but is available on the Wayback
- * Machine)
+ * That is now missing from that site, but is available on the Wayback
+ * Machine:
+ *
+ * https://web.archive.org/web/20130223054955/http://www.nato.int/structur/AC/224/standard/4607/4607.htm
  *
  * https://nso.nato.int/nso/zPublic/ap/aedp-7(2).pdf
  *
@@ -12,13 +14,11 @@
  */
 
 #include "config.h"
-
-#include <errno.h>
+#include "stanag4607.h"
 
 #include "wtap-int.h"
 #include "file_wrappers.h"
 #include <wsutil/buffer.h>
-#include "stanag4607.h"
 
 typedef struct {
   time_t base_secs;
@@ -27,40 +27,45 @@ typedef struct {
 #define PKT_HDR_SIZE  32 /* size of a packet header */
 #define SEG_HDR_SIZE  5  /* size of a segment header */
 
-static gboolean is_valid_id(guint16 version_id)
+static int stanag4607_file_type_subtype = -1;
+
+void register_stanag4607(void);
+
+static bool is_valid_id(uint16_t version_id)
 {
 #define VERSION_21 0x3231
 #define VERSION_30 0x3330
   if ((version_id != VERSION_21) &&
       (version_id != VERSION_30))
      /* Not a stanag4607 file */
-     return FALSE;
-  return TRUE;
+     return false;
+  return true;
 }
 
-static gboolean stanag4607_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
-                               Buffer *buf, int *err, gchar **err_info)
+static bool stanag4607_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
+                                 int *err, char **err_info)
 {
   stanag4607_t *stanag4607 = (stanag4607_t *)wth->priv;
-  guint32 millisecs, secs, nsecs;
-  gint64 offset = 0;
-  guint8 stanag_pkt_hdr[PKT_HDR_SIZE+SEG_HDR_SIZE];
-  guint32 packet_size;
+  uint32_t millisecs, secs, nsecs;
+  int64_t offset = 0;
+  uint8_t stanag_pkt_hdr[PKT_HDR_SIZE+SEG_HDR_SIZE];
+  uint32_t packet_size;
 
   *err = 0;
 
   /* Combined packet header and segment header */
   if (!wtap_read_bytes_or_eof(fh, stanag_pkt_hdr, sizeof stanag_pkt_hdr, err, err_info))
-    return FALSE;
+    return false;
   offset += sizeof stanag_pkt_hdr;
 
   if (!is_valid_id(pntoh16(&stanag_pkt_hdr[0]))) {
     *err = WTAP_ERR_BAD_FILE;
     *err_info = g_strdup("Bad version number");
-    return FALSE;
+    return false;
   }
 
   rec->rec_type = REC_TYPE_PACKET;
+  rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 
   /* The next 4 bytes are the packet length */
   packet_size = pntoh32(&stanag_pkt_hdr[2]);
@@ -70,9 +75,9 @@ static gboolean stanag4607_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
      * to allocate space for an immensely-large packet.
      */
     *err = WTAP_ERR_BAD_FILE;
-    *err_info = g_strdup_printf("stanag4607: File has %" G_GUINT32_FORMAT "d-byte packet, "
+    *err_info = ws_strdup_printf("stanag4607: File has %" PRIu32 "d-byte packet, "
       "bigger than maximum of %u", packet_size, WTAP_MAX_PACKET_SIZE_STANDARD);
-    return FALSE;
+    return false;
   }
   if (packet_size < PKT_HDR_SIZE+SEG_HDR_SIZE) {
     /*
@@ -80,9 +85,9 @@ static gboolean stanag4607_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
      * infinitely if the size is zero.
      */
     *err = WTAP_ERR_BAD_FILE;
-    *err_info = g_strdup_printf("stanag4607: File has %" G_GUINT32_FORMAT "d-byte packet, "
+    *err_info = ws_strdup_printf("stanag4607: File has %" PRIu32 "d-byte packet, "
       "smaller than minimum of %u", packet_size, PKT_HDR_SIZE+SEG_HDR_SIZE);
-    return FALSE;
+    return false;
   }
   rec->rec_header.packet_header.caplen = packet_size;
   rec->rec_header.packet_header.len = packet_size;
@@ -101,11 +106,11 @@ static gboolean stanag4607_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
 #define JOB_DEFINITION_SEGMENT 5
 #define PLATFORM_LOCATION_SEGMENT 13
   if (MISSION_SEGMENT == stanag_pkt_hdr[32]) {
-    guint8 mseg[39];
+    uint8_t mseg[39];
     struct tm tm;
 
     if (!wtap_read_bytes(fh, &mseg, sizeof mseg, err, err_info))
-      return FALSE;
+      return false;
     offset += sizeof mseg;
 
     tm.tm_year = pntoh16(&mseg[35]) - 1900;
@@ -120,14 +125,14 @@ static gboolean stanag4607_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
   }
   else if (PLATFORM_LOCATION_SEGMENT == stanag_pkt_hdr[32]) {
     if (!wtap_read_bytes(fh, &millisecs, sizeof millisecs, err, err_info))
-      return FALSE;
+      return false;
     offset += sizeof millisecs;
     millisecs = g_ntohl(millisecs);
   }
   else if (DWELL_SEGMENT == stanag_pkt_hdr[32]) {
-    guint8 dseg[19];
+    uint8_t dseg[19];
     if (!wtap_read_bytes(fh, &dseg, sizeof dseg, err, err_info))
-      return FALSE;
+      return false;
     offset += sizeof dseg;
     millisecs = pntoh32(&dseg[15]);
   }
@@ -140,37 +145,31 @@ static gboolean stanag4607_read_file(wtap *wth, FILE_T fh, wtap_rec *rec,
 
   /* wind back to the start of the packet ... */
   if (file_seek(fh, - offset, SEEK_CUR, err) == -1)
-    return FALSE;
+    return false;
 
-  return wtap_read_packet_bytes(fh, buf, packet_size, err, err_info);
+  return wtap_read_bytes_buffer(fh, &rec->data, packet_size, err, err_info);
 }
 
-static gboolean stanag4607_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
+static bool stanag4607_read(wtap *wth, wtap_rec *rec,
+                            int *err, char **err_info, int64_t *data_offset)
 {
-  gint64 offset;
+  *data_offset = file_tell(wth->fh);
 
-  *err = 0;
-
-  offset = file_tell(wth->fh);
-
-  *data_offset = offset;
-
-  return stanag4607_read_file(wth, wth->fh, &wth->rec, wth->rec_data, err, err_info);
+  return stanag4607_read_file(wth, wth->fh, rec, err, err_info);
 }
 
-static gboolean stanag4607_seek_read(wtap *wth, gint64 seek_off,
-                               wtap_rec *rec,
-                               Buffer *buf, int *err, gchar **err_info)
+static bool stanag4607_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
+                                 int *err, char **err_info)
 {
   if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
-    return FALSE;
+    return false;
 
-  return stanag4607_read_file(wth, wth->random_fh, rec, buf, err, err_info);
+  return stanag4607_read_file(wth, wth->random_fh, rec, err, err_info);
 }
 
-wtap_open_return_val stanag4607_open(wtap *wth, int *err, gchar **err_info)
+wtap_open_return_val stanag4607_open(wtap *wth, int *err, char **err_info)
 {
-  guint16 version_id;
+  uint16_t version_id;
   stanag4607_t *stanag4607;
 
   if (!wtap_read_bytes(wth->fh, &version_id, sizeof version_id, err, err_info))
@@ -184,11 +183,11 @@ wtap_open_return_val stanag4607_open(wtap *wth, int *err, gchar **err_info)
   if (file_seek(wth->fh, 0, SEEK_SET, err) == -1)
     return WTAP_OPEN_ERROR;
 
-  wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_STANAG_4607;
+  wth->file_type_subtype = stanag4607_file_type_subtype;
   wth->file_encap = WTAP_ENCAP_STANAG_4607;
   wth->snapshot_length = 0; /* not known */
 
-  stanag4607 = (stanag4607_t *)g_malloc(sizeof(stanag4607_t));
+  stanag4607 = g_new(stanag4607_t, 1);
   wth->priv = (void *)stanag4607;
   stanag4607->base_secs = 0; /* unknown as of yet */
 
@@ -196,11 +195,44 @@ wtap_open_return_val stanag4607_open(wtap *wth, int *err, gchar **err_info)
   wth->subtype_seek_read = stanag4607_seek_read;
   wth->file_tsprec = WTAP_TSPREC_MSEC;
 
+  /*
+   * Add an IDB; we don't know how many interfaces were
+   * involved, so we just say one interface, about which
+   * we only know the link-layer type, snapshot length,
+   * and time stamp resolution.
+   */
+  wtap_add_generated_idb(wth);
+
   return WTAP_OPEN_MINE;
 }
 
+static const struct supported_block_type stanag4607_blocks_supported[] = {
+  /*
+   * We support packet blocks, with no comments or other options.
+   */
+  { WTAP_BLOCK_PACKET, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info stanag4607_info = {
+  "STANAG 4607 Format", "stanag4607", NULL, NULL,
+  false, BLOCKS_SUPPORTED(stanag4607_blocks_supported),
+  NULL, NULL, NULL
+};
+
+void register_stanag4607(void)
+{
+  stanag4607_file_type_subtype = wtap_register_file_type_subtype(&stanag4607_info);
+
+  /*
+   * Register name for backwards compatibility with the
+   * wtap_filetypes table in Lua.
+   */
+  wtap_register_backwards_compatibility_lua_name("STANAG_4607",
+                                                 stanag4607_file_type_subtype);
+}
+
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

@@ -4,13 +4,12 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
-#ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
-#endif
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -35,7 +34,7 @@ int InterfaceToolbarReader::async_pipe_read(void *data, int nbyte)
     int bytes_read = -1;
 
     overlap.Pointer = 0;
-    overlap.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    overlap.hEvent = CreateEvent(NULL, true, false, NULL);
     if (overlap.hEvent == NULL)
     {
         // CreateEvent failed with error code GetLastError()
@@ -55,7 +54,7 @@ int InterfaceToolbarReader::async_pipe_read(void *data, int nbyte)
         if (WaitForSingleObject(overlap.hEvent, INFINITE) == WAIT_OBJECT_0)
         {
             // The wait operation has completed.
-            success = GetOverlappedResult(control_in_, &overlap, &nof_bytes_read, FALSE);
+            success = GetOverlappedResult(control_in_, &overlap, &nof_bytes_read, false);
 
             if (success && nof_bytes_read != 0)
             {
@@ -96,12 +95,10 @@ int InterfaceToolbarReader::pipe_read(char *data, int nbyte)
             total_len += read_len;
         }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
         if (QThread::currentThread()->isInterruptionRequested())
         {
             return -1;
         }
-#endif
     }
 
     return total_len;
@@ -141,12 +138,10 @@ void InterfaceToolbarReader::loop()
             break;
         }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
         if (QThread::currentThread()->isInterruptionRequested())
         {
             break;
         }
-#endif
 
         if (ret == 0 || !FD_ISSET(fd_in_, &readfds))
         {
@@ -184,16 +179,3 @@ void InterfaceToolbarReader::loop()
 
     emit finished();
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -12,6 +12,7 @@
 #include <QPalette>
 #include <QApplication>
 #include <QBrush>
+#include <QRegularExpression>
 
 #include <ui/qt/models/supported_protocols_model.h>
 
@@ -158,7 +159,7 @@ void SupportedProtocolsModel::populate()
     void *proto_cookie;
     void *field_cookie;
 
-    emit beginResetModel();
+    beginResetModel();
 
     SupportedProtocolsItem *protoItem, *fieldItem;
     protocol_t *protocol;
@@ -181,7 +182,7 @@ void SupportedProtocolsModel::populate()
         }
     }
 
-    emit endResetModel();
+    endResetModel();
 }
 
 
@@ -199,7 +200,7 @@ bool SupportedProtocolsProxyModel::lessThan(const QModelIndex &left, const QMode
     SupportedProtocolsItem* right_item = static_cast<SupportedProtocolsItem*>(right.internalPointer());
 
     if ((left_item != NULL) && (right_item != NULL)) {
-        int compare_ret = left_item->name().compare(right_item->name());
+        int compare_ret =  QString::compare(left_item->name(), right_item->name(), Qt::CaseInsensitive);
         if (compare_ret < 0)
             return true;
     }
@@ -209,7 +210,9 @@ bool SupportedProtocolsProxyModel::lessThan(const QModelIndex &left, const QMode
 
 bool SupportedProtocolsProxyModel::filterAcceptItem(SupportedProtocolsItem& item) const
 {
-    QRegExp regex(filter_, Qt::CaseInsensitive);
+    QRegularExpression regex(filter_, QRegularExpression::CaseInsensitiveOption);
+    if (! regex.isValid())
+        return false;
 
     if (item.name().contains(regex))
         return true;
@@ -256,17 +259,3 @@ void SupportedProtocolsProxyModel::setFilter(const QString& filter)
     filter_ = filter;
     invalidateFilter();
 }
-
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

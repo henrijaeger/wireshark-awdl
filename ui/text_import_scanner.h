@@ -1,4 +1,5 @@
-/**-*-C-*-**********************************************************************
+/** @file
+ *
  * text_import_scanner.h
  * Scanner for text import
  * November 2010, Jaap Keuter <jaap.keuter@xs4all.nl>
@@ -22,35 +23,28 @@ extern "C" {
 
 typedef enum {
     T_BYTE = 1,
+    T_BYTES,
     T_OFFSET,
     T_DIRECTIVE,
     T_TEXT,
-    T_EOL
+    T_EOL,
+    T_EOF
 } token_t;
 
+typedef enum {
+    IMPORT_SUCCESS,
+    IMPORT_FAILURE,
+    IMPORT_INIT_FAILED
+} import_status_t;
 
-void parse_token(token_t token, char *str);
-void write_current_packet(void);
+import_status_t parse_token(token_t token, char *str);
 
 extern FILE *text_importin;
 
-int text_import_scan(FILE *input_file);
+import_status_t text_import_scan(FILE *input_file);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
 #endif /* __TEXT_IMPORT_SCANNER_H__ */
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -1,4 +1,4 @@
-/* gencode.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -9,6 +9,8 @@
 
 #ifndef GENCODE_H
 #define GENCODE_H
+
+#include "dfilter-int.h"
 
 void
 dfw_gencode(dfwork_t *dfw);

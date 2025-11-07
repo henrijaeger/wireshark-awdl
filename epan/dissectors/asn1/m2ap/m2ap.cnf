@@ -68,18 +68,26 @@ ProtocolIE-Field/value ie_field_value
 
 #.FN_BODY PLMN-Identity  VAL_PTR = &parameter_tvb
   tvbuff_t *parameter_tvb = NULL;
+  struct m2ap_private_data *m2ap_data = m2ap_get_private_data(actx->pinfo);
+  e212_number_type_t number_type = m2ap_data->number_type;
+  m2ap_data->number_type = E212_NONE;
 %(DEFAULT_BODY)s
   if (parameter_tvb) {
     proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_m2ap_PLMN_Identity);
-    dissect_e212_mcc_mnc(parameter_tvb, actx->pinfo, subtree, 0, E212_NONE, FALSE);
+    dissect_e212_mcc_mnc(parameter_tvb, actx->pinfo, subtree, 0, number_type, false);
   }
 #.END
+
+#.FN_BODY ECGI
+  struct m2ap_private_data *m2ap_data = m2ap_get_private_data(actx->pinfo);
+  m2ap_data->number_type = E212_ECGI;
+%(DEFAULT_BODY)s
 
 #.FN_BODY IPAddress VAL_PTR = &parameter_tvb
   tvbuff_t *parameter_tvb = NULL;
 %(DEFAULT_BODY)s
   if (parameter_tvb) {
-    gint tvb_len = tvb_reported_length(parameter_tvb);
+    int tvb_len = tvb_reported_length(parameter_tvb);
     proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_m2ap_IPAddress);
 
     switch (tvb_len) {
@@ -97,7 +105,7 @@ ProtocolIE-Field/value ie_field_value
 #.END
 
 #.TYPE_ATTR
-BitRate DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=&units_bit_sec
+BitRate DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=UNS(&units_bit_sec)
 
 #.FN_HDR SessionStartRequest
   col_set_str(actx->pinfo->cinfo, COL_INFO, "MBMS Session Start Request");
@@ -219,6 +227,12 @@ id-SC-PTM-Information                                    ProtocolIE-ID
 id-Modification-PeriodExtended                           ProtocolIE-ID
 id-Repetition-PeriodExtended                             ProtocolIE-ID
 id-MCH-Scheduling-PeriodExtended2                        ProtocolIE-ID
+id-Subcarrier-SpacingMBMS                                ProtocolIE-ID
+id-SubframeAllocationExtended                            ProtocolIE-ID
+id-MCCHrelatedBCCH-ExtConfigPerMBSFNArea-Item            ProtocolIE-ID
+id-MCCHrelatedBCCH-ExtConfigPerMBSFNArea                 ProtocolIE-ID
+id-SubframeAllocationFurtherExtension                    ProtocolIE-ID
+id-AdditionalConfigParameters                            ProtocolIE-ID
 
 #.REGISTER
 
@@ -264,6 +278,8 @@ Active-MBMS-Session-List                              N m2ap.ies id-Active-MBMS-
 MBMS-Suspension-Notification-List                     N m2ap.ies id-MBMS-Suspension-Notification-List
 MBMS-Suspension-Notification-Item                     N m2ap.ies id-MBMS-Suspension-Notification-Item
 SC-PTM-Information                                    N m2ap.ies id-SC-PTM-Information
+MCCHrelatedBCCH-ExtConfigPerMBSFNArea-Item            N m2ap.ies id-MCCHrelatedBCCH-ExtConfigPerMBSFNArea-Item
+MCCHrelatedBCCH-ExtConfigPerMBSFNArea                 N m2ap.ies id-MCCHrelatedBCCH-ExtConfigPerMBSFNArea
 
 #M2AP-PROTOCOL-EXTENSION
 Modulation-Coding-Scheme2                             N m2ap.extension id-Modulation-Coding-Scheme2
@@ -271,6 +287,10 @@ MCH-Scheduling-PeriodExtended                         N m2ap.extension id-MCH-Sc
 Repetition-PeriodExtended                             N m2ap.extension id-Repetition-PeriodExtended
 Modification-PeriodExtended                           N m2ap.extension id-Modification-PeriodExtended
 MCH-Scheduling-PeriodExtended2                        N m2ap.extension id-MCH-Scheduling-PeriodExtended2
+SubframeAllocationExtended                            N m2ap.extension id-SubframeAllocationExtended
+Subcarrier-SpacingMBMS                                N m2ap.extension id-Subcarrier-SpacingMBMS
+SubframeAllocationFurtherExtension                    N m2ap.extension id-SubframeAllocationFurtherExtension
+AdditionalConfigParameters                            N m2ap.extension id-AdditionalConfigParameters
 
 #M2AP-ELEMENTARY-PROCEDURE
 SessionStartRequest               N m2ap.proc.imsg id-sessionStart

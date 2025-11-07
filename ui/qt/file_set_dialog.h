@@ -1,4 +1,4 @@
-/* fileset_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -11,8 +11,6 @@
 #define FILE_SET_DIALOG_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include "file.h"
 #include "fileset.h"
@@ -56,16 +54,3 @@ private:
 };
 
 #endif // FILE_SET_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

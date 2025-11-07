@@ -15,6 +15,7 @@
 
 /*Network Service Header (NSH) Next Protocol field values */
 
+#define NSH_NONE            0
 #define NSH_IPV4            1
 #define NSH_IPV6            2
 #define NSH_ETHERNET        3
@@ -22,5 +23,8 @@
 #define NSH_MPLS            5
 #define NSH_EXPERIMENT_1    254
 #define NSH_EXPERIMENT_2    255
+
+// Alias for last "actual" known protocol
+#define NSH_MAX_PROTOCOL NSH_MPLS
 
 #endif /* __PACKET_NSH_H__ */

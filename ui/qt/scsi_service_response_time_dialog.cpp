@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "scsi_service_response_time_dialog.h"
 
@@ -79,20 +80,7 @@ void ScsiServiceResponseTimeDialog::provideParameterData()
     char* err;
     QString command;
 
-    command = QString(",%1").arg(command_combo_->currentIndex());
+    command = QStringLiteral(",%1").arg(command_combo_->currentIndex());
 
     scsistat_param(srt_, command.toStdString().c_str(), &err);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

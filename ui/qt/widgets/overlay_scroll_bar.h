@@ -1,16 +1,18 @@
-/* overlay_scroll_bar.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __OVERLAY_SCROLL_BAR_H__
 #define __OVERLAY_SCROLL_BAR_H__
 
 #include <QScrollBar>
-#include <QProxyStyle>
+
+class QProxyStyle;
 
 class OverlayScrollBar : public QScrollBar
 {
@@ -21,19 +23,22 @@ public:
     virtual ~OverlayScrollBar();
 
     virtual QSize sizeHint() const;
+    virtual int sliderPosition();
 
     /** Set the "near" overlay image.
      * @param overlay_image An image containing a 1:1 mapping of nearby
      *        packet colors to raster lines. It should be sized in device
      *        pixels.
+     * @param packet_count Number of packets.
      * @param start_pos The first packet number represented by the image.
      *        -1 means no packet is selected.
      * @param end_pos The last packet number represented by the image. -1
      *        means no packet is selected.
-     * @param selected_pos The position of the selected packet within the
-     *        image. -1 means no packet is selected.
+     * @param positions The positions of the selected packets within the
+     *        image.
+     * @param rowHeight The row height to be used for displaying the mark
      */
-    void setNearOverlayImage(QImage &overlay_image, int packet_count = -1, int start_pos = -1, int end_pos = -1, int selected_pos = -1);
+    void setNearOverlayImage(QImage &overlay_image, int packet_count = -1, int start_pos = -1, int end_pos = -1, QList<int> positions = QList<int>(), int rowHeight = 1);
 
     /** Set the "far" overlay image.
      * @param mp_image An image showing the position of marked, ignored,
@@ -48,9 +53,6 @@ public:
     QRect grooveRect();
 
 public slots:
-    // Qt 4's QScrollBar::setRange isn't a slot. We can't wrap this in
-    //#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
-    // because Qt 4's MOC doesn't support macros.
     void setChildRange(int min, int max) { child_sb_.setRange(min, max); }
 
 protected:
@@ -71,21 +73,12 @@ private:
     int packet_count_;
     int start_pos_;
     int end_pos_;
-    int selected_pos_;
+    QList<int> positions_;
+    int row_height_;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+    void updateChildStyle();
+#endif
 };
 
 #endif // __OVERLAY_SCROLL_BAR_H__
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

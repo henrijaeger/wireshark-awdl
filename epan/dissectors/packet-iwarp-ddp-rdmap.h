@@ -24,8 +24,33 @@
 #define RDMA_SEND_SE_INVALIDATE 0x06
 #define RDMA_TERMINATE 0x07
 
-struct rdmapinfo {
-	guint8 opcode;
-};
+/* Read request info */
+typedef struct rdmap_request {
+	uint32_t sink_stag;
+	uint64_t sink_toffset;
+	uint32_t source_stag;
+	uint64_t source_toffset;
+	uint32_t message_size;
+} rdmap_request_t;
+
+typedef struct rdmapinfo {
+	uint8_t  opcode;
+	bool last_flag;
+	bool is_tagged;
+	union {
+		/* Tagged Buffer Model */
+		struct {
+			uint32_t steering_tag;
+			uint64_t tagged_offset;
+		};
+		/* Untagged Buffer Model */
+		struct {
+			uint32_t queue_number;
+			uint32_t message_seq_num;
+			uint32_t message_offset;
+		};
+	};
+	rdmap_request_t *read_request;
+} rdmap_info_t;
 
 #endif /* __PACKET_IWARP_DDP_RDMAP_H_ */

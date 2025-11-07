@@ -7,14 +7,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 
-include_directories(
-	${CMAKE_CURRENT_BINARY_DIR}
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${CMAKE_SOURCE_DIR}/epan
-)
-
 set(FTYPE_PUBLIC_HEADERS
 	ftypes.h
+)
+
+set(FTYPE_HEADER_FILES
+	${FTYPE_PUBLIC_HEADERS}
+	ftypes-int.h
 )
 
 set(FTYPE_FILES
@@ -27,7 +26,6 @@ set(FTYPE_FILES
 	ftype-ipv6.c
 	ftype-guid.c
 	ftype-none.c
-	ftype-pcre.c
 	ftype-protocol.c
 	ftype-string.c
 	ftype-time.c
@@ -41,7 +39,17 @@ set_source_files_properties(
 )
 
 add_library(ftypes OBJECT
+	#Included so that Visual Studio can properly put header files in solution
+	${FTYPE_HEADER_FILES}
+
 	${FTYPE_FILES}
+)
+
+target_include_directories(ftypes
+	PRIVATE
+		${CMAKE_CURRENT_BINARY_DIR}
+		${CMAKE_CURRENT_SOURCE_DIR}
+		${CMAKE_SOURCE_DIR}/epan
 )
 
 set_target_properties(ftypes PROPERTIES
@@ -49,23 +57,22 @@ set_target_properties(ftypes PROPERTIES
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
 )
 
-if(NOT WIN32)
-	install(FILES ${FTYPE_PUBLIC_HEADERS}
-		DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/epan/ftypes"
-	)
-endif()
+install(FILES ${FTYPE_PUBLIC_HEADERS}
+	DESTINATION "${PROJECT_INSTALL_INCLUDEDIR}/epan/ftypes"
+	COMPONENT "Development"
+	EXCLUDE_FROM_ALL
+)
 
 CHECKAPI(
 	NAME
 	  ftypes
 	SWITCHES
-	  -g termoutput -build
 	SOURCES
 	  ${FTYPE_FILES}
 )
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

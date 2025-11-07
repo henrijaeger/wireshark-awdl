@@ -65,7 +65,7 @@ TODO
 
 /* All field dissectors that call a normal type
    (i.e. not a pointer, not an array)
-   has a local variable  guint param declared which is passed on to the
+   has a local variable  unsigned param declared which is passed on to the
    type dissector.
    The default value is 0 but the PARAM_VALUE conformance tag can be used to
    change it.
@@ -235,7 +235,7 @@ prepend_pointer_list(pointer_item_t *ptrs, int num_pointers)
 		if(num_pointers)num_pointers--;
 		pi=pi->next;
 	}
-	if(!pi)pi=ptrs;
+	pi=ptrs;
 	while(num_pointers--){
 		pi=g_new0(pointer_item_t, 1);
 		if (!pi) {
@@ -276,7 +276,7 @@ get_union_tag_size(char *name)
 		}
 	}
 	FPRINTF(stderr, "ERROR: size of tag for union:%s is not known\n", name);
-	FPRINTF(stderr, "  use the UNION_TAG_SIZE directive to specify it in teh conformance file\n");
+	FPRINTF(stderr, "  use the UNION_TAG_SIZE directive to specify it in the conformance file\n");
 	exit(10);
 }
 
@@ -306,7 +306,7 @@ check_hf_rename_refcount(void)
 {
 	hf_rename_item_t *hri;
 
-	/* dont generate code for renamed hf fields  just return the new name*/
+	/* don't generate code for renamed hf fields  just return the new name*/
 	for(hri=hf_rename_list;hri;hri=hri->next){
 		if(!hri->refcount){
 			FPRINTF(stderr, "ERROR: the hf_rename field:%s was never referenced. it is likely the conformance file is stale\n", hri->old_name);
@@ -345,7 +345,7 @@ register_hf_field(const char *hf_name, const char *title, const char *filter_nam
 	hf_field_item_t *hfi;
 	hf_rename_item_t *hri;
 
-	/* dont generate code for renamed hf fields  just return the new name*/
+	/* don't generate code for renamed hf fields  just return the new name*/
 	for(hri=hf_rename_list;hri;hri=hri->next){
 		if(!strncmp(hf_name, hri->old_name, strlen(hf_name))){
 			hfi=find_hf_field(hri->new_name);
@@ -368,7 +368,7 @@ register_hf_field(const char *hf_name, const char *title, const char *filter_nam
 	hfi->name=g_strdup(hf_name);
 	hfi->ft_type=g_strdup(ft_type);
 
-	FPRINTF(eth_hf, "static int %s = -1;\n", hf_name);
+	FPRINTF(eth_hf, "static int %s;\n", hf_name);
 	FPRINTF(eth_hfarr, "		{ &%s,\n", hf_name);
 	FPRINTF(eth_hfarr, "		  { \"%s\", \"%s\", %s, %s,\n", title, filter_name, ft_type, base_type);
 	FPRINTF(eth_hfarr, "		  %s, %s,\n", valsstring, mask);
@@ -459,7 +459,7 @@ prune_keyword_parameters(const char *name)
 static token_item_t *
 parsebrackets(token_item_t *ti, bracket_item_t **bracket){
 	bracket_item_t *br;
-	type_item_t *type_item;
+	const type_item_t *type_item;
 
 	if(g_strcmp0(ti->str, "[")){
 		FPRINTF(stderr, "ERROR: parsebrackets first token is not '['\n");
@@ -554,13 +554,13 @@ parsebrackets(token_item_t *ti, bracket_item_t **bracket){
 			continue;
 		}
 
-		/* public : we dont care about this one */
+		/* public : we don't care about this one */
 		if(!g_strcmp0(ti->str, "public")){
 			ti=ti->next;
 			continue;
 		}
 
-		/* gensize : we dont care about this one */
+		/* gensize : we don't care about this one */
 		if(!g_strcmp0(ti->str, "gensize")){
 			ti=ti->next;
 			continue;
@@ -591,7 +591,7 @@ parsebrackets(token_item_t *ti, bracket_item_t **bracket){
 			continue;
 		}
 
-		/* value   we dont care about this one so just skip it */
+		/* value   we don't care about this one so just skip it */
 		if(!g_strcmp0(ti->str, "value")){
 			int level;
 			ti=ti->next;
@@ -619,7 +619,7 @@ parsebrackets(token_item_t *ti, bracket_item_t **bracket){
 			continue;
 		}
 
-		/* range   we dont care about this one so just skip it */
+		/* range   we don't care about this one so just skip it */
 		if(!g_strcmp0(ti->str, "range")){
 			int level;
 			ti=ti->next;
@@ -647,7 +647,7 @@ parsebrackets(token_item_t *ti, bracket_item_t **bracket){
 			continue;
 		}
 
-		/* flag   we dont care about this one so just skip it */
+		/* flag   we don't care about this one so just skip it */
 		if(!g_strcmp0(ti->str, "flag")){
 			int level;
 			ti=ti->next;
@@ -750,8 +750,9 @@ parsebrackets(token_item_t *ti, bracket_item_t **bracket){
 			ti=ti->next;
 			continue;
 		}
-
-		FPRINTF(stderr, "ERROR: parsebrackets should not be reached  unknown tag:%s\n", ti->str);
+		if(ti){
+			FPRINTF(stderr, "ERROR: parsebrackets should not be reached  unknown tag:%s\n", ti->str);
+		}
 		Exit(10);
 	}
 
@@ -885,16 +886,16 @@ static void parseheader(void)
 	FPRINTF(NULL,"Interface:%s\n",ifname);
 
 	/* opnum */
-	g_snprintf(hf_status, BASE_BUFFER_SIZE, "hf_%s_opnum", ifname);
-	g_snprintf(filter_name, BASE_BUFFER_SIZE, "%s.opnum", ifname);
+	snprintf(hf_status, BASE_BUFFER_SIZE, "hf_%s_opnum", ifname);
+	snprintf(filter_name, BASE_BUFFER_SIZE, "%s.opnum", ifname);
 	register_hf_field(hf_status, "Operation", filter_name, "FT_UINT16", "BASE_DEC", "NULL", "0", "");
 
 	/* status */
-	g_snprintf(hf_status, BASE_BUFFER_SIZE, "hf_%s_rc", ifname);
-	g_snprintf(filter_name, BASE_BUFFER_SIZE, "%s.rc", ifname);
-	register_hf_field(hf_status, "Return code", filter_name, "FT_UINT32", "BASE_HEX", "VALS(NT_errors)", "0", "");
+	snprintf(hf_status, BASE_BUFFER_SIZE, "hf_%s_rc", ifname);
+	snprintf(filter_name, BASE_BUFFER_SIZE, "%s.rc", ifname);
+	register_hf_field(hf_status, "Return code", filter_name, "FT_UINT32", "BASE_HEX|BASE_EXT_STRING", "&NT_errors_ext", "0", "");
 
-	FPRINTF(eth_ett, "static gint ett_%s = -1;\n", ifname);
+	FPRINTF(eth_ett, "static int ett_%s;\n", ifname);
 	FPRINTF(eth_ettarr, "		 &ett_%s,\n", ifname);
 
 	/* the body must start with { */
@@ -917,7 +918,7 @@ static void parseheader(void)
 	FPRINTF(eth_code,"\n");
 
 	sscanf(version, "%d.%d", &major, &minor);
-	FPRINTF(eth_code,"static guint16 ver_%s = %d;\n", ifname, major);
+	FPRINTF(eth_code,"static uint16_t ver_%s = %d;\n", ifname, major);
 	FPRINTF(eth_code,"\n");
 
 	FPRINTF(eth_handoff, "	  dcerpc_init_uuid(proto_%s, ett_%s,\n", ifname, ifname);
@@ -1090,11 +1091,11 @@ find_type(char *name)
 	if(!tmptype){
 		char dissectorname[DISSECTORNAME_MAXLEN];
 		if(!g_strcmp0(name,"uint16")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1102,11 +1103,11 @@ find_type(char *name)
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("uint16", dissectorname, "FT_UINT16", "BASE_DEC", "0", "NULL", 2);
 		} else if(!g_strcmp0(name,"int16")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1114,11 +1115,11 @@ find_type(char *name)
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("int16", dissectorname, "FT_INT16", "BASE_DEC", "0", "NULL", 2);
 		} else if(!g_strcmp0(name,"uint32")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1127,11 +1128,11 @@ find_type(char *name)
 			tmptype=register_new_type("uint32", dissectorname, "FT_UINT32", "BASE_DEC", "0", "NULL", 4);
 		} else if( (!g_strcmp0(name,"int32"))
 			|| (!g_strcmp0(name,"long")) ){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1142,11 +1143,11 @@ find_type(char *name)
 			else
 				tmptype=register_new_type("long", dissectorname, "FT_INT32", "BASE_DEC", "0", "NULL", 4);
 		} else if( (!g_strcmp0(name,"uint8")) ){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1155,11 +1156,11 @@ find_type(char *name)
 			tmptype=register_new_type("uint8", dissectorname, "FT_UINT8", "BASE_DEC", "0", "NULL", 1);
 		} else if( (!g_strcmp0(name,"int8"))
 			|| (!g_strcmp0(name, "char")) ){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1170,11 +1171,11 @@ find_type(char *name)
 			else
 				tmptype=register_new_type("char", dissectorname, "FT_INT8", "BASE_DEC", "0", "NULL", 1);
 		} else if(!g_strcmp0(name,"bool8")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1182,36 +1183,36 @@ find_type(char *name)
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("bool8", dissectorname, "FT_INT8", "BASE_DEC", "0", "NULL", 1);
 		} else if(!g_strcmp0(name,"unistr")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
-			FPRINTF(eth_code, "    offset=dissect_ndr_cvstring(tvb, offset, pinfo, tree, di, drep, 2, hf_index, FALSE, NULL);\n");
+			FPRINTF(eth_code, "    offset=dissect_ndr_cvstring(tvb, offset, pinfo, tree, di, drep, 2, hf_index, false, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
 			FPRINTF(eth_code, "}\n");
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("unistr", dissectorname, "FT_STRING", "BASE_NONE", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"ascstr")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
-			FPRINTF(eth_code, "    offset=dissect_ndr_cvstring(tvb, offset, pinfo, tree, di, drep, 1, hf_index, FALSE, NULL);\n");
+			FPRINTF(eth_code, "    offset=dissect_ndr_cvstring(tvb, offset, pinfo, tree, di, drep, 1, hf_index, false, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
 			FPRINTF(eth_code, "}\n");
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("ascstr", dissectorname, "FT_STRING", "BASE_NONE", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"GUID")
 			||!g_strcmp0(name,"uuid_t")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uuid_t(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1219,18 +1220,18 @@ find_type(char *name)
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type(name, dissectorname, "FT_GUID", "BASE_NONE", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"policy_handle")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static e_ctx_hnd policy_hnd;\n");
 			FPRINTF(eth_code, "static proto_item *hnd_item;\n");
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset = dissect_nt_policy_hnd(tvb, offset, pinfo, tree, di, drep,\n");
 			FPRINTF(eth_code, " 				  hf_index, &policy_hnd, &hnd_item,\n");
-			FPRINTF(eth_code, " 				  param&0x01, param&0x02);\n");
+			FPRINTF(eth_code, " 				  param);\n");
 
 			FPRINTF(eth_code, "    return offset;\n");
 			FPRINTF(eth_code, "}\n");
@@ -1238,11 +1239,11 @@ find_type(char *name)
 			tmptype=register_new_type("policy_handle", dissectorname, "FT_BYTES", "BASE_NONE", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"NTTIME")){
 			/* 8 bytes, aligned to 4 bytes */
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    offset = dissect_ndr_nt_NTTIME(tvb, offset, pinfo, tree, di, drep, hf_index);\n");
 
@@ -1253,11 +1254,11 @@ find_type(char *name)
 			tmptype=register_new_type("NTTIME", dissectorname, "FT_ABSOLUTE_TIME", "ABSOLUTE_TIME_LOCAL", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"NTTIME_hyper")){
 			/* 8 bytes, aligned to 8 bytes */
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    ALIGN_TO_8_BYTES;\n");
 			FPRINTF(eth_code, "    offset = dissect_ndr_nt_NTTIME(tvb, offset, pinfo, tree, di, drep, hf_index);\n");
@@ -1269,11 +1270,11 @@ find_type(char *name)
 			tmptype=register_new_type("NTTIME_hyper", dissectorname, "FT_ABSOLUTE_TIME", "ABSOLUTE_TIME_LOCAL", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"NTTIME_1sec")){
 			/* 8 bytes, aligned to 8 bytes */
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    ALIGN_TO_8_BYTES;\n");
 			FPRINTF(eth_code, "    offset = dissect_ndr_nt_NTTIME(tvb, offset, pinfo, tree, di, drep, hf_index);\n");
@@ -1285,11 +1286,11 @@ find_type(char *name)
 			tmptype=register_new_type("NTTIME_1sec", dissectorname, "FT_ABSOLUTE_TIME", "ABSOLUTE_TIME_LOCAL", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"udlong")){
 			/* 8 bytes, aligned to 4 bytes */
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_duint32(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
@@ -1300,11 +1301,11 @@ find_type(char *name)
 			tmptype=register_new_type("udlong", dissectorname, "FT_UINT64", "BASE_DEC", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"dlong")){
 			/* 8 bytes, aligned to 4 bytes */
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_duint32(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
@@ -1315,11 +1316,11 @@ find_type(char *name)
 			tmptype=register_new_type("dlong", dissectorname, "FT_INT64", "BASE_DEC", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"uint64")){
 			/* 8 bytes, aligned to 8 bytes */
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    \n");
 			FPRINTF(eth_code, "    ALIGN_TO_8_BYTES;\n");
@@ -1330,13 +1331,13 @@ find_type(char *name)
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("uint64", dissectorname, "FT_UINT64", "BASE_DEC", "0", "NULL", 8);
 		} else if(!g_strcmp0(name,"time_t")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
-			FPRINTF(eth_code, "    \n");
+			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_time_t(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "    return offset;\n");
@@ -1344,25 +1345,23 @@ find_type(char *name)
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("time_t", dissectorname, "FT_ABSOLUTE_TIME", "ABSOLUTE_TIME_LOCAL", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"SID")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
-			FPRINTF(eth_code, "    di->hf_index=hf_index;\n");
-
-			FPRINTF(eth_code, "    offset=dissect_ndr_nt_SID_with_options(tvb, offset, pinfo, tree, di, drep, param);\n");
+			FPRINTF(eth_code, "    offset=dissect_ndr_nt_SID_with_options(tvb, offset, pinfo, tree, di, drep, param, hf_index);\n");
 			FPRINTF(eth_code, "    return offset;\n");
 			FPRINTF(eth_code, "}\n");
 			FPRINTF(eth_code, "\n");
 			tmptype=register_new_type("SID", dissectorname, "FT_STRING", "BASE_NONE", "0", "NULL", 4);
 		} else if(!g_strcmp0(name,"WERROR")){
-			g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
+			snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, name);
 			FPRINTF(NULL,"\nAutogenerating built-in type:%s\n------------\n",name);
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 			FPRINTF(eth_code, "{\n");
 			FPRINTF(eth_code, "    \n");
 			FPRINTF(eth_code, "    offset=dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf_index, NULL);\n");
@@ -1370,7 +1369,7 @@ find_type(char *name)
 			FPRINTF(eth_code, "    return offset;\n");
 			FPRINTF(eth_code, "}\n");
 			FPRINTF(eth_code, "\n");
-			tmptype=register_new_type("WERROR", dissectorname, "FT_UINT32", "BASE_DEC", "0", "VALS(NT_errors)", 4);
+			tmptype=register_new_type("WERROR", dissectorname, "FT_UINT32", "BASE_DEC|BASE_EXT_STRING", "0", "&WERR_errors_ext", 4);
 		}
 	}
 
@@ -1478,7 +1477,7 @@ static void parsetypedefstruct(int pass)
 	pointer_item_t *pi;
 	const char *pointer_type;
 	char *field_name;
-	guint32 fixed_array_size;
+	uint32_t fixed_array_size;
 	int is_array_of_pointers;
 	int empty_struct = 0;
 
@@ -1537,7 +1536,7 @@ static void parsetypedefstruct(int pass)
 	}
 
 	struct_name=tmpti->next->str;
-	g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, struct_name);
+	snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, struct_name);
 
 	FPRINTF(NULL,"\nSTRUCT:%s pass:%d\n-------\n",struct_name,pass);
 
@@ -1549,19 +1548,19 @@ static void parsetypedefstruct(int pass)
 
 	/* this is pass 0  so reset alignment to zero and update as items are
 	   processed. we need alignment when pass 1 is run.
-	   set alignment initially to 1 so we dont fail for empty structs
+	   set alignment initially to 1 so we don't fail for empty structs
 	*/
 	if(pass==0){
 		alignment=1;
 	}
 	/* pass 1  generate header for the struct dissector */
 	if(pass==1){
-		FPRINTF(eth_ett, "static gint ett_%s_%s = -1;\n", ifname, struct_name);
+		FPRINTF(eth_ett, "static int ett_%s_%s;\n", ifname, struct_name);
 		FPRINTF(eth_ettarr, "		 &ett_%s_%s,\n", ifname, struct_name);
-		FPRINTF(eth_hdr, "int %s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param);\n", dissectorname);
+		FPRINTF(eth_hdr, "int %s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param);\n", dissectorname);
 		FPRINTF(eth_code, "\n");
 		FPRINTF(eth_code, "int\n");
-		FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *parent_tree, dcerpc_info *di _U_, guint8 *drep _U_, int hf_index, guint32 param _U_)\n", dissectorname);
+		FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *parent_tree, dcerpc_info *di _U_, uint8_t *drep _U_, int hf_index, uint32_t param _U_)\n", dissectorname);
 		FPRINTF(eth_code, "{\n");
 		FPRINTF(eth_code, "    proto_item *item=NULL;\n");
 		if(!empty_struct){
@@ -1637,7 +1636,7 @@ static void parsetypedefstruct(int pass)
 		/* count the levels of pointers */
 		for(num_pointers=0;!g_strcmp0(ti->str, "*");ti=ti->next){
 			num_pointers++;
-			/* poitners are aligned at 4 byte boundaries */
+			/* pointers are aligned at 4 byte boundaries */
 			if(alignment<4){
 				alignment=4;
 			}
@@ -1659,16 +1658,8 @@ static void parsetypedefstruct(int pass)
 		fixed_array_size=0;
 		is_array_of_pointers=0;
 		if(!g_strcmp0(ti->str, "[")){
-			char fss[BASE_BUFFER_SIZE];
-
 			/* this might be a fixed array */
 			ti=ti->next;
-
-			if (!ws_strtou32(ti->str, NULL, &fixed_array_size)) {
-				FPRINTF(stderr, "ERROR: invalid integer: %s\n", ti->str);
-				Exit(10);
-			}
-			g_snprintf(fss, BASE_BUFFER_SIZE, "%d", fixed_array_size);
 
 			if(!g_strcmp0("]", ti->str)){
 				/* this is just a normal [] array */
@@ -1678,9 +1669,8 @@ static void parsetypedefstruct(int pass)
 				fixed_array_size=0;
 				is_array_of_pointers=1;
 				ti=ti->next;
-			} else if(g_strcmp0(fss, ti->str)){
-				FPRINTF(stderr, "ERROR: typedefstruct (%s) fixed array size looks different to calculated one %s!=%s\n", struct_name, fss, ti->str);
-				ti=ti->next;
+			} else if (!ws_strtou32(ti->str, NULL, &fixed_array_size)) {
+				FPRINTF(stderr, "ERROR: invalid integer: %s\n", ti->str);
 				Exit(10);
 			} else {
 				ti=ti->next;
@@ -1693,22 +1683,22 @@ static void parsetypedefstruct(int pass)
 			ti=ti->next;
 		}
 
-		g_snprintf(hf_index, BASE_BUFFER_SIZE, "hf_%s_%s_%s", ifname, struct_name, field_name);
+		snprintf(hf_index, BASE_BUFFER_SIZE, "hf_%s_%s_%s", ifname, struct_name, field_name);
 		/* pass 0  generate subdissectors */
 		if(pass==0){
 			char filter_name[BASE_BUFFER_SIZE];
 			const char *hf;
 
-			g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, struct_name, field_name);
+			snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, struct_name, field_name);
 			ptmpstr=g_strdup(tmpstr);
 
 			if(check_if_to_emit(tmpstr)){
-			  g_snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, struct_name, field_name);
+			  snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, struct_name, field_name);
 			  hf=register_hf_field(hf_index, field_name, filter_name, type_item->ft_type, type_item->base_type, type_item->vals, type_item->mask, "");
 			  FPRINTF(eth_code, "static int\n");
-			  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", ptmpstr);
+			  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", ptmpstr);
 			  FPRINTF(eth_code, "{\n");
-			  FPRINTF(eth_code, "	 guint32 param=%s;\n",find_dissector_param_value(ptmpstr));
+			  FPRINTF(eth_code, "	 uint32_t param=%s;\n",find_dissector_param_value(ptmpstr));
 			  FPRINTF(eth_code, "	 offset=%s(tvb, offset, pinfo, tree, di, drep, %s, param);\n", type_item->dissector, hf);
 			  FPRINTF(eth_code, "	 return offset;\n");
 			  FPRINTF(eth_code, "}\n");
@@ -1720,10 +1710,10 @@ static void parsetypedefstruct(int pass)
 			if(is_array_of_pointers){
 				pointer_type=pi->type;
 				pi=pi->next;
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
 				if(check_if_to_emit(tmpstr)){
 				  FPRINTF(eth_code, "static int\n");
-				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				  FPRINTF(eth_code, "{\n");
 				  FPRINTF(eth_code, "	 offset=dissect_ndr_embedded_pointer(tvb, offset, pinfo, tree, di, drep, %s, %s, \"%s\", -1);\n", ptmpstr, ptr_to_define(pointer_type), field_name);
 				  FPRINTF(eth_code, "	 return offset;\n");
@@ -1735,10 +1725,10 @@ static void parsetypedefstruct(int pass)
 
 				ptmpstr=g_strdup(tmpstr);
 			} else if(fixed_array_size){
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "fixedarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "fixedarray_%s", ptmpstr);
 				if(check_if_to_emit(tmpstr)){
 				  FPRINTF(eth_code, "static int\n");
-				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				  FPRINTF(eth_code, "{\n");
 				  FPRINTF(eth_code, "	 int count=%d;\n",fixed_array_size);
 				  FPRINTF(eth_code, "	 while(count--){\n");
@@ -1760,10 +1750,10 @@ static void parsetypedefstruct(int pass)
 			  case 0:
 				break;
 			  case BI_SIZE_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
 				if(check_if_to_emit(tmpstr)){
 				  FPRINTF(eth_code, "static int\n");
-				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				  FPRINTF(eth_code, "{\n");
 				  FPRINTF(eth_code, "	 offset=dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep, %s);\n", ptmpstr);
 				  FPRINTF(eth_code, "	 return offset;\n");
@@ -1775,10 +1765,10 @@ static void parsetypedefstruct(int pass)
 				ptmpstr=g_strdup(tmpstr);
 				break;
 			  case BI_LENGTH_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "uvarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "uvarray_%s", ptmpstr);
 				if(check_if_to_emit(tmpstr)){
 				  FPRINTF(eth_code, "static int\n");
-				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				  FPRINTF(eth_code, "{\n");
 				  FPRINTF(eth_code, "	 offset=dissect_ndr_uvarray(tvb, offset, pinfo, tree, di, drep, %s);\n", ptmpstr);
 				  FPRINTF(eth_code, "	 return offset;\n");
@@ -1790,10 +1780,10 @@ static void parsetypedefstruct(int pass)
 				ptmpstr=g_strdup(tmpstr);
 				break;
 			  case BI_SIZE_IS|BI_LENGTH_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
 				if(check_if_to_emit(tmpstr)){
 				  FPRINTF(eth_code, "static int\n");
-				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				  FPRINTF(eth_code, "{\n");
 				  FPRINTF(eth_code, "	 offset=dissect_ndr_ucvarray(tvb, offset, pinfo, tree, di, drep, %s);\n", ptmpstr);
 				  FPRINTF(eth_code, "	 return offset;\n");
@@ -1814,10 +1804,10 @@ static void parsetypedefstruct(int pass)
 			while(num_pointers--){
 				pointer_type=pi->type;
 				pi=pi->next;
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
 				if(check_if_to_emit(tmpstr)){
 				  FPRINTF(eth_code, "static int\n");
-				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				  FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				  FPRINTF(eth_code, "{\n");
 				  FPRINTF(eth_code, "	 offset=dissect_ndr_embedded_pointer(tvb, offset, pinfo, tree, di, drep, %s, %s, \"%s\", -1);\n", ptmpstr, ptr_to_define(pointer_type), field_name);
 				  FPRINTF(eth_code, "	 return offset;\n");
@@ -1832,17 +1822,17 @@ static void parsetypedefstruct(int pass)
 		}
 
 		if(pass==1){
-			g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, struct_name, field_name);
+			snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, struct_name, field_name);
 			ptmpstr=g_strdup(tmpstr);
 
 			/* handle fixedsizearrays */
 			if(is_array_of_pointers){
 				pointer_type=pi->type;
 				pi=pi->next;
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
 				ptmpstr=g_strdup(tmpstr);
 			} else if(fixed_array_size){
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "fixedarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "fixedarray_%s", ptmpstr);
 				ptmpstr=g_strdup(tmpstr);
 			}
 
@@ -1852,15 +1842,15 @@ static void parsetypedefstruct(int pass)
 			  case 0:
 				break;
 			  case BI_SIZE_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
 				ptmpstr=g_strdup(tmpstr);
 				break;
 			  case BI_LENGTH_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "uvarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "uvarray_%s", ptmpstr);
 				ptmpstr=g_strdup(tmpstr);
 				break;
 			  case BI_SIZE_IS|BI_LENGTH_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
 				ptmpstr=g_strdup(tmpstr);
 				break;
 			  default:
@@ -1873,7 +1863,7 @@ static void parsetypedefstruct(int pass)
 			while(num_pointers--){
 				pointer_type=pi->type;
 				pi=pi->next;
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
 				ptmpstr=g_strdup(tmpstr);
 			}
 
@@ -1999,28 +1989,28 @@ static void parsetypedefbitmap(int pass)
 		Exit(10);
 	}
 	bitmap_name=tmpti->next->str;
-	g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, bitmap_name);
+	snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, bitmap_name);
 
 	FPRINTF(NULL,"\nBITMAP:%s pass:%d\n-------\n",bitmap_name,pass);
 
 	/* pass 1  generate header for the struct dissector */
 	if(pass==1){
-		FPRINTF(eth_ett, "static gint ett_%s_%s = -1;\n", ifname, bitmap_name);
+		FPRINTF(eth_ett, "static int ett_%s_%s;\n", ifname, bitmap_name);
 		FPRINTF(eth_ettarr, "		 &ett_%s_%s,\n", ifname, bitmap_name);
-		FPRINTF(eth_hdr, "int %s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param);\n", dissectorname);
+		FPRINTF(eth_hdr, "int %s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param);\n", dissectorname);
 		FPRINTF(eth_code, "\n");
 		FPRINTF(eth_code, "int\n");
-		FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+		FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 		FPRINTF(eth_code, "{\n");
 		FPRINTF(eth_code, "    proto_item *item=NULL;\n");
 		FPRINTF(eth_code, "    proto_tree *tree=NULL;\n");
 		switch(alignment){
 		case 1:
-			FPRINTF(eth_code, "    guint8 flags;\n");
+			FPRINTF(eth_code, "    uint8_t flags;\n");
 			FPRINTF(eth_code, "\n");
 			break;
 		case 4:
-			FPRINTF(eth_code, "    guint32 flags;\n");
+			FPRINTF(eth_code, "    uint32_t flags;\n");
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "    ALIGN_TO_4_BYTES;\n");
 			break;
@@ -2062,7 +2052,7 @@ static void parsetypedefbitmap(int pass)
 
 		name=ti->str;
 		ti=ti->next;
-		g_snprintf(hf_bitname, BASE_BUFFER_SIZE, "hf_%s_%s_%s", ifname, bitmap_name, name);
+		snprintf(hf_bitname, BASE_BUFFER_SIZE, "hf_%s_%s_%s", ifname, bitmap_name, name);
 
 		if(g_strcmp0(ti->str, "=")){
 			FPRINTF(stderr, "ERROR: typedefbitmap i expected a '=' here\n");
@@ -2088,9 +2078,9 @@ static void parsetypedefbitmap(int pass)
 		if(pass==0){
 			char filter_name[BASE_BUFFER_SIZE], base_name[BASE_BUFFER_SIZE], tfs_name[BASE_BUFFER_SIZE];
 
-			g_snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, bitmap_name, name);
-			g_snprintf(base_name, BASE_BUFFER_SIZE, "%d", alignment*8);
-			g_snprintf(tfs_name, BASE_BUFFER_SIZE, "TFS(&%s_tfs)", name);
+			snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, bitmap_name, name);
+			snprintf(base_name, BASE_BUFFER_SIZE, "%d", alignment*8);
+			snprintf(tfs_name, BASE_BUFFER_SIZE, "TFS(&%s_tfs)", name);
 			register_hf_field(hf_bitname, name, filter_name, "FT_BOOLEAN", base_name, tfs_name, value, "");
 
 			FPRINTF(eth_code, "static const true_false_string %s_tfs = {\n",name);
@@ -2247,7 +2237,7 @@ static void parsetypedefunion(int pass)
 		Exit(10);
 	}
 	union_name=tmpti->next->str;
-	g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_union_%s", ifname, union_name);
+	snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_union_%s", ifname, union_name);
 
 	FPRINTF(NULL,"\nUNION:%s pass:%d\n-------\n",union_name,pass);
 
@@ -2267,11 +2257,11 @@ static void parsetypedefunion(int pass)
 
 	/* pass 1  generate header for the struct dissector */
 	if(pass==1){
-		FPRINTF(eth_ett, "static gint ett_%s_%s = -1;\n", ifname, union_name);
+		FPRINTF(eth_ett, "static int ett_%s_%s;\n", ifname, union_name);
 		FPRINTF(eth_ettarr, "		 &ett_%s_%s,\n", ifname, union_name);
 		FPRINTF(eth_code, "\n");
 		FPRINTF(eth_code, "static int\n");
-		FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+		FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 		FPRINTF(eth_code, "{\n");
 		FPRINTF(eth_code, "    proto_item *item=NULL;\n");
 		FPRINTF(eth_code, "    proto_tree *tree=NULL;\n");
@@ -2285,13 +2275,13 @@ static void parsetypedefunion(int pass)
 		case 1:
 			break;
 		case 2:
-			FPRINTF(eth_code, "    guint16 level;\n");
+			FPRINTF(eth_code, "    uint16_t level;\n");
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "    ALIGN_TO_2_BYTES;\n");
 			FPRINTF(eth_code, "\n");
 			break;
 		case 4:
-			FPRINTF(eth_code, "    guint32 level = 0;\n");
+			FPRINTF(eth_code, "    uint32_t level = 0;\n");
 			FPRINTF(eth_code, "\n");
 			FPRINTF(eth_code, "    ALIGN_TO_4_BYTES;\n");
 			FPRINTF(eth_code, "\n");
@@ -2401,22 +2391,22 @@ static void parsetypedefunion(int pass)
 			alignment=item_alignment;
 		}
 
-		g_snprintf(hf_index, BASE_BUFFER_SIZE, "hf_%s_%s_%s_%s", ifname, union_name, case2str(bi->case_name), ti->str);
+		snprintf(hf_index, BASE_BUFFER_SIZE, "hf_%s_%s_%s_%s", ifname, union_name, case2str(bi->case_name), ti->str);
 		/* pass 0  generate subdissectors */
 		if(pass==0){
 			char filter_name[BASE_BUFFER_SIZE];
 			const char *hf;
 
-			g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_union_%s_%s_%s", ifname, union_name, case2str(bi->case_name), ti->str);
+			snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_union_%s_%s_%s", ifname, union_name, case2str(bi->case_name), ti->str);
 			ptmpstr=g_strdup(tmpstr);
 
-			g_snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, union_name, ti->str);
+			snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, union_name, ti->str);
 			hf=register_hf_field(hf_index, ti->str, filter_name, type_item->ft_type, type_item->base_type, type_item->vals, type_item->mask, "");
 
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", ptmpstr);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", ptmpstr);
 			FPRINTF(eth_code, "{\n");
-			FPRINTF(eth_code, "    guint32 param=%s;\n",find_dissector_param_value(ptmpstr));
+			FPRINTF(eth_code, "    uint32_t param=%s;\n",find_dissector_param_value(ptmpstr));
 			FPRINTF(eth_code, "    offset=%s(tvb, offset, pinfo, tree, di, drep, %s, param);\n", type_item->dissector, hf);
 			FPRINTF(eth_code, "    return offset;\n");
 			FPRINTF(eth_code, "}\n");
@@ -2424,9 +2414,9 @@ static void parsetypedefunion(int pass)
 
 			/* handle pointers */
 			while(num_pointers--){
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", ptmpstr, "unique");
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", ptmpstr, "unique");
 				FPRINTF(eth_code, "static int\n");
-				FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				FPRINTF(eth_code, "{\n");
 				FPRINTF(eth_code, "    offset=dissect_ndr_embedded_pointer(tvb, offset, pinfo, tree, di, drep, %s, NDR_POINTER_UNIQUE, \"%s\", -1);\n", ptmpstr, ti->str);
 				FPRINTF(eth_code, "    return offset;\n");
@@ -2440,10 +2430,10 @@ static void parsetypedefunion(int pass)
 
 		if(pass==1){
 			/* handle pointers */
-			g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_union_%s_%s_%s", ifname, union_name, case2str(bi->case_name), ti->str);
+			snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_union_%s_%s_%s", ifname, union_name, case2str(bi->case_name), ti->str);
 			ptmpstr=g_strdup(tmpstr);
 			while(num_pointers--){
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", ptmpstr, "unique");
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", ptmpstr, "unique");
 				ptmpstr=g_strdup(tmpstr);
 			}
 
@@ -2581,7 +2571,7 @@ static void parsefunction(int pass)
 	if((pass==1)||(pass==2)){
 		FPRINTF(eth_code, "\n");
 		FPRINTF(eth_code, "static int\n");
-		FPRINTF(eth_code, "%s_dissect_%s_%s(tvbuff_t *tvb _U_, int offset _U_, packet_info *pinfo _U_, proto_tree *tree _U_, dcerpc_info* di _U_, guint8 *drep _U_)\n", ifname, function_name, (pass==1)?"request":"response");
+		FPRINTF(eth_code, "%s_dissect_%s_%s(tvbuff_t *tvb _U_, int offset _U_, packet_info *pinfo _U_, proto_tree *tree _U_, dcerpc_info* di _U_, uint8_t *drep _U_)\n", ifname, function_name, (pass==1)?"request":"response");
 		FPRINTF(eth_code, "{\n");
 	}
 
@@ -2636,28 +2626,28 @@ static void parsefunction(int pass)
 			num_pointers++;
 		}
 
-		/* now that we know how many real poitner there were we must
+		/* now that we know how many real pointer there were we must
 		   prepend default pointers to the list so it has the right
 		   length.
 		*/
 		pi=prepend_pointer_list(bi->pointer_list, num_pointers);
 
-		g_snprintf(hf_index, BASE_BUFFER_SIZE, "hf_%s_%s_%s", ifname, function_name, ti->str);
+		snprintf(hf_index, BASE_BUFFER_SIZE, "hf_%s_%s_%s", ifname, function_name, ti->str);
 		/* pass 0  generate subdissectors */
 		if(pass==0){
 			char filter_name[BASE_BUFFER_SIZE];
 			const char *hf;
 
-			g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, function_name, ti->str);
+			snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, function_name, ti->str);
 			ptmpstr=g_strdup(tmpstr);
 
-			g_snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, function_name, ti->str);
+			snprintf(filter_name, BASE_BUFFER_SIZE, "%s.%s.%s", ifname, function_name, ti->str);
 			hf=register_hf_field(hf_index, ti->str, filter_name, type_item->ft_type, type_item->base_type, type_item->vals, type_item->mask, "");
 
 			FPRINTF(eth_code, "static int\n");
-			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", ptmpstr);
+			FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", ptmpstr);
 			FPRINTF(eth_code, "{\n");
-			FPRINTF(eth_code, "    guint32 param=%s;\n",find_dissector_param_value(ptmpstr));
+			FPRINTF(eth_code, "    uint32_t param=%s;\n",find_dissector_param_value(ptmpstr));
 			FPRINTF(eth_code, "    offset=%s(tvb, offset, pinfo, tree, di, drep, %s, param);\n", type_item->dissector, hf);
 			FPRINTF(eth_code, "    return offset;\n");
 			FPRINTF(eth_code, "}\n");
@@ -2665,45 +2655,43 @@ static void parsefunction(int pass)
 
 
 			/* handle switch_is */
-			if(bi){
-			  switch(bi->flags&(BI_SIZE_IS|BI_LENGTH_IS)){
-			  case 0:
-				break;
-			  case BI_SIZE_IS|BI_LENGTH_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
-				FPRINTF(eth_code, "static int\n");
-				FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
-				FPRINTF(eth_code, "{\n");
-				FPRINTF(eth_code, "    offset=dissect_ndr_ucvarray(tvb, offset, pinfo, tree, di, drep, %s);\n", ptmpstr);
-				FPRINTF(eth_code, "    return offset;\n");
-				FPRINTF(eth_code, "}\n");
-				FPRINTF(eth_code, "\n");
-				ptmpstr=g_strdup(tmpstr);
-				break;
-			  case BI_SIZE_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
-				FPRINTF(eth_code, "static int\n");
-				FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
-				FPRINTF(eth_code, "{\n");
-				FPRINTF(eth_code, "    offset=dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep, %s);\n", ptmpstr);
-				FPRINTF(eth_code, "    return offset;\n");
-				FPRINTF(eth_code, "}\n");
-				FPRINTF(eth_code, "\n");
-				ptmpstr=g_strdup(tmpstr);
-				break;
-			  default:
-				FPRINTF(stderr, "ERROR: typedeffunction can not handle this combination of sizeis/lengthis\n");
-				Exit(10);
-			  }
+			switch(bi->flags&(BI_SIZE_IS|BI_LENGTH_IS)){
+			case 0:
+			    break;
+			case BI_SIZE_IS|BI_LENGTH_IS:
+			    snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
+			    FPRINTF(eth_code, "static int\n");
+			    FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
+			    FPRINTF(eth_code, "{\n");
+			    FPRINTF(eth_code, "    offset=dissect_ndr_ucvarray(tvb, offset, pinfo, tree, di, drep, %s);\n", ptmpstr);
+			    FPRINTF(eth_code, "    return offset;\n");
+			    FPRINTF(eth_code, "}\n");
+			    FPRINTF(eth_code, "\n");
+			    ptmpstr=g_strdup(tmpstr);
+			    break;
+			case BI_SIZE_IS:
+			    snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
+			    FPRINTF(eth_code, "static int\n");
+			    FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
+			    FPRINTF(eth_code, "{\n");
+			    FPRINTF(eth_code, "    offset=dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep, %s);\n", ptmpstr);
+			    FPRINTF(eth_code, "    return offset;\n");
+			    FPRINTF(eth_code, "}\n");
+			    FPRINTF(eth_code, "\n");
+			    ptmpstr=g_strdup(tmpstr);
+			    break;
+			default:
+			    FPRINTF(stderr, "ERROR: typedeffunction can not handle this combination of sizeis/lengthis\n");
+			    Exit(10);
 			}
 
 			/* handle pointers */
 			while(num_pointers--){
 				pointer_type=pi->type;
 				pi=pi->next;
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
 				FPRINTF(eth_code, "static int\n");
-				FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)\n", tmpstr);
+				FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)\n", tmpstr);
 				FPRINTF(eth_code, "{\n");
 				FPRINTF(eth_code, "    offset=dissect_ndr_toplevel_pointer(tvb, offset, pinfo, tree, di, drep, %s, %s, \"%s\", -1);\n", ptmpstr, ptr_to_define(pointer_type), ti->str);
 				FPRINTF(eth_code, "    return offset;\n");
@@ -2716,32 +2704,30 @@ static void parsefunction(int pass)
 		}
 
 		if((pass==1)||(pass==2)){
-			g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, function_name, ti->str);
+			snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_dissect_%s_%s", ifname, function_name, ti->str);
 			ptmpstr=g_strdup(tmpstr);
 
-			if(bi){
-			  switch(bi->flags&(BI_SIZE_IS|BI_LENGTH_IS)){
-			  case 0:
-				break;
-			  case BI_SIZE_IS|BI_LENGTH_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
-				ptmpstr=g_strdup(tmpstr);
-				break;
-			  case BI_SIZE_IS:
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
-				ptmpstr=g_strdup(tmpstr);
-				break;
-			  default:
-				FPRINTF(stderr, "ERROR: typedeffunction can not handle this combination of sizeis/lengthis\n");
-				Exit(10);
-			  }
+			switch(bi->flags&(BI_SIZE_IS|BI_LENGTH_IS)){
+			case 0:
+			    break;
+			case BI_SIZE_IS|BI_LENGTH_IS:
+			    snprintf(tmpstr, BASE_BUFFER_SIZE, "ucvarray_%s", ptmpstr);
+			    ptmpstr=g_strdup(tmpstr);
+			    break;
+			case BI_SIZE_IS:
+			    snprintf(tmpstr, BASE_BUFFER_SIZE, "ucarray_%s", ptmpstr);
+			    ptmpstr=g_strdup(tmpstr);
+			    break;
+			default:
+			    FPRINTF(stderr, "ERROR: typedeffunction can not handle this combination of sizeis/lengthis\n");
+			    Exit(10);
 			}
 
 			/* handle pointers */
 			while(num_pointers--){
 				pointer_type=pi->type;
 				pi=pi->next;
-				g_snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
+				snprintf(tmpstr, BASE_BUFFER_SIZE, "%s_%s", pointer_type, ptmpstr);
 				ptmpstr=g_strdup(tmpstr);
 			}
 
@@ -2813,7 +2799,8 @@ static void parsetypedefenum(void)
 	char *p;
 	long val;
 	int eval, enumsize;
-	char dissectorname[BASE_BUFFER_SIZE], valsstring[BASE_BUFFER_SIZE], hfvalsstring[BASE_BUFFER_SIZE];
+	char dissectorname[BASE_BUFFER_SIZE], valsstring[BASE_BUFFER_SIZE];
+	char *hfvalsstring;
 
 	enumsize=16;
 
@@ -2928,8 +2915,8 @@ static void parsetypedefenum(void)
 		Exit(10);
 	}
 
-	g_snprintf(valsstring, BASE_BUFFER_SIZE, "%s_%s_vals", ifname, ti->str);
-	g_snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, ti->str);
+	snprintf(valsstring, BASE_BUFFER_SIZE, "%s_%s_vals", ifname, ti->str);
+	snprintf(dissectorname, DISSECTORNAME_MAXLEN, "%s_dissect_%s", ifname, ti->str);
 
 	FPRINTF(NULL,"\nENUM:%s\n-------\n",ti->str);
 
@@ -2940,7 +2927,7 @@ static void parsetypedefenum(void)
 
 	FPRINTF(eth_hdr, "\n");
 	FPRINTF(eth_hdr, "extern const value_string %s[];\n", valsstring);
-	FPRINTF(eth_hdr, "int %s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param);\n", dissectorname);
+	FPRINTF(eth_hdr, "int %s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param);\n", dissectorname);
 
 	FPRINTF(eth_code, "\n");
 	FPRINTF(eth_code, "const value_string %s[] = {\n", valsstring);
@@ -2953,7 +2940,7 @@ static void parsetypedefenum(void)
 
 	FPRINTF(eth_code, "\n");
 	FPRINTF(eth_code, "int\n");
-	FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int hf_index, guint32 param _U_)\n", dissectorname);
+	FPRINTF(eth_code, "%s(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep, int hf_index, uint32_t param _U_)\n", dissectorname);
 	FPRINTF(eth_code, "{\n");
 	switch(enumsize){
 	case 16:
@@ -2971,8 +2958,7 @@ static void parsetypedefenum(void)
 	FPRINTF(eth_code, "}\n");
 	FPRINTF(eth_code, "\n");
 
-
-	g_snprintf(hfvalsstring, BASE_BUFFER_SIZE, "VALS(%s)", valsstring);
+	hfvalsstring = g_strdup_printf("VALS(%s)", valsstring);
 	switch(enumsize){
 	case 16:
 		register_new_type(ti->str, dissectorname, "FT_INT16", "BASE_DEC", "0", hfvalsstring, 2);
@@ -2982,8 +2968,10 @@ static void parsetypedefenum(void)
 		break;
 	default:
 		FPRINTF(stderr,"ERROR enum unknown size\n");
+		g_free(hfvalsstring);
 		Exit(10);
 	}
+	g_free(hfvalsstring);
 
 	FPRINTF(NULL,"\n----------\nEND ENUM:%s\n",ti->str);
 
@@ -3190,7 +3178,7 @@ readcnffile(FILE *fh)
 			register_hf_rename(old_name, new_name);
 		} else if(!strncmp(cnfline, "UNION_TAG_SIZE", 14)){
 			char *union_name, *union_tag;
-			gint32 union_tag_size;
+			int32_t union_tag_size;
 			union_tag_size_item_t *utsi;
 			char *str;
 
@@ -3226,7 +3214,7 @@ readcnffile(FILE *fh)
 	}
 }
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
 	char idlfile[BASE_BUFFER_SIZE];
 	char tmplfile[BASE_BUFFER_SIZE];
@@ -3248,14 +3236,14 @@ int main(int argc, char *argv[])
 	eth_ft=g_fopen("ETH_FT", "w");
 	eth_handoff=g_fopen("ETH_HANDOFF", "w");
 
-	g_snprintf(idlfile, BASE_BUFFER_SIZE, "%s.cnf", argv[1]);
+	snprintf(idlfile, BASE_BUFFER_SIZE, "%s.cnf", argv[1]);
 	fh=g_fopen(idlfile,"r");
 	if(fh){
 		readcnffile(fh);
 		fclose(fh);
 	}
 
-	g_snprintf(idlfile, BASE_BUFFER_SIZE, "%s.idl", argv[1]);
+	snprintf(idlfile, BASE_BUFFER_SIZE, "%s.idl", argv[1]);
 	fh=g_fopen(idlfile,"r");
 	if(!fh){
 		FPRINTF(stderr, "ERROR: could not open idl-file:%s\n", idlfile);
@@ -3278,7 +3266,7 @@ int main(int argc, char *argv[])
 	   search through the tokenlist and g_remove all such
 	   prefixes
 	*/
-	g_snprintf(prefix_str, BASE_BUFFER_SIZE, "%s_", ifname);
+	snprintf(prefix_str, BASE_BUFFER_SIZE, "%s_", ifname);
 	preparetrimprefix(prefix_str);
 	trimprefix();
 
@@ -3405,9 +3393,9 @@ int main(int argc, char *argv[])
 	check_hf_rename_refcount();
 
 	/* merge code and template into dissector */
-	g_snprintf(line, 4 * BASE_BUFFER_SIZE, "packet-dcerpc-%s.c", ifname);
+	snprintf(line, 4 * BASE_BUFFER_SIZE, "packet-dcerpc-%s.c", ifname);
 	fh=g_fopen(line, "w");
-	g_snprintf(tmplfile, BASE_BUFFER_SIZE, "packet-dcerpc-%s-template.c", argv[1]);
+	snprintf(tmplfile, BASE_BUFFER_SIZE, "packet-dcerpc-%s-template.c", argv[1]);
 	tfh=g_fopen(tmplfile, "r");
 	if(!tfh){
 		FPRINTF(stderr, "ERROR: could not find %s\n", tmplfile);
@@ -3441,9 +3429,9 @@ int main(int argc, char *argv[])
 	fclose(fh);
 	fclose(tfh);
 
-	g_snprintf(line, 4 * BASE_BUFFER_SIZE, "packet-dcerpc-%s.h", ifname);
+	snprintf(line, 4 * BASE_BUFFER_SIZE, "packet-dcerpc-%s.h", ifname);
 	fh=g_fopen(line, "w");
-	g_snprintf(tmplfile, BASE_BUFFER_SIZE, "packet-dcerpc-%s-template.h", argv[1]);
+	snprintf(tmplfile, BASE_BUFFER_SIZE, "packet-dcerpc-%s-template.h", argv[1]);
 	tfh=g_fopen(tmplfile, "r");
 	if(!tfh){
 		FPRINTF(stderr, "ERROR: could not find %s\n", tmplfile);

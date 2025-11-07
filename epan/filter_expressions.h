@@ -14,7 +14,7 @@
 #include "ws_symbol_export.h"
 
 #include <epan/prefs.h>
-#include <epan/wmem/wmem.h>
+#include <epan/wmem_scopes.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,12 +25,11 @@ extern "C" {
  */
 
 typedef struct filter_expression {
-	gpointer button;	/* Filter toolbar (GTK only) */
-	gchar	*label;
-	gchar	*expression;
-	gchar	*comment;
+	char	*label;
+	char	*expression;
+	char	*comment;
 
-	gboolean enabled;	/* Can be set to FALSE by Preferences Dialog */
+	bool enabled;	/* Can be set to false by Preferences Dialog */
 } filter_expression_t;
 
 WS_DLL_PUBLIC void filter_expression_iterate_expressions(wmem_foreach_func func, void* user_data);
@@ -39,12 +38,13 @@ WS_DLL_PUBLIC void filter_expression_iterate_expressions(wmem_foreach_func func,
  *
  * @param label Label (button) text for the expression.
  * @param expr The display filter for the expression.
+ * @param comment A comment about the filter.
  * @param enabled Determines if the expression is shown in the UI.
  * @return A newly allocated and initialized struct filter_expression.
  */
 WS_DLL_PUBLIC
-filter_expression_t *filter_expression_new(const gchar *label,
-    const gchar *expr, const gchar *comment, const gboolean enabled);
+filter_expression_t *filter_expression_new(const char *label,
+    const char *expr, const char *comment, const bool enabled);
 
 /* Keep the UAT structure local to the filter_expressions */
 void filter_expression_register_uat(module_t* pref_module);

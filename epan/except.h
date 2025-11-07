@@ -21,7 +21,7 @@
  * Portable Exception Handling for ANSI C.<BR>
  * Modified to support throwing an exception with a null message pointer,
  * and to have the message not be const (as we generate messages with
- * "g_strdup_sprintf()", which means they need to be freed; using
+ * "ws_strdup_printf()", which means they need to be freed; using
  * a null message means that we don't have to use a special string
  * for exceptions with no message, and don't have to worry about
  * not freeing that).
@@ -187,7 +187,7 @@ WS_DLL_PUBLIC void except_free(void *);
 #endif /* XCEPT_H */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

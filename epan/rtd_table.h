@@ -1,4 +1,4 @@
-/* rtd_table.h
+/** @file
  * GUI independent helper routines common to all Response Time Delay (RTD) taps.
  * Based on srt_table.h
  *
@@ -15,25 +15,25 @@
 #include "tap.h"
 #include "timestats.h"
 #include "value_string.h"
-#include "wmem/wmem.h"
+#include <epan/wmem_scopes.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
 typedef struct _rtd_timestat {
-	guint num_timestat;              /**< number of elements on rtd array */
+	unsigned num_timestat;              /**< number of elements on rtd array */
 	timestat_t* rtd;
-	guint32 open_req_num;
-	guint32 disc_rsp_num;
-	guint32 req_dup_num;
-	guint32 rsp_dup_num;
+	uint32_t open_req_num;
+	uint32_t disc_rsp_num;
+	uint32_t req_dup_num;
+	uint32_t rsp_dup_num;
 } rtd_timestat;
 
 /** Statistics table */
 typedef struct _rtd_stat_table {
 	char *filter;
-	guint num_rtds;              /**< number of elements on time_stats array */
+	unsigned num_rtds;              /**< number of elements on time_stats array */
 	rtd_timestat* time_stats;
 } rtd_stat_table;
 
@@ -41,7 +41,7 @@ typedef struct _rtd_stat_table {
  */
 typedef struct _rtd_data_t {
 	rtd_stat_table  stat_table;  /**< RTD table data */
-	void        *user_data;       /**< "GUI" specifics (GTK+ only) */
+	void        *user_data;       /**< "GUI" specifics (sharkd only?) */
 } rtd_data_t;
 
 /** Structure for information about a registered service response table */
@@ -49,9 +49,6 @@ struct register_rtd;
 typedef struct register_rtd register_rtd_t;
 
 typedef void (*rtd_gui_init_cb)(rtd_stat_table* rtd, void* gui_data);
-typedef void (*rtd_gui_reset_cb)(rtd_stat_table* rtd, void* gui_data); /* GTK+ only. */
-typedef void (*rtd_gui_free_cb)(rtd_stat_table* rtd, void* gui_data); /* GTK+ only. */
-typedef void (*rtd_init_cb)(struct register_rtd* rtd, rtd_gui_init_cb gui_callback, void* gui_data); /* GTK+ only. */
 typedef void (*rtd_filter_check_cb)(const char *opt_arg, const char **filter, char** err);
 
 /** Register the response time delay table.
@@ -64,7 +61,7 @@ typedef void (*rtd_filter_check_cb)(const char *opt_arg, const char **filter, ch
  * @param rtd_packet_func the tap processing function
  * @param filter_check_cb callback for verification of filter or other dissector checks
  */
-WS_DLL_PUBLIC void register_rtd_table(const int proto_id, const char* tap_listener, guint num_tables, guint num_timestats, const value_string* vs_type,
+WS_DLL_PUBLIC void register_rtd_table(const int proto_id, const char* tap_listener, unsigned num_tables, unsigned num_timestats, const value_string* vs_type,
                                       tap_packet_cb rtd_packet_func, rtd_filter_check_cb filter_check_cb);
 
 /** Get protocol ID from RTD
@@ -93,7 +90,7 @@ WS_DLL_PUBLIC tap_packet_cb get_rtd_packet_func(register_rtd_t* rtd);
  * @param rtd Registered RTD
  * @return The number of registered tables.
  */
-WS_DLL_PUBLIC guint get_rtd_num_tables(register_rtd_t* rtd);
+WS_DLL_PUBLIC unsigned get_rtd_num_tables(register_rtd_t* rtd);
 
 /** Get value_string used for RTD
  *
@@ -112,26 +109,22 @@ WS_DLL_PUBLIC register_rtd_t* get_rtd_table_by_name(const char* name);
 /** Free the RTD table data.
  *
  * @param table RTD stat table array
- * @param gui_callback optional callback from GUI
- * @param callback_data callback data needed for GUI
  */
-WS_DLL_PUBLIC void free_rtd_table(rtd_stat_table* table, rtd_gui_free_cb gui_callback, void *callback_data);
+WS_DLL_PUBLIC void free_rtd_table(rtd_stat_table* table);
 
 /** Reset table data in the RTD.
  *
  * @param table RTD table
- * @param gui_callback optional callback from GUI
- * @param callback_data callback data needed for GUI
  */
-WS_DLL_PUBLIC void reset_rtd_table(rtd_stat_table* table, rtd_gui_reset_cb gui_callback, void *callback_data);
+WS_DLL_PUBLIC void reset_rtd_table(rtd_stat_table* table);
 
 /** Interator to walk RTD tables and execute func
  * Used for initialization
  *
- * @param func action to be performed on all converation tables
+ * @param func action to be performed on all conversation tables
  * @param user_data any data needed to help perform function
  */
-WS_DLL_PUBLIC void rtd_table_iterate_tables(wmem_foreach_func func, gpointer user_data);
+WS_DLL_PUBLIC void rtd_table_iterate_tables(wmem_foreach_func func, void *user_data);
 
 /** Return filter used for register_tap_listener
  *
@@ -157,7 +150,7 @@ WS_DLL_PUBLIC void rtd_table_dissector_init(register_rtd_t* rtd, rtd_stat_table*
  * @param rtd Registered RTD
  * @return RTD tap string
  */
-WS_DLL_PUBLIC gchar* rtd_table_get_tap_string(register_rtd_t* rtd);
+WS_DLL_PUBLIC char* rtd_table_get_tap_string(register_rtd_t* rtd);
 
 #ifdef __cplusplus
 }

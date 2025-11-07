@@ -31,203 +31,228 @@
 void proto_register_mpls_echo(void);
 void proto_reg_handoff_mpls_echo(void);
 
+static dissector_handle_t mpls_echo_handle;
+
 #define UDP_PORT_MPLS_ECHO 3503
 
-static int proto_mpls_echo = -1;
-static int hf_mpls_echo_version = -1;
-static int hf_mpls_echo_mbz = -1;
-static int hf_mpls_echo_gflags = -1;
-static int hf_mpls_echo_flag_sbz = -1;
-static int hf_mpls_echo_flag_v = -1;
-static int hf_mpls_echo_flag_t = -1;
-static int hf_mpls_echo_flag_r = -1;
-static int hf_mpls_echo_msgtype = -1;
-static int hf_mpls_echo_replymode = -1;
-static int hf_mpls_echo_returncode = -1;
-static int hf_mpls_echo_returnsubcode = -1;
-static int hf_mpls_echo_handle = -1;
-static int hf_mpls_echo_sequence = -1;
-static int hf_mpls_echo_ts_sent = -1;
-static int hf_mpls_echo_ts_rec = -1;
-static int hf_mpls_echo_tlv_type = -1;
-static int hf_mpls_echo_tlv_len = -1;
-static int hf_mpls_echo_tlv_value = -1;
-static int hf_mpls_echo_tlv_fec_type = -1;
-static int hf_mpls_echo_tlv_fec_len = -1;
-static int hf_mpls_echo_tlv_fec_value = -1;
-static int hf_mpls_echo_tlv_fec_ldp_ipv4 = -1;
-static int hf_mpls_echo_tlv_fec_ldp_ipv4_mask = -1;
-static int hf_mpls_echo_tlv_fec_ldp_ipv6 = -1;
-static int hf_mpls_echo_tlv_fec_ldp_ipv6_mask = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ipv4_ipv4_endpoint = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ipv6_ipv6_endpoint = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ip_mbz1 = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ip_tunnel_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ipv4_ext_tunnel_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ipv4_ipv4_sender = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ipv6_ext_tunnel_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ipv6_ipv6_sender = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ip_mbz2 = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_ip_lsp_id = -1;
-static int hf_mpls_echo_tlv_fec_vpn_route_dist = -1;
-static int hf_mpls_echo_tlv_fec_vpn_ipv4 = -1;
-static int hf_mpls_echo_tlv_fec_vpn_len = -1;
-static int hf_mpls_echo_tlv_fec_vpn_ipv6 = -1;
-static int hf_mpls_echo_tlv_fec_l2_vpn_route_dist = -1;
-static int hf_mpls_echo_tlv_fec_l2_vpn_send_ve_id = -1;
-static int hf_mpls_echo_tlv_fec_l2_vpn_recv_ve_id = -1;
-static int hf_mpls_echo_tlv_fec_l2_vpn_encap_type = -1;
-static int hf_mpls_echo_tlv_fec_l2cid_sender = -1;
-static int hf_mpls_echo_tlv_fec_l2cid_remote = -1;
-static int hf_mpls_echo_tlv_fec_l2cid_vcid = -1;
-static int hf_mpls_echo_tlv_fec_l2cid_encap = -1;
-static int hf_mpls_echo_tlv_fec_l2cid_mbz = -1;
-static int hf_mpls_echo_tlv_fec_bgp_ipv4 = -1;
-static int hf_mpls_echo_tlv_fec_bgp_ipv6 = -1;
-static int hf_mpls_echo_tlv_fec_bgp_len = -1;
-static int hf_mpls_echo_tlv_fec_gen_ipv4 = -1;
-static int hf_mpls_echo_tlv_fec_gen_ipv4_mask = -1;
-static int hf_mpls_echo_tlv_fec_gen_ipv6 = -1;
-static int hf_mpls_echo_tlv_fec_gen_ipv6_mask = -1;
-static int hf_mpls_echo_tlv_fec_nil_label = -1;
-static int hf_mpls_echo_tlv_ds_map_mtu = -1;
-static int hf_mpls_echo_tlv_ds_map_addr_type = -1;
-static int hf_mpls_echo_tlv_ds_map_res = -1;
-static int hf_mpls_echo_tlv_ds_map_flag_res = -1;
-static int hf_mpls_echo_tlv_ds_map_flag_i = -1;
-static int hf_mpls_echo_tlv_ds_map_flag_n = -1;
-static int hf_mpls_echo_tlv_ds_map_ds_ip = -1;
-static int hf_mpls_echo_tlv_ds_map_int_ip = -1;
-static int hf_mpls_echo_tlv_ds_map_if_index = -1;
-static int hf_mpls_echo_tlv_ds_map_ds_ipv6 = -1;
-static int hf_mpls_echo_tlv_ds_map_int_ipv6 = -1;
-static int hf_mpls_echo_tlv_ds_map_hash_type = -1;
-static int hf_mpls_echo_tlv_ds_map_depth = -1;
-static int hf_mpls_echo_tlv_ds_map_muti_len = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_ip = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_mask = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_ip_low = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_ip_high = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_no_multipath_info = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_value = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_label = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_exp = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_bos = -1;
-static int hf_mpls_echo_tlv_ds_map_mp_proto = -1;
-static int hf_mpls_echo_tlv_dd_map_mtu = -1;
-static int hf_mpls_echo_tlv_dd_map_addr_type = -1;
-static int hf_mpls_echo_tlv_dd_map_res = -1;
-static int hf_mpls_echo_tlv_dd_map_flag_res = -1;
-static int hf_mpls_echo_tlv_dd_map_flag_i = -1;
-static int hf_mpls_echo_tlv_dd_map_flag_n = -1;
-static int hf_mpls_echo_tlv_dd_map_ds_ip = -1;
-static int hf_mpls_echo_tlv_dd_map_int_ip = -1;
-static int hf_mpls_echo_tlv_dd_map_ds_ipv6 = -1;
-static int hf_mpls_echo_tlv_dd_map_int_ipv6 = -1;
-static int hf_mpls_echo_tlv_dd_map_return_code = -1;
-static int hf_mpls_echo_tlv_dd_map_return_subcode = -1;
-static int hf_mpls_echo_tlv_dd_map_subtlv_len = -1;
-static int hf_mpls_echo_tlv_dd_map_ingress_if_num = -1;
-static int hf_mpls_echo_tlv_dd_map_egress_if_num = -1;
-static int hf_mpls_echo_sub_tlv_multipath_type = -1;
-static int hf_mpls_echo_sub_tlv_multipath_length = -1;
-static int hf_mpls_echo_sub_tlv_multipath_value = -1;
-static int hf_mpls_echo_sub_tlv_resv = -1;
-static int hf_mpls_echo_sub_tlv_multipath_info = -1;
-/* static int hf_mpls_echo_tlv_ddstlv_map_mp_label = -1; */
-static int hf_mpls_echo_tlv_ddstlv_map_mp_proto = -1;
-/* static int hf_mpls_echo_tlv_ddstlv_map_mp_exp = -1; */
-/* static int hf_mpls_echo_tlv_ddstlv_map_mp_bos = -1; */
-static int hf_mpls_echo_sub_tlv_multipath_ip = -1;
-static int hf_mpls_echo_sub_tlv_mp_ip_low = -1;
-static int hf_mpls_echo_sub_tlv_mp_ip_high = -1;
-static int hf_mpls_echo_sub_tlv_mp_mask = -1;
-static int hf_mpls_echo_sub_tlv_op_type = -1;
-static int hf_mpls_echo_sub_tlv_addr_type = -1;
-static int hf_mpls_echo_sub_tlv_fec_tlv_value = -1;
-static int hf_mpls_echo_sub_tlv_label = -1;
-static int hf_mpls_echo_sub_tlv_traffic_class = -1;
-static int hf_mpls_echo_sub_tlv_s_bit = -1;
-static int hf_mpls_echo_sub_tlv_res = -1;
-static int hf_mpls_echo_sub_tlv_remote_peer_unspecified = -1;
-static int hf_mpls_echo_sub_tlv_remote_peer_ip = -1;
-static int hf_mpls_echo_sub_tlv_remore_peer_ipv6 = -1;
-static int hf_mpls_echo_tlv_dd_map_type = -1;
-static int hf_mpls_echo_tlv_dd_map_length = -1;
-static int hf_mpls_echo_tlv_dd_map_value = -1;
-static int hf_mpls_echo_tlv_padaction = -1;
-static int hf_mpls_echo_tlv_padding = -1;
-static int hf_mpls_echo_tlv_vendor = -1;
-static int hf_mpls_echo_tlv_ilso_addr_type = -1;
-static int hf_mpls_echo_tlv_ilso_mbz = -1;
-static int hf_mpls_echo_tlv_ilso_ipv4_addr = -1;
-static int hf_mpls_echo_tlv_ilso_ipv4_int_addr = -1;
-static int hf_mpls_echo_tlv_ilso_ipv6_addr = -1;
-static int hf_mpls_echo_tlv_ilso_ipv6_int_addr = -1;
-static int hf_mpls_echo_tlv_ilso_int_index = -1;
-static int hf_mpls_echo_tlv_ilso_label = -1;
-static int hf_mpls_echo_tlv_ilso_exp = -1;
-static int hf_mpls_echo_tlv_ilso_bos = -1;
-static int hf_mpls_echo_tlv_ilso_ttl = -1;
+static int proto_mpls_echo;
+static int hf_mpls_echo_version;
+static int hf_mpls_echo_mbz;
+static int hf_mpls_echo_gflags;
+static int hf_mpls_echo_flag_sbz;
+static int hf_mpls_echo_flag_v;
+static int hf_mpls_echo_flag_t;
+static int hf_mpls_echo_flag_r;
+static int hf_mpls_echo_msgtype;
+static int hf_mpls_echo_replymode;
+static int hf_mpls_echo_returncode;
+static int hf_mpls_echo_returnsubcode;
+static int hf_mpls_echo_handle;
+static int hf_mpls_echo_sequence;
+static int hf_mpls_echo_ts_sent;
+static int hf_mpls_echo_ts_rec;
+static int hf_mpls_echo_tlv_type;
+static int hf_mpls_echo_tlv_len;
+static int hf_mpls_echo_tlv_value;
+static int hf_mpls_echo_tlv_fec_type;
+static int hf_mpls_echo_tlv_fec_len;
+static int hf_mpls_echo_tlv_fec_value;
+static int hf_mpls_echo_tlv_fec_ldp_ipv4;
+static int hf_mpls_echo_tlv_fec_ldp_ipv4_mask;
+static int hf_mpls_echo_tlv_fec_ldp_ipv6;
+static int hf_mpls_echo_tlv_fec_ldp_ipv6_mask;
+static int hf_mpls_echo_tlv_fec_rsvp_ipv4_ipv4_endpoint;
+static int hf_mpls_echo_tlv_fec_rsvp_ipv6_ipv6_endpoint;
+static int hf_mpls_echo_tlv_fec_rsvp_ip_mbz1;
+static int hf_mpls_echo_tlv_fec_rsvp_ip_tunnel_id;
+static int hf_mpls_echo_tlv_fec_rsvp_ipv4_ext_tunnel_id;
+static int hf_mpls_echo_tlv_fec_rsvp_ipv4_ipv4_sender;
+static int hf_mpls_echo_tlv_fec_rsvp_ipv6_ext_tunnel_id;
+static int hf_mpls_echo_tlv_fec_rsvp_ipv6_ipv6_sender;
+static int hf_mpls_echo_tlv_fec_rsvp_ip_mbz2;
+static int hf_mpls_echo_tlv_fec_rsvp_ip_lsp_id;
+static int hf_mpls_echo_tlv_fec_vpn_route_dist;
+static int hf_mpls_echo_tlv_fec_vpn_ipv4;
+static int hf_mpls_echo_tlv_fec_vpn_len;
+static int hf_mpls_echo_tlv_fec_vpn_ipv6;
+static int hf_mpls_echo_tlv_fec_l2_vpn_route_dist;
+static int hf_mpls_echo_tlv_fec_l2_vpn_send_ve_id;
+static int hf_mpls_echo_tlv_fec_l2_vpn_recv_ve_id;
+static int hf_mpls_echo_tlv_fec_l2_vpn_encap_type;
+static int hf_mpls_echo_tlv_fec_l2cid_sender;
+static int hf_mpls_echo_tlv_fec_l2cid_remote;
+static int hf_mpls_echo_tlv_fec_l2cid_vcid;
+static int hf_mpls_echo_tlv_fec_l2cid_encap;
+static int hf_mpls_echo_tlv_fec_l2cid_mbz;
+static int hf_mpls_echo_tlv_fec_bgp_ipv4;
+static int hf_mpls_echo_tlv_fec_bgp_ipv6;
+static int hf_mpls_echo_tlv_fec_bgp_len;
+static int hf_mpls_echo_tlv_fec_gen_ipv4;
+static int hf_mpls_echo_tlv_fec_gen_ipv4_mask;
+static int hf_mpls_echo_tlv_fec_gen_ipv6;
+static int hf_mpls_echo_tlv_fec_gen_ipv6_mask;
+static int hf_mpls_echo_tlv_fec_nil_label;
+static int hf_mpls_echo_tlv_fec_pw_ipv6_128_sender;
+static int hf_mpls_echo_tlv_fec_pw_ipv6_128_remote;
+static int hf_mpls_echo_tlv_fec_pw_ipv6_128_pw_id;
+static int hf_mpls_echo_tlv_fec_pw_ipv6_128_pw_type;
+static int hf_mpls_echo_tlv_fec_pw_ipv6_128_mbz;
+static int hf_mpls_echo_tlv_fec_igp_ipv4;
+static int hf_mpls_echo_tlv_fec_igp_ipv6;
+static int hf_mpls_echo_tlv_fec_igp_mask;
+static int hf_mpls_echo_tlv_fec_igp_protocol;
+static int hf_mpls_echo_tlv_fec_igp_reserved;
+static int hf_mpls_echo_tlv_fec_igp_adj_type;
+static int hf_mpls_echo_tlv_fec_igp_adj_local_ipv4;
+static int hf_mpls_echo_tlv_fec_igp_adj_local_ipv6;
+static int hf_mpls_echo_tlv_fec_igp_adj_local_ident;
+static int hf_mpls_echo_tlv_fec_igp_adj_remote_ipv4;
+static int hf_mpls_echo_tlv_fec_igp_adj_remote_ipv6;
+static int hf_mpls_echo_tlv_fec_igp_adj_remote_ident;
+static int hf_mpls_echo_tlv_fec_igp_adj_adv_ident_ospf;
+static int hf_mpls_echo_tlv_fec_igp_adj_adv_ident_isis;
+static int hf_mpls_echo_tlv_fec_igp_adj_adv_ident;
+static int hf_mpls_echo_tlv_fec_igp_adj_rec_ident_ospf;
+static int hf_mpls_echo_tlv_fec_igp_adj_rec_ident_isis;
+static int hf_mpls_echo_tlv_fec_igp_adj_rec_ident;
+static int hf_mpls_echo_tlv_ds_map_mtu;
+static int hf_mpls_echo_tlv_ds_map_addr_type;
+static int hf_mpls_echo_tlv_ds_map_res;
+static int hf_mpls_echo_tlv_ds_map_flag_res;
+static int hf_mpls_echo_tlv_ds_map_flag_i;
+static int hf_mpls_echo_tlv_ds_map_flag_n;
+static int hf_mpls_echo_tlv_ds_map_ds_ip;
+static int hf_mpls_echo_tlv_ds_map_int_ip;
+static int hf_mpls_echo_tlv_ds_map_if_index;
+static int hf_mpls_echo_tlv_ds_map_ds_ipv6;
+static int hf_mpls_echo_tlv_ds_map_int_ipv6;
+static int hf_mpls_echo_tlv_ds_map_hash_type;
+static int hf_mpls_echo_tlv_ds_map_depth;
+static int hf_mpls_echo_tlv_ds_map_muti_len;
+static int hf_mpls_echo_tlv_ds_map_mp_ip;
+static int hf_mpls_echo_tlv_ds_map_mp_mask;
+static int hf_mpls_echo_tlv_ds_map_mp_ip_low;
+static int hf_mpls_echo_tlv_ds_map_mp_ip_high;
+static int hf_mpls_echo_tlv_ds_map_mp_no_multipath_info;
+static int hf_mpls_echo_tlv_ds_map_mp_value;
+static int hf_mpls_echo_tlv_ds_map_mp_label;
+static int hf_mpls_echo_tlv_ds_map_mp_exp;
+static int hf_mpls_echo_tlv_ds_map_mp_bos;
+static int hf_mpls_echo_tlv_ds_map_mp_proto;
+static int hf_mpls_echo_tlv_dd_map_mtu;
+static int hf_mpls_echo_tlv_dd_map_addr_type;
+static int hf_mpls_echo_tlv_dd_map_res;
+static int hf_mpls_echo_tlv_dd_map_flag_res;
+static int hf_mpls_echo_tlv_dd_map_flag_i;
+static int hf_mpls_echo_tlv_dd_map_flag_n;
+static int hf_mpls_echo_tlv_dd_map_ds_ip;
+static int hf_mpls_echo_tlv_dd_map_int_ip;
+static int hf_mpls_echo_tlv_dd_map_ds_ipv6;
+static int hf_mpls_echo_tlv_dd_map_int_ipv6;
+static int hf_mpls_echo_tlv_dd_map_return_code;
+static int hf_mpls_echo_tlv_dd_map_return_subcode;
+static int hf_mpls_echo_tlv_dd_map_subtlv_len;
+static int hf_mpls_echo_tlv_dd_map_ingress_if_num;
+static int hf_mpls_echo_tlv_dd_map_egress_if_num;
+static int hf_mpls_echo_sub_tlv_multipath_type;
+static int hf_mpls_echo_sub_tlv_multipath_length;
+static int hf_mpls_echo_sub_tlv_multipath_value;
+static int hf_mpls_echo_sub_tlv_resv;
+static int hf_mpls_echo_sub_tlv_multipath_info;
+/* static int hf_mpls_echo_tlv_ddstlv_map_mp_label; */
+static int hf_mpls_echo_tlv_ddstlv_map_mp_proto;
+/* static int hf_mpls_echo_tlv_ddstlv_map_mp_exp; */
+/* static int hf_mpls_echo_tlv_ddstlv_map_mp_bos; */
+static int hf_mpls_echo_sub_tlv_multipath_ip;
+static int hf_mpls_echo_sub_tlv_mp_ip_low;
+static int hf_mpls_echo_sub_tlv_mp_ip_high;
+static int hf_mpls_echo_sub_tlv_mp_mask;
+static int hf_mpls_echo_sub_tlv_op_type;
+static int hf_mpls_echo_sub_tlv_addr_type;
+static int hf_mpls_echo_sub_tlv_fec_tlv_value;
+static int hf_mpls_echo_sub_tlv_label;
+static int hf_mpls_echo_sub_tlv_traffic_class;
+static int hf_mpls_echo_sub_tlv_s_bit;
+static int hf_mpls_echo_sub_tlv_res;
+static int hf_mpls_echo_sub_tlv_remote_peer_unspecified;
+static int hf_mpls_echo_sub_tlv_remote_peer_ip;
+static int hf_mpls_echo_sub_tlv_remore_peer_ipv6;
+static int hf_mpls_echo_tlv_dd_map_type;
+static int hf_mpls_echo_tlv_dd_map_length;
+static int hf_mpls_echo_tlv_dd_map_value;
+static int hf_mpls_echo_tlv_padaction;
+static int hf_mpls_echo_tlv_padding;
+static int hf_mpls_echo_tlv_vendor;
+static int hf_mpls_echo_tlv_ilso_addr_type;
+static int hf_mpls_echo_tlv_ilso_mbz;
+static int hf_mpls_echo_tlv_ilso_ipv4_addr;
+static int hf_mpls_echo_tlv_ilso_ipv4_int_addr;
+static int hf_mpls_echo_tlv_ilso_ipv6_addr;
+static int hf_mpls_echo_tlv_ilso_ipv6_int_addr;
+static int hf_mpls_echo_tlv_ilso_int_index;
+static int hf_mpls_echo_tlv_ilso_label;
+static int hf_mpls_echo_tlv_ilso_exp;
+static int hf_mpls_echo_tlv_ilso_bos;
+static int hf_mpls_echo_tlv_ilso_ttl;
 #if 0
-static int hf_mpls_echo_tlv_rto_ipv4 = -1;
-static int hf_mpls_echo_tlv_rto_ipv6 = -1;
+static int hf_mpls_echo_tlv_rto_ipv4;
+static int hf_mpls_echo_tlv_rto_ipv6;
 #endif
-static int hf_mpls_echo_tlv_reply_tos = -1;
-static int hf_mpls_echo_tlv_reply_tos_mbz = -1;
-static int hf_mpls_echo_tlv_errored_type = -1;
-static int hf_mpls_echo_tlv_ds_map_ingress_if_num = -1;
-static int hf_mpls_echo_tlv_ds_map_egress_if_num = -1;
-static int hf_mpls_echo_lspping_tlv_src_gid = -1;
-static int hf_mpls_echo_lspping_tlv_src_nid = -1;
-static int hf_mpls_echo_lspping_tlv_src_tunnel_no = -1;
-static int hf_mpls_echo_lspping_tlv_lsp_no = -1;
-static int hf_mpls_echo_lspping_tlv_dst_gid = -1;
-static int hf_mpls_echo_lspping_tlv_dst_nid = -1;
-static int hf_mpls_echo_lspping_tlv_dst_tunnel_no = -1;
-static int hf_mpls_echo_lspping_tlv_resv = -1;
-static int hf_mpls_echo_lspping_tlv_src_addr_gid = -1;
-static int hf_mpls_echo_lspping_tlv_src_addr_nid=-1;
-static int hf_mpls_echo_lspping_tlv_pw_serv_identifier = -1;
-static int hf_mpls_echo_lspping_tlv_pw_src_ac_id = -1;
-static int hf_mpls_echo_lspping_tlv_pw_dst_ac_id = -1;
-static int hf_mpls_echo_padding = -1;
-/* static int hf_mpls_echo_lspping_tlv_pw_agi_type = -1; */
-/* static int hf_mpls_echo_lspping_tlv_pw_agi_len = -1; */
-/* static int hf_mpls_echo_lspping_tlv_pw_agi_val = -1; */
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv4_p2mp_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_mbz1 = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_tunnel_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv4_ext_tunnel_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv4_ipv4_sender = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_mbz2 = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_lsp_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv6_p2mp_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv6_ext_tunnel_id = -1;
-static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv6_ipv6_sender = -1;
-static int hf_mpls_echo_tlv_echo_jitter = -1;
-static int hf_mpls_echo_tlv_responder_indent_type = -1;
-static int hf_mpls_echo_tlv_responder_indent_len = -1;
-static int hf_mpls_echo_tlv_responder_indent_ipv4 = -1;
-/* static int hf_mpls_echo_tlv_responder_indent_ipv6 = -1; */
-static int hf_mpls_echo_tlv_bfd = -1;
+static int hf_mpls_echo_tlv_reply_tos;
+static int hf_mpls_echo_tlv_reply_tos_mbz;
+static int hf_mpls_echo_tlv_errored_type;
+static int hf_mpls_echo_tlv_ds_map_ingress_if_num;
+static int hf_mpls_echo_tlv_ds_map_egress_if_num;
+static int hf_mpls_echo_lspping_tlv_src_gid;
+static int hf_mpls_echo_lspping_tlv_src_nid;
+static int hf_mpls_echo_lspping_tlv_src_tunnel_no;
+static int hf_mpls_echo_lspping_tlv_lsp_no;
+static int hf_mpls_echo_lspping_tlv_dst_gid;
+static int hf_mpls_echo_lspping_tlv_dst_nid;
+static int hf_mpls_echo_lspping_tlv_dst_tunnel_no;
+static int hf_mpls_echo_lspping_tlv_resv;
+static int hf_mpls_echo_lspping_tlv_src_addr_gid;
+static int hf_mpls_echo_lspping_tlv_src_addr_nid;
+static int hf_mpls_echo_lspping_tlv_pw_serv_identifier;
+static int hf_mpls_echo_lspping_tlv_pw_src_ac_id;
+static int hf_mpls_echo_lspping_tlv_pw_dst_ac_id;
+static int hf_mpls_echo_padding;
+/* static int hf_mpls_echo_lspping_tlv_pw_agi_type; */
+/* static int hf_mpls_echo_lspping_tlv_pw_agi_len; */
+/* static int hf_mpls_echo_lspping_tlv_pw_agi_val; */
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv4_p2mp_id;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_mbz1;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_tunnel_id;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv4_ext_tunnel_id;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv4_ipv4_sender;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_mbz2;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ip_lsp_id;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv6_p2mp_id;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv6_ext_tunnel_id;
+static int hf_mpls_echo_tlv_fec_rsvp_p2mp_ipv6_ipv6_sender;
+static int hf_mpls_echo_tlv_echo_jitter;
+static int hf_mpls_echo_tlv_responder_indent_type;
+static int hf_mpls_echo_tlv_responder_indent_len;
+static int hf_mpls_echo_tlv_responder_indent_ipv4;
+static int hf_mpls_echo_tlv_responder_indent_ipv6;
+static int hf_mpls_echo_tlv_bfd;
 
-static gint ett_mpls_echo = -1;
-static gint ett_mpls_echo_gflags = -1;
-static gint ett_mpls_echo_tlv = -1;
-static gint ett_mpls_echo_tlv_fec = -1;
-static gint ett_mpls_echo_tlv_ds_map = -1;
-static gint ett_mpls_echo_tlv_ilso = -1;
-static gint ett_mpls_echo_tlv_dd_map = -1;
-static gint ett_mpls_echo_tlv_ddstlv_map = -1;
+static int ett_mpls_echo;
+static int ett_mpls_echo_gflags;
+static int ett_mpls_echo_tlv;
+static int ett_mpls_echo_tlv_fec;
+static int ett_mpls_echo_tlv_ds_map;
+static int ett_mpls_echo_tlv_ilso;
+static int ett_mpls_echo_tlv_dd_map;
+static int ett_mpls_echo_tlv_ddstlv_map;
 
-static expert_field ei_mpls_echo_tlv_fec_len = EI_INIT;
-static expert_field ei_mpls_echo_tlv_dd_map_subtlv_len = EI_INIT;
-static expert_field ei_mpls_echo_tlv_len = EI_INIT;
-static expert_field ei_mpls_echo_tlv_ds_map_muti_len = EI_INIT;
-static expert_field ei_mpls_echo_unknown_address_type = EI_INIT;
-static expert_field ei_mpls_echo_incorrect_address_type = EI_INIT;
-static expert_field ei_mpls_echo_malformed = EI_INIT;
+static expert_field ei_mpls_echo_tlv_fec_len;
+static expert_field ei_mpls_echo_tlv_dd_map_subtlv_len;
+static expert_field ei_mpls_echo_tlv_len;
+static expert_field ei_mpls_echo_tlv_ds_map_muti_len;
+static expert_field ei_mpls_echo_unknown_address_type;
+static expert_field ei_mpls_echo_incorrect_address_type;
+static expert_field ei_mpls_echo_malformed;
 
 static const value_string mpls_echo_msgtype[] = {
     {1, "MPLS Echo Request"},
@@ -285,12 +310,12 @@ static value_string_ext mpls_echo_returncode_ext = VALUE_STRING_EXT_INIT(mpls_ec
 #endif
 #define TLV_P2MP_RESPONDER_IDENT   0x000B
 #define TLV_P2MP_ECHO_JITTER       0x000C
-/* As per RFC 6426 http://tools.ietf.org/html/rfc6426 Section: 2.2.1 */
+/* As per RFC 6426 https://tools.ietf.org/html/rfc6426 Section: 2.2.1 */
 #define TLV_SRC_IDENTIFIER         0x000D
 #define TLV_DST_IDENTIFIER         0x000E
-/* As per RFC 5884 http://tools.ietf.org/html/rfc5884 Section: 6.1 */
+/* As per RFC 5884 https://tools.ietf.org/html/rfc5884 Section: 6.1 */
 #define TLV_BFD_DISCRIMINATOR      0x000F
-/* As per RFC 6426 http://tools.ietf.org/html/rfc6426 Section: 7.3 */
+/* As per RFC 6426 https://tools.ietf.org/html/rfc6426 Section: 7.3 */
 #define TLV_REVERSE_PATH_FEC_STACK 0x0010
 #define TLV_DETAILED_DOWNSTREAM    0x0014 /* [RFC6424] */
 #define TLV_VENDOR_PRIVATE_START   0xFC00
@@ -324,7 +349,7 @@ static const value_string mpls_echo_tlv_type_names[] = {
 };
 static value_string_ext mpls_echo_tlv_type_names_ext = VALUE_STRING_EXT_INIT(mpls_echo_tlv_type_names);
 
-/*As per RFC 4379, http://tools.ietf.org/html/rfc4379 Section: 3.2 */
+/*As per RFC 4379, https://tools.ietf.org/html/rfc4379 Section: 3.2 */
 #define TLV_FEC_STACK_LDP_IPv4              1
 #define TLV_FEC_STACK_LDP_IPv6              2
 #define TLV_FEC_STACK_RSVP_IPv4             3
@@ -341,14 +366,21 @@ static value_string_ext mpls_echo_tlv_type_names_ext = VALUE_STRING_EXT_INIT(mpl
 #define TLV_FEC_STACK_GEN_IPv4             14
 #define TLV_FEC_STACK_GEN_IPv6             15
 #define TLV_FEC_STACK_NIL                  16
-/*As per RFC 6425, http://tools.ietf.org/html/rfc6425 Section: 3.1 */
+/*As per RFC 6425, https://tools.ietf.org/html/rfc6425 Section: 3.1 */
 #define TLV_FEC_STACK_P2MP_IPv4            17
 #define TLV_FEC_STACK_P2MP_IPv6            18
-/*As per RFC 6426, http://tools.ietf.org/html/rfc6426 Section: 2.3 */
+/*As per RFC 6426, https://tools.ietf.org/html/rfc6426 Section: 2.3 */
 #define TLV_FEC_STACK_STATIC_LSP           22
 #define TLV_FEC_STACK_STATIC_PW            23
+/*As per RFC 8029, https://tools.ietf.org/html/rfc8029 Section 3.2 */
+#define TLV_FEC_STACK_PW_IPv6_FEC_128      24
+#define TLV_FEC_STACK_PW_IPv6_FEC_129      25
 #define TLV_FEC_VENDOR_PRIVATE_START   0xFC00
 #define TLV_FEC_VENDOR_PRIVATE_END     0xFFFF
+/*As per RFC 8287, https://tools.ietf.org/html/rfc8287 Section: 9.1 */
+#define TLV_FEC_STACK_SR_IGP_IPv4          34
+#define TLV_FEC_STACK_SR_IGP_IPv6          35
+#define TLV_FEC_STACK_SR_IGP_ADJ           36
 
 /* FEC sub-TLV Type names */
 static const value_string mpls_echo_tlv_fec_names[] = {
@@ -360,9 +392,9 @@ static const value_string mpls_echo_tlv_fec_names[] = {
     { TLV_FEC_STACK_VPN_IPv4,       "VPN IPv4 prefix"},
     { TLV_FEC_STACK_VPN_IPv6,       "VPN IPv6 prefix"},
     { TLV_FEC_STACK_L2_VPN,         "L2 VPN endpoint"},
-    { TLV_FEC_STACK_L2_CID_OLD,     "FEC 128 Pseudowire (old)"},
-    { TLV_FEC_STACK_L2_CID_NEW,     "FEC 128 Pseudowire (new)"},
-    { TLV_FEC_STACK_L2_FEC_129,     "FEC 129 Pseudowire"},
+    { TLV_FEC_STACK_L2_CID_OLD,     "FEC 128 Pseudowire - IPv4 (Deprecated)"},
+    { TLV_FEC_STACK_L2_CID_NEW,     "FEC 128 Pseudowire - IPv4"},
+    { TLV_FEC_STACK_L2_FEC_129,     "FEC 129 Pseudowire - IPv4"},
     { TLV_FEC_STACK_BGP_LAB_v4,     "BGP labeled IPv4 prefix"},
     { TLV_FEC_STACK_BGP_LAB_v6,     "BGP labeled IPv6 prefix"},
     { TLV_FEC_STACK_GEN_IPv4,       "Generic IPv4 prefix"},
@@ -372,6 +404,11 @@ static const value_string mpls_echo_tlv_fec_names[] = {
     { TLV_FEC_STACK_P2MP_IPv6,      "RSVP P2MP IPv6 Session Query"},
     { TLV_FEC_STACK_STATIC_LSP,     "Static LSP"},
     { TLV_FEC_STACK_STATIC_PW,      "Static Pseudowire"},
+    { TLV_FEC_STACK_PW_IPv6_FEC_128,"FEC 128 Pseudowire - IPv6"},
+    { TLV_FEC_STACK_PW_IPv6_FEC_129,"FEC 129 Pseudowire - IPv6"},
+    { TLV_FEC_STACK_SR_IGP_IPv4,    "IPv4 IGP-Prefix Segment ID"},
+    { TLV_FEC_STACK_SR_IGP_IPv6,    "IPv6 IGP-Prefix Segment ID"},
+    { TLV_FEC_STACK_SR_IGP_ADJ,     "IGP-Adjacency Segment ID"},
     { TLV_FEC_VENDOR_PRIVATE_START, "Vendor Private"},
     { 0, NULL}
 };
@@ -413,7 +450,7 @@ static const value_string mpls_echo_multipathtlv_type[] = {
 #define SUB_TLV_FEC_PUSH     1
 #define SUB_TLV_FEC_POP      2
 
-const value_string mpls_echo_subtlv_op_types[] = {
+static const value_string mpls_echo_subtlv_op_types[] = {
     { SUB_TLV_FEC_PUSH,    "Push"},
     { SUB_TLV_FEC_POP,     "Pop"},
     { 0, NULL}
@@ -424,10 +461,36 @@ const value_string mpls_echo_subtlv_op_types[] = {
 #define SUB_TLV_FEC_IPV4            1
 #define SUB_TLV_FEC_IPV6            2
 
-const value_string mpls_echo_subtlv_addr_types[] = {
+static const value_string mpls_echo_subtlv_addr_types[] = {
     { SUB_TLV_FEC_UNSPECIFIED,    "Unspecified"},
     { SUB_TLV_FEC_IPV4,           "IPv4"},
     { SUB_TLV_FEC_IPV6,           "IPv6"},
+    { 0, NULL}
+};
+
+/* [RFC 8287] */
+#define SUB_TLV_FEC_SR_PROTO_ANY     0
+#define SUB_TLV_FEC_SR_PROTO_OSPF    1
+#define SUB_TLV_FEC_SR_PROTO_ISIS    2
+
+static const value_string mpls_echo_subtlv_sr_protocol_types[] = {
+    { SUB_TLV_FEC_SR_PROTO_ANY,  "Any IGP protocol"},
+    { SUB_TLV_FEC_SR_PROTO_OSPF, "OSPF"},
+    { SUB_TLV_FEC_SR_PROTO_ISIS, "IS-IS"},
+    { 0, NULL}
+};
+
+/* [RFC 8287] */
+#define SUB_TLV_FEC_SR_IGP_ADJ_UNNUMBERED    0
+#define SUB_TLV_FEC_SR_IGP_ADJ_PARALLEL      1
+#define SUB_TLV_FEC_SR_IGP_ADJ_IPv4          4
+#define SUB_TLV_FEC_SR_IGP_ADJ_IPv6          6
+
+static const value_string mpls_echo_subtlv_igp_adjacency_types[] = {
+    { SUB_TLV_FEC_SR_IGP_ADJ_UNNUMBERED, "Unnumbered Interface Adjacency"},
+    { SUB_TLV_FEC_SR_IGP_ADJ_PARALLEL,   "Parallel Adjacency"},
+    { SUB_TLV_FEC_SR_IGP_ADJ_IPv4,       "IPv4, Non-parallel Adjacency"},
+    { SUB_TLV_FEC_SR_IGP_ADJ_IPv6,       "IPv6, Non-parallel Adjacency"},
     { 0, NULL}
 };
 
@@ -454,7 +517,7 @@ static const value_string mpls_echo_tlv_responder_ident_sub_tlv_type[] = {
 #define TLV_ADDR_UNNUM_IPv4     2
 #define TLV_ADDR_IPv6           3
 #define TLV_ADDR_UNNUM_IPv6     4
-/* As per RFC 6426, http://tools.ietf.org/html/rfc6426 Section: 2.1 */
+/* As per RFC 6426, https://tools.ietf.org/html/rfc6426 Section: 2.1 */
 #define TLV_ADDR_NONIP          5
 
 static const value_string mpls_echo_tlv_addr_type[] = {
@@ -498,7 +561,8 @@ static const value_string mpls_echo_tlv_ds_map_mp_proto[] = {
     {2, "BGP"},
     {3, "LDP"},
     {4, "RSVP-TE"},
-    {5, "Reserved"},
+    {5, "OSPF"},
+    {6, "IS-IS"},
     {0, NULL}
 };
 
@@ -506,13 +570,13 @@ static const value_string mpls_echo_tlv_ds_map_mp_proto[] = {
  * Dissector for FEC sub-TLVs
  */
 static void
-dissect_mpls_echo_tlv_fec(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tree *tree, int rem)
+dissect_mpls_echo_tlv_fec(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, proto_tree *tree, int rem)
 {
     proto_tree *ti, *tlv_fec_tree;
-    guint16     idx = 1, nil_idx = 1, type, saved_type;
+    uint16_t    idx = 1, nil_idx = 1, type, saved_type;
     int         length, nil_length, pad;
-    guint32     label;
-    guint8      exp, bos, ttl;
+    uint32_t    label, adj_offset, adj_type, adj_proto;
+    uint8_t     exp, bos, ttl;
 
     while (rem >= 4) { /* Type, Length */
         type = tvb_get_ntohs(tvb, offset);
@@ -527,7 +591,7 @@ dissect_mpls_echo_tlv_fec(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto
         tlv_fec_tree = NULL;
 
         if (tree) {
-            tlv_fec_tree = proto_tree_add_subtree_format(tree, tvb, offset, length + 4 + (4-(length%4)),
+            tlv_fec_tree = proto_tree_add_subtree_format(tree, tvb, offset, length + (4-(length%4)),
                                      ett_mpls_echo_tlv_fec, NULL, "FEC Element %u: %s",
                                      idx, val_to_str_ext(type, &mpls_echo_tlv_fec_names_ext,
                                                          "Unknown FEC type (0x%04X)"));
@@ -729,6 +793,27 @@ dissect_mpls_echo_tlv_fec(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto
                                     tvb, offset + 20, 1, ENC_BIG_ENDIAN);
             }
             break;
+        case TLV_FEC_STACK_PW_IPv6_FEC_128:
+            if (length != 38) {
+                expert_add_info_format(pinfo, ti, &ei_mpls_echo_tlv_fec_len,
+                                       "Invalid FEC Sub-TLV Length "
+                                       "(claimed %u, should be %u)",
+                                       length, 38);
+                return;
+            }
+            if (tree) {
+                proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_pw_ipv6_128_sender,
+                                    tvb, offset + 4, 16, ENC_NA);
+                proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_pw_ipv6_128_remote,
+                                    tvb, offset + 20, 16, ENC_NA);
+                proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_pw_ipv6_128_pw_id,
+                                    tvb, offset + 36, 2, ENC_BIG_ENDIAN);
+                proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_pw_ipv6_128_pw_type,
+                                    tvb, offset + 38, 2, ENC_BIG_ENDIAN);
+                proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_pw_ipv6_128_mbz,
+                                    tvb, offset + 40, 2, ENC_BIG_ENDIAN);
+            }
+            break;
         case TLV_FEC_STACK_NIL:
                 nil_length = length;
                 while (nil_length >= 4) {
@@ -835,6 +920,88 @@ dissect_mpls_echo_tlv_fec(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto
                                     tvb, (offset + 32), 4, ENC_BIG_ENDIAN);
             }
             break;
+        case TLV_FEC_STACK_SR_IGP_IPv4:
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_ipv4,
+                                tvb, offset + 4, 4, ENC_NA);
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_mask,
+                                tvb, offset + 8, 1, ENC_BIG_ENDIAN);
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_protocol,
+                                tvb, offset + 9, 1, ENC_BIG_ENDIAN);
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_reserved,
+                                tvb, offset + 10, 2, ENC_NA);
+            break;
+        case TLV_FEC_STACK_SR_IGP_IPv6:
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_ipv6,
+                                tvb, offset + 4, 16, ENC_NA);
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_mask,
+                                tvb, offset + 20, 1, ENC_BIG_ENDIAN);
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_protocol,
+                                tvb, offset + 21, 1, ENC_BIG_ENDIAN);
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_reserved,
+                                tvb, offset + 22, 2, ENC_NA);
+            break;
+        case TLV_FEC_STACK_SR_IGP_ADJ:
+            adj_offset = offset +4;
+            proto_tree_add_item_ret_uint(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_type,
+                                tvb, adj_offset, 1, ENC_BIG_ENDIAN, &adj_type);
+            adj_offset += 1;
+            proto_tree_add_item_ret_uint(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_protocol,
+                                tvb, adj_offset, 1, ENC_BIG_ENDIAN, &adj_proto);
+            adj_offset += 1;
+            proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_reserved,
+                                tvb, adj_offset, 2, ENC_NA);
+            adj_offset += 2;
+            switch(adj_type) {
+                case SUB_TLV_FEC_SR_IGP_ADJ_IPv4:
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_local_ipv4,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    adj_offset += 4;
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_remote_ipv4,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    adj_offset += 4;
+                    break;
+                case SUB_TLV_FEC_SR_IGP_ADJ_IPv6:
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_local_ipv6,
+                                        tvb, adj_offset, 16, ENC_NA);
+                    adj_offset += 16;
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_remote_ipv6,
+                                        tvb, adj_offset, 16, ENC_NA);
+                    adj_offset += 16;
+                    break;
+                case SUB_TLV_FEC_SR_IGP_ADJ_UNNUMBERED:
+                case SUB_TLV_FEC_SR_IGP_ADJ_PARALLEL:
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_local_ident,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    adj_offset += 4;
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_remote_ident,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    adj_offset += 4;
+                    break;
+            }
+            switch(adj_proto) {
+                case SUB_TLV_FEC_SR_PROTO_OSPF:
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_adv_ident_ospf,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    adj_offset += 4;
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_rec_ident_ospf,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    break;
+                case SUB_TLV_FEC_SR_PROTO_ISIS:
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_adv_ident_isis,
+                                        tvb, adj_offset, 6, ENC_NA);
+                    adj_offset += 6;
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_rec_ident_isis,
+                                        tvb, adj_offset, 6, ENC_NA);
+                    break;
+                case SUB_TLV_FEC_SR_PROTO_ANY:
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_adv_ident,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    adj_offset += 4;
+                    proto_tree_add_item(tlv_fec_tree, hf_mpls_echo_tlv_fec_igp_adj_rec_ident,
+                                        tvb, adj_offset, 4, ENC_NA);
+                    break;
+            }
+            break;
         case TLV_FEC_STACK_RES:
         default:
             if (length)
@@ -871,14 +1038,14 @@ dissect_mpls_echo_tlv_fec(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto
  * Dissector for Downstream Mapping TLV
  */
 static void
-dissect_mpls_echo_tlv_ds_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tree *tree, int rem)
+dissect_mpls_echo_tlv_ds_map(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, proto_tree *tree, int rem)
 {
     proto_tree *ti, *tlv_ds_map_tree;
     proto_tree *addr_ti;
-    guint16     mplen, idx = 1;
-    guint32     label;
-    guint8      exp, bos, proto;
-    guint8      hash_type, addr_type;
+    uint16_t    mplen, idx = 1;
+    uint32_t    label;
+    uint8_t     exp, bos, proto;
+    uint8_t     hash_type, addr_type;
 
     proto_tree_add_item(tree, hf_mpls_echo_tlv_ds_map_mtu, tvb,
                         offset, 2, ENC_BIG_ENDIAN);
@@ -895,7 +1062,7 @@ dissect_mpls_echo_tlv_ds_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
     proto_tree_add_item(tlv_ds_map_tree, hf_mpls_echo_tlv_ds_map_flag_n, tvb,
                         offset + 3, 1, ENC_BIG_ENDIAN);
 
-    addr_type = tvb_get_guint8(tvb, offset + 2);
+    addr_type = tvb_get_uint8(tvb, offset + 2);
     switch (addr_type) {
     case TLV_ADDR_IPv4:
         proto_tree_add_item(tree, hf_mpls_echo_tlv_ds_map_ds_ip, tvb,
@@ -938,7 +1105,7 @@ dissect_mpls_echo_tlv_ds_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
 
     /* Get the Multipath Length and Hash Type */
     mplen     = tvb_get_ntohs(tvb, offset + 14);
-    hash_type = tvb_get_guint8(tvb, offset + 12);
+    hash_type = tvb_get_uint8(tvb, offset + 12);
 
     rem    -= 16;
     offset += 16;
@@ -1040,15 +1207,15 @@ dissect_mpls_echo_tlv_ds_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
 
 /* Dissector for Detailed Downstream Mapping TLV - RFC [6424] */
 static void
-dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tree *tree, int rem)
+dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, proto_tree *tree, int rem)
 {
     proto_tree *ddti = NULL, *tlv_dd_map_tree, *tlv_ddstlv_map_tree;
     proto_tree *ddsti, *ddsti2;
-    guint16     subtlv_length, subtlv_type, multipath_length;
-    guint8      addr_type, multipath_type, fec_tlv_length;
-    guint16     idx = 1;
-    guint32     label;
-    guint8      tc, s_bit, proto;
+    uint16_t    subtlv_length, subtlv_type, multipath_length;
+    uint8_t     addr_type, multipath_type, fec_tlv_length;
+    uint16_t    idx = 1;
+    uint32_t    label;
+    uint8_t     tc, s_bit, proto;
 
     if (tree) {
         proto_tree_add_item(tree, hf_mpls_echo_tlv_dd_map_mtu, tvb,
@@ -1066,7 +1233,7 @@ dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
         ddti = proto_tree_add_item(tlv_dd_map_tree, hf_mpls_echo_tlv_dd_map_flag_n, tvb,
                                    offset + 3, 1, ENC_BIG_ENDIAN);
     }
-    addr_type = tvb_get_guint8(tvb, offset + 2);
+    addr_type = tvb_get_uint8(tvb, offset + 2);
     switch (addr_type) {
     case TLV_ADDR_IPv4:
         proto_tree_add_item(tree, hf_mpls_echo_tlv_dd_map_ds_ip, tvb,
@@ -1122,7 +1289,7 @@ dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
 
         switch (subtlv_type) {
         case TLV_FEC_MULTIPATH_DATA:
-            multipath_type   = tvb_get_guint8(tvb, offset);
+            multipath_type   = tvb_get_uint8(tvb, offset);
             multipath_length = tvb_get_ntohs(tvb, offset + 1);
             tlv_dd_map_tree = proto_tree_add_subtree(tree, tvb, offset - 4, multipath_length + 8,
                                         ett_mpls_echo_tlv_dd_map, &ddsti, "Multipath sub-TLV");
@@ -1243,7 +1410,7 @@ dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
             tlv_dd_map_tree = proto_tree_add_subtree(tree, tvb, offset - 4, subtlv_length + 4,
                                 ett_mpls_echo_tlv_dd_map, NULL, "Label stack sub-TLV");
 
-            while (rem >= 4) {
+            while (subtlv_length >= 4) {
                 if (tree) {
                     decode_mpls_label(tvb, offset, &label, &tc, &s_bit, &proto);
 
@@ -1256,15 +1423,16 @@ dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
                     proto_tree_add_item(tlv_ddstlv_map_tree, hf_mpls_echo_tlv_ddstlv_map_mp_proto,
                                         tvb, offset + 3, 1, ENC_BIG_ENDIAN);
                 }
-                rem    -= 4;
-                offset += 4;
+                subtlv_length -= 4;
+                rem           -= 4;
+                offset        += 4;
                 idx++;
             }
             break;
 
         case TLV_FEC_STACK_CHANGE: {
-            addr_type       = tvb_get_guint8(tvb, offset + 1);
-            fec_tlv_length  = tvb_get_guint8(tvb, offset + 2);
+            addr_type       = tvb_get_uint8(tvb, offset + 1);
+            fec_tlv_length  = tvb_get_uint8(tvb, offset + 2);
             tlv_dd_map_tree = proto_tree_add_subtree(tree, tvb, offset - 4, fec_tlv_length + 12,
                                             ett_mpls_echo_tlv_dd_map, NULL, "Stack change sub-TLV");
 
@@ -1275,23 +1443,23 @@ dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
             switch (addr_type) {
             case SUB_TLV_FEC_UNSPECIFIED:
                 proto_tree_add_item(tlv_dd_map_tree, hf_mpls_echo_sub_tlv_remote_peer_unspecified, tvb, offset + 4, 0, ENC_NA);
-                rem    += 4;
-                offset -= 4;
                 break;
             case SUB_TLV_FEC_IPV4:
                 proto_tree_add_item(tlv_dd_map_tree, hf_mpls_echo_sub_tlv_remote_peer_ip, tvb, offset + 4, 4, ENC_BIG_ENDIAN);
+                rem    -= 4;
+                offset += 4;
                 break;
             case SUB_TLV_FEC_IPV6:
                 proto_tree_add_item(tlv_dd_map_tree, hf_mpls_echo_sub_tlv_remore_peer_ipv6, tvb, offset + 4, 16, ENC_NA);
-                rem    -= 12;
-                offset += 12;
+                rem    -= 16;
+                offset += 16;
                 break;
             }
 
-            offset -= 8;
+            offset += 4;
             dissect_mpls_echo_tlv_fec(tvb, pinfo, offset, tlv_dd_map_tree, fec_tlv_length);
 
-            rem -= (fec_tlv_length + 8);
+            rem -= (fec_tlv_length + 4);
             break;
         }
 
@@ -1310,16 +1478,16 @@ dissect_mpls_echo_tlv_dd_map(tvbuff_t *tvb, packet_info *pinfo, guint offset, pr
  * Dissector for IPv4 and IPv6 Interface and Label Stack Object
  */
 static void
-dissect_mpls_echo_tlv_ilso(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tree *tree, int rem, gboolean is_ipv6)
+dissect_mpls_echo_tlv_ilso(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, proto_tree *tree, int rem, bool is_ipv6)
 {
     proto_tree *ti;
-    guint8      type;
-    guint16     idx = 1;
-    guint32     label;
-    guint8      exp, bos, ttl;
+    uint8_t     type;
+    uint16_t    idx = 1;
+    uint32_t    label;
+    uint8_t     exp, bos, ttl;
 
     ti      = proto_tree_add_item(tree, hf_mpls_echo_tlv_ilso_addr_type, tvb, offset, 1, ENC_BIG_ENDIAN);
-    type    = tvb_get_guint8(tvb, offset);
+    type    = tvb_get_uint8(tvb, offset);
     offset += 1;
     rem    -= 1;
 
@@ -1398,31 +1566,35 @@ dissect_mpls_echo_tlv_ilso(tvbuff_t *tvb, packet_info *pinfo, guint offset, prot
 }
 
 static int
-dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tree *tree, int rem, gboolean in_errored);
+dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, proto_tree *tree, int rem, bool in_errored);
 
 /*
  * Dissector for Errored TLVs
  */
 static void
-dissect_mpls_echo_tlv_errored(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tree *tree, int rem)
+// NOLINTNEXTLINE(misc-no-recursion)
+dissect_mpls_echo_tlv_errored(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, proto_tree *tree, int rem)
 {
     int errored_tlv_length;
 
+    increment_dissection_depth(pinfo);
     while (rem >= 4) {
-        errored_tlv_length = dissect_mpls_echo_tlv(tvb, pinfo, offset, tree, rem, TRUE);
+        errored_tlv_length = dissect_mpls_echo_tlv(tvb, pinfo, offset, tree, rem, true);
         rem    -= errored_tlv_length;
         offset += errored_tlv_length;
     }
+    increment_dissection_depth(pinfo);
 }
 
 /*
  * Dissector for MPLS Echo TLVs and return bytes consumed
  */
 static int
-dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tree *tree, int rem, gboolean in_errored)
+// NOLINTNEXTLINE(misc-no-recursion)
+dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, proto_tree *tree, int rem, bool in_errored)
 {
     proto_tree *ti = NULL, *mpls_echo_tlv_tree = NULL;
-    guint16     type, saved_type;
+    uint16_t    type, saved_type;
     int         length;
 
     length = tvb_reported_length_remaining(tvb, offset);
@@ -1490,7 +1662,7 @@ dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tre
                                    length);
             break;
         }
-        dissect_mpls_echo_tlv_ilso(tvb, pinfo, offset + 4, mpls_echo_tlv_tree, length, FALSE);
+        dissect_mpls_echo_tlv_ilso(tvb, pinfo, offset + 4, mpls_echo_tlv_tree, length, false);
         break;
     case TLV_ILSO_IPv6:
         if (length < 24) {
@@ -1499,7 +1671,7 @@ dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tre
                                    length);
             break;
         }
-        dissect_mpls_echo_tlv_ilso(tvb, pinfo, offset + 4, mpls_echo_tlv_tree, length, TRUE);
+        dissect_mpls_echo_tlv_ilso(tvb, pinfo, offset + 4, mpls_echo_tlv_tree, length, true);
         break;
 #if 0
     case TLV_RTO_IPv4:
@@ -1534,7 +1706,7 @@ dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tre
                             tvb, offset + 4, 4, ENC_BIG_ENDIAN);
         break;
     case TLV_P2MP_RESPONDER_IDENT: {
-        guint16     resp_ident_type, resp_ident_len;
+        uint16_t    resp_ident_type, resp_ident_len;
         proto_item *hidden_item;
 
         resp_ident_type = tvb_get_ntohs(tvb, offset + 4);
@@ -1554,7 +1726,7 @@ dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tre
             hidden_item = proto_tree_add_item(mpls_echo_tlv_tree,
                                               hf_mpls_echo_tlv_responder_indent_len, tvb,
                                               offset + 6, 2, ENC_BIG_ENDIAN);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
+            proto_item_set_hidden(hidden_item);
             proto_tree_add_item(mpls_echo_tlv_tree, hf_mpls_echo_tlv_responder_indent_ipv4,
                                 tvb, offset + 8, 4, ENC_BIG_ENDIAN);
             break;
@@ -1570,9 +1742,9 @@ dissect_mpls_echo_tlv(tvbuff_t *tvb, packet_info *pinfo, guint offset, proto_tre
                                 tvb, offset + 4, 2, ENC_BIG_ENDIAN);
             hidden_item = proto_tree_add_item(mpls_echo_tlv_tree, hf_mpls_echo_tlv_responder_indent_len,
                                               tvb, offset + 6, 2, ENC_BIG_ENDIAN);
-            PROTO_ITEM_SET_HIDDEN(hidden_item);
-            proto_tree_add_item(mpls_echo_tlv_tree, hf_mpls_echo_tlv_responder_indent_ipv4,
-                                tvb, offset + 8, 16, ENC_BIG_ENDIAN);
+            proto_item_set_hidden(hidden_item);
+            proto_tree_add_item(mpls_echo_tlv_tree, hf_mpls_echo_tlv_responder_indent_ipv6,
+                                tvb, offset + 8, 16, ENC_NA);
             break;
         }
         break;
@@ -1666,7 +1838,7 @@ dissect_mpls_echo(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     int         offset = 0, rem = 0, len;
     proto_item *ti = NULL;
     proto_tree *mpls_echo_tree = NULL;
-    guint8      msgtype;
+    uint8_t     msgtype;
 
     /* If version != 1 we assume it's not an mpls ping packet */
     if (tvb_captured_length(tvb) < 5) {
@@ -1686,7 +1858,7 @@ dissect_mpls_echo(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     rem = tvb_reported_length_remaining(tvb, offset);
 
     /* Get the message type and fill in the Column info */
-    msgtype = tvb_get_guint8(tvb, offset + 4);
+    msgtype = tvb_get_uint8(tvb, offset + 4);
 
     /* The minimum fixed part of the packet is 16 Bytes or 32 Bytes depending on Msg Type */
     if ( ((!MSGTYPE_MPLS_ECHO(msgtype)) && (rem < 16)) ||
@@ -1759,10 +1931,11 @@ dissect_mpls_echo(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
 
     /* Dissect all TLVs */
     while (tvb_reported_length_remaining(tvb, offset) > 0 ) {
-        len = dissect_mpls_echo_tlv(tvb, pinfo, offset, mpls_echo_tree, rem, FALSE);
+        len = dissect_mpls_echo_tlv(tvb, pinfo, offset, mpls_echo_tree, rem, false);
         offset += len;
         rem    -= len;
     }
+
 
     return tvb_captured_length(tvb);
 }
@@ -1999,6 +2172,98 @@ proto_register_mpls_echo(void)
         { &hf_mpls_echo_tlv_fec_nil_label,
           { "Label", "mpls_echo.tlv.fec.nil_label",
             FT_UINT24, BASE_DEC, VALS(special_labels), 0x0, "MPLS ECHO TLV FEC Stack NIL Label", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_pw_ipv6_128_sender,
+          { "Sender's PE Address", "mpls_echo.tlv.fec.pw_ipv6_128_sender",
+            FT_IPv6, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC PW IPV6 FEC 128 SENDER", HFILL }
+        },
+        { &hf_mpls_echo_tlv_fec_pw_ipv6_128_remote,
+          { "Remote's PE Address", "mpls_echo.tlv.fec.pw_ipv6_128_remote",
+            FT_IPv6, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC PW IPV6 FEC 128 REMOTE", HFILL }
+        },
+        { &hf_mpls_echo_tlv_fec_pw_ipv6_128_pw_id,
+          { "PW ID", "mpls_echo.tlv.fec.fec.pw_ipv6_128_pwid",
+            FT_UINT16, BASE_DEC, NULL, 0x0, "MPLS ECHO TLV FEC PW IPV6 FEC 128 PW ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_pw_ipv6_128_pw_type,
+          { "PW TYPE", "mpls_echo.tlv.fec.fec.pw_ipv6_128_pw_type",
+            FT_UINT16, BASE_DEC, VALS(fec_vc_types_vals), 0x0, "MPLS ECHO TLV FEC PW IPV6 FEC 128 PW TYPE", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_pw_ipv6_128_mbz,
+          { "MBZ", "mpls_echo.tlv.fec.fec.pw_ipv6_128_mbz",
+            FT_UINT16, BASE_HEX, NULL, 0x0, "MPLS ECHO TLV FEC PW IPV6 FEC 128 MBZ", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_ipv4,
+          { "IPv4 Prefix", "mpls_echo.tlv.fec.igp_ipv4",
+            FT_IPv4, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP IPv4", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_ipv6,
+          { "IPv6 Prefix", "mpls_echo.tlv.fec.igp_ipv6",
+            FT_IPv6, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP IPv6", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_mask,
+          { "Prefix Length", "mpls_echo.tlv.fec.igp_mask",
+            FT_UINT8, BASE_DEC, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Prefix Length", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_protocol,
+          { "Protocol", "mpls_echo.tlv.fec.igp_protocol",
+            FT_UINT8, BASE_DEC, VALS(mpls_echo_subtlv_sr_protocol_types), 0x0, "MPLS ECHO TLV FEC Stack IGP Protocol", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_reserved,
+          { "Reserved", "mpls_echo.tlv.fec.igp_reserved",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Reserved", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_type,
+          { "Adjacency Type", "mpls_echo.tlv.fec.igp_adj_type",
+            FT_UINT8, BASE_DEC, VALS(mpls_echo_subtlv_igp_adjacency_types), 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Type", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_local_ipv4,
+          { "Local Interface ID", "mpls_echo.tlv.fec.igp_adj_local_id.ipv4",
+            FT_IPv4, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Local Interface ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_local_ipv6,
+          { "Local Interface ID", "mpls_echo.tlv.fec.igp_adj_local_id.ipv6",
+            FT_IPv6, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Local Interface ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_local_ident,
+          { "Local Interface ID", "mpls_echo.tlv.fec.igp_adj_local_id.ident",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Local Interface ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_remote_ipv4,
+          { "Remote Interface ID", "mpls_echo.tlv.fec.igp_adj_remote_id.ipv4",
+            FT_IPv4, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Remote Interface ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_remote_ipv6,
+          { "Remote Interface ID", "mpls_echo.tlv.fec.igp_adj_remote_id.ipv6",
+            FT_IPv6, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Remote Interface ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_remote_ident,
+          { "Remote Interface ID", "mpls_echo.tlv.fec.igp_adj_remote_id.ident",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Remote Interface ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_adv_ident_ospf,
+          { "Advertising Node Identifier Router ID", "mpls_echo.tlv.fec.igp_adj_adv_node_id.ospf",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Advertising Node Identifier OSPF Router ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_adv_ident_isis,
+          { "Advertising Node Identifier System ID", "mpls_echo.tlv.fec.igp_adj_adv_node_id.isis",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Advertising Node Identifier IS-IS System ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_adv_ident,
+          { "Advertising Node Identifier", "mpls_echo.tlv.fec.igp_adj_adv_node_id.ident",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Advertising Node Identifier", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_rec_ident_ospf,
+          { "Receiving Node Identifier Router ID", "mpls_echo.tlv.fec.igp_adj_rec_node_id.ospf",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Receiving Node Identifier OSPF Router ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_rec_ident_isis,
+          { "Receiving Node Identifier System ID", "mpls_echo.tlv.fec.igp_adj_rec_node_id.isis",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Receiving Node Identifier IS-IS System ID", HFILL}
+        },
+        { &hf_mpls_echo_tlv_fec_igp_adj_rec_ident,
+          { "Receiving Node Identifier", "mpls_echo.tlv.fec.igp_adj_rec_node_id.ident",
+            FT_BYTES, BASE_NONE, NULL, 0x0, "MPLS ECHO TLV FEC Stack IGP Adjacency Receiving Node Identifier", HFILL}
         },
         { &hf_mpls_echo_tlv_ds_map_mtu,
           { "MTU", "mpls_echo.tlv.ds_map.mtu",
@@ -2490,12 +2755,10 @@ proto_register_mpls_echo(void)
           { "Target IPv4 Address", "mpls_echo.tlv.resp_id.ipv4",
             FT_IPv4, BASE_NONE, NULL, 0x0, "P2MP Responder ID TLV IPv4 Address", HFILL}
         },
-#if 0
         { &hf_mpls_echo_tlv_responder_indent_ipv6,
           { "Target IPv6 Address", "mpls_echo.tlv.resp_id.ipv6",
             FT_IPv6, BASE_NONE, NULL, 0x0, "P2MP Responder ID TLV IPv6 Address", HFILL}
         },
-#endif
         { &hf_mpls_echo_tlv_echo_jitter,
           { "Echo Jitter time", "mpls_echo.tlv.echo_jitter",
             FT_UINT32, BASE_DEC, NULL, 0x0, "MPLS ECHO Jitter time", HFILL}
@@ -2506,7 +2769,7 @@ proto_register_mpls_echo(void)
         },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_mpls_echo,
         &ett_mpls_echo_gflags,
         &ett_mpls_echo_tlv,
@@ -2535,22 +2798,21 @@ proto_register_mpls_echo(void)
     proto_register_subtree_array(ett, array_length(ett));
     expert_mpls_echo = expert_register_protocol(proto_mpls_echo);
     expert_register_field_array(expert_mpls_echo, ei, array_length(ei));
+
+    mpls_echo_handle = register_dissector("mpls-echo", dissect_mpls_echo, proto_mpls_echo);
 }
 
 
 void
 proto_reg_handoff_mpls_echo(void)
 {
-    dissector_handle_t mpls_echo_handle;
-
-    mpls_echo_handle = create_dissector_handle(dissect_mpls_echo, proto_mpls_echo);
     dissector_add_uint_with_preference("udp.port", UDP_PORT_MPLS_ECHO, mpls_echo_handle);
 
     dissector_add_uint("pwach.channel_type", PW_ACH_TYPE_ONDEMAND_CV, mpls_echo_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

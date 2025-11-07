@@ -29,25 +29,24 @@
 #include "config.h"
 
 #include <epan/packet.h>
-#include <epan/exceptions.h>
 #include <epan/prefs.h>
 #include <epan/in_cksum.h>
-#include <epan/etypes.h>
-#include <epan/ipproto.h>
 #include <epan/expert.h>
 #include <epan/to_str.h>
+#include <epan/tfs.h>
+#include <epan/unit_strings.h>
 
-#include "packet-ip.h"
+#include <wsutil/array.h>
 #include "packet-rsvp.h"
 
 void proto_register_lmp(void);
 void proto_reg_handoff_lmp(void);
 
-static int proto_lmp = -1;
+static int proto_lmp;
 
 #define UDP_PORT_LMP_DEFAULT 701
 
-static gboolean lmp_checksum_config = FALSE;
+static bool lmp_checksum_config;
 
 static dissector_handle_t lmp_handle;
 
@@ -488,41 +487,41 @@ static int hf_lmp_filter[LMPF_MAX];
 static int hf_lmp_data;
 
 /* Generated from convert_proto_tree_add_text.pl */
-static int hf_lmp_maximum_reservable_bandwidth = -1;
-static int hf_lmp_verify_transport_mechanism = -1;
-static int hf_lmp_interface_id_ipv6 = -1;
-static int hf_lmp_minimum_reservable_bandwidth = -1;
-static int hf_lmp_object_length = -1;
-static int hf_lmp_interface_id_unnumbered = -1;
-static int hf_lmp_signal_types_sdh = -1;
-static int hf_lmp_link_type = -1;
-static int hf_lmp_number_of_data_links = -1;
-static int hf_lmp_version = -1;
-static int hf_lmp_interface_id_ipv4 = -1;
-static int hf_lmp_header_length = -1;
-static int hf_lmp_uni_version = -1;
-static int hf_lmp_subobject_type = -1;
-static int hf_lmp_object_class = -1;
-static int hf_lmp_negotiable = -1;
-static int hf_lmp_signal_types_sonet = -1;
-static int hf_lmp_header_flags = -1;
-static int hf_lmp_verify_interval = -1;
-static int hf_lmp_wavelength = -1;
-static int hf_lmp_channel_status = -1;
-static int hf_lmp_verifydeadinterval = -1;
-static int hf_lmp_data_link_remote_id_ipv6 = -1;
-static int hf_lmp_link = -1;
-static int hf_lmp_subobject_length = -1;
-static int hf_lmp_transmission_rate = -1;
-static int hf_lmp_verify_transport_response = -1;
-static int hf_lmp_data_link_local_id_ipv6 = -1;
-static int hf_lmp_free_timeslots = -1;
+static int hf_lmp_maximum_reservable_bandwidth;
+static int hf_lmp_verify_transport_mechanism;
+static int hf_lmp_interface_id_ipv6;
+static int hf_lmp_minimum_reservable_bandwidth;
+static int hf_lmp_object_length;
+static int hf_lmp_interface_id_unnumbered;
+static int hf_lmp_signal_types_sdh;
+static int hf_lmp_link_type;
+static int hf_lmp_number_of_data_links;
+static int hf_lmp_version;
+static int hf_lmp_interface_id_ipv4;
+static int hf_lmp_header_length;
+static int hf_lmp_uni_version;
+static int hf_lmp_subobject_type;
+static int hf_lmp_object_class;
+static int hf_lmp_negotiable;
+static int hf_lmp_signal_types_sonet;
+static int hf_lmp_header_flags;
+static int hf_lmp_verify_interval;
+static int hf_lmp_wavelength;
+static int hf_lmp_channel_status;
+static int hf_lmp_verifydeadinterval;
+static int hf_lmp_data_link_remote_id_ipv6;
+static int hf_lmp_link;
+static int hf_lmp_subobject_length;
+static int hf_lmp_transmission_rate;
+static int hf_lmp_verify_transport_response;
+static int hf_lmp_data_link_local_id_ipv6;
+static int hf_lmp_free_timeslots;
 
-static expert_field ei_lmp_checksum_incorrect = EI_INIT;
-static expert_field ei_lmp_invalid_msg_type = EI_INIT;
-static expert_field ei_lmp_invalid_class = EI_INIT;
-static expert_field ei_lmp_trace_len = EI_INIT;
-static expert_field ei_lmp_obj_len = EI_INIT;
+static expert_field ei_lmp_checksum_incorrect;
+static expert_field ei_lmp_invalid_msg_type;
+static expert_field ei_lmp_invalid_class;
+static expert_field ei_lmp_trace_len;
+static expert_field ei_lmp_obj_len;
 
 static int
 lmp_valid_class(int lmp_class)
@@ -656,7 +655,7 @@ enum {
 
 #define NUM_LMP_SUBTREES (LMP_TREE_CLASS_START + LMP_CLASS_MAX)
 
-static gint lmp_subtree[NUM_LMP_SUBTREES];
+static int lmp_subtree[NUM_LMP_SUBTREES];
 
 static int lmp_class_to_subtree(int lmp_class)
 {
@@ -693,7 +692,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
     proto_tree *lmp_subobj_tree;
     proto_item *hidden_item, *msg_item;
 
-    guint8 message_type;
+    uint8_t message_type;
     vec_t cksum_vec[1];
     int j, k, l, len;
     int msg_length;
@@ -704,12 +703,12 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "LMP");
     col_clear(pinfo->cinfo, COL_INFO);
 
-    message_type = tvb_get_guint8(tvb, offset+3);
+    message_type = tvb_get_uint8(tvb, offset+3);
     col_add_str(pinfo->cinfo, COL_INFO,
          val_to_str(message_type, message_type_vals, "Unknown (%u). "));
 
     if (tree) {
-        static const int * header_flags[] = {
+        static int * const header_flags[] = {
             &hf_lmp_filter[LMPF_HDR_FLAGS_CC_DOWN],
             &hf_lmp_filter[LMPF_HDR_FLAGS_REBOOT],
             NULL
@@ -737,7 +736,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
         hidden_item = proto_tree_add_boolean(lmp_header_tree,
                                              hf_lmp_filter[lmp_msg_to_filter_num(message_type)],
                                              tvb, offset+3, 1, 1);
-        PROTO_ITEM_SET_HIDDEN(hidden_item);
+        proto_item_set_hidden(hidden_item);
     } else {
         expert_add_info_format(pinfo, msg_item, &ei_lmp_invalid_msg_type,
                                "Invalid message type: %u", message_type);
@@ -760,9 +759,9 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
     offset += 8;
     len = 8;
     while (len < msg_length) {
-        guint8 lmp_class;
-        guint8 type;
-        guint8 negotiable;
+        uint8_t lmp_class;
+        uint8_t type;
+        uint8_t negotiable;
         int filter_num;
         proto_item* trace_item;
 
@@ -771,12 +770,12 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             proto_tree_add_expert(tree, pinfo, &ei_lmp_obj_len, tvb, offset+2, 2);
             break;
         }
-        lmp_class = tvb_get_guint8(tvb, offset+1);
-        type = tvb_get_guint8(tvb, offset);
+        lmp_class = tvb_get_uint8(tvb, offset+1);
+        type = tvb_get_uint8(tvb, offset);
         negotiable = (type >> 7); type &= 0x7f;
         hidden_item = proto_tree_add_uint(lmp_tree, hf_lmp_filter[LMPF_OBJECT], tvb,
                                           offset, 1, lmp_class);
-        PROTO_ITEM_SET_GENERATED(hidden_item);
+        proto_item_set_generated(hidden_item);
         filter_num = lmp_class_to_filter_num(lmp_class);
         if (filter_num != -1 && lmp_valid_class(lmp_class)) {
             ti = proto_tree_add_item(lmp_tree,
@@ -835,14 +834,14 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 1:
                 l = LMPF_VAL_LOCAL_NODE_ID;
-                proto_item_append_text(ti, ": %s", tvb_ip_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": %s", tvb_ip_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[l], tvb,
                                     offset2, 4, ENC_BIG_ENDIAN);
                 break;
 
             case 2:
                 l = LMPF_VAL_REMOTE_NODE_ID;
-                proto_item_append_text(ti, ": %s", tvb_ip_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": %s", tvb_ip_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[l], tvb,
                                     offset2, 4, ENC_BIG_ENDIAN);
                 break;
@@ -861,7 +860,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             case 2:
                 l = (type == 1)? LMPF_VAL_LOCAL_LINK_ID_IPV4:
                 LMPF_VAL_REMOTE_LINK_ID_IPV4;
-                proto_item_append_text(ti, ": IPv4 %s", tvb_ip_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": IPv4 %s", tvb_ip_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[l], tvb,
                                     offset2, 4, ENC_BIG_ENDIAN);
                 break;
@@ -870,7 +869,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             case 4:
                 l = (type == 3)? LMPF_VAL_LOCAL_LINK_ID_IPV6:
                 LMPF_VAL_REMOTE_LINK_ID_IPV6;
-                proto_item_append_text(ti, ": IPv6 %s", tvb_ip6_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": IPv6 %s", tvb_ip6_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[l], tvb,
                                     offset2, 16, ENC_NA);
                 break;
@@ -898,7 +897,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             case 2:
                 l = (type == 1)? LMPF_VAL_LOCAL_INTERFACE_ID_IPV4:
                 LMPF_VAL_REMOTE_INTERFACE_ID_IPV4;
-                proto_item_append_text(ti, ": IPv4 %s", tvb_ip_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": IPv4 %s", tvb_ip_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[l], tvb,
                                     offset2, 4, ENC_BIG_ENDIAN);
                 break;
@@ -907,7 +906,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             case 4:
                 l = (type == 3)? LMPF_VAL_LOCAL_INTERFACE_ID_IPV6:
                 LMPF_VAL_REMOTE_INTERFACE_ID_IPV6;
-                proto_item_append_text(ti, ": IPv6 %s", tvb_ip6_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": IPv6 %s", tvb_ip6_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[l], tvb,
                                     offset2, 16, ENC_NA);
                 break;
@@ -1004,7 +1003,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             case 1:
                 {
                 float transmission_rate;
-                static const int * verify_flags[] = {
+                static int * const verify_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_BEGIN_VERIFY_FLAGS_ALL_LINKS],
                     &hf_lmp_filter[LMPF_VAL_BEGIN_VERIFY_FLAGS_LINK_TYPE],
                     NULL
@@ -1069,14 +1068,14 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
         case LMP_CLASS_TE_LINK:
         {
-            static const int * link_flags[] = {
+            static int * const link_flags[] = {
                 &hf_lmp_filter[LMPF_VAL_TE_LINK_FLAGS_FAULT_MGMT],
                 &hf_lmp_filter[LMPF_VAL_TE_LINK_FLAGS_LINK_VERIFY],
                 NULL
             };
 
             ti2 = proto_tree_add_bitmask(lmp_object_tree, tvb, offset2, hf_lmp_filter[LMPF_VAL_TE_LINK_FLAGS], lmp_subtree[LMP_TREE_TE_LINK_FLAGS], link_flags, ENC_NA);
-            l = tvb_get_guint8(tvb, offset2);
+            l = tvb_get_uint8(tvb, offset2);
             proto_item_append_text(ti2, ": %s%s",
                                    (l&0x01) ? "Fault-Mgmt-Supported " : "",
                                    (l&0x02) ? "Link-Verification-Supported " : "");
@@ -1085,8 +1084,8 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 1:
                 proto_item_append_text(ti, ": IPv4: Local %s, Remote %s",
-                                       tvb_ip_to_str(tvb, offset2+4),
-                                       tvb_ip_to_str(tvb, offset2+8));
+                                       tvb_ip_to_str(pinfo->pool, tvb, offset2+4),
+                                       tvb_ip_to_str(pinfo->pool, tvb, offset2+8));
                 proto_tree_add_item(lmp_object_tree,
                                     hf_lmp_filter[LMPF_VAL_TE_LINK_LOCAL_IPV4],
                                     tvb, offset2+4, 4, ENC_BIG_ENDIAN);
@@ -1097,8 +1096,8 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 2:
                 proto_item_append_text(ti, ": IPv6: Local %s, Remote %s",
-                                       tvb_ip6_to_str(tvb, offset2+4),
-                                       tvb_ip6_to_str(tvb, offset2+20));
+                                       tvb_ip6_to_str(pinfo->pool, tvb, offset2+4),
+                                       tvb_ip6_to_str(pinfo->pool, tvb, offset2+20));
                 proto_tree_add_item(lmp_object_tree,
                                     hf_lmp_filter[LMPF_VAL_TE_LINK_LOCAL_IPV6],
                                     tvb, offset2+4, 16, ENC_NA);
@@ -1129,14 +1128,14 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
         case LMP_CLASS_DATA_LINK:
         {
-            static const int * link_flags[] = {
+            static int * const link_flags[] = {
                 &hf_lmp_filter[LMPF_VAL_DATA_LINK_FLAGS_PORT],
                 &hf_lmp_filter[LMPF_VAL_DATA_LINK_FLAGS_ALLOCATED],
                 NULL
             };
 
             ti2 = proto_tree_add_bitmask(lmp_object_tree, tvb, offset2, hf_lmp_filter[LMPF_VAL_DATA_LINK_FLAGS], lmp_subtree[LMP_TREE_DATA_LINK_FLAGS], link_flags, ENC_NA);
-            l = tvb_get_guint8(tvb, offset2);
+            l = tvb_get_uint8(tvb, offset2);
             proto_item_append_text(ti2, ": %s%s",
                                    (l&0x01) ? "Interface-Type-Port " : "Interface-Type-Component-Link ",
                                    (l&0x02) ? "Allocated " : "Unallocated ");
@@ -1144,8 +1143,8 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 1:
                 proto_item_append_text(ti, ": IPv4: Local %s, Remote %s",
-                                       tvb_ip_to_str(tvb, offset2+4),
-                                       tvb_ip_to_str(tvb, offset2+8));
+                                       tvb_ip_to_str(pinfo->pool, tvb, offset2+4),
+                                       tvb_ip_to_str(pinfo->pool, tvb, offset2+8));
 
                 proto_tree_add_item(lmp_object_tree,
                                     hf_lmp_filter[LMPF_VAL_DATA_LINK_LOCAL_IPV4],
@@ -1159,8 +1158,8 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 2:
                 proto_item_append_text(ti, ": IPv6: Local %s, Remote %s",
-                                       tvb_ip6_to_str(tvb, offset2+4),
-                                       tvb_ip6_to_str(tvb, offset2+8));
+                                       tvb_ip6_to_str(pinfo->pool, tvb, offset2+4),
+                                       tvb_ip6_to_str(pinfo->pool, tvb, offset2+8));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_data_link_local_id_ipv6, tvb, offset2+4, 16, ENC_NA);
                 proto_tree_add_item(lmp_object_tree, hf_lmp_data_link_remote_id_ipv6, tvb, offset2+20, 16, ENC_NA);
                 l = 36;
@@ -1186,7 +1185,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             while (l < obj_length - 4) {
                 float bandwidth;
 
-                mylen = tvb_get_guint8(tvb, offset2+l+1);
+                mylen = tvb_get_uint8(tvb, offset2+l+1);
                 ti2 = proto_tree_add_item(lmp_object_tree,
                                           hf_lmp_filter[LMPF_VAL_DATA_LINK_SUBOBJ],
                                           tvb, offset2+l, mylen, ENC_NA);
@@ -1195,16 +1194,16 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                 proto_tree_add_item(lmp_subobj_tree, hf_lmp_subobject_type, tvb, offset2+l, 1, ENC_BIG_ENDIAN);
 
                 proto_tree_add_item(lmp_subobj_tree, hf_lmp_subobject_length, tvb, offset2+l+1, 1, ENC_BIG_ENDIAN);
-                switch(tvb_get_guint8(tvb, offset2+l)) {
+                switch(tvb_get_uint8(tvb, offset2+l)) {
 
                 case 1:
 
                     proto_item_set_text(ti2, "Interface Switching Capability: "
                                         "Switching Cap: %s, Encoding Type: %s, "
                                         "Min BW: %.3f Mbps, Max BW: %.3f Mbps",
-                                        rval_to_str(tvb_get_guint8(tvb, offset2+l+2),
+                                        rval_to_str(tvb_get_uint8(tvb, offset2+l+2),
                                                     gmpls_switching_type_rvals, "Unknown (%d)"),
-                                        rval_to_str(tvb_get_guint8(tvb, offset2+l+3),
+                                        rval_to_str(tvb_get_uint8(tvb, offset2+l+3),
                                                     gmpls_lsp_enc_rvals, "Unknown (%d)"),
                                         tvb_get_ntohieee_float(tvb, offset2+l+4)*8/1000000,
                                         tvb_get_ntohieee_float(tvb, offset2+l+8)*8/1000000);
@@ -1230,13 +1229,13 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
                 default:
                     proto_tree_add_item(lmp_subobj_tree, hf_lmp_data, tvb, offset2+l,
-                                        tvb_get_guint8(tvb, offset2+l+1), ENC_NA);
+                                        tvb_get_uint8(tvb, offset2+l+1), ENC_NA);
                     break;
                 }
-                if (tvb_get_guint8(tvb, offset2+l+1) == 0)
+                if (tvb_get_uint8(tvb, offset2+l+1) == 0)
                     break;
 
-                l += tvb_get_guint8(tvb, offset2+l+1);
+                l += tvb_get_uint8(tvb, offset2+l+1);
             }
         }
         break;
@@ -1267,17 +1266,17 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                 case 1:
                     if (j < 4)
                         proto_item_append_text(ti, ": [IPv4-%s",
-                                               tvb_ip_to_str(tvb, offset2+l));
+                                               tvb_ip_to_str(pinfo->pool, tvb, offset2+l));
                     proto_item_append_text(ti2, ": IPv4 %s",
-                                           tvb_ip_to_str(tvb, offset2+l));
+                                           tvb_ip_to_str(pinfo->pool, tvb, offset2+l));
                     proto_tree_add_item(lmp_subobj_tree, hf_lmp_interface_id_ipv4, tvb, offset2+l, 4, ENC_BIG_ENDIAN);
                     l += 4;
                     break;
 
                 case 2:
                     if (j < 4)
-                        proto_item_append_text(ti, ": [IPv6-%s", tvb_ip6_to_str(tvb, offset2+l));
-                    proto_item_append_text(ti2, ": IPv6 %s", tvb_ip6_to_str(tvb, offset2+l));
+                        proto_item_append_text(ti, ": [IPv6-%s", tvb_ip6_to_str(pinfo->pool, tvb, offset2+l));
+                    proto_item_append_text(ti2, ": IPv6 %s", tvb_ip6_to_str(pinfo->pool, tvb, offset2+l));
                     proto_tree_add_item(lmp_subobj_tree, hf_lmp_interface_id_ipv6, tvb, offset2, 16, ENC_NA);
                     l += 16;
                     break;
@@ -1301,11 +1300,11 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                 proto_tree_add_item(lmp_subobj_tree, hf_lmp_link, tvb, offset2+l, 4, ENC_NA);
                 if (j < 4)
                     proto_item_append_text(ti, "-%s,%s], ",
-                                           tvb_get_guint8(tvb, offset2+l) & 0x80 ? "Act" : "NA",
+                                           tvb_get_uint8(tvb, offset2+l) & 0x80 ? "Act" : "NA",
                                            val_to_str(tvb_get_ntohl(tvb, offset2+l) & 0x7fffffff,
                                                       channel_status_short_str, "UNK (%u)."));
                 proto_item_append_text(ti2, ": %s, ",
-                                       tvb_get_guint8(tvb, offset2+l) & 0x80 ? "Active" : "Not Active");
+                                       tvb_get_uint8(tvb, offset2+l) & 0x80 ? "Active" : "Not Active");
                 proto_tree_add_item(lmp_subobj_tree, hf_lmp_channel_status, tvb, offset2+l, 4, ENC_BIG_ENDIAN);
                 proto_item_append_text(ti2, "%s", val_to_str(tvb_get_ntohl(tvb, offset2+l) & 0x7fffffff,
                                                              channel_status_str, "Unknown (%u). "));
@@ -1354,7 +1353,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 1:
                 {
-                static const int * error_flags[] = {
+                static int * const error_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_ERROR_VERIFY_UNSUPPORTED_LINK],
                     &hf_lmp_filter[LMPF_VAL_ERROR_VERIFY_UNWILLING],
                     &hf_lmp_filter[LMPF_VAL_ERROR_VERIFY_TRANSPORT],
@@ -1374,7 +1373,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 2:
                 {
-                static const int * error_flags[] = {
+                static int * const error_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_ERROR_SUMMARY_BAD_PARAMETERS],
                     &hf_lmp_filter[LMPF_VAL_ERROR_SUMMARY_RENEGOTIATE],
                     &hf_lmp_filter[LMPF_VAL_ERROR_SUMMARY_BAD_TE_LINK],
@@ -1398,7 +1397,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 3:
                 {
-                static const int * error_flags[] = {
+                static int * const error_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_ERROR_TRACE_UNSUPPORTED_TYPE],
                     &hf_lmp_filter[LMPF_VAL_ERROR_TRACE_INVALID_MSG],
                     &hf_lmp_filter[LMPF_VAL_ERROR_TRACE_UNKNOWN_CTYPE],
@@ -1416,7 +1415,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 4:
                 {
-                static const int * error_flags[] = {
+                static int * const error_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_ERROR_LAD_AREA_ID_MISMATCH],
                     &hf_lmp_filter[LMPF_VAL_ERROR_LAD_TCP_ID_MISMATCH],
                     &hf_lmp_filter[LMPF_VAL_ERROR_LAD_DA_DCN_MISMATCH],
@@ -1459,10 +1458,10 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                                     tvb, offset2+2, 2, l);
                 if (l && l <= obj_length - 8) {
                     proto_item_append_text(lmp_object_tree, " = %s",
-                                           tvb_format_text(tvb, offset2+4, l));
+                                           tvb_format_text(pinfo->pool, tvb, offset2+4, l));
                     proto_tree_add_string(lmp_object_tree,
                                           hf_lmp_filter[LMPF_VAL_TRACE_LOCAL_MSG],
-                                          tvb, offset2+4, l, tvb_format_text(tvb,
+                                          tvb, offset2+4, l, tvb_format_text(pinfo->pool, tvb,
                                                                              offset2+4,l));
                 }
                 else
@@ -1482,10 +1481,10 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                                     hf_lmp_filter[LMPF_VAL_TRACE_REMOTE_LEN],
                                     tvb, offset2+2, 2, l);
                 proto_item_append_text(lmp_object_tree, " = %s",
-                                       tvb_format_text(tvb, offset2+4, l));
+                                       tvb_format_text(pinfo->pool, tvb, offset2+4, l));
                 proto_tree_add_string(lmp_object_tree,
                                       hf_lmp_filter[LMPF_VAL_TRACE_REMOTE_MSG],
-                                      tvb, offset2+4, l, tvb_format_text(tvb, offset2+4,l));
+                                      tvb, offset2+4, l, tvb_format_text(pinfo->pool, tvb, offset2+4,l));
                 break;
 
             default:
@@ -1521,7 +1520,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             case 1:
                 {
 
-                static const int * sp_flags[] = {
+                static int * const sp_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_SP_FLAGS_RSVP],
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_SP_FLAGS_LDP],
                     NULL
@@ -1531,7 +1530,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
                 /* Signaling Protocols */
                 proto_tree_add_bitmask(lmp_object_tree, tvb, offset2, hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_SP_FLAGS], lmp_subtree[LMP_TREE_SERVICE_CONFIG_SP_FLAGS], sp_flags, ENC_NA);
-                l = tvb_get_guint8(tvb, offset2);
+                l = tvb_get_uint8(tvb, offset2);
 
                 proto_item_append_text(ti2, ": %s %s",
                                        (l & 0x01) ? "RSVP-based UNI signaling supported " : "",
@@ -1544,14 +1543,14 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 2:
                 {
-                static const int * tp_flags[] = {
+                static int * const tp_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_CPSA_TP_FLAGS_PATH_OVERHEAD],
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_CPSA_TP_FLAGS_LINE_OVERHEAD],
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_CPSA_TP_FLAGS_SECTION_OVERHEAD],
                     NULL
                 };
 
-                static const int * cct_flags[] = {
+                static int * const cct_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_CPSA_CCT_FLAGS_CC_SUPPORTED],
                     NULL
                 };
@@ -1562,18 +1561,18 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                 proto_tree_add_item(lmp_object_tree, hf_lmp_link_type, tvb, offset2, 1, ENC_BIG_ENDIAN);
 
                 proto_item_append_text(lmp_object_tree, "%s",
-                                       val_to_str(tvb_get_guint8(tvb, offset2),
+                                       val_to_str(tvb_get_uint8(tvb, offset2),
                                                   service_attribute_link_type_str,
                                                   "Unknown (%u). "));
 
-                l = tvb_get_guint8(tvb, offset2+1);
+                l = tvb_get_uint8(tvb, offset2+1);
                 /* Signal type for SDH */
                 if (l == LMP_CLASS_SERVICE_CONFIG_CPSA_SIGNAL_TYPES_SDH) {
                     /* Signal types for an SDH link */
                     proto_tree_add_item(lmp_object_tree, hf_lmp_signal_types_sdh, tvb, offset2+1, 1, ENC_BIG_ENDIAN);
 
                     proto_item_append_text(lmp_object_tree, "%s",
-                                           val_to_str(tvb_get_guint8(tvb, offset2+1),
+                                           val_to_str(tvb_get_uint8(tvb, offset2+1),
                                                       service_attribute_signal_types_sdh_str,
                                                       "Unknown (%u).   "));
                 }
@@ -1583,7 +1582,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                     proto_tree_add_item(lmp_object_tree, hf_lmp_signal_types_sonet, tvb, offset2+1, 1, ENC_BIG_ENDIAN);
 
                     proto_item_append_text(lmp_object_tree, "%s",
-                                           val_to_str(tvb_get_guint8(tvb, offset2+1),
+                                           val_to_str(tvb_get_uint8(tvb, offset2+1),
                                                       service_attribute_signal_types_sonet_str,
                                                       "Unknown (%u).   "));
                 }
@@ -1591,7 +1590,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                 /* TP Transparency */
                 proto_tree_add_bitmask(lmp_object_tree, tvb, offset2+2, hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_CPSA_TP_FLAGS], lmp_subtree[LMP_TREE_SERVICE_CONFIG_CPSA_TP_FLAGS], tp_flags, ENC_NA);
 
-                l = tvb_get_guint8(tvb, offset2+2);
+                l = tvb_get_uint8(tvb, offset2+2);
                 proto_item_append_text(ti2, ": %s%s%s",
                                        (l & 0x01) ? "Path/VC Overhead Transparency " : "",
                                        (l & 0x02) ? "Line/MS Overhead Transparency " : "",
@@ -1628,7 +1627,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
                 /* Local interface ID */
                 proto_item_append_text(ti, ": Local Interface ID %s",
-                                       tvb_ip_to_str(tvb, offset2+12));
+                                       tvb_ip_to_str(pinfo->pool, tvb, offset2+12));
 
                 proto_tree_add_item(lmp_object_tree,
                                     hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_CPSA_INTERFACE_ID],
@@ -1638,13 +1637,13 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 3:
                 {
-                static const int * t_flags[] = {
+                static int * const t_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_TRANSPARENCY_FLAGS_SOH],
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_TRANSPARENCY_FLAGS_LOH],
                     NULL
                 };
 
-                static const int * tcm_flags[] = {
+                static int * const tcm_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_TCM_FLAGS_TCM_SUPPORTED],
                     NULL
                 };
@@ -1660,7 +1659,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
                 /* TCM Monitoring */
                 proto_tree_add_bitmask(lmp_object_tree, tvb, offset2+7, hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_TCM_FLAGS], lmp_subtree[LMP_TREE_SERVICE_CONFIG_NSA_TCM_FLAGS], tcm_flags, ENC_BIG_ENDIAN);
-                l = tvb_get_guint8(tvb, offset2+7);
+                l = tvb_get_uint8(tvb, offset2+7);
                 proto_item_append_text(ti2, ": %s",
                                        (l & 0x01) ? "Transparent Support of TCM available " :  "");
                 }
@@ -1668,7 +1667,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             case 4:
                 {
-                static const int * diversity_flags[] = {
+                static int * const diversity_flags[] = {
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_NETWORK_DIVERSITY_FLAGS_NODE],
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_NETWORK_DIVERSITY_FLAGS_LINK],
                     &hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_NETWORK_DIVERSITY_FLAGS_SRLG],
@@ -1677,7 +1676,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
                 /* Network Diversity Object */
                 proto_tree_add_bitmask(lmp_object_tree, tvb, offset2+3, hf_lmp_filter[LMPF_VAL_SERVICE_CONFIG_NSA_NETWORK_DIVERSITY_FLAGS], lmp_subtree[LMP_TREE_SERVICE_CONFIG_NSA_NETWORK_DIVERSITY_FLAGS], diversity_flags, ENC_BIG_ENDIAN);
-                l = tvb_get_guint8(tvb,offset2+3);
+                l = tvb_get_uint8(tvb,offset2+3);
                 proto_item_append_text(ti2, ": %s%s%s",
                                        (l & 0x01) ? "Node Diversity is supported " :  "",
                                        (l & 0x02) ? "Link Diversity is supported " : "",
@@ -1697,13 +1696,13 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             switch(type) {
 
             case 1:
-                proto_item_append_text(ti, ": %s", tvb_ip_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": %s", tvb_ip_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[LMPF_VAL_LOCAL_DA_DCN_ADDR], tvb,
                                     offset2, 4, ENC_BIG_ENDIAN);
                 break;
 
             case 2:
-                proto_item_append_text(ti, ": %s", tvb_ip_to_str(tvb, offset2));
+                proto_item_append_text(ti, ": %s", tvb_ip_to_str(pinfo->pool, tvb, offset2));
                 proto_tree_add_item(lmp_object_tree, hf_lmp_filter[LMPF_VAL_REMOTE_DA_DCN_ADDR], tvb,
                                     offset2, 4, ENC_BIG_ENDIAN);
                 break;
@@ -1739,7 +1738,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                                     tvb, offset2+20, 4, ENC_BIG_ENDIAN);
                 l = 24;
                 while (l < obj_length - 4) {
-                    mylen = tvb_get_guint8(tvb, offset2+l+1);
+                    mylen = tvb_get_uint8(tvb, offset2+l+1);
                     ti2 = proto_tree_add_item(lmp_object_tree,
                                               hf_lmp_filter[LMPF_VAL_LAD_INFO_SUBOBJ],
                                               tvb, offset2+l, mylen, ENC_NA);
@@ -1755,15 +1754,15 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                     else
                         proto_tree_add_item(lmp_subobj_tree, hf_lmp_subobject_length, tvb, offset2+l+1, 1, ENC_BIG_ENDIAN);
 
-                    switch(tvb_get_guint8(tvb, offset2+l)) {
+                    switch(tvb_get_uint8(tvb, offset2+l)) {
 
                     case 250:
                         proto_item_set_text(ti2, "Primary Routing Controller: "
                                             "Area ID: %s, RC PC ID: %s, "
                                             "RC PC Addr: %s",
-                                            tvb_ip_to_str(tvb, offset2+l+4),
-                                            tvb_ip_to_str(tvb, offset2+l+8),
-                                            tvb_ip_to_str(tvb, offset2+l+12));
+                                            tvb_ip_to_str(pinfo->pool, tvb, offset2+l+4),
+                                            tvb_ip_to_str(pinfo->pool, tvb, offset2+l+8),
+                                            tvb_ip_to_str(pinfo->pool, tvb, offset2+l+12));
                         proto_tree_add_item(lmp_subobj_tree,
                                             hf_lmp_filter[LMPF_VAL_LAD_INFO_SUBOBJ_PRI_AREA_ID],
                                             tvb, offset2+l+4, 4, ENC_BIG_ENDIAN);
@@ -1779,9 +1778,9 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                         proto_item_set_text(ti2, "Secondary Routing Controller: "
                                             "Area ID: %s, RC PC ID: %s, "
                                             "RC PC Addr: %s",
-                                            tvb_ip_to_str(tvb, offset2+l+4),
-                                            tvb_ip_to_str(tvb, offset2+l+8),
-                                            tvb_ip_to_str(tvb, offset2+l+12));
+                                            tvb_ip_to_str(pinfo->pool, tvb, offset2+l+4),
+                                            tvb_ip_to_str(pinfo->pool, tvb, offset2+l+8),
+                                            tvb_ip_to_str(pinfo->pool, tvb, offset2+l+12));
                         proto_tree_add_item(lmp_subobj_tree,
                                             hf_lmp_filter[LMPF_VAL_LAD_INFO_SUBOBJ_SEC_AREA_ID],
                                             tvb, offset2+l+4, 4, ENC_BIG_ENDIAN);
@@ -1796,9 +1795,9 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                     case 252:
                         proto_item_set_text(ti2, "SONET/SDH Layer Capability: "
                                             "Switching Cap: %s, Encoding Type: %s",
-                                            rval_to_str(tvb_get_guint8(tvb, offset2+l+4),
+                                            rval_to_str(tvb_get_uint8(tvb, offset2+l+4),
                                                         gmpls_switching_type_rvals, "Unknown (%d)"),
-                                            rval_to_str(tvb_get_guint8(tvb, offset2+l+5),
+                                            rval_to_str(tvb_get_uint8(tvb, offset2+l+5),
                                                         gmpls_lsp_enc_rvals, "Unknown (%d)"));
                         proto_tree_add_item(lmp_subobj_tree,
                                             hf_lmp_filter[LMPF_VAL_LAD_INFO_SUBOBJ_SWITCHING_TYPE],
@@ -1810,7 +1809,7 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                         for (j = 0; j < (mylen - 8) / 4; j++) {
                             proto_tree_add_uint_format(lmp_subobj_tree, hf_lmp_free_timeslots, tvb, offset2+l+8+(j*4), 4,
                                                 tvb_get_ntoh24(tvb, offset2+l+9+(j*4)), "%s: %d free timeslots",
-                                                val_to_str_ext(tvb_get_guint8(tvb, offset2+l+8+(j*4)),
+                                                val_to_str_ext(tvb_get_uint8(tvb, offset2+l+8+(j*4)),
                                                                &gmpls_sonet_signal_type_str_ext,
                                                                "Unknown Signal Type (%d)"),
                                                 tvb_get_ntoh24(tvb, offset2+l+9+(j*4)));
@@ -1819,13 +1818,13 @@ dissect_lmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
                     default:
                         proto_tree_add_item(lmp_subobj_tree, hf_lmp_data, tvb, offset2+l,
-                                            tvb_get_guint8(tvb, offset2+l+1), ENC_NA);
+                                            tvb_get_uint8(tvb, offset2+l+1), ENC_NA);
                         break;
                     }
-                    if (tvb_get_guint8(tvb, offset2+l+1) == 0)
+                    if (tvb_get_uint8(tvb, offset2+l+1) == 0)
                         break;
 
-                    l += tvb_get_guint8(tvb, offset2+l+1);
+                    l += tvb_get_uint8(tvb, offset2+l+1);
                 }
 
                 break;
@@ -1868,7 +1867,7 @@ register_lmp_prefs (void)
 void
 proto_register_lmp(void)
 {
-    static gint *ett[NUM_LMP_SUBTREES];
+    static int *ett[NUM_LMP_SUBTREES];
     int i;
 
     static hf_register_info lmpf_info[] = {
@@ -2554,16 +2553,16 @@ proto_register_lmp(void)
       /* Generated from convert_proto_tree_add_text.pl */
       { &hf_lmp_version, { "LMP Version", "lmp.version", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
       { &hf_lmp_header_flags, { "Flags", "lmp.header_flags", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL }},
-      { &hf_lmp_header_length, { "Length", "lmp.header_length", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_byte_bytes, 0x0, NULL, HFILL }},
+      { &hf_lmp_header_length, { "Length", "lmp.header_length", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_byte_bytes), 0x0, NULL, HFILL }},
       { &hf_lmp_negotiable, { "Negotiable", "lmp.negotiable", FT_BOOLEAN, 8, TFS(&tfs_yes_no), 0x80, NULL, HFILL }},
       { &hf_lmp_object_length, { "Length", "lmp.object_length", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL }},
       { &hf_lmp_object_class, { "Object Class", "lmp.object_class", FT_UINT8, BASE_DEC, VALS(lmp_class_vals), 0x0, NULL, HFILL }},
-      { &hf_lmp_verify_interval, { "Verify Interval", "lmp.verify_interval", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_milliseconds, 0x0, NULL, HFILL }},
+      { &hf_lmp_verify_interval, { "Verify Interval", "lmp.verify_interval", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_milliseconds), 0x0, NULL, HFILL }},
       { &hf_lmp_number_of_data_links, { "Number of Data Links", "lmp.number_of_data_links", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
       { &hf_lmp_verify_transport_mechanism, { "Verify Transport Mechanism", "lmp.verify_transport_mechanism", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL }},
       { &hf_lmp_transmission_rate, { "Transmission Rate", "lmp.transmission_rate", FT_FLOAT, BASE_NONE, NULL, 0x0, NULL, HFILL }},
       { &hf_lmp_wavelength, { "Wavelength", "lmp.wavelength", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
-      { &hf_lmp_verifydeadinterval, { "VerifyDeadInterval", "lmp.verifydeadinterval", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, &units_milliseconds, 0x0, NULL, HFILL }},
+      { &hf_lmp_verifydeadinterval, { "VerifyDeadInterval", "lmp.verifydeadinterval", FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_milliseconds), 0x0, NULL, HFILL }},
       { &hf_lmp_verify_transport_response, { "Verify Transport Response", "lmp.verify_transport_response", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL }},
       { &hf_lmp_data_link_local_id_ipv6, { "Data-Link Local ID - IPv6", "lmp.data_link.local_ipv6", FT_IPv6, BASE_NONE, NULL, 0x0, NULL, HFILL }},
       { &hf_lmp_data_link_remote_id_ipv6, { "Data-Link Remote ID - IPv6", "lmp.data_link.remote_ipv6", FT_IPv6, BASE_NONE, NULL, 0x0, NULL, HFILL }},
@@ -2594,7 +2593,6 @@ proto_register_lmp(void)
     expert_module_t* expert_lmp;
 
     for (i=0; i<NUM_LMP_SUBTREES; i++) {
-        lmp_subtree[i] = -1;
         ett[i] = &lmp_subtree[i];
     }
 
@@ -2607,18 +2605,19 @@ proto_register_lmp(void)
     proto_register_field_array(proto_lmp, lmpf_info, array_length(lmpf_info));
     proto_register_subtree_array(ett, array_length(ett));
 
+    lmp_handle = register_dissector("lmp", dissect_lmp, proto_lmp);
+
     register_lmp_prefs();
 }
 
 void
 proto_reg_handoff_lmp(void)
 {
-    lmp_handle = create_dissector_handle(dissect_lmp, proto_lmp);
     dissector_add_uint_with_preference("udp.port", UDP_PORT_LMP_DEFAULT, lmp_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

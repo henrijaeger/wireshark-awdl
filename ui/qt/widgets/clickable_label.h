@@ -1,4 +1,4 @@
-/* clickable_label.h
+/** @file
  *
  * Taken from https://wiki.qt.io/Clickable_QLabel and adapted for usage
  *
@@ -18,7 +18,7 @@ class ClickableLabel : public QLabel
 {
     Q_OBJECT
 public:
-    explicit ClickableLabel( QWidget* parent=0 );
+    explicit ClickableLabel(QWidget* parent=0);
 
 signals:
     void clicked();
@@ -31,16 +31,3 @@ protected:
 };
 
 #endif /* CLICKABLE_LABEL_H_ */
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

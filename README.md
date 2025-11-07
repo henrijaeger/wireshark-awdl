@@ -1,12 +1,13 @@
 General Information
 -------------------
 
-Wireshark is a network traffic analyzer, or "sniffer", for Unix and
-Unix-like operating systems.  It uses Qt, a graphical user interface
-library, and libpcap, a packet capture and filtering library.
+Wireshark is a network traffic analyzer, or "sniffer", for Linux, macOS,
+\*BSD and other Unix and Unix-like operating systems and for Windows.
+It uses Qt, a graphical user interface library, and libpcap and npcap as
+packet capture and filtering libraries.
 
 The Wireshark distribution also comes with TShark, which is a
-line-oriented sniffer (similar to Sun's snoop, or tcpdump) that uses the
+line-oriented sniffer (similar to Sun's snoop or tcpdump) that uses the
 same dissection, capture-file reading and writing, and packet filtering
 code as Wireshark, and with editcap, which is a program to read capture
 files and write the packets from that capture file, possibly in a
@@ -31,11 +32,11 @@ Official installation packages are available for Microsoft Windows and
 macOS.
 
 It is available as either a standard or add-on package for many popular
-operating sytems and Linux distributions including Debian, Ubuntu, Fedora,
+operating systems and Linux distributions including Debian, Ubuntu, Fedora,
 CentOS, RHEL, Arch, Gentoo, openSUSE, FreeBSD, DragonFly BSD, NetBSD, and
 OpenBSD.
 
-Additionaly it is available through many third-party packaging systems
+Additionally it is available through many third-party packaging systems
 such as pkgsrc, OpenCSW, Homebrew, and MacPorts.
 
 It should run on other Unix-ish systems without too much trouble.
@@ -45,18 +46,13 @@ operating system. This is the case for Windows XP, which is supported by
 Wireshark 1.10 and earlier. In other cases the standard package for
 Wireshark might simply be old. This is the case for Solaris and HP-UX.
 
-NOTE: The Makefile depends on GNU "make"; it doesn't appear to
-work with the "make" that comes with Solaris 7 nor the BSD "make".
+Python 3 is needed to build Wireshark. AsciiDoctor is required to build
+the documentation, including the man pages. Perl and flex are required
+to generate some of the source code.
 
-Both Perl and Python are needed, the former for building the man pages.
-
-If you decide to modify the yacc grammar or lex scanner, then
-you need "flex" - it cannot be built with vanilla "lex" -
-and either "bison" or the Berkeley "yacc". Your flex
-version must be 2.5.1 or greater. Check this with `flex -V`.
-
-You must therefore install Perl, Python, GNU "make", "flex", and either "bison"
-or Berkeley "yacc" on systems that lack them.
+You must therefore install Python 3, AsciiDoctor, and GNU "flex" (vanilla
+"lex" won't work) on systems that lack them. You might need to install
+Perl as well.
 
 Full installation instructions can be found in the INSTALL file and in the
 Developer's Guide at https://www.wireshark.org/docs/wsdg_html_chunked/
@@ -68,13 +64,13 @@ Usage
 -----
 
 In order to capture packets from the network, you need to make the
-dumpcap program set-UID to root, or you need to have access to the
+dumpcap program set-UID to root or you need to have access to the
 appropriate entry under `/dev` if your system is so inclined (BSD-derived
 systems, and systems such as Solaris and HP-UX that support DLPI,
 typically fall into this category).  Although it might be tempting to
 make the Wireshark and TShark executables setuid root, or to run them as
 root please don't.  The capture process has been isolated in dumpcap;
-this simple program is less likely to contain security holes, and thus
+this simple program is less likely to contain security holes and is thus
 safer to run as root.
 
 Please consult the man page for a description of each command-line
@@ -84,21 +80,23 @@ option and interface feature.
 Multiple File Types
 -------------------
 
-The wiretap library is a packet-capture library currently under
-development parallel to wireshark.  In the future it is hoped that
-wiretap will have more features than libpcap, but wiretap is still in
-its infancy. However, wiretap is used in wireshark for its ability
-to read multiple file types.  See the Wireshark man page or the
-Wireshark User's Guide for a list of supported file formats.
+Wireshark can read packets from a number of different file types.  See
+the Wireshark man page or the Wireshark User's Guide for a list of
+supported file formats.
 
-In addition, it can read gzipped versions of any of those files
-automatically, if you have the zlib library available when compiling
-Wireshark. Wireshark needs a modern version of zlib to be able to use
-zlib to read gzipped files; version 1.1.3 is known to work.  Versions
-prior to 1.0.9 are missing some functions that Wireshark needs and won't
-work.  `./configure` should detect if you have the proper zlib version
-available and, if you don't, should disable zlib support. You can always
-use `./configure --disable-zlib` to explicitly disable zlib support.
+Wireshark can transparently read compressed versions of any of those files if
+the required compression library was available when Wireshark was compiled.
+Currently supported compression formats are:
+
+- GZIP
+- LZ4
+- ZSTD
+
+GZIP and LZ4 (when using independent blocks, which is the default) support
+fast random seeking, which offers much better GUI performance on large files.
+Any of these compression formats can be disabled at compile time by passing
+the corresponding option to cmake, i.e., `cmake -DENABLE_ZLIB=OFF`,
+`cmake -DENABLE_LZ4=OFF`, or `cmake -DENABLE_ZSTD=OFF`.
 
 Although Wireshark can read AIX iptrace files, the documentation on
 AIX's iptrace packet-trace command is sparse.  The `iptrace` command
@@ -108,12 +106,12 @@ daemon causes a graceful shutdown and a complete packet is written
 to the trace file. If a partial packet is saved at the end, Wireshark
 will complain when reading that file, but you will be able to read all
 other packets.  If this occurs, please let the Wireshark developers know
-at wireshark-dev@wireshark.org, and be sure to send us a copy of that trace
+at wireshark-dev@wireshark.org; be sure to send us a copy of that trace
 file if it's small and contains non-sensitive data.
 
 Support for Lucent/Ascend products is limited to the debug trace output
 generated by the MAX and Pipline series of products.  Wireshark can read
-the output of the `wandsession` `wandisplay`, `wannext`, and `wdd`
+the output of the `wandsession`, `wandisplay`, `wannext`, and `wdd`
 commands.
 
 Wireshark can also read dump trace output from the Toshiba "Compact Router"
@@ -121,7 +119,7 @@ line of ISDN routers (TR-600 and TR-650). You can telnet to the router
 and start a dump session with `snoop dump`.
 
 CoSine L2 debug output can also be read by Wireshark. To get the L2
-debug output, get in the diags mode first and then use
+debug output first enter the diags mode and then use
 `create-pkt-log-profile` and `apply-pkt-lozg-profile` commands under
 layer-2 category. For more detail how to use these commands, you
 should examine the help command by `layer-2 create ?` or `layer-2 apply ?`.
@@ -131,8 +129,8 @@ capture the trace output to a file on disk.  The trace is happening inside
 the router and the router has no way of saving the trace to a file for you.
 An easy way of doing this under Unix is to run `telnet <ascend> | tee <outfile>`.
 Or, if your system has the "script" command installed, you can save
-a shell session, including telnet to a file. For example, to a file named
-tracefile.out:
+a shell session, including telnet, to a file. For example to log to a file
+named tracefile.out:
 
 ~~~
 $ script tracefile.out
@@ -152,33 +150,31 @@ when decoding IPv4 and IPv6 packets.
 
 If you want to turn off name resolution while using Wireshark, start
 Wireshark with the `-n` option to turn off all name resolution (including
-resolution of MAC addresses and TCP/UDP/SMTP port numbers to names), or
+resolution of MAC addresses and TCP/UDP/SMTP port numbers to names) or
 with the `-N mt` option to turn off name resolution for all
 network-layer addresses (IPv4, IPv6, IPX).
 
 You can make that the default setting by opening the Preferences dialog
-box using the Preferences item in the Edit menu, selecting "Name
-resolution", turning off the appropriate name resolution options,
-clicking "Save", and clicking "OK".
+using the Preferences item in the Edit menu, selecting "Name resolution",
+turning off the appropriate name resolution options, and clicking "OK".
 
 
 SNMP
 ----
 
 Wireshark can do some basic decoding of SNMP packets; it can also use
-the libsmi library to do more sophisticated decoding, by reading MIB
+the libsmi library to do more sophisticated decoding by reading MIB
 files and using the information in those files to display OIDs and
-variable binding values in a friendlier fashion.  The configure script
-will automatically determine whether you have the libsmi library on
-your system.  If you have the libsmi library but _do not_ want to have
-Wireshark use it, you can run configure with the `--without-libsmi`
-option.
+variable binding values in a friendlier fashion.  CMake  will automatically
+determine whether you have the libsmi library on your system.  If you
+have the libsmi library but _do not_ want Wireshark to use it, you can run
+cmake with the `-DENABLE_SMI=OFF` option.
 
 How to Report a Bug
 -------------------
 
 Wireshark is under constant development, so it is possible that you will
-encounter a bug while using it. Please report bugs at https://bugs.wireshark.org.
+encounter a bug while using it. Please report bugs at https://gitlab.com/wireshark/wireshark/-/issues.
 Be sure you enter into the bug:
 
 1. The complete build information from the "About Wireshark"
@@ -218,6 +214,37 @@ some platforms (e.g., BSD systems).  If you got a core dump with
 TShark rather than Wireshark, use "tshark" as the first argument to
 the debugger; the core dump may be named "tshark.core".
 
+License
+-------
+
+Wireshark is distributed under the GNU GPLv2. See the file COPYING for
+the full text of the license. When in doubt the full text is the legally
+binding part. These notes are just to make it easier for people that are not
+familiar with the GPLv2.
+
+There are no restrictions on its use. There are restrictions on its distribution
+in source or binary form.
+
+Most parts of Wireshark are covered by a "GPL version 2 or later" license.
+Some files are covered by different licenses that are compatible with
+the GPLv2.
+
+As a notable exception, some utilities distributed with the Wireshark source are
+covered by other licenses that are not themselves directly compatible with the
+GPLv2. This is OK, as only the tools themselves are licensed this way, the
+output of the tools is not considered a derived work, and so can be safely
+licensed for Wireshark's use. An incomplete selection of these tools includes:
+ - the pidl utility (tools/pidl) is licensed under the GPLv3+.
+
+Parts of Wireshark can be built and distributed as libraries. These
+parts are still covered by the GPL, and NOT by the Lesser General Public
+License or any other license.
+
+If you integrate all or part of Wireshark into your own application and you
+opt to publish or release it then the combined work must be released under
+the terms of the GPLv2.
+
+
 Disclaimer
 ----------
 
@@ -229,4 +256,4 @@ Gerald Combs <gerald@wireshark.org>
 
 Gilbert Ramirez <gram@alumni.rice.edu>
 
-Guy Harris <guy@alum.mit.edu>
+Guy Harris <gharris@sonic.net>

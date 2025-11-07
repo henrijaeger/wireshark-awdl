@@ -1,4 +1,4 @@
-/* nettrace_3gpp_32_423.h
+/** @file
  *
  * MIME file format decoder for the Wiretap library.
  *
@@ -12,6 +12,6 @@
 #include <glib.h>
 #include "wtap.h"
 
-wtap_open_return_val nettrace_3gpp_32_423_file_open(wtap *wth, int *err, gchar **err_info);
+wtap_open_return_val nettrace_3gpp_32_423_file_open(wtap *wth, int *err, char **err_info);
 
 #endif

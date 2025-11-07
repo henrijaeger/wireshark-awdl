@@ -1,6 +1,6 @@
-/* cocoa_bridge.h
+/** @file
  *
- * This code was taken directly from:
+ * This code is based upon:
  * https://forum.qt.io/topic/82609/remove-native-mac-menu-items-such-as-show-tab-bar
  *
  * Wireshark - Network traffic analyzer
@@ -21,19 +21,8 @@ class CocoaBridge
 public:
     static void cleanOSGeneratedMenuItems();
 
+    static void showInFinder(char const *file_path);
+
 };
 
 #endif // COCOABRIDGE_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

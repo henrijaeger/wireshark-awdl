@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -23,14 +24,14 @@
  * process command line option that affects the paths of the directories
  * used for personal files (configuration, saved captures)
  */
-gboolean
+bool
 persfilepath_opt(int opt _U_, const char *optstr)
 {
-    gchar *p, *colonp;
+    char *p, *colonp;
 
     colonp = strchr(optstr, ':');
     if (colonp == NULL) {
-        return FALSE;
+        return false;
     }
 
     p = colonp;
@@ -50,7 +51,7 @@ persfilepath_opt(int opt _U_, const char *optstr)
          * looks correct.
          */
         *colonp = ':';
-        return FALSE;
+        return false;
     }
 
     /* directory should be existing */
@@ -62,7 +63,7 @@ persfilepath_opt(int opt _U_, const char *optstr)
          * looks correct.
          */
         *colonp = ':';
-        return FALSE;
+        return false;
     }
 
     if (strcmp(optstr,"persconf") == 0) {
@@ -71,21 +72,8 @@ persfilepath_opt(int opt _U_, const char *optstr)
         set_persdatafile_dir(p);
     } else {
         /* XXX - might need to add the temp file path */
-        return FALSE;
+        return false;
     }
     *colonp = ':'; /* put the colon back */
-    return TRUE;
+    return true;
 }
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -24,7 +24,7 @@ QWidget* ColoringRulesDelegate::createEditor(QWidget *parent, const QStyleOption
     case ColoringRulesModel::colName:
     {
         SyntaxLineEdit *editor = new SyntaxLineEdit(parent);
-        connect(editor, SIGNAL(textChanged(QString)), this, SLOT(ruleNameChanged(QString)));
+        connect(editor, &SyntaxLineEdit::textChanged, this, &ColoringRulesDelegate::ruleNameChanged);
         return editor;
     }
 
@@ -32,7 +32,7 @@ QWidget* ColoringRulesDelegate::createEditor(QWidget *parent, const QStyleOption
         return new DisplayFilterEdit(parent);
 
     default:
-        Q_ASSERT(FALSE);
+        Q_ASSERT(false);
         return 0;
     }
 
@@ -87,6 +87,7 @@ void ColoringRulesDelegate::setModelData(QWidget *editor, QAbstractItemModel *mo
         if ((displayEdit->syntaxState() == SyntaxLineEdit::Invalid) &&
             (model->data(model->index(index.row(), ColoringRulesModel::colName), Qt::CheckStateRole) == Qt::Checked))
         {
+            model->setData(model->index(index.row(), ColoringRulesModel::colName), Qt::Unchecked, Qt::CheckStateRole);
             emit invalidField(index, displayEdit->syntaxErrorMessage());
         }
         else
@@ -120,15 +121,3 @@ void ColoringRulesDelegate::ruleNameChanged(const QString name)
         name_edit->setSyntaxState(SyntaxLineEdit::Valid);
     }
 }
-
-/* * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

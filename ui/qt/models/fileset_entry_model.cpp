@@ -13,7 +13,7 @@
 
 #include <ui/qt/utils/qt_ui_utils.h>
 
-#include <QRegExp>
+#include <QRegularExpression>
 
 FilesetEntryModel::FilesetEntryModel(QObject * parent) :
     QAbstractItemModel(parent)
@@ -28,15 +28,14 @@ QModelIndex FilesetEntryModel::index(int row, int column, const QModelIndex &) c
     return createIndex(row, column, const_cast<fileset_entry *>(entries_.at(row)));
 }
 
-int FilesetEntryModel::rowCount(const QModelIndex &parent) const
+int FilesetEntryModel::rowCount(const QModelIndex &) const
 {
-    Q_UNUSED(parent)
-    return entries_.count();
+    return static_cast<int>(entries_.count());
 }
 
 QVariant FilesetEntryModel::data(const QModelIndex &index, int role) const
 {
-    if ( ! index.isValid() || index.row() >= rowCount() )
+    if (! index.isValid() || index.row() >= rowCount())
         return QVariant();
 
     const fileset_entry *entry = static_cast<fileset_entry*>(index.internalPointer());
@@ -44,14 +43,13 @@ QVariant FilesetEntryModel::data(const QModelIndex &index, int role) const
         switch (index.column()) {
         case Name:
             return QString(entry->name);
-            break;
         case Created:
         {
             QString created = nameToDate(entry->name);
-            if(created.length() < 1) {
+            if (created.length() < 1) {
                 /* if this file doesn't follow the file set pattern, */
                 /* use the creation time of that file if available */
-                /* http://en.wikipedia.org/wiki/ISO_8601 */
+                /* https://en.wikipedia.org/wiki/ISO_8601 */
                 /*
                  * macOS provides 0 if the file system doesn't support the
                  * creation time; FreeBSD provides -1.
@@ -66,19 +64,16 @@ QVariant FilesetEntryModel::data(const QModelIndex &index, int role) const
                 }
             }
             return created;
-            break;
         }
         case Modified:
             return time_tToString(entry->mtime);
-            break;
         case Size:
             return file_size_to_qstring(entry->size);
-            break;
         default:
             break;
         }
     } else if (role == Qt::ToolTipRole) {
-        return QString(tr("Open this capture file"));
+        return tr("Open this capture file");
     } else if (role == Qt::TextAlignmentRole) {
         switch (index.column()) {
         case Size:
@@ -98,16 +93,12 @@ QVariant FilesetEntryModel::headerData(int section, Qt::Orientation, int role) c
     switch (section) {
     case Name:
         return tr("Filename");
-        break;
     case Created:
         return tr("Created");
-        break;
     case Modified:
         return tr("Modified");
-        break;
     case Size:
         return tr("Size");
-        break;
     default:
         break;
     }
@@ -130,14 +121,13 @@ void FilesetEntryModel::clear()
 }
 
 QString FilesetEntryModel::nameToDate(const char *name) const {
+    char *date;
     QString dn;
 
-    if (!fileset_filename_match_pattern(name))
+    if (fileset_filename_match_pattern(name, NULL, NULL, &date) == FILESET_NO_MATCH)
         return NULL;
 
-    dn = name;
-    dn.remove(QRegExp(".*_"));
-    dn.truncate(14);
+    dn = gchar_free_to_qstring(date);
     dn.insert(4, '-');
     dn.insert(7, '-');
     dn.insert(10, ' ');
@@ -154,7 +144,7 @@ QString FilesetEntryModel::time_tToString(time_t clock) const
     // yyyy-MM-dd HH:mm:ss
     // The equivalent QDateTime call is pretty slow here, possibly related to QTBUG-21678
     // and/or QTBUG-41714.
-    return QString("%1-%2-%3 %4:%5:%6")
+    return QStringLiteral("%1-%2-%3 %4:%5:%6")
             .arg(local->tm_year + 1900, 4, 10, QChar('0'))
             .arg(local->tm_mon+1, 2, 10, QChar('0'))
             .arg(local->tm_mday, 2, 10, QChar('0'))
@@ -162,16 +152,3 @@ QString FilesetEntryModel::time_tToString(time_t clock) const
             .arg(local->tm_min, 2, 10, QChar('0'))
             .arg(local->tm_sec, 2, 10, QChar('0'));
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

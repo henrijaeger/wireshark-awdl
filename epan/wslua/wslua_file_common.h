@@ -1,5 +1,4 @@
-/*
- * wslua_file_common.h
+/** @file
  *
  * Wireshark's interface to the Lua Programming Language
  * for file handling related source files.
@@ -16,9 +15,8 @@
 
 /* See wslua_file_common.c for details */
 
-#include "config.h"
-
 #include "wslua.h"
+#include <wiretap/wtap_opttypes.h>
 #include <wiretap/wtap-int.h>
 
 /* this is way overkill for this one member, but in case we need to add
@@ -52,16 +50,16 @@ extern int set_wdh_priv_table_ref(lua_State* L, wtap_dumper *wdh);
 extern void remove_wdh_priv(lua_State* L, wtap_dumper *wdh);
 
 /* implemented in other c files than wslua_file_common.c */
-extern CaptureInfo* push_CaptureInfo(lua_State* L, wtap *wth, const gboolean first_time);
+extern CaptureInfo* push_CaptureInfo(lua_State* L, wtap *wth, const bool first_time);
 extern CaptureInfoConst* push_CaptureInfoConst(lua_State* L, wtap_dumper *wdh);
 extern File* push_File(lua_State* L, FILE_T ft);
 extern File* push_Wdh(lua_State* L, wtap_dumper *wdh);
-extern FrameInfo* push_FrameInfo(lua_State* L, wtap_rec *rec, Buffer* buf);
-extern FrameInfoConst* push_FrameInfoConst(lua_State* L, const wtap_rec *rec, const guint8 *pd);
+extern FrameInfo* push_FrameInfo(lua_State* L, wtap_rec *rec);
+extern FrameInfoConst* push_FrameInfoConst(lua_State* L, const wtap_rec *rec, const uint8_t *pd);
 
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

@@ -9,13 +9,12 @@
  */
 
 #include <config.h>
+#include <wsutil/array.h>
 
 #include "win32-utils.h"
 
-#include <log.h>
-
 #include <tchar.h>
-#include <VersionHelpers.h>
+#include <versionhelpers.h>
 
 /* Quote the argument element if necessary, so that it will get
  * reconstructed correctly in the C runtime startup code.  Note that
@@ -28,24 +27,24 @@
  * correctly in the command-line string passed to CreateProcess()
  * if that string is constructed by gluing those strings together.
  */
-gchar *
-protect_arg (const gchar *argv)
+char *
+protect_arg (const char *argv)
 {
-    gchar *new_arg;
-    const gchar *p = argv;
-    gchar *q;
-    gint len = 0;
-    gboolean need_dblquotes = FALSE;
+    char *new_arg;
+    const char *p = argv;
+    char *q;
+    int len = 0;
+    bool need_dblquotes = false;
 
     while (*p) {
         if (*p == ' ' || *p == '\t')
-            need_dblquotes = TRUE;
+            need_dblquotes = true;
         else if (*p == '"')
             len++;
         else if (*p == '\\') {
-            const gchar *pp = p;
+            const char *pp = p;
 
-            while (*pp && *pp == '\\')
+            while (*pp == '\\')
                 pp++;
             if (*pp == '"')
                 len++;
@@ -54,7 +53,7 @@ protect_arg (const gchar *argv)
         p++;
     }
 
-    q = new_arg = g_malloc (len + need_dblquotes*2 + 1);
+    q = new_arg = g_malloc (len + (need_dblquotes ? 2 : 0) + 1);
     p = argv;
 
     if (need_dblquotes)
@@ -64,9 +63,9 @@ protect_arg (const gchar *argv)
         if (*p == '"')
             *q++ = '\\';
         else if (*p == '\\') {
-            const gchar *pp = p;
+            const char *pp = p;
 
-            while (*pp && *pp == '\\')
+            while (*pp == '\\')
                 pp++;
             if (*pp == '"')
                 *q++ = '\\';
@@ -82,32 +81,87 @@ protect_arg (const gchar *argv)
     return new_arg;
 }
 
+#define PIPE_STR "\\pipe\\"
+
+bool
+win32_is_pipe_name(const char *pipe_name)
+{
+    char *pncopy, *pos;
+    /* Under Windows, named pipes _must_ have the form
+     * "\\<server>\pipe\<pipename>".  <server> may be "." for localhost.
+     * https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names
+     */
+    pncopy = g_strdup(pipe_name);
+    if ((pos = strstr(pncopy, "\\\\")) == pncopy) {
+        pos = strchr(pncopy + 3, '\\');
+        if (pos && g_ascii_strncasecmp(pos, PIPE_STR, strlen(PIPE_STR)) != 0)
+            pos = NULL;
+    }
+
+    g_free(pncopy);
+
+    return (pos != NULL);
+}
+
 /*
- * Generate a string for a Win32 error.
+ * Generate a UTF-8 string for a Windows error.
  */
-#define ERRBUF_SIZE    1024
+
+/*
+ * We make the buffer at least this big, under the assumption that doing
+ * so will reduce the number of reallocations to do.  (Otherwise, why
+ * did Microsoft bother supporting a minimum buffer size?)
+ */
+#define ERRBUF_SIZE    128
 const char *
 win32strerror(DWORD error)
 {
-    static char errbuf[ERRBUF_SIZE+1];
-    size_t errlen;
-    char *p;
-
-    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                   NULL, error, 0, errbuf, ERRBUF_SIZE, NULL);
+    DWORD retval;
+    WCHAR *utf16_message;
+    char *utf8_message;
+    char *tempmsg;
+    const char *msg;
 
     /*
-     * "FormatMessage()" "helpfully" sticks CR/LF at the end of the
-     * message.  Get rid of it.
+     * XXX - what language ID to use?
+     *
+     * For UN*Xes, g_strerror() may or may not return localized strings.
+     *
+     * We currently don't have localized strings, except for GUI items,
+     * but we might want to do so.  On the other hand, if most of these
+     * messages are going to be read by Wireshark developers, English
+     * might be a better choice, so the developer doesn't have to get
+     * the message translated if it's in a language they don't happen
+     * to understand.  Then again, we're including the error number,
+     * so the developer can just look that up.
      */
-    errlen = strlen(errbuf);
-    if (errlen >= 2) {
-        errbuf[errlen - 1] = '\0';
-        errbuf[errlen - 2] = '\0';
+    retval = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_MAX_WIDTH_MASK,
+                            NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                            (LPTSTR)&utf16_message, ERRBUF_SIZE, NULL);
+    if (retval == 0) {
+        /* Failed. */
+        tempmsg = ws_strdup_printf("Couldn't get error message for error (%lu) (because %lu)",
+                                  error, GetLastError());
+        msg = g_intern_string(tempmsg);
+        g_free(tempmsg);
+        return msg;
     }
-    p = strchr(errbuf, '\0');
-    g_snprintf(p, (gulong)(sizeof errbuf - (p-errbuf)), " (%lu)", error);
-    return errbuf;
+
+    utf8_message = g_utf16_to_utf8(utf16_message, -1, NULL, NULL, NULL);
+    LocalFree(utf16_message);
+    if (utf8_message == NULL) {
+        /* Conversion failed. */
+        tempmsg = ws_strdup_printf("Couldn't convert error message for error to UTF-8 (%lu) (because %lu)",
+                                  error, GetLastError());
+        msg = g_intern_string(tempmsg);
+        g_free(tempmsg);
+        return msg;
+    }
+    tempmsg = ws_strdup_printf("%s (%lu)", utf8_message, error);
+    g_free(utf8_message);
+    msg = g_intern_string(tempmsg);
+    g_free(tempmsg);
+    return msg;
 }
 
 /*
@@ -118,7 +172,7 @@ win32strexception(DWORD exception)
 {
     static char errbuf[ERRBUF_SIZE+1];
     static const struct exception_msg {
-        int code;
+        DWORD code;
         char *msg;
     } exceptions[] = {
         { EXCEPTION_ACCESS_VIOLATION, "Access violation" },
@@ -145,28 +199,27 @@ win32strexception(DWORD exception)
         { EXCEPTION_STACK_OVERFLOW, "Stack overflow" },
         { 0, NULL }
     };
-#define N_EXCEPTIONS    (sizeof exceptions / sizeof exceptions[0])
-    int i;
+#define N_EXCEPTIONS    array_length(exceptions)
 
-    for (i = 0; i < N_EXCEPTIONS; i++) {
+    for (size_t i = 0; i < N_EXCEPTIONS; i++) {
         if (exceptions[i].code == exception)
             return exceptions[i].msg;
     }
-    g_snprintf(errbuf, (gulong)sizeof errbuf, "Exception 0x%08x", exception);
+    snprintf(errbuf, sizeof errbuf, "Exception 0x%08lx", exception);
     return errbuf;
 }
 
 // This appears to be the closest equivalent to SIGPIPE on Windows.
-// https://blogs.msdn.microsoft.com/oldnewthing/20131209-00/?p=2433
+// https://devblogs.microsoft.com/oldnewthing/?p=2433
 // https://stackoverflow.com/a/53214/82195
 
 static void win32_kill_child_on_exit(HANDLE child_handle) {
     static HANDLE cjo_handle = NULL;
     if (!cjo_handle) {
-        cjo_handle = CreateJobObject(NULL, _T("Local\\Wireshark child process cleanup"));
+        cjo_handle = CreateJobObject(NULL, NULL);
 
         if (!cjo_handle) {
-            g_log(LOG_DOMAIN_CAPTURE, G_LOG_LEVEL_DEBUG, "Could not create child cleanup job object: %s",
+            ws_log(LOG_DOMAIN_CAPTURE, LOG_LEVEL_DEBUG, "Could not create child cleanup job object: %s",
                 win32strerror(GetLastError()));
             return;
         }
@@ -176,22 +229,25 @@ static void win32_kill_child_on_exit(HANDLE child_handle) {
         BOOL sijo_ret = SetInformationJobObject(cjo_handle, JobObjectExtendedLimitInformation,
             &cjo_jel_info, sizeof(cjo_jel_info));
         if (!sijo_ret) {
-            g_log(LOG_DOMAIN_CAPTURE, G_LOG_LEVEL_DEBUG, "Could not set child cleanup limits: %s",
+            ws_log(LOG_DOMAIN_CAPTURE, LOG_LEVEL_DEBUG, "Could not set child cleanup limits: %s",
                 win32strerror(GetLastError()));
         }
     }
 
     BOOL aptjo_ret = AssignProcessToJobObject(cjo_handle, child_handle);
     if (!aptjo_ret) {
-        g_log(LOG_DOMAIN_CAPTURE, G_LOG_LEVEL_DEBUG, "Could not assign child cleanup process: %s",
+        ws_log(LOG_DOMAIN_CAPTURE, LOG_LEVEL_DEBUG, "Could not assign child cleanup process: %s",
             win32strerror(GetLastError()));
     }
 }
 
-BOOL win32_create_process(const char *application_name, const char *command_line, LPSECURITY_ATTRIBUTES process_attributes, LPSECURITY_ATTRIBUTES thread_attributes, BOOL inherit_handles, DWORD creation_flags, LPVOID environment, const char *current_directory, LPSTARTUPINFO startup_info, LPPROCESS_INFORMATION process_information)
+BOOL win32_create_process(const char *application_name, const char *command_line, LPSECURITY_ATTRIBUTES process_attributes, LPSECURITY_ATTRIBUTES thread_attributes, size_t n_inherit_handles, HANDLE *inherit_handles, DWORD creation_flags, LPVOID environment, const char *current_directory, LPSTARTUPINFO startup_info, LPPROCESS_INFORMATION process_information)
 {
     gunichar2 *wappname = NULL, *wcurrentdirectory = NULL;
     gunichar2 *wcommandline = g_utf8_to_utf16(command_line, -1, NULL, NULL, NULL);
+    LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = NULL;
+    STARTUPINFOEX startup_infoex;
+    size_t i;
     // CREATE_SUSPENDED: Suspend the child so that we can cleanly call
     //     AssignProcessToJobObject.
     DWORD wcreationflags = creation_flags|CREATE_SUSPENDED;
@@ -199,7 +255,7 @@ BOOL win32_create_process(const char *application_name, const char *command_line
     //     e.g. if we're running under "Run As", ConEmu, or Visual Studio. On Windows
     //     <= 7 our child process needs to break away from it so that we can cleanly
     //     call AssignProcessToJobObject on *our* job.
-    //     Windows >= 8 supports nested jobs so this isn't neccessary there.
+    //     Windows >= 8 supports nested jobs so this isn't necessary there.
     //     https://blogs.msdn.microsoft.com/winsdk/2014/09/22/job-object-insanity/
     //
     if (! IsWindowsVersionOrGreater(6, 2, 0)) { // Windows 8
@@ -212,15 +268,54 @@ BOOL win32_create_process(const char *application_name, const char *command_line
     if (current_directory) {
         wcurrentdirectory = g_utf8_to_utf16(current_directory, -1, NULL, NULL, NULL);
     }
+    if (n_inherit_handles > 0) {
+        size_t attr_size = 0;
+        BOOL success;
+        success = InitializeProcThreadAttributeList(NULL, 1, 0, &attr_size);
+        if (success || (GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {
+            attribute_list = g_malloc(attr_size);
+            success = InitializeProcThreadAttributeList(attribute_list, 1, 0, &attr_size);
+        }
+        if (success && (attribute_list != NULL)) {
+            success = UpdateProcThreadAttribute(attribute_list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                inherit_handles, n_inherit_handles * sizeof(HANDLE), NULL, NULL);
+        }
+        if (!success && (attribute_list != NULL)) {
+            DeleteProcThreadAttributeList(attribute_list);
+            g_free(attribute_list);
+            attribute_list = NULL;
+        }
+    }
+    memset(&startup_infoex, 0, sizeof(startup_infoex));
+    startup_infoex.StartupInfo = *startup_info;
+    startup_infoex.StartupInfo.cb = sizeof(startup_infoex);
+    startup_infoex.lpAttributeList = attribute_list;
+    wcreationflags |= EXTENDED_STARTUPINFO_PRESENT;
+    for (i = 0; i < n_inherit_handles; i++) {
+        SetHandleInformation(inherit_handles[i], HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    }
     BOOL cp_res = CreateProcess(wappname, wcommandline, process_attributes, thread_attributes,
-        inherit_handles, wcreationflags, environment, wcurrentdirectory, startup_info,
-        process_information);
+        (n_inherit_handles > 0) ? true : false, wcreationflags, environment, wcurrentdirectory,
+        &startup_infoex.StartupInfo, process_information);
+    /* While this function makes the created process inherit only the explicitly
+     * listed handles, there can be other functions (in 3rd party libraries)
+     * that create processes inheriting all inheritable handles. To minimize
+     * number of unwanted handle duplicates (handle duplicate can extend object
+     * lifetime, e.g. pipe write end) created that way clear the inherit flag.
+     */
+    for (i = 0; i < n_inherit_handles; i++) {
+        SetHandleInformation(inherit_handles[i], HANDLE_FLAG_INHERIT, 0);
+    }
     if (cp_res) {
         win32_kill_child_on_exit(process_information->hProcess);
         ResumeThread(process_information->hThread);
     }
     // XXX Else try again if CREATE_BREAKAWAY_FROM_JOB and GetLastError() == ERROR_ACCESS_DENIED?
 
+    if (attribute_list) {
+        DeleteProcThreadAttributeList(attribute_list);
+        g_free(attribute_list);
+    }
     g_free(wappname);
     g_free(wcommandline);
     g_free(wcurrentdirectory);
@@ -228,7 +323,7 @@ BOOL win32_create_process(const char *application_name, const char *command_line
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 4

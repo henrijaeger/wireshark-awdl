@@ -19,12 +19,13 @@ find_path( SBC_INCLUDE_DIR
 find_library( SBC_LIBRARY
   NAMES
     sbc
+    libsbc-1
   HINTS
     "${SBC_HINTS}/lib"
 )
 
 include( FindPackageHandleStandardArgs )
-find_package_handle_standard_args( SBC DEFAULT_MSG SBC_INCLUDE_DIR SBC_LIBRARY )
+find_package_handle_standard_args( SBC DEFAULT_MSG SBC_LIBRARY SBC_INCLUDE_DIR )
 
 if( SBC_FOUND )
   set( SBC_INCLUDE_DIRS ${SBC_INCLUDE_DIR} )

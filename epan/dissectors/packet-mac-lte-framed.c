@@ -18,7 +18,7 @@
 void proto_register_mac_lte_framed(void);
 
 /* Initialize the protocol and registered fields. */
-static int proto_mac_lte_framed = -1;
+static int proto_mac_lte_framed;
 
 extern int proto_mac_lte;
 
@@ -26,10 +26,10 @@ extern int proto_mac_lte;
 static int dissect_mac_lte_framed(tvbuff_t *tvb, packet_info *pinfo,
                                    proto_tree *tree, void* data _U_)
 {
-    gint                 offset = 0;
+    int                  offset = 0;
     struct mac_lte_info  *p_mac_lte_info;
     tvbuff_t             *mac_tvb;
-    gboolean             infoAlreadySet = FALSE;
+    bool                 infoAlreadySet = false;
 
     /* Need to find enabled mac-lte dissector */
     dissector_handle_t   mac_lte_handle = find_dissector("mac-lte");
@@ -51,15 +51,15 @@ static int dissect_mac_lte_framed(tvbuff_t *tvb, packet_info *pinfo,
     p_mac_lte_info = (struct mac_lte_info*)p_get_proto_data(wmem_file_scope(), pinfo, proto_mac_lte, 0);
     if (p_mac_lte_info == NULL) {
         /* Allocate new info struct for this frame */
-        p_mac_lte_info = (struct mac_lte_info*)wmem_alloc0(wmem_file_scope(), sizeof(struct mac_lte_info));
-        infoAlreadySet = FALSE;
+        p_mac_lte_info = wmem_new0(wmem_file_scope(), struct mac_lte_info);
+        infoAlreadySet = false;
     }
     else {
-        infoAlreadySet = TRUE;
+        infoAlreadySet = true;
     }
 
     /* Dissect the fields to populate p_mac_lte */
-    if (!dissect_mac_lte_context_fields(p_mac_lte_info, tvb, &offset)) {
+    if (!dissect_mac_lte_context_fields(p_mac_lte_info, tvb, pinfo, tree, &offset)) {
         return offset;
     }
 
@@ -87,7 +87,7 @@ void proto_register_mac_lte_framed(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

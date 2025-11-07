@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <ui/qt/widgets/editor_file_dialog.h>
 #include <ui/qt/widgets/wireshark_file_dialog.h>
@@ -24,7 +25,7 @@ EditorFileDialog::EditorFileDialog(const QModelIndex& index, enum FileMode mode,
     , caption_(caption)
     , directory_(directory)
     , filter_(filter)
-    , options_(0)
+    , options_(QFileDialog::Options())
 {
     if (mode_ == Directory)
         options_ = QFileDialog::ShowDirsOnly;
@@ -33,7 +34,7 @@ EditorFileDialog::EditorFileDialog(const QModelIndex& index, enum FileMode mode,
         setText(directory);
 
     file_dialog_button_->setText(UTF8_HORIZONTAL_ELLIPSIS);
-    connect(file_dialog_button_, SIGNAL(clicked()), this, SLOT(applyFilename()));
+    connect(file_dialog_button_, &QPushButton::clicked, this, &EditorFileDialog::applyFilename);
 }
 
 void EditorFileDialog::setOption(QFileDialog::Option option, bool on)
@@ -67,7 +68,7 @@ bool EditorFileDialog::eventFilter(QObject *obj, QEvent *event)
 {
     if (event->type() == QEvent::KeyPress) {
         QKeyEvent* key = static_cast<QKeyEvent*>(event);
-        if ( (key->key() == Qt::Key_Tab) && !file_dialog_button_->hasFocus()) {
+        if ((key->key() == Qt::Key_Tab) && !file_dialog_button_->hasFocus()) {
             file_dialog_button_->setFocus();
             return true;
         }
@@ -106,16 +107,3 @@ void EditorFileDialog::applyFilename()
         emit acceptEdit(index_);
     }
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

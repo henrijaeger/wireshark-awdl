@@ -37,13 +37,18 @@ QWidget *AdvancedPrefDelegate::createEditor(QWidget *parent, const QStyleOptionV
     case AdvancedPrefsModel::colType:
         //If user clicks on any of these columns, reset preference back to default
         //There is no need to launch an editor
-        ((QAbstractItemModel*)index.model())->setData(index, QVariant(), Qt::EditRole);
+        const_cast<QAbstractItemModel*>(index.model())->setData(index, QVariant(), Qt::EditRole);
         break;
     case AdvancedPrefsModel::colValue:
         pref = indexToPref(index);
         WiresharkPreference * wspref = PreferenceManager::instance()->getPreference(pref);
-        if ( wspref )
-            return wspref->editor(parent, option, index);
+        if (wspref) {
+            QWidget *editor = wspref->editor(parent, option, index);
+            if (editor) {
+                editor->setAutoFillBackground(true);
+            }
+            return editor;
+        }
         break;
     }
 
@@ -55,13 +60,13 @@ void AdvancedPrefDelegate::setEditorData(QWidget *editor, const QModelIndex &ind
     PrefsItem* pref = indexToPref(index);
 
     WiresharkPreference * wspref = PreferenceManager::instance()->getPreference(pref);
-    if ( wspref )
+    if (wspref)
     {
         wspref->setData(editor, index);
         return;
     }
 
-    Q_ASSERT(FALSE);
+    Q_ASSERT(false);
 }
 
 void AdvancedPrefDelegate::setModelData(QWidget *editor, QAbstractItemModel *model,
@@ -70,23 +75,11 @@ void AdvancedPrefDelegate::setModelData(QWidget *editor, QAbstractItemModel *mod
     PrefsItem* pref = indexToPref(index);
 
     WiresharkPreference * wspref = PreferenceManager::instance()->getPreference(pref);
-    if ( wspref )
+    if (wspref)
     {
         wspref->setModelData(editor, model, index);
         return;
     }
 
-    Q_ASSERT(FALSE);
+    Q_ASSERT(false);
 }
-
-/* * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

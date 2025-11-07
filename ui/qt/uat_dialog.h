@@ -1,17 +1,16 @@
-/* uat_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef UAT_DIALOG_H
 #define UAT_DIALOG_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include "geometry_state_dialog.h"
 #include <ui/qt/models/uat_model.h>
@@ -19,6 +18,7 @@
 
 class QComboBox;
 class QPushButton;
+class QItemSelection;
 
 struct epan_uat;
 
@@ -37,9 +37,11 @@ public:
     void setUat(struct epan_uat *uat = NULL);
 
 private slots:
+    void copyFromProfile(QString filename);
     void modelDataChanged(const QModelIndex &topLeft);
     void modelRowsRemoved();
     void modelRowsReset();
+    void uatTreeViewSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
     void on_uatTreeView_currentItemChanged(const QModelIndex &current, const QModelIndex &previous);
     void acceptChanges();
     void rejectChanges();
@@ -63,6 +65,7 @@ private:
     bool trySetErrorHintFromField(const QModelIndex &index);
     void applyChanges();
     void addRecord(bool copy_from_current = false);
+    void resizeColumns();
 };
 
 #endif // UAT_DIALOG_H

@@ -1,4 +1,4 @@
--- 3GPP TS 25.331 V14.4.0 (2017-09)
+-- 3GPP TS 25.331 V17.1.0 (2022-06)
 --
 -- 11.3	Information element definitions
 --
@@ -800,7 +800,7 @@ AccessGroupIdentity ::=				INTEGER (0..15)
 AccessStratumReleaseIndicator ::=	ENUMERATED {
 										rel-4, rel-5, rel-6, rel-7, rel-8,
 										rel-9, rel-10, rel-11, rel-12,
-										rel-13, rel-14, spare5, spare4, spare3,
+										rel-13, rel-14, rel-15, rel-16, spare3,
 										spare2, spare1 }
 
 -- TABULAR : for ActivationTime, value 'now' always appear as default, and is encoded
@@ -1218,6 +1218,10 @@ DL-PhysChCapabilityFDD-vd20ext ::=	SEQUENCE {
 
 DL-PhysChCapabilityFDD-ve30ext ::=	SEQUENCE {
 	supportofHS-SCCHDrxOperation			ENUMERATED { true }				OPTIONAL
+}
+
+DL-PhysChCapabilityFDD-vf10ext ::=	SEQUENCE {
+	supportofSimplifiedHS-SCCHType1Operation			     ENUMERATED { true }			OPTIONAL
 }
 
 DL-PhysChCapabilityTDD ::=		SEQUENCE {
@@ -1743,6 +1747,10 @@ MeasurementCapability-ve30ext ::=	SEQUENCE {
 	qoEMeasurementCollectionForStreamingServices	ENUMERATED { true }			OPTIONAL
 }
 
+MeasurementCapability-vf20ext ::=	SEQUENCE {
+	qoEMeasurementCollectionForMTSIServices		ENUMERATED { true }			OPTIONAL
+}
+
 MessageAuthenticationCode ::=		BIT STRING (SIZE (32))
 
 MinimumSF-DL ::=					ENUMERATED {
@@ -2082,6 +2090,12 @@ PhysicalChannelCapabilityInfo-v770ext ::= SEQUENCE {
 	tddPhysChCapability-128					SEQUENCE {
 		uplinkPhysChCapability					UL-PhysChCapabilityInfoTDD-128-v770ext
 	}		OPTIONAL
+}
+
+PhysicalChannelCapability-vf10ext ::=	SEQUENCE {
+	fddPhysChCapability						SEQUENCE {
+		downlinkPhysChCapability					DL-PhysChCapabilityFDD-vf10ext	OPTIONAL
+		}
 }
 
 -- PhysicalChannelCapability-LCR-r4 describes the 1.28Mcps TDD physical channel capability
@@ -3034,6 +3048,16 @@ UE-RadioAccessCapability-ve30ext-IEs ::=		SEQUENCE {
 	measurementCapability							MeasurementCapability-ve30ext		OPTIONAL,
 	supportofSimultaneousSetupandReleaseofRABsRBs	ENUMERATED { true }					OPTIONAL,
 	physicalChannelCapability						PhysicalChannelCapability-ve30ext	OPTIONAL,
+	ue-RadioAccessCapability-vf10ext    		UE-RadioAccessCapability-vf10ext-IEs    OPTIONAL
+}
+
+UE-RadioAccessCapability-vf10ext-IEs ::=		SEQUENCE {
+	physicalChannelCapability					PhysicalChannelCapability-vf10ext   OPTIONAL,
+	ue-RadioAccessCapability-vf20ext-IEs	    UE-RadioAccessCapability-vf20ext-IEs OPTIONAL
+}
+
+UE-RadioAccessCapability-vf20ext-IEs ::=		SEQUENCE {
+	measurementCapability						MeasurementCapability-vf20ext		OPTIONAL,
 	nonCriticalExtensions						SEQUENCE {}							OPTIONAL
 }
 
@@ -3305,7 +3329,7 @@ UE-RadioAccessCapability-vd20ext ::= SEQUENCE {
 
 UE-RadioAccessCapabBand-va40ext ::= SEQUENCE {
 	ue-RadioAccessCapabBandFDDList5				UE-RadioAccessCapabBandFDDList5,
-	-- This IE shall be included if the UE also supports Band I - Band XXII
+	-- This IE shall be included if the UE also supports Band I – Band XXII
 	ue-RadioAccessCapabBandFDDList-ext2			UE-RadioAccessCapabBandFDDList-ext2		OPTIONAL
 }
 
@@ -15270,7 +15294,7 @@ EUTRA-FrequencyAndPriorityInfo ::=	SEQUENCE {
 	threshXhigh							INTEGER (0..31),
 	-- Actual value = IE value * 2
 	threshXlow							INTEGER (0..31),
-	eutra-blackListedCellList			EUTRA-BlacklistedCellPerFreqList		OPTIONAL,
+	eutra-exclude-ListedCellList			EUTRA-Exclude-listedCellPerFreqList		OPTIONAL,
 	eutraDetection						BOOLEAN
 }
 
@@ -15306,7 +15330,7 @@ EUTRA-FrequencyAndPriorityInfoExtension-vb50ext ::=	SEQUENCE {
 	qqualMinEUTRA						INTEGER (-34..-3)						OPTIONAL,
 	threshXhigh2						INTEGER (0..31)							OPTIONAL,
 	threshXlow2							INTEGER (0..31)							OPTIONAL,
-	eutra-blackListedCellList			EUTRA-BlacklistedCellPerFreqList		OPTIONAL,
+	eutra-exclude-listedCellList			EUTRA-Exclude-listedCellPerFreqList		OPTIONAL,
 	eutraDetection						BOOLEAN
 }
 
@@ -15503,7 +15527,7 @@ EUTRA-FrequencyInfoList-r12 ::=			SEQUENCE (SIZE (1..maxNumEUTRAFreqs)) OF
 EUTRA-FrequencyInfo ::=				SEQUENCE {
 	earfcn								EARFCN,
 	measurementBandwidth				EUTRA-MeasurementBandwidth				OPTIONAL,
-	eutra-blackListedCellList			EUTRA-BlacklistedCellPerFreqList		OPTIONAL
+	eutra-exclude-listedCellList			EUTRA-Exclude-listedCellPerFreqList		OPTIONAL
 }
 
 EUTRA-FrequencyInfo-r11 ::=	SEQUENCE {
@@ -15512,7 +15536,7 @@ EUTRA-FrequencyInfo-r11 ::=	SEQUENCE {
 	earfcn								EARFCN,
 	earfcnExt							EARFCNExtension							OPTIONAL,
 	measurementBandwidth				EUTRA-MeasurementBandwidth				OPTIONAL,
-	eutra-blackListedCellList			EUTRA-BlacklistedCellPerFreqList		OPTIONAL,
+	eutra-exclude-listedCellList			EUTRA-Exclude-listedCellPerFreqList		OPTIONAL,
 	widebandRSRQMeasurements			ENUMERATED {true}						OPTIONAL
 }
 
@@ -15520,7 +15544,7 @@ EUTRA-FrequencyInfo-r12 ::=	SEQUENCE {
 	earfcn								EARFCNExtension2,
 	reducedMeasurementPerformance		ENUMERATED {true}						OPTIONAL,
 	measurementBandwidth				EUTRA-MeasurementBandwidth				OPTIONAL,
-	eutra-blackListedCellList			EUTRA-BlacklistedCellPerFreqList		OPTIONAL,
+	eutra-exclude-listedCellList			EUTRA-Exclude-listedCellPerFreqList		OPTIONAL,
 	widebandRSRQMeasurements			ENUMERATED {true}						OPTIONAL
 }
 
@@ -17025,10 +17049,10 @@ InterFreqRACHReportingInfo ::= SEQUENCE {
 	maxReportedCellsOnRACHinterFreq		MaxReportedCellsOnRACHinterFreq
 }
 
-InterFreqBlacklistedCellsList-r12 ::=		SEQUENCE (SIZE (1..maxFreq)) OF
-													InterFreqBlacklistedCells-r12
+InterFreqExclude-listedCellsList-r12 ::=		SEQUENCE (SIZE (1..maxFreq)) OF
+													InterFreqExclude-listedCells-r12
 
-InterFreqBlacklistedCells-r12 ::=		SEQUENCE {
+InterFreqExclude-listedCells-r12 ::=		SEQUENCE {
 	frequencyInfo						FrequencyInfo,
 	excludedCellInfoList				CellInfoListToBeExcluded
 }
@@ -17108,7 +17132,7 @@ InterFreqReportingCriteria-r11 ::=	SEQUENCE {
 
 InterFreqReportingCriteria-r12 ::=	SEQUENCE {
 	interFreqEventList					InterFreqEventList-r12			OPTIONAL,
-	interFreqBlacklistedCellsList		InterFreqBlacklistedCellsList-r12	OPTIONAL
+	interFreqExclude-listedCellsList		InterFreqExclude-listedCellsList-r12	OPTIONAL
 }
 
 InterFreqReportingQuantity ::=		SEQUENCE {
@@ -18812,6 +18836,16 @@ MeasurementCommand-r14 ::=			CHOICE {
 	releaseSome						MeasurementsToRelease
 }
 
+MeasurementCommand-r15 ::=			CHOICE {
+	setup								MeasurementType-r15,
+	modify								SEQUENCE {
+		measurementType						MeasurementType-r15				OPTIONAL
+	},
+	release								NULL,
+	releaseAll							NULL,
+	releaseSome						MeasurementsToRelease
+}
+
 MeasurementControlSysInfo ::=		SEQUENCE {
 	-- CHOICE cellSelectQualityMeasure represents PCCPCH-RSCP in TDD mode.
 	use-of-HCS							CHOICE {
@@ -19146,6 +19180,21 @@ MeasurementType-r14 ::=							CHOICE {
 	applicationLayerMeasurementConfiguration	ApplicationLayerMeasurementConfiguration
 }
 
+MeasurementType-r15 ::=							CHOICE {
+	intraFrequencyMeasurement						IntraFrequencyMeasurement-r11,
+	interFrequencyMeasurement						InterFrequencyMeasurement-r12,
+	interRATMeasurement							InterRATMeasurement-r12,
+	up-Measurement									UE-Positioning-Measurement-r13,
+	trafficVolumeMeasurement						TrafficVolumeMeasurement,
+	qualityMeasurement								QualityMeasurement,
+	ue-InternalMeasurement						UE-InternalMeasurement-r14,
+	csgProximityDetection							CSGProximityDetection,
+	eutraMeasurementForCELLFACH					EUTRA-MeasurementForCELLFACH-r12,
+	applicationLayerMeasurementConfiguration 	ApplicationLayerMeasurementConfiguration,
+	applicationLayerMeasurementConfiguration-r15 ApplicationLayerMeasurementConfiguration-r15
+}
+
+
 MeasurementType-Relocation-r14 ::=				CHOICE {
 	intraFrequencyMeasurement						IntraFrequencyMeasurement-r11,
 	interFrequencyMeasurement						InterFrequencyMeasurement-r12,
@@ -19157,6 +19206,21 @@ MeasurementType-Relocation-r14 ::=				CHOICE {
 	csgProximityDetection							CSGProximityDetection,
 	eutraMeasurementForCELLFACH					EUTRA-MeasurementForCELLFACH-r12,
 	applicationLayerMeasurement					NULL
+}
+
+MeasurementType-Relocation-r15 ::=				CHOICE {
+	intraFrequencyMeasurement						IntraFrequencyMeasurement-r11,
+	interFrequencyMeasurement						InterFrequencyMeasurement-r12,
+	interRATMeasurement							InterRATMeasurement-r12,
+	up-Measurement									UE-Positioning-Measurement-r13,
+	trafficVolumeMeasurement						TrafficVolumeMeasurement,
+	qualityMeasurement								QualityMeasurement,
+	ue-InternalMeasurement						UE-InternalMeasurement-r14,
+	csgProximityDetection							CSGProximityDetection,
+	eutraMeasurementForCELLFACH					EUTRA-MeasurementForCELLFACH-r12,
+	applicationLayerMeasurement					NULL,
+	applicationLayerMeasurement-r15				NULL
+
 }
 
 MeasurementValidity ::=				SEQUENCE {
@@ -19871,8 +19935,18 @@ ApplicationLayerMeasurementConfiguration ::=		SEQUENCE {
 	containerForApplicationLayerMeasurementConfiguration	OCTET STRING ( SIZE (1..1000))
 }
 
+ApplicationLayerMeasurementConfiguration-r15 ::=	 SEQUENCE {
+	containerForApplicationLayerMeasurementConfiguration	 OCTET STRING ( SIZE (1..1000)),
+	serviceType										ENUMERATED { qoe, qoemtsi }
+}
+
 ApplicationLayerMeasurementReporting ::=		SEQUENCE {
 	containerForApplicationLayerMeasurementReporting		OCTET STRING ( SIZE (1..8000))
+}
+
+ApplicationLayerMeasurementReporting-r15 ::=		SEQUENCE {
+	containerForApplicationLayerMeasurementReporting		OCTET STRING ( SIZE (1..8000)),
+	serviceType										ENUMERATED { qoe, qoemtsi }
 }
 
 ObservedTimeDifferenceToGSM ::=		INTEGER (0..4095)
@@ -22733,12 +22807,12 @@ ETWS-Information ::=				SEQUENCE {
 -- This IE is not used in the specification.
 ETWS-WarningSecurityInfo ::=		OCTET STRING
 
-EUTRA-BlacklistedCell ::=			SEQUENCE {
+EUTRA-Exclude-listedCell ::=			SEQUENCE {
 	physicalCellIdentity				EUTRA-PhysicalCellIdentity
 }
 
-EUTRA-BlacklistedCellPerFreqList ::= SEQUENCE (SIZE (1..maxEUTRACellPerFreq)) OF
-											EUTRA-BlacklistedCell
+EUTRA-Exclude-listedCellPerFreqList ::= SEQUENCE (SIZE (1..maxEUTRACellPerFreq)) OF
+											EUTRA-Exclude-listedCell
 
 EUTRA-PhysicalCellIdentity ::=		INTEGER (0..503)
 
@@ -22754,7 +22828,7 @@ EUTRA-TargetFreqInfoList-vb50ext ::=	SEQUENCE (SIZE (1..maxEUTRATargetFreqs)) OF
 
 EUTRA-TargetFreqInfo ::=			SEQUENCE {
 	dlEUTRACarrierFreq					EARFCN,
-	eutraBlacklistedCellPerFreqList		EUTRA-BlacklistedCellPerFreqList	OPTIONAL
+	eutraExclude-listedCellPerFreqList		EUTRA-Exclude-listedCellPerFreqList	OPTIONAL
 }
 
 EUTRA-TargetFreqInfo-vb50ext ::=	SEQUENCE {
@@ -24800,7 +24874,7 @@ SysInfoType21 ::=					SEQUENCE {
 SysInfoType22 ::=				SEQUENCE {
 --	In the Tabular there are separate definitions for prach-PreambleForEnhancedUplinkListType1Ext
 --	and prach-PreambleForEnhancedUplinkListType2Ext/prach-PreambleForEnhancedUplinkListType3Ext even
---		though the contents are the same. The only difference is in how the IE "Weight" is used in
+--		though the contents are the same. The only difference is in how the IE “Weight” is used in
 --		calculating the weight for each signalled PRACH Control Parameters.
 --	To simplify the ASN.1, a single definition is used here for all three cases.
 	prach-PreambleForEnhancedUplinkListType1Ext

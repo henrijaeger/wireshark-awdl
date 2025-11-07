@@ -1,4 +1,4 @@
-/* proto_hier_stats.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -10,6 +10,9 @@
 #ifndef __UI_PROTO_HIER_STATS_H__
 #define __UI_PROTO_HIER_STATS_H__
 
+#include <epan/proto.h>
+#include "cfile.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -18,21 +21,20 @@ extern "C" {
  * Protocol Hierarchy Statistics
  */
 
-#include <epan/proto.h>
-#include "cfile.h"
-
 typedef struct {
-    header_field_info	*hfinfo;
-    guint		num_pkts_total;
-    guint		num_pkts_last;
-    guint		num_bytes_total;
-    guint		num_bytes_last;
+    const header_field_info	*hfinfo;
+    unsigned		num_pkts_total;
+    unsigned		num_pdus_total;
+    unsigned		num_pkts_last;
+    unsigned		num_bytes_total;
+    unsigned		num_bytes_last;
+    unsigned		last_pkt;
 } ph_stats_node_t;
 
 
 typedef struct {
-    guint	tot_packets;
-    guint	tot_bytes;
+    unsigned	tot_packets;
+    unsigned	tot_bytes;
     GNode	*stats_tree;
     double	first_time;	/* seconds (msec resolution) of first packet */
     double	last_time;	/* seconds (msec resolution) of last packet  */
@@ -47,16 +49,3 @@ void ph_stats_free(ph_stats_t *ps);
 #endif /* __cplusplus */
 
 #endif /* __UI_PROTO_HIER_STATS_H__ */
-
-/*
- * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -18,20 +18,6 @@
  * These structures are meant to support the provision of contextual
  * metadata to the BTLE dissector.
  */
-typedef struct {
-    guint64 InitA;
-    guint64 AdvA;
-    guint32 LinkAA;
-    guint32 CRCInit;
-    guint8  WinSize;
-    guint16 WinOffset;
-    guint16 Interval;
-    guint16 Latency;
-    guint16 Timeout;
-    guint64 ChM;
-    guint8  Hop;
-    guint8  SCA;
-} btle_CONNECT_REQ_t;
 
 typedef enum {
     E_AA_NO_COMMENT = 0,
@@ -41,18 +27,33 @@ typedef enum {
 } btle_AA_category_t;
 
 #define BTLE_DIR_UNKNOWN 0
-#define BTLE_DIR_MASTER_SLAVE 1
-#define BTLE_DIR_SLAVE_MASTER 2
+#define BTLE_DIR_CENTRAL_PERIPHERAL 1
+#define BTLE_DIR_PERIPHERAL_CENTRAL 2
+
+#define BTLE_PDU_TYPE_UNKNOWN       0 /* Unknown physical channel PDU */
+#define BTLE_PDU_TYPE_ADVERTISING   1 /* Advertising physical channel PDU */
+#define BTLE_PDU_TYPE_DATA          2 /* Data physical channel PDU */
+#define BTLE_PDU_TYPE_CONNECTEDISO  3 /* Connected isochronous physical channel PDU */
+#define BTLE_PDU_TYPE_BROADCASTISO  4 /* Broadcast isochronous physical channel PDU */
+
+#define LE_1M_PHY     0
+#define LE_2M_PHY     1
+#define LE_CODED_PHY  2
 
 typedef struct {
     btle_AA_category_t aa_category;
-    btle_CONNECT_REQ_t connection_info;
-    guint connection_info_valid: 1;
-    guint crc_checked_at_capture: 1;
-    guint crc_valid_at_capture: 1;
-    guint mic_checked_at_capture: 1;
-    guint mic_valid_at_capture: 1;
-    guint direction: 2; /* 0 Unknown, 1 Master -> Slave, 2 Slave -> Master */
+    unsigned crc_checked_at_capture: 1;
+    unsigned crc_valid_at_capture: 1;
+    unsigned mic_checked_at_capture: 1;
+    unsigned mic_valid_at_capture: 1;
+    unsigned direction: 2; /* 0 Unknown, 1 Central -> Peripheral, 2 Peripheral -> Central */
+    unsigned aux_pdu_type_valid: 1;
+    unsigned event_counter_valid: 1;
+    uint8_t pdu_type;
+    uint8_t aux_pdu_type;
+    uint8_t channel;
+    uint8_t phy;
+    uint16_t event_counter;
 
     union {
         void              *data;
@@ -63,7 +64,7 @@ typedef struct {
 #endif /* __PACKET_BTLE_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

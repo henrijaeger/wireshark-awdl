@@ -1,4 +1,5 @@
-/* url_link_delegate.h
+/** @file
+ *
  * Delegates for displaying links as links, including elide model
  *
  * Wireshark - Network traffic analyzer
@@ -14,13 +15,10 @@
 #include <QStyledItemDelegate>
 #include <QStyleOptionViewItem>
 #include <QModelIndex>
-
-class QRegExp;
+#include <QRegularExpression>
 
 class UrlLinkDelegate : public QStyledItemDelegate
 {
-    Q_OBJECT
-
 public:
     explicit UrlLinkDelegate(QObject *parent = Q_NULLPTR);
     ~UrlLinkDelegate();
@@ -29,22 +27,10 @@ public:
     void setColCheck(int column, QString &pattern);
 
 protected:
-    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const;
+    virtual void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const;
 
 private:
     int re_col_;
-    QRegExp *url_re_;
+    QRegularExpression *url_re_;
 };
 #endif // URL_LINK_DELEGATE_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- */

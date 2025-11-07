@@ -12,9 +12,16 @@
 
 #include "config.h"
 
+#define WS_LOG_DOMAIN "packet-dcerpc-netlogon"
 
 #include <epan/packet.h>
+#include <epan/expert.h>
+#include <epan/tfs.h>
+
 #include <wsutil/wsgcrypt.h>
+#include <wsutil/wslog.h>
+#include <wsutil/str_util.h>
+#include <wsutil/array.h>
 
 /* for dissect_mscldap_string */
 #include "packet-ldap.h"
@@ -23,35 +30,17 @@
 #include "packet-dcerpc-netlogon.h"
 #include "packet-windows-common.h"
 #include "packet-dcerpc-lsa.h"
+#include "packet-ntlmssp.h"
+#include "packet-dcerpc-misc.h"
 /* for keytab format */
 #include <epan/asn1.h>
 #include "packet-kerberos.h"
-/* for routines to read the keytab file */
-#include "read_keytab_file.h"
-/* for decoding */
 
 void proto_register_dcerpc_netlogon(void);
 void proto_reg_handoff_dcerpc_netlogon(void);
 
-extern const char *gbl_nt_password;
-
-#ifdef DEBUG_NETLOGON
-#include <stdio.h>
-#define debugprintf(...) fprintf(stderr,__VA_ARGS__)
-static void printnbyte(const guint8* tab,int nb,const char* txt,const char* txt2)
-{
-    int i=0;
-    debugprintf("%s ",txt);
-    for(i=0;i<nb;i++)
-    {
-        debugprintf("%02X ",*(tab+i));
-    }
-    debugprintf("%s",txt2);
-}
-#else
-#define debugprintf(...)
-static void printnbyte(const guint8* tab _U_,int nb _U_,const char* txt _U_,const char* txt2 _U_) {}
-#endif
+static proto_item *
+netlogon_dissect_neg_options(tvbuff_t *tvb,proto_tree *tree,uint32_t flags,int offset);
 
 #define NETLOGON_FLAG_80000000 0x80000000
 #define NETLOGON_FLAG_40000000 0x40000000
@@ -60,9 +49,9 @@ static void printnbyte(const guint8* tab _U_,int nb _U_,const char* txt _U_,cons
 #define NETLOGON_FLAG_8000000   0x8000000
 #define NETLOGON_FLAG_4000000   0x4000000
 #define NETLOGON_FLAG_2000000   0x2000000
-#define NETLOGON_FLAG_1000000   0x1000000
+#define NETLOGON_FLAG_AES       0x1000000
 #define NETLOGON_FLAG_800000     0x800000
-#define NETLOGON_FLAG_USEAES     0x400000
+#define NETLOGON_FLAG_400000     0x400000
 #define NETLOGON_FLAG_200000     0x200000
 #define NETLOGON_FLAG_100000     0x100000
 #define NETLOGON_FLAG_80000       0x80000
@@ -86,377 +75,445 @@ static void printnbyte(const guint8* tab _U_,int nb _U_,const char* txt _U_,cons
 #define NETLOGON_FLAG_2               0x2
 #define NETLOGON_FLAG_1               0x1
 
-static wmem_map_t *netlogon_auths=NULL;
-#if 0
+static wmem_map_t *netlogon_auths;
 static wmem_map_t *schannel_auths;
-#endif
-static gint hf_netlogon_TrustedDomainName_string = -1;
-static gint hf_netlogon_UserName_string = -1;
-static gint DomainInfo_sid = -1;
-static gint DnsDomainInfo_sid = -1;
-static gint DnsDomainInfo_domain_guid = -1;
-static gint DnsDomainInfo_dns_domain = -1;
-static gint DnsDomainInfo_dns_forest = -1;
-static gint DnsDomainInfo_name = -1;
-static int hf_client_challenge = -1;
-static int hf_server_rid = -1;
-static int hf_server_challenge = -1;
-static int hf_client_credential = -1;
-static int hf_server_credential = -1;
-static int proto_dcerpc_netlogon = -1;
-static int hf_netlogon_logon_dnslogondomainname = -1;
-static int hf_netlogon_logon_upn = -1;
-static int hf_netlogon_group_attrs_mandatory = -1;
-static int hf_netlogon_group_attrs_enabled_by_default = -1;
-static int hf_netlogon_group_attrs_enabled = -1;
-static int hf_netlogon_opnum = -1;
-static int hf_netlogon_data_length = -1;
-static int hf_netlogon_extraflags = -1;
-static int hf_netlogon_extra_flags_root_forest = -1;
-static int hf_netlogon_trust_flags_dc_firsthop = -1;
-static int hf_netlogon_trust_flags_rodc_to_dc = -1;
-static int hf_netlogon_trust_flags_rodc_ntlm = -1;
-static int hf_netlogon_package_name = -1;
-static int hf_netlogon_rc = -1;
-static int hf_netlogon_dos_rc = -1;
-static int hf_netlogon_werr_rc = -1;
-static int hf_netlogon_len = -1;
-static int hf_netlogon_sensitive_data_flag = -1;
-static int hf_netlogon_sensitive_data_len = -1;
-static int hf_netlogon_sensitive_data = -1;
-static int hf_netlogon_security_information = -1;
-static int hf_netlogon_dummy = -1;
-static int hf_netlogon_neg_flags = -1;
-/* static int hf_netlogon_neg_flags_80000000 = -1; */
-static int hf_netlogon_neg_flags_40000000 = -1;
-static int hf_netlogon_neg_flags_20000000 = -1;
-/* static int hf_netlogon_neg_flags_10000000 = -1; */
-/* static int hf_netlogon_neg_flags_8000000 = -1; */
-/* static int hf_netlogon_neg_flags_4000000 = -1; */
-/* static int hf_netlogon_neg_flags_2000000 = -1; */
-static int hf_netlogon_neg_flags_1000000 = -1;
-/* static int hf_netlogon_neg_flags_800000 = -1; */
-static int hf_netlogon_neg_flags_400000 = -1;
-static int hf_netlogon_neg_flags_200000 = -1;
-static int hf_netlogon_neg_flags_100000 = -1;
-static int hf_netlogon_neg_flags_80000 = -1;
-static int hf_netlogon_neg_flags_40000 = -1;
-static int hf_netlogon_neg_flags_20000 = -1;
-static int hf_netlogon_neg_flags_10000 = -1;
-static int hf_netlogon_neg_flags_8000 = -1;
-static int hf_netlogon_neg_flags_4000 = -1;
-static int hf_netlogon_neg_flags_2000 = -1;
-static int hf_netlogon_neg_flags_1000 = -1;
-static int hf_netlogon_neg_flags_800 = -1;
-static int hf_netlogon_neg_flags_400 = -1;
-static int hf_netlogon_neg_flags_200 = -1;
-static int hf_netlogon_neg_flags_100 = -1;
-static int hf_netlogon_neg_flags_80 = -1;
-static int hf_netlogon_neg_flags_40 = -1;
-static int hf_netlogon_neg_flags_20 = -1;
-static int hf_netlogon_neg_flags_10 = -1;
-static int hf_netlogon_neg_flags_8 = -1;
-static int hf_netlogon_neg_flags_4 = -1;
-static int hf_netlogon_neg_flags_2 = -1;
-static int hf_netlogon_neg_flags_1 = -1;
-static int hf_netlogon_minworkingsetsize = -1;
-static int hf_netlogon_maxworkingsetsize = -1;
-static int hf_netlogon_pagedpoollimit = -1;
-static int hf_netlogon_pagefilelimit = -1;
-static int hf_netlogon_timelimit = -1;
-static int hf_netlogon_nonpagedpoollimit = -1;
-/* static int hf_netlogon_pac_size = -1; */
-/* static int hf_netlogon_pac_data = -1; */
-/* static int hf_netlogon_auth_size = -1; */
-/* static int hf_netlogon_auth_data = -1; */
-static int hf_netlogon_cipher_len = -1;
-static int hf_netlogon_cipher_maxlen = -1;
-static int hf_netlogon_cipher_current_data = -1;
-static int hf_netlogon_cipher_current_set_time = -1;
-static int hf_netlogon_cipher_old_data = -1;
-static int hf_netlogon_cipher_old_set_time = -1;
-static int hf_netlogon_priv = -1;
-static int hf_netlogon_privilege_entries = -1;
-static int hf_netlogon_privilege_control = -1;
-static int hf_netlogon_privilege_name = -1;
-static int hf_netlogon_systemflags = -1;
-static int hf_netlogon_pdc_connection_status = -1;
-static int hf_netlogon_tc_connection_status = -1;
-static int hf_netlogon_restart_state = -1;
-static int hf_netlogon_attrs = -1;
-static int hf_netlogon_lsapolicy_len = -1;
-/* static int hf_netlogon_lsapolicy_referentid = -1; */
-/* static int hf_netlogon_lsapolicy_pointer = -1; */
-static int hf_netlogon_count = -1;
-static int hf_netlogon_entries = -1;
-static int hf_netlogon_minpasswdlen = -1;
-static int hf_netlogon_passwdhistorylen = -1;
-static int hf_netlogon_level16 = -1;
-static int hf_netlogon_validation_level = -1;
-static int hf_netlogon_reference = -1;
-static int hf_netlogon_next_reference = -1;
-static int hf_netlogon_timestamp = -1;
-static int hf_netlogon_level = -1;
-static int hf_netlogon_challenge = -1;
-static int hf_netlogon_reserved = -1;
-static int hf_netlogon_audit_retention_period = -1;
-static int hf_netlogon_auditing_mode = -1;
-static int hf_netlogon_max_audit_event_count = -1;
-static int hf_netlogon_event_audit_option = -1;
-static int hf_netlogon_unknown_string = -1;
-static int hf_netlogon_trust_extention = -1;
-static int hf_netlogon_trust_max = -1;
-static int hf_netlogon_trust_offset = -1;
-static int hf_netlogon_trust_len = -1;
-static int hf_netlogon_dummy_string = -1;
-static int hf_netlogon_dummy_string2 = -1;
-static int hf_netlogon_dummy_string3 = -1;
-static int hf_netlogon_dummy_string4 = -1;
-static int hf_netlogon_dummy_string5 = -1;
-static int hf_netlogon_dummy_string6 = -1;
-static int hf_netlogon_dummy_string7 = -1;
-static int hf_netlogon_dummy_string8 = -1;
-static int hf_netlogon_dummy_string9 = -1;
-static int hf_netlogon_dummy_string10 = -1;
-static int hf_netlogon_unknown_short = -1;
-static int hf_netlogon_unknown_long = -1;
-static int hf_netlogon_dummy1_long = -1;
-static int hf_netlogon_dummy2_long = -1;
-static int hf_netlogon_dummy3_long = -1;
-static int hf_netlogon_dummy4_long = -1;
-static int hf_netlogon_dummy5_long = -1;
-static int hf_netlogon_dummy6_long = -1;
-static int hf_netlogon_dummy7_long = -1;
-static int hf_netlogon_dummy8_long = -1;
-static int hf_netlogon_dummy9_long = -1;
-static int hf_netlogon_dummy10_long = -1;
-static int hf_netlogon_unknown_char = -1;
-static int hf_netlogon_logon_time = -1;
-static int hf_netlogon_logoff_time = -1;
-static int hf_netlogon_last_logoff_time = -1;
-static int hf_netlogon_kickoff_time = -1;
-static int hf_netlogon_pwd_age = -1;
-static int hf_netlogon_pwd_last_set_time = -1;
-static int hf_netlogon_pwd_can_change_time = -1;
-static int hf_netlogon_pwd_must_change_time = -1;
-/* static int hf_netlogon_nt_chal_resp = -1; */
-static int hf_netlogon_lm_chal_resp = -1;
-static int hf_netlogon_credential = -1;
-static int hf_netlogon_acct_name = -1;
-static int hf_netlogon_acct_desc = -1;
-static int hf_netlogon_group_desc = -1;
-static int hf_netlogon_full_name = -1;
-static int hf_netlogon_comment = -1;
-static int hf_netlogon_parameters = -1;
-static int hf_netlogon_logon_script = -1;
-static int hf_netlogon_profile_path = -1;
-static int hf_netlogon_home_dir = -1;
-static int hf_netlogon_dir_drive = -1;
-static int hf_netlogon_logon_count = -1;
-static int hf_netlogon_logon_count16 = -1;
-static int hf_netlogon_bad_pw_count = -1;
-static int hf_netlogon_bad_pw_count16 = -1;
-static int hf_netlogon_user_rid = -1;
-static int hf_netlogon_alias_rid = -1;
-static int hf_netlogon_group_rid = -1;
-static int hf_netlogon_logon_srv = -1;
-/* static int hf_netlogon_principal = -1; */
-static int hf_netlogon_logon_dom = -1;
-static int hf_netlogon_resourcegroupcount = -1;
-static int hf_netlogon_downlevel_domain_name = -1;
-static int hf_netlogon_dns_domain_name = -1;
-static int hf_netlogon_ad_client_dns_name = -1;
-static int hf_netlogon_domain_name = -1;
-static int hf_netlogon_domain_create_time = -1;
-static int hf_netlogon_domain_modify_time = -1;
-static int hf_netlogon_modify_count = -1;
-static int hf_netlogon_db_modify_time = -1;
-static int hf_netlogon_db_create_time = -1;
-static int hf_netlogon_oem_info = -1;
-static int hf_netlogon_serial_number = -1;
-static int hf_netlogon_num_rids = -1;
-static int hf_netlogon_num_trusts = -1;
-static int hf_netlogon_num_controllers = -1;
-static int hf_netlogon_num_sid = -1;
-static int hf_netlogon_computer_name = -1;
-static int hf_netlogon_site_name = -1;
-static int hf_netlogon_trusted_dc_name = -1;
-static int hf_netlogon_dc_name = -1;
-static int hf_netlogon_dc_site_name = -1;
-static int hf_netlogon_dns_forest_name = -1;
-static int hf_netlogon_dc_address = -1;
-static int hf_netlogon_dc_address_type = -1;
-static int hf_netlogon_client_site_name = -1;
-static int hf_netlogon_workstation = -1;
-static int hf_netlogon_workstation_site_name = -1;
-static int hf_netlogon_os_version = -1;
-static int hf_netlogon_workstation_os = -1;
-static int hf_netlogon_workstation_flags = -1;
-static int hf_netlogon_supportedenctypes = -1;
+static int proto_dcerpc_netlogon;
 
-static int hf_netlogon_workstations = -1;
-static int hf_netlogon_workstation_fqdn = -1;
-static int hf_netlogon_group_name = -1;
-static int hf_netlogon_alias_name = -1;
-static int hf_netlogon_country = -1;
-static int hf_netlogon_codepage = -1;
-static int hf_netlogon_flags = -1;
-static int hf_netlogon_trust_attribs = -1;
-static int hf_netlogon_trust_attribs_non_transitive = -1;
-static int hf_netlogon_trust_attribs_uplevel_only = -1;
-static int hf_netlogon_trust_attribs_quarantined_domain = -1;
-static int hf_netlogon_trust_attribs_forest_transitive = -1;
-static int hf_netlogon_trust_attribs_cross_organization = -1;
-static int hf_netlogon_trust_attribs_within_forest = -1;
-static int hf_netlogon_trust_attribs_treat_as_external = -1;
-static int hf_netlogon_trust_type = -1;
-static int hf_netlogon_trust_flags = -1;
-static int hf_netlogon_trust_flags_inbound = -1;
-static int hf_netlogon_trust_flags_outbound = -1;
-static int hf_netlogon_trust_flags_in_forest = -1;
-static int hf_netlogon_trust_flags_native_mode = -1;
-static int hf_netlogon_trust_flags_primary = -1;
-static int hf_netlogon_trust_flags_tree_root = -1;
-static int hf_netlogon_trust_parent_index = -1;
-static int hf_netlogon_user_account_control = -1;
-static int hf_netlogon_user_account_control_dont_require_preauth = -1;
-static int hf_netlogon_user_account_control_use_des_key_only = -1;
-static int hf_netlogon_user_account_control_not_delegated = -1;
-static int hf_netlogon_user_account_control_trusted_for_delegation = -1;
-static int hf_netlogon_user_account_control_smartcard_required = -1;
-static int hf_netlogon_user_account_control_encrypted_text_password_allowed = -1;
-static int hf_netlogon_user_account_control_account_auto_locked = -1;
-static int hf_netlogon_user_account_control_dont_expire_password = -1;
-static int hf_netlogon_user_account_control_server_trust_account = -1;
-static int hf_netlogon_user_account_control_workstation_trust_account = -1;
-static int hf_netlogon_user_account_control_interdomain_trust_account = -1;
-static int hf_netlogon_user_account_control_mns_logon_account = -1;
-static int hf_netlogon_user_account_control_normal_account = -1;
-static int hf_netlogon_user_account_control_temp_duplicate_account = -1;
-static int hf_netlogon_user_account_control_password_not_required = -1;
-static int hf_netlogon_user_account_control_home_directory_required = -1;
-static int hf_netlogon_user_account_control_account_disabled = -1;
-static int hf_netlogon_user_flags = -1;
-static int hf_netlogon_user_flags_extra_sids = -1;
-static int hf_netlogon_user_flags_resource_groups = -1;
-static int hf_netlogon_auth_flags = -1;
-static int hf_netlogon_pwd_expired = -1;
-static int hf_netlogon_nt_pwd_present = -1;
-static int hf_netlogon_lm_pwd_present = -1;
-static int hf_netlogon_code = -1;
-static int hf_netlogon_database_id = -1;
-static int hf_netlogon_sync_context = -1;
-static int hf_netlogon_max_size = -1;
-static int hf_netlogon_max_log_size = -1;
-static int hf_netlogon_dns_host = -1;
-static int hf_netlogon_acct_expiry_time = -1;
-static int hf_netlogon_encrypted_lm_owf_password = -1;
-static int hf_netlogon_lm_owf_password = -1;
-static int hf_netlogon_nt_owf_password = -1;
-static int hf_netlogon_param_ctrl = -1;
-static int hf_netlogon_logon_id = -1;
-static int hf_netlogon_num_deltas = -1;
-static int hf_netlogon_user_session_key = -1;
-static int hf_netlogon_blob_size = -1;
-static int hf_netlogon_blob = -1;
-static int hf_netlogon_logon_attempts = -1;
-static int hf_netlogon_authoritative = -1;
-static int hf_netlogon_secure_channel_type = -1;
-static int hf_netlogon_logonsrv_handle = -1;
-static int hf_netlogon_delta_type = -1;
-static int hf_netlogon_get_dcname_request_flags = -1;
-static int hf_netlogon_get_dcname_request_flags_force_rediscovery = -1;
-static int hf_netlogon_get_dcname_request_flags_directory_service_required = -1;
-static int hf_netlogon_get_dcname_request_flags_directory_service_preferred = -1;
-static int hf_netlogon_get_dcname_request_flags_gc_server_required = -1;
-static int hf_netlogon_get_dcname_request_flags_pdc_required = -1;
-static int hf_netlogon_get_dcname_request_flags_background_only = -1;
-static int hf_netlogon_get_dcname_request_flags_ip_required = -1;
-static int hf_netlogon_get_dcname_request_flags_kdc_required = -1;
-static int hf_netlogon_get_dcname_request_flags_timeserv_required = -1;
-static int hf_netlogon_get_dcname_request_flags_writable_required = -1;
-static int hf_netlogon_get_dcname_request_flags_good_timeserv_preferred = -1;
-static int hf_netlogon_get_dcname_request_flags_avoid_self = -1;
-static int hf_netlogon_get_dcname_request_flags_only_ldap_needed = -1;
-static int hf_netlogon_get_dcname_request_flags_is_flat_name = -1;
-static int hf_netlogon_get_dcname_request_flags_is_dns_name = -1;
-static int hf_netlogon_get_dcname_request_flags_return_dns_name = -1;
-static int hf_netlogon_get_dcname_request_flags_return_flat_name = -1;
-static int hf_netlogon_dc_flags = -1;
-static int hf_netlogon_dc_flags_pdc_flag = -1;
-static int hf_netlogon_dc_flags_gc_flag = -1;
-static int hf_netlogon_dc_flags_ldap_flag = -1;
-static int hf_netlogon_dc_flags_ds_flag = -1;
-static int hf_netlogon_dc_flags_kdc_flag = -1;
-static int hf_netlogon_dc_flags_timeserv_flag = -1;
-static int hf_netlogon_dc_flags_closest_flag = -1;
-static int hf_netlogon_dc_flags_writable_flag = -1;
-static int hf_netlogon_dc_flags_good_timeserv_flag = -1;
-static int hf_netlogon_dc_flags_ndnc_flag = -1;
-static int hf_netlogon_dc_flags_dns_controller_flag = -1;
-static int hf_netlogon_dc_flags_dns_domain_flag = -1;
-static int hf_netlogon_dc_flags_dns_forest_flag = -1;
-/* static int hf_netlogon_dnsdomaininfo = -1; */
-static int hf_netlogon_s4u2proxytarget = -1;
-static int hf_netlogon_transitedlistsize = -1;
-static int hf_netlogon_transited_service = -1;
-static int hf_netlogon_logon_duration = -1;
-static int hf_netlogon_time_created = -1;
+static int hf_netlogon_TrustedDomainName_string;
+static int hf_netlogon_UserName_string;
+static int hf_domain_info_sid;
+static int hf_dns_domain_info_sid;
+static int hf_dns_domain_info_domain_guid;
+static int hf_dns_domain_info_dns_domain;
+static int hf_dns_domain_info_dns_forest;
+static int hf_dns_domain_info_name;
+static int hf_client_challenge;
+static int hf_server_rid;
+static int hf_server_challenge;
+static int hf_client_credential;
+static int hf_server_credential;
+static int hf_netlogon_logon_dnslogondomainname;
+static int hf_netlogon_logon_upn;
+static int hf_netlogon_opnum;
+static int hf_netlogon_data_length;
+static int hf_netlogon_extraflags;
+static int hf_netlogon_extra_flags_root_forest;
+static int hf_netlogon_trust_flags_dc_firsthop;
+static int hf_netlogon_trust_flags_rodc_to_dc;
+static int hf_netlogon_trust_flags_rodc_ntlm;
+static int hf_netlogon_package_name;
+static int hf_netlogon_rc;
+static int hf_netlogon_dos_rc;
+static int hf_netlogon_werr_rc;
+static int hf_netlogon_len;
+static int hf_netlogon_password_version_reserved;
+static int hf_netlogon_password_version_number;
+static int hf_netlogon_password_version_present;
+static int hf_netlogon_sensitive_data_flag;
+static int hf_netlogon_sensitive_data_len;
+static int hf_netlogon_sensitive_data;
+static int hf_netlogon_security_information;
+static int hf_netlogon_dummy;
+static int hf_netlogon_neg_flags;
+static int hf_netlogon_neg_flags_80000000;
+static int hf_netlogon_neg_flags_40000000;
+static int hf_netlogon_neg_flags_20000000;
+/* static int hf_netlogon_neg_flags_10000000; */
+/* static int hf_netlogon_neg_flags_8000000; */
+/* static int hf_netlogon_neg_flags_4000000; */
+/* static int hf_netlogon_neg_flags_2000000; */
+static int hf_netlogon_neg_flags_1000000;
+/* static int hf_netlogon_neg_flags_800000; */
+/* static int hf_netlogon_neg_flags_400000; */
+static int hf_netlogon_neg_flags_200000;
+static int hf_netlogon_neg_flags_100000;
+static int hf_netlogon_neg_flags_80000;
+static int hf_netlogon_neg_flags_40000;
+static int hf_netlogon_neg_flags_20000;
+static int hf_netlogon_neg_flags_10000;
+static int hf_netlogon_neg_flags_8000;
+static int hf_netlogon_neg_flags_4000;
+static int hf_netlogon_neg_flags_2000;
+static int hf_netlogon_neg_flags_1000;
+static int hf_netlogon_neg_flags_800;
+static int hf_netlogon_neg_flags_400;
+static int hf_netlogon_neg_flags_200;
+static int hf_netlogon_neg_flags_100;
+static int hf_netlogon_neg_flags_80;
+static int hf_netlogon_neg_flags_40;
+static int hf_netlogon_neg_flags_20;
+static int hf_netlogon_neg_flags_10;
+static int hf_netlogon_neg_flags_8;
+static int hf_netlogon_neg_flags_4;
+static int hf_netlogon_neg_flags_2;
+static int hf_netlogon_neg_flags_1;
+static int hf_netlogon_minworkingsetsize;
+static int hf_netlogon_maxworkingsetsize;
+static int hf_netlogon_pagedpoollimit;
+static int hf_netlogon_pagefilelimit;
+static int hf_netlogon_timelimit;
+static int hf_netlogon_nonpagedpoollimit;
+/* static int hf_netlogon_pac_size; */
+/* static int hf_netlogon_pac_data; */
+/* static int hf_netlogon_auth_size; */
+/* static int hf_netlogon_auth_data; */
+static int hf_netlogon_cipher_len;
+static int hf_netlogon_cipher_maxlen;
+static int hf_netlogon_cipher_current_data;
+static int hf_netlogon_cipher_current_set_time;
+static int hf_netlogon_cipher_old_data;
+static int hf_netlogon_cipher_old_set_time;
+static int hf_netlogon_priv;
+static int hf_netlogon_privilege_entries;
+static int hf_netlogon_privilege_control;
+static int hf_netlogon_privilege_name;
+static int hf_netlogon_systemflags;
+static int hf_netlogon_pdc_connection_status;
+static int hf_netlogon_tc_connection_status;
+static int hf_netlogon_restart_state;
+static int hf_netlogon_attrs;
+static int hf_netlogon_lsapolicy_len;
+/* static int hf_netlogon_lsapolicy_referentid; */
+/* static int hf_netlogon_lsapolicy_pointer; */
+static int hf_netlogon_count;
+static int hf_netlogon_entries;
+static int hf_netlogon_minpasswdlen;
+static int hf_netlogon_passwdhistorylen;
+static int hf_netlogon_level16;
+static int hf_netlogon_validation_level;
+static int hf_netlogon_reference;
+static int hf_netlogon_next_reference;
+static int hf_netlogon_timestamp;
+static int hf_netlogon_level;
+static int hf_netlogon_challenge;
+static int hf_netlogon_reserved;
+static int hf_netlogon_audit_retention_period;
+static int hf_netlogon_auditing_mode;
+static int hf_netlogon_max_audit_event_count;
+static int hf_netlogon_event_audit_option;
+static int hf_netlogon_unknown_string;
+static int hf_netlogon_new_password;
+static int hf_netlogon_trust_extension;
+static int hf_netlogon_trust_max;
+static int hf_netlogon_trust_offset;
+static int hf_netlogon_trust_len;
+static int hf_netlogon_opaque_buffer_enc;
+static int hf_netlogon_opaque_buffer_dec;
+static int hf_netlogon_opaque_buffer_size;
+static int hf_netlogon_dummy_string;
+static int hf_netlogon_dummy_string2;
+static int hf_netlogon_dummy_string3;
+static int hf_netlogon_dummy_string4;
+static int hf_netlogon_dummy_string5;
+static int hf_netlogon_dummy_string6;
+static int hf_netlogon_dummy_string7;
+static int hf_netlogon_dummy_string8;
+static int hf_netlogon_dummy_string9;
+static int hf_netlogon_dummy_string10;
+static int hf_netlogon_unknown_short;
+static int hf_netlogon_unknown_long;
+static int hf_netlogon_dummy1_long;
+static int hf_netlogon_dummy2_long;
+static int hf_netlogon_dummy3_long;
+static int hf_netlogon_dummy4_long;
+static int hf_netlogon_dummy5_long;
+static int hf_netlogon_dummy6_long;
+static int hf_netlogon_dummy7_long;
+static int hf_netlogon_dummy8_long;
+static int hf_netlogon_dummy9_long;
+static int hf_netlogon_dummy10_long;
+static int hf_netlogon_unknown_char;
+static int hf_netlogon_logon_time;
+static int hf_netlogon_logoff_time;
+static int hf_netlogon_last_logoff_time;
+static int hf_netlogon_kickoff_time;
+static int hf_netlogon_pwd_age;
+static int hf_netlogon_pwd_last_set_time;
+static int hf_netlogon_pwd_can_change_time;
+static int hf_netlogon_pwd_must_change_time;
+static int hf_netlogon_nt_chal_resp;
+static int hf_netlogon_lm_chal_resp;
+static int hf_netlogon_credential;
+static int hf_netlogon_acct_name;
+static int hf_netlogon_acct_desc;
+static int hf_netlogon_group_desc;
+static int hf_netlogon_full_name;
+static int hf_netlogon_comment;
+static int hf_netlogon_parameters;
+static int hf_netlogon_logon_script;
+static int hf_netlogon_profile_path;
+static int hf_netlogon_home_dir;
+static int hf_netlogon_dir_drive;
+static int hf_netlogon_logon_count;
+static int hf_netlogon_logon_count16;
+static int hf_netlogon_bad_pw_count;
+static int hf_netlogon_bad_pw_count16;
+static int hf_netlogon_user_rid;
+static int hf_netlogon_alias_rid;
+static int hf_netlogon_group_rid;
+static int hf_netlogon_logon_srv;
+/* static int hf_netlogon_principal; */
+static int hf_netlogon_logon_dom;
+static int hf_netlogon_resourcegroupcount;
+static int hf_netlogon_accountdomaingroupcount;
+static int hf_netlogon_domaingroupcount;
+static int hf_netlogon_membership_domains_count;
+static int hf_netlogon_downlevel_domain_name;
+static int hf_netlogon_dns_domain_name;
+static int hf_netlogon_ad_client_dns_name;
+static int hf_netlogon_domain_name;
+static int hf_netlogon_domain_create_time;
+static int hf_netlogon_domain_modify_time;
+static int hf_netlogon_modify_count;
+static int hf_netlogon_db_modify_time;
+static int hf_netlogon_db_create_time;
+static int hf_netlogon_oem_info;
+static int hf_netlogon_serial_number;
+static int hf_netlogon_num_rids;
+static int hf_netlogon_num_trusts;
+static int hf_netlogon_num_controllers;
+static int hf_netlogon_num_sid;
+static int hf_netlogon_computer_name;
+static int hf_netlogon_site_name;
+static int hf_netlogon_trusted_dc_name;
+static int hf_netlogon_dc_name;
+static int hf_netlogon_dc_site_name;
+static int hf_netlogon_dns_forest_name;
+static int hf_netlogon_dc_address;
+static int hf_netlogon_dc_address_type;
+static int hf_netlogon_client_site_name;
+static int hf_netlogon_workstation;
+static int hf_netlogon_workstation_site_name;
+static int hf_netlogon_os_version;
+static int hf_netlogon_workstation_os;
+static int hf_netlogon_workstation_flags;
+static int hf_netlogon_supportedenctypes;
 
-static gint ett_nt_counted_longs_as_string = -1;
-static gint ett_dcerpc_netlogon = -1;
-static gint ett_group_attrs = -1;
-static gint ett_user_flags = -1;
-static gint ett_user_account_control = -1;
-static gint ett_QUOTA_LIMITS = -1;
-static gint ett_IDENTITY_INFO = -1;
-static gint ett_DELTA_ENUM = -1;
-static gint ett_authenticate_flags = -1;
-static gint ett_CYPHER_VALUE = -1;
-static gint ett_UNICODE_MULTI = -1;
-static gint ett_DOMAIN_CONTROLLER_INFO = -1;
-static gint ett_UNICODE_STRING_512 = -1;
-static gint ett_TYPE_50 = -1;
-static gint ett_TYPE_52 = -1;
-static gint ett_DELTA_ID_UNION = -1;
-static gint ett_TYPE_44 = -1;
-static gint ett_DELTA_UNION = -1;
-static gint ett_LM_OWF_PASSWORD = -1;
-static gint ett_NT_OWF_PASSWORD = -1;
-static gint ett_GROUP_MEMBERSHIP = -1;
-static gint ett_BLOB = -1;
-static gint ett_DS_DOMAIN_TRUSTS = -1;
-static gint ett_LSA_POLICY_INFO = -1;
-static gint ett_DOMAIN_TRUST_INFO = -1;
-static gint ett_trust_flags = -1;
-static gint ett_trust_attribs = -1;
-static gint ett_get_dcname_request_flags = -1;
-static gint ett_dc_flags = -1;
+static int hf_netlogon_workstations;
+static int hf_netlogon_workstation_fqdn;
+static int hf_netlogon_group_name;
+static int hf_netlogon_alias_name;
+static int hf_netlogon_country;
+static int hf_netlogon_codepage;
+static int hf_netlogon_flags;
+static int hf_netlogon_trust_attribs;
+static int hf_netlogon_trust_attribs_non_transitive;
+static int hf_netlogon_trust_attribs_uplevel_only;
+static int hf_netlogon_trust_attribs_quarantined_domain;
+static int hf_netlogon_trust_attribs_forest_transitive;
+static int hf_netlogon_trust_attribs_cross_organization;
+static int hf_netlogon_trust_attribs_within_forest;
+static int hf_netlogon_trust_attribs_treat_as_external;
+static int hf_netlogon_trust_type;
+static int hf_netlogon_trust_flags;
+static int hf_netlogon_trust_flags_inbound;
+static int hf_netlogon_trust_flags_outbound;
+static int hf_netlogon_trust_flags_in_forest;
+static int hf_netlogon_trust_flags_native_mode;
+static int hf_netlogon_trust_flags_primary;
+static int hf_netlogon_trust_flags_tree_root;
+static int hf_netlogon_trust_parent_index;
+static int hf_netlogon_user_account_control;
+static int hf_netlogon_user_account_control_dont_require_preauth;
+static int hf_netlogon_user_account_control_use_des_key_only;
+static int hf_netlogon_user_account_control_not_delegated;
+static int hf_netlogon_user_account_control_trusted_for_delegation;
+static int hf_netlogon_user_account_control_smartcard_required;
+static int hf_netlogon_user_account_control_encrypted_text_password_allowed;
+static int hf_netlogon_user_account_control_account_auto_locked;
+static int hf_netlogon_user_account_control_dont_expire_password;
+static int hf_netlogon_user_account_control_server_trust_account;
+static int hf_netlogon_user_account_control_workstation_trust_account;
+static int hf_netlogon_user_account_control_interdomain_trust_account;
+static int hf_netlogon_user_account_control_mns_logon_account;
+static int hf_netlogon_user_account_control_normal_account;
+static int hf_netlogon_user_account_control_temp_duplicate_account;
+static int hf_netlogon_user_account_control_password_not_required;
+static int hf_netlogon_user_account_control_home_directory_required;
+static int hf_netlogon_user_account_control_account_disabled;
+static int hf_netlogon_user_flags;
+static int hf_netlogon_user_flags_extra_sids;
+static int hf_netlogon_user_flags_resource_groups;
+static int hf_netlogon_auth_flags;
+static int hf_netlogon_pwd_expired;
+static int hf_netlogon_nt_pwd_present;
+static int hf_netlogon_lm_pwd_present;
+static int hf_netlogon_code;
+static int hf_netlogon_database_id;
+static int hf_netlogon_sync_context;
+static int hf_netlogon_max_size;
+static int hf_netlogon_max_log_size;
+static int hf_netlogon_dns_host;
+static int hf_netlogon_acct_expiry_time;
+static int hf_netlogon_encrypted_lm_owf_password;
+static int hf_netlogon_lm_owf_password;
+static int hf_netlogon_nt_owf_password;
+static int hf_netlogon_param_ctrl;
+static int hf_netlogon_logon_id;
+static int hf_netlogon_num_deltas;
+static int hf_netlogon_user_session_key;
+static int hf_netlogon_blob_size;
+static int hf_netlogon_blob;
+static int hf_netlogon_logon_attempts;
+static int hf_netlogon_authoritative;
+static int hf_netlogon_secure_channel_type;
+static int hf_netlogon_logonsrv_handle;
+static int hf_netlogon_delta_type;
+static int hf_netlogon_get_dcname_request_flags;
+static int hf_netlogon_get_dcname_request_flags_force_rediscovery;
+static int hf_netlogon_get_dcname_request_flags_directory_service_required;
+static int hf_netlogon_get_dcname_request_flags_directory_service_preferred;
+static int hf_netlogon_get_dcname_request_flags_gc_server_required;
+static int hf_netlogon_get_dcname_request_flags_pdc_required;
+static int hf_netlogon_get_dcname_request_flags_background_only;
+static int hf_netlogon_get_dcname_request_flags_ip_required;
+static int hf_netlogon_get_dcname_request_flags_kdc_required;
+static int hf_netlogon_get_dcname_request_flags_timeserv_required;
+static int hf_netlogon_get_dcname_request_flags_writable_required;
+static int hf_netlogon_get_dcname_request_flags_good_timeserv_preferred;
+static int hf_netlogon_get_dcname_request_flags_avoid_self;
+static int hf_netlogon_get_dcname_request_flags_only_ldap_needed;
+static int hf_netlogon_get_dcname_request_flags_is_flat_name;
+static int hf_netlogon_get_dcname_request_flags_is_dns_name;
+static int hf_netlogon_get_dcname_request_flags_return_dns_name;
+static int hf_netlogon_get_dcname_request_flags_return_flat_name;
+static int hf_netlogon_dc_flags;
+static int hf_netlogon_dc_flags_pdc_flag;
+static int hf_netlogon_dc_flags_gc_flag;
+static int hf_netlogon_dc_flags_ldap_flag;
+static int hf_netlogon_dc_flags_ds_flag;
+static int hf_netlogon_dc_flags_kdc_flag;
+static int hf_netlogon_dc_flags_timeserv_flag;
+static int hf_netlogon_dc_flags_closest_flag;
+static int hf_netlogon_dc_flags_writable_flag;
+static int hf_netlogon_dc_flags_good_timeserv_flag;
+static int hf_netlogon_dc_flags_ndnc_flag;
+static int hf_netlogon_dc_flags_dns_controller_flag;
+static int hf_netlogon_dc_flags_dns_domain_flag;
+static int hf_netlogon_dc_flags_dns_forest_flag;
+/* static int hf_netlogon_dnsdomaininfo; */
+static int hf_netlogon_s4u2proxytarget;
+static int hf_netlogon_transitedlistsize;
+static int hf_netlogon_transited_service;
+static int hf_netlogon_logon_duration;
+static int hf_netlogon_time_created;
+static int hf_netlogon_claims_set_size;
+static int hf_netlogon_claims_compression_format;
+static int hf_netlogon_claims_set_uncompressed_size;
+static int hf_netlogon_claims_reserved_type;
+static int hf_netlogon_claims_reserved_field_size;
+static int hf_netlogon_claims_source_type;
+static int hf_netlogon_claims_count;
+static int hf_netlogon_claim_id;
+static int hf_netlogon_claim_type;
+static int hf_netlogon_claim_value_count;
+static int hf_netlogon_claim_int64_value;
+static int hf_netlogon_claim_uint64_value;
+static int hf_netlogon_claim_string_value;
+static int hf_netlogon_claim_boolean_value;
+static int hf_netlogon_ticket_logon_options;
+static int hf_netlogon_ticket_logon_options_0000000000000001;
+static int hf_netlogon_ticket_logon_options_0000000000010000;
+static int hf_netlogon_ticket_logon_options_0000000000020000;
+static int hf_netlogon_ticket_logon_options_0000000100000000;
+static int hf_netlogon_ticket_logon_options_0000000200000000;
+static int hf_netlogon_ticket_logon_options_0001000000000000;
+static int hf_netlogon_ticket_logon_options_0002000000000000;
+static int hf_netlogon_ticket_logon_service_ticket_size;
+static int hf_netlogon_ticket_logon_additional_ticket_size;
+static int hf_netlogon_ticket_logon_results;
+static int hf_netlogon_ticket_logon_results_0000000000000001;
+static int hf_netlogon_ticket_logon_results_0000000100000000;
+static int hf_netlogon_ticket_logon_results_0000000200000000;
+static int hf_netlogon_ticket_logon_results_0000000400000000;
+static int hf_netlogon_ticket_logon_results_0000000800000000;
+static int hf_netlogon_ticket_logon_results_0000001000000000;
+static int hf_netlogon_ticket_logon_results_0000002000000000;
+static int hf_netlogon_ticket_logon_results_0000004000000000;
+static int hf_netlogon_ticket_logon_results_0001000000000000;
+static int hf_netlogon_ticket_logon_results_0002000000000000;
+static int hf_netlogon_ticket_logon_results_0004000000000000;
+static int hf_netlogon_ticket_logon_results_0008000000000000;
+static int hf_netlogon_ticket_logon_results_0010000000000000;
+static int hf_netlogon_ticket_logon_results_0020000000000000;
+static int hf_netlogon_ticket_logon_results_0040000000000000;
+static int hf_netlogon_ticket_logon_kerberos_status;
+static int hf_netlogon_ticket_logon_netlogon_status;
+static int hf_netlogon_ticket_logon_source_of_status;
+static int hf_netlogon_ticket_logon_user_claims_size;
+static int hf_netlogon_ticket_logon_device_claims_size;
+static int hf_netlogon_ticket_logon_claims;
+static int hf_netlogon_forest_trust_info_flags;
+static int hf_netlogon_forest_trust_info_flags_00000001;
+static int hf_netlogon_forest_trust_info;
+
+static int ett_nt_counted_longs_as_string;
+static int ett_dcerpc_netlogon;
+static int ett_group_attrs;
+static int ett_user_flags;
+static int ett_user_account_control;
+static int ett_QUOTA_LIMITS;
+static int ett_IDENTITY_INFO;
+static int ett_DELTA_ENUM;
+static int ett_authenticate_flags;
+static int ett_CYPHER_VALUE;
+static int ett_UNICODE_MULTI;
+static int ett_DOMAIN_CONTROLLER_INFO;
+static int ett_netr_CryptPassword;
+static int ett_NL_PASSWORD_VERSION;
+static int ett_NL_GENERIC_RPC_DATA;
+static int ett_TYPE_50;
+static int ett_TYPE_52;
+static int ett_DELTA_ID_UNION;
+static int ett_CAPABILITIES;
+static int ett_DELTA_UNION;
+static int ett_LM_OWF_PASSWORD;
+static int ett_NT_OWF_PASSWORD;
+static int ett_GROUP_MEMBERSHIP;
+static int ett_BLOB;
+static int ett_DS_DOMAIN_TRUSTS;
+static int ett_LSA_POLICY_INFO;
+static int ett_DOMAIN_TRUST_INFO;
+static int ett_trust_flags;
+static int ett_trust_attribs;
+static int ett_get_dcname_request_flags;
+static int ett_dc_flags;
+static int ett_wstr_LOGON_IDENTITY_INFO_string;
+static int ett_domain_group_memberships;
+static int ett_domains_group_memberships;
+static int ett_netlogon_ticket_logon_options;
+static int ett_netlogon_ticket_logon_results;
+static int ett_netlogon_ticket_logon_claims;
+static int ett_netlogon_forest_trust_info_flags;
+
+static expert_field ei_netlogon_auth_nthash;
+static expert_field ei_netlogon_session_key;
 
 typedef struct _netlogon_auth_vars {
-    guint64 client_challenge;
-    guint64 server_challenge;
-    guint8  session_key[16];
-    guint8  encryption_key[16];
-    guint8  sequence[16];
-    guint32 flags;
-    guint64 seq;
-    guint64 confounder;
-    guint8 private_type;
-    gboolean can_decrypt;
+    uint64_t client_challenge;
+    uint64_t server_challenge;
+    md4_pass nthash;
+    int auth_fd_num;
+    uint8_t session_key[16];
+    uint8_t encryption_key[16];
+    uint8_t sequence[16];
+    uint32_t flags;
+    uint64_t seq;
+    uint64_t confounder;
+    uint8_t private_type;
+    bool can_decrypt;
     char* client_name;
     int start;
     int next_start;
     struct _netlogon_auth_vars *next;
 } netlogon_auth_vars;
 
-typedef struct _md4_pass {
-    guint8 md4[16];
-} md4_pass;
+static gcry_error_t prepare_session_key_cipher(netlogon_auth_vars *vars,
+                                               gcry_cipher_hd_t *_cipher_hd);
 
 typedef struct _seen_packet {
-    gboolean isseen;
-    guint32 num;
+    bool isseen;
+    uint32_t num;
 } seen_packet;
 
 static seen_packet seen;
@@ -466,13 +523,13 @@ static e_guid_t uuid_dcerpc_netlogon = {
     { 0xef, 0x00, 0x01, 0x23, 0x45, 0x67, 0xcf, 0xfb }
 };
 
-static guint16 ver_dcerpc_netlogon = 1;
+static uint16_t ver_dcerpc_netlogon = 1;
 
-static gint dissect_dcerpc_8bytes (tvbuff_t *tvb, gint offset, packet_info *pinfo _U_,
-                                   proto_tree *tree, guint8 *drep,
-                                   int hfindex, guint64 *pdata)
+static int dissect_dcerpc_8bytes (tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
+                                   proto_tree *tree, const uint8_t *drep,
+                                   int hfindex, uint64_t *pdata)
 {
-    guint64 data;
+    uint64_t data;
 
     data = ((drep[0] & DREP_LITTLE_ENDIAN)
             ? tvb_get_letoh64 (tvb, offset)
@@ -556,54 +613,106 @@ static const true_false_string user_account_control_account_disabled= {
     "This account is NOT disabled",
 };
 
+static const value_string netlogon_claims_compression_format_vals[] = {
+    { 0, "COMPRESSION_FORMAT_NONE" },
+    { 2, "COMPRESSION_FORMAT_LZNT1" },
+    { 3, "COMPRESSION_FORMAT_XPRESS" },
+    { 4, "COMPRESSION_FORMAT_XPRESS_HUFF" },
+    { 0, NULL }
+};
+
+static const value_string hf_netlogon_claims_source_type_vals[] = {
+    { 1, "CLAIMS_SOURCE_TYPE_AD" },
+    { 2, "CLAIMS_SOURCE_TYPE_CERTIFICATE" },
+    { 0, NULL }
+};
+
+static const value_string netlogon_claim_type_vals[] = {
+    { 1, "CLAIM_TYPE_INT64" },
+    { 2, "CLAIM_TYPE_UINT64" },
+    { 3, "CLAIM_TYPE_STRING" },
+    { 6, "CLAIM_TYPE_BOOLEAN" },
+    { 0, NULL }
+};
+
 typedef struct _netlogon_auth_key {
-    address src;
-    address dst;
-    guint32 srcport;
-    guint32 dstport;
-    char * name;
+    /*
+     * For now we only match the client and server ip
+     * addresses, as keys can be used across tcp connections.
+     *
+     * Also note that ServerChallenge and ServerAuthenticate
+     * can be on different tcp connections!
+     *
+     * TODO:
+     * * We could have a challenge table indexed by client, server
+     *   and computer name
+     * * A good ServerAuthenticate could fill a session key table
+     *   indexed by computer name.
+     * * A DCERPC bind/alter context could lookup the session key table
+     *   and copy the session key to the DCERPC connection/auth_context.
+     */
+    address client;
+    address server;
 } netlogon_auth_key;
 
-static gint
-netlogon_auth_equal (gconstpointer k1, gconstpointer k2)
+static int
+netlogon_auth_equal (const void *k1, const void *k2)
 {
     const netlogon_auth_key *key1 = (const netlogon_auth_key *)k1;
     const netlogon_auth_key *key2 = (const netlogon_auth_key *)k2;
-    if(key1->name == NULL || key2->name ==NULL)
-        return ((key1->srcport == key2->srcport) && (key1->dstport == key2->dstport) && addresses_equal(&key1->src,&key2->src) &&
-                addresses_equal(&key1->dst,&key2->dst));
-    else
-        return ((strcmp(key1->name,key2->name)==0) && addresses_equal(&key1->src,&key2->src) &&
-                addresses_equal(&key1->dst,&key2->dst));
+
+    return (addresses_equal(&key1->client,&key2->client) && addresses_equal(&key1->server,&key2->server));
 }
 
-static guint
-netlogon_auth_hash (gconstpointer k)
+static unsigned
+netlogon_auth_hash (const void *k)
 {
     const netlogon_auth_key *key1 = (const netlogon_auth_key *)k;
-    guint hash_val1;
-    if(key1->name == NULL) {
-        hash_val1 = key1->dstport;
-        hash_val1 += key1->srcport;
-    }
-    else {
-        unsigned int i = 0;
-        hash_val1 = 0;
-        for(i=0; key1->name[i]; i++) {
-            hash_val1 += key1->name[i];
-        }
-    }
+    unsigned hash_val1 = 0;
 
-    hash_val1 = add_address_to_hash(hash_val1, &key1->src);
-    hash_val1 = add_address_to_hash(hash_val1, &key1->dst);
+    hash_val1 = add_address_to_hash(hash_val1, &key1->client);
+    hash_val1 = add_address_to_hash(hash_val1, &key1->server);
     return hash_val1;
 }
+
+typedef struct _dcerpc_auth_schannel_key {
+    conversation_t *conv;
+    uint64_t        transport_salt;
+    uint32_t        auth_context_id;
+} dcerpc_auth_schannel_key;
+
+static unsigned
+dcerpc_auth_schannel_key_hash(const void *k)
+{
+    const dcerpc_auth_schannel_key *key = (const dcerpc_auth_schannel_key *)k;
+    unsigned hash;
+
+    hash = GPOINTER_TO_UINT(key->conv);
+    /* sizeof(unsigned) might be smaller than sizeof(uint64_t) */
+    hash += (unsigned)key->transport_salt;
+    hash += (unsigned)(key->transport_salt << sizeof(unsigned));
+    hash += key->auth_context_id;
+
+    return hash;
+}
+
+static int
+dcerpc_auth_schannel_key_equal(const void *k1, const void *k2)
+{
+    const dcerpc_auth_schannel_key *key1 = (const dcerpc_auth_schannel_key *)k1;
+    const dcerpc_auth_schannel_key *key2 = (const dcerpc_auth_schannel_key *)k2;
+
+    return ((key1->conv == key2->conv)
+            && (key1->transport_salt == key2->transport_salt)
+            && (key1->auth_context_id == key2->auth_context_id));
+}
+
 static int
 netlogon_dissect_EXTRA_FLAGS(tvbuff_t *tvb, int offset,
-                             packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                             packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 mask;
-    static const int * extraflags[] = {
+    uint32_t mask;
+    static int * const extraflags[] = {
         &hf_netlogon_extra_flags_root_forest,
         &hf_netlogon_trust_flags_dc_firsthop,
         &hf_netlogon_trust_flags_rodc_to_dc,
@@ -622,14 +731,105 @@ netlogon_dissect_EXTRA_FLAGS(tvbuff_t *tvb, int offset,
     proto_tree_add_bitmask_value_with_flags(parent_tree, tvb, offset-4, hf_netlogon_extraflags, ett_trust_flags, extraflags, mask, BMT_NO_APPEND);
     return offset;
 }
+
+struct LOGON_INFO_STATE;
+
+struct LOGON_INFO_STATE_CB {
+    struct LOGON_INFO_STATE *state;
+    ntlmssp_blob     *response;
+    const uint8_t    **name_ptr;
+    int              name_levels;
+};
+
+struct LOGON_INFO_STATE {
+    packet_info      *pinfo;
+    proto_tree       *tree;
+    uint8_t          server_challenge[8];
+    ntlmssp_blob     nt_response;
+    ntlmssp_blob     lm_response;
+    ntlmssp_header_t ntlmssph;
+    struct LOGON_INFO_STATE_CB domain_cb, acct_cb, host_cb, nt_cb, lm_cb;
+};
+
+static void dissect_LOGON_INFO_STATE_finish(struct LOGON_INFO_STATE *state)
+{
+    if (state->ntlmssph.acct_name != NULL &&
+        state->nt_response.length >= 24 &&
+        state->lm_response.length >= 24)
+    {
+        if (state->ntlmssph.domain_name == NULL) {
+                state->ntlmssph.domain_name = (const uint8_t *)"";
+        }
+        if (state->ntlmssph.host_name == NULL) {
+                state->ntlmssph.host_name = (const uint8_t *)"";
+        }
+
+        ntlmssp_create_session_key(state->pinfo,
+                                   state->tree,
+                                   &state->ntlmssph,
+                                   0, /* NTLMSSP_ flags */
+                                   state->server_challenge,
+                                   NULL, /* encryptedsessionkey */
+                                   &state->nt_response,
+                                   &state->lm_response);
+    }
+}
+
+static void dissect_ndr_lm_nt_byte_array(packet_info *pinfo,
+                                         proto_tree *tree,
+                                         proto_item *item _U_,
+                                         dcerpc_info *di,
+                                         tvbuff_t *tvb,
+                                         int start_offset,
+                                         int end_offset,
+                                         void *callback_args)
+{
+    struct LOGON_INFO_STATE_CB *cb_ref = (struct LOGON_INFO_STATE_CB *)callback_args;
+    struct LOGON_INFO_STATE *state = NULL;
+    int offset = start_offset;
+    uint64_t tmp;
+    uint16_t len;
+
+    if (cb_ref == NULL) {
+        return;
+    }
+    state = cb_ref->state;
+
+    if (di->conformant_run) {
+        /* just a run to handle conformant arrays, no scalars to dissect */
+        return;
+    }
+
+    /* NDR array header */
+    ALIGN_TO_5_BYTES
+    if (di->call_data->flags & DCERPC_IS_NDR64) {
+        offset += 3 * 8;
+    } else {
+        offset += 3 * 4;
+    }
+
+    tmp = end_offset - offset;
+    if (tmp > NTLMSSP_BLOB_MAX_SIZE) {
+        tmp = NTLMSSP_BLOB_MAX_SIZE;
+    }
+    len = (uint16_t)tmp;
+    cb_ref->response->length = len;
+    cb_ref->response->contents = (uint8_t *)tvb_memdup(pinfo->pool, tvb, offset, len);
+    if (len > 24) {
+        dissect_ntlmv2_response(tvb, pinfo, tree, offset, len);
+    }
+
+    dissect_LOGON_INFO_STATE_finish(state);
+}
+
 static int
 dissect_ndr_lm_nt_hash_cb(tvbuff_t *tvb, int offset,
                           packet_info *pinfo, proto_tree *tree,
-                          dcerpc_info *di, guint8 *drep, int hf_index,
+                          dcerpc_info *di, uint8_t *drep, int hf_index,
                           dcerpc_callback_fnct_t *callback,
                           void *callback_args)
 {
-    guint16 len, size;
+    uint16_t len, size;
 
     /* Structure starts with short, but is aligned for longs */
 
@@ -659,32 +859,30 @@ dissect_ndr_lm_nt_hash_cb(tvbuff_t *tvb, int offset,
 
     return offset;
 }
+
 static int
 dissect_ndr_lm_nt_hash_helper(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep, int hf_index, int levels _U_,
-                              gboolean add_subtree)
+                              dcerpc_info *di, uint8_t *drep, int hf_index,
+                              struct LOGON_INFO_STATE_CB *cb_ref)
 {
-    proto_tree *subtree = tree;
+    proto_tree *subtree;
 
-    if (add_subtree) {
-
-        subtree = proto_tree_add_subtree(
+    subtree = proto_tree_add_subtree(
             tree, tvb, offset, 0, ett_LM_OWF_PASSWORD, NULL,
             proto_registrar_get_name(hf_index));
-    }
 
     return dissect_ndr_lm_nt_hash_cb(
         tvb, offset, pinfo, subtree, di, drep, hf_index,
-        NULL, NULL);
-    /*cb_wstr_postprocess, GINT_TO_POINTER(2 + levels));*/
+        dissect_ndr_lm_nt_byte_array, cb_ref);
 }
+
 static int
 netlogon_dissect_USER_ACCOUNT_CONTROL(tvbuff_t *tvb, int offset,
-                                      packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                                      packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 mask;
-    static const int * uac[] = {
+    uint32_t mask;
+    static int * const uac[] = {
         &hf_netlogon_user_account_control_dont_require_preauth,
         &hf_netlogon_user_account_control_use_des_key_only,
         &hf_netlogon_user_account_control_not_delegated,
@@ -722,7 +920,7 @@ netlogon_dissect_USER_ACCOUNT_CONTROL(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_LOGONSRV_HANDLE(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_UNIQUE, "Server Handle",
@@ -753,7 +951,7 @@ netlogon_dissect_LOGONSRV_HANDLE(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_VALIDATION_UAS_INFO(tvbuff_t *tvb, int offset,
                                      packet_info *pinfo, proto_tree *tree,
-                                     dcerpc_info *di, guint8 *drep)
+                                     dcerpc_info *di, uint8_t *drep)
 {
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect */
@@ -816,7 +1014,7 @@ netlogon_dissect_VALIDATION_UAS_INFO(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrlogonuaslogon_rqst(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -833,7 +1031,7 @@ netlogon_dissect_netrlogonuaslogon_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonuaslogon_reply(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_VALIDATION_UAS_INFO, NDR_POINTER_UNIQUE,
@@ -854,16 +1052,16 @@ netlogon_dissect_netrlogonuaslogon_reply(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_LOGOFF_UAS_INFO(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
-    guint32 duration;
+    uint32_t duration;
 
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect */
         return offset;
     }
 
-    duration = tvb_get_guint32(tvb, offset, DREP_ENC_INTEGER(drep));
+    duration = tvb_get_uint32(tvb, offset, DREP_ENC_INTEGER(drep));
     proto_tree_add_uint_format_value(tree, hf_netlogon_logon_duration, tvb, offset, 4, duration, "unknown time format");
     offset+= 4;
 
@@ -883,7 +1081,7 @@ netlogon_dissect_LOGOFF_UAS_INFO(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrlogonuaslogoff_rqst(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -900,7 +1098,7 @@ netlogon_dissect_netrlogonuaslogoff_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonuaslogoff_reply(tvbuff_t *tvb, int offset,
-                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_LOGOFF_UAS_INFO, NDR_POINTER_REF,
@@ -913,29 +1111,78 @@ netlogon_dissect_netrlogonuaslogoff_reply(tvbuff_t *tvb, int offset,
 }
 
 static int
-netlogon_dissect_BYTE_byte(tvbuff_t *tvb, int offset,
-                           packet_info *pinfo, proto_tree *tree,
-                           dcerpc_info *di, guint8 *drep)
+netlogon_dissect_BLOB(tvbuff_t *tvb, int offset, int length,
+                      packet_info *pinfo _U_ , proto_tree *tree,
+                      dcerpc_info *di _U_, uint8_t *drep _U_)
 {
-    offset = dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep,
-                               hf_netlogon_unknown_char, NULL);
-
+    proto_tree_add_item(tree, hf_netlogon_blob, tvb, offset, length,
+                        ENC_NA);
+    offset += length;
     return offset;
 }
 
 static int
 netlogon_dissect_BYTE_array(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
-    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_BYTE_byte);
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_BLOB);
 
     return offset;
 }
 
 
+static void cb_wstr_LOGON_IDENTITY_INFO(packet_info *pinfo, proto_tree *tree,
+                                        proto_item *item, dcerpc_info *di,
+                                        tvbuff_t *tvb,
+                                        int start_offset, int end_offset,
+                                        void *callback_args)
+{
+    dcerpc_call_value *dcv = (dcerpc_call_value *)di->call_data;
+    struct LOGON_INFO_STATE_CB *cb_ref =
+       (struct LOGON_INFO_STATE_CB *)callback_args;
+    struct LOGON_INFO_STATE *state = cb_ref->state;
 
+    cb_wstr_postprocess(pinfo, tree, item, di, tvb, start_offset, end_offset,
+                        GINT_TO_POINTER(cb_ref->name_levels));
+
+    if (*cb_ref->name_ptr == NULL) {
+        *cb_ref->name_ptr = (const uint8_t *)dcv->private_data;
+    }
+
+    dissect_LOGON_INFO_STATE_finish(state);
+}
+
+static int
+dissect_ndr_wstr_LOGON_IDENTITY_INFO(tvbuff_t *tvb, int offset,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep,
+                                     int hf_index, int levels,
+                                     struct LOGON_INFO_STATE_CB *cb_ref)
+{
+    proto_item *item = NULL;
+    proto_tree *subtree = NULL;
+
+    if (cb_ref == NULL) {
+          return dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
+                                            hf_index, levels);
+    }
+
+    subtree = proto_tree_add_subtree(tree, tvb, offset, 0,
+                                     ett_wstr_LOGON_IDENTITY_INFO_string, &item,
+                                     proto_registrar_get_name(hf_index));
+
+    /*
+     * Add 2 levels, so that the string gets attached to the
+     * "Character Array" top-level item and to the top-level item
+     * added above.
+     */
+    cb_ref->name_levels = 2 + levels;
+    cb_ref->name_levels |= CB_STR_SAVE;
+    return dissect_ndr_counted_string_cb(tvb, offset, pinfo, subtree, di, drep,
+                                         hf_index, cb_wstr_LOGON_IDENTITY_INFO, cb_ref);
+}
 
 /*
  * IDL typedef struct {
@@ -949,11 +1196,21 @@ netlogon_dissect_BYTE_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_LOGON_IDENTITY_INFO(tvbuff_t *tvb, int offset,
                                      packet_info *pinfo, proto_tree *parent_tree,
-                                     dcerpc_info *di, guint8 *drep)
+                                     dcerpc_info *di, uint8_t *drep,
+                                     struct LOGON_INFO_STATE *state)
 {
+    struct LOGON_INFO_STATE_CB *domain_cb = NULL;
+    struct LOGON_INFO_STATE_CB *acct_cb = NULL;
+    struct LOGON_INFO_STATE_CB *host_cb = NULL;
     proto_item *item=NULL;
     proto_tree *tree=NULL;
     int old_offset=offset;
+
+    if (state != NULL) {
+        domain_cb = &state->domain_cb;
+        acct_cb = &state->acct_cb;
+        host_cb = &state->host_cb;
+    }
 
     if(parent_tree){
         tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
@@ -963,8 +1220,8 @@ netlogon_dissect_LOGON_IDENTITY_INFO(tvbuff_t *tvb, int offset,
     /* XXX: It would be nice to get the domain and account name
        displayed in COL_INFO. */
 
-    offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
-                                        hf_netlogon_logon_dom, 0);
+    offset = dissect_ndr_wstr_LOGON_IDENTITY_INFO(tvb, offset, pinfo, tree, di, drep,
+                                                  hf_netlogon_logon_dom, 0, domain_cb);
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_param_ctrl, NULL);
@@ -972,11 +1229,11 @@ netlogon_dissect_LOGON_IDENTITY_INFO(tvbuff_t *tvb, int offset,
     offset = dissect_ndr_duint32(tvb, offset, pinfo, tree, di, drep,
                                  hf_netlogon_logon_id, NULL);
 
-    offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
-                                        hf_netlogon_acct_name, 1);
+    offset = dissect_ndr_wstr_LOGON_IDENTITY_INFO(tvb, offset, pinfo, tree, di, drep,
+                                                  hf_netlogon_acct_name, 1, acct_cb);
 
-    offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
-                                        hf_netlogon_workstation, 0);
+    offset = dissect_ndr_wstr_LOGON_IDENTITY_INFO(tvb, offset, pinfo, tree, di, drep,
+                                                  hf_netlogon_workstation, 0, host_cb);
 
 #ifdef REMOVED
     /* NetMon does not recognize these bytes. I'll comment them out until someone complains */
@@ -1001,7 +1258,7 @@ netlogon_dissect_LOGON_IDENTITY_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_LM_OWF_PASSWORD(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo _U_, proto_tree *parent_tree,
-                                 dcerpc_info *di, guint8 *drep _U_)
+                                 dcerpc_info *di, uint8_t *drep _U_)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -1031,7 +1288,7 @@ netlogon_dissect_LM_OWF_PASSWORD(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_NT_OWF_PASSWORD(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo _U_, proto_tree *parent_tree,
-                                 dcerpc_info *di, guint8 *drep _U_)
+                                 dcerpc_info *di, uint8_t *drep _U_)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -1064,10 +1321,11 @@ netlogon_dissect_NT_OWF_PASSWORD(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_INTERACTIVE_INFO(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGON_IDENTITY_INFO(tvb, offset,
-                                                  pinfo, tree, di, drep);
+                                                  pinfo, tree, di, drep,
+                                                  NULL);
 
     offset = netlogon_dissect_LM_OWF_PASSWORD(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -1086,7 +1344,7 @@ netlogon_dissect_INTERACTIVE_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CHALLENGE(tvbuff_t *tvb, int offset,
                            packet_info *pinfo _U_, proto_tree *tree,
-                           dcerpc_info *di, guint8 *drep _U_)
+                           dcerpc_info *di, uint8_t *drep _U_)
 {
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect.*/
@@ -1100,98 +1358,53 @@ netlogon_dissect_CHALLENGE(tvbuff_t *tvb, int offset,
     return offset;
 }
 
-#if 0
-/*
- * IDL typedef struct {
- * IDL   LOGON_IDENTITY_INFO logon_info;
- * IDL   CHALLENGE chal;
- * IDL   STRING ntchallengeresponse;
- * IDL   STRING lmchallengeresponse;
- * IDL } NETWORK_INFO;
- */
-static void dissect_nt_chal_resp_cb(packet_info *pinfo _U_, proto_tree *tree,
-                                    proto_item *item _U_, tvbuff_t *tvb,
-                                    int start_offset, int end_offset,
-                                    void *callback_args )
-{
-    int len;
-    gint options = GPOINTER_TO_INT(callback_args);
-    gint levels = CB_STR_ITEM_LEVELS(options);
-    char *s;
-
-
-    /* Skip over 3 guint32's in NDR format */
-
-    if (start_offset % 4)
-        start_offset += 4 - (start_offset % 4);
-
-    start_offset += 12;
-    len = end_offset - start_offset;
-
-    s = tvb_bytes_to_str(wmem_packet_scope(), tvb, start_offset, len);
-
-    /* Append string to upper-level proto_items */
-
-    if (levels > 0 && item && s && s[0]) {
-        proto_item_append_text(item, ": %s", s);
-        item = item->parent;
-        levels--;
-        if (levels > 0) {
-            proto_item_append_text(item, ": %s", s);
-            item = item->parent;
-            levels--;
-            while (levels > 0) {
-                proto_item_append_text(item, " %s", s);
-                item = item->parent;
-                levels--;
-            }
-        }
-    }
-    /* Call ntlmv2 response dissector */
-
-    if (len > 24)
-        dissect_ntlmv2_response(tvb, tree, start_offset, len);
-}
-#endif
-
 static int
 netlogon_dissect_NETWORK_INFO(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
+    struct LOGON_INFO_STATE *state =
+        (struct LOGON_INFO_STATE *)di->private_data;
+    int              last_offset;
+    struct LOGON_INFO_STATE_CB *nt_cb = NULL;
+    struct LOGON_INFO_STATE_CB *lm_cb = NULL;
+
+    if (state == NULL) {
+        state = wmem_new0(pinfo->pool, struct LOGON_INFO_STATE);
+        state->ntlmssph = (ntlmssp_header_t) { .type = NTLMSSP_AUTH, };
+        state->domain_cb.state = state;
+        state->domain_cb.name_ptr = &state->ntlmssph.domain_name;
+        state->acct_cb.state = state;
+        state->acct_cb.name_ptr = &state->ntlmssph.acct_name;
+        state->host_cb.state = state;
+        state->host_cb.name_ptr = &state->ntlmssph.host_name;
+        state->nt_cb.state = state;
+        state->nt_cb.response = &state->nt_response;
+        state->lm_cb.state = state;
+        state->lm_cb.response = &state->lm_response;
+        di->private_data = state;
+    }
+    state->pinfo = pinfo;
+    state->tree = tree;
 
     offset = netlogon_dissect_LOGON_IDENTITY_INFO(tvb, offset,
-                                                  pinfo, tree, di, drep);
+                                                  pinfo, tree, di, drep,
+                                                  state);
+    last_offset = offset;
     offset = netlogon_dissect_CHALLENGE(tvb, offset,
                                         pinfo, tree, di, drep);
-#if 0
-    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
-                                          NDR_POINTER_UNIQUE, "NT ",
-                                          hf_netlogon_nt_owf_password, 0);
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_data_length, NULL);
-#endif
-    offset = dissect_ndr_lm_nt_hash_helper(tvb,offset,pinfo, tree, di, drep, hf_netlogon_lm_chal_resp, 0,TRUE);
-    offset = dissect_ndr_lm_nt_hash_helper(tvb,offset,pinfo, tree, di, drep, hf_netlogon_lm_chal_resp, 0,TRUE);
-    /* Not really sure that it really works with NTLM v2 ....*/
-#if 0
-    offset = netlogon_dissect_LM_OWF_PASSWORD(tvb, offset,
-                                              pinfo, tree, di, drep);
-
-    offset = netlogon_dissect_NT_OWF_PASSWORD(tvb, offset,
-                                              pinfo, tree, di, drep);
-#endif
+    if (offset == (last_offset + 8)) {
+        tvb_memcpy(tvb, state->server_challenge, last_offset, 8);
+        nt_cb = &state->nt_cb;
+        lm_cb = &state->lm_cb;
+    }
+    offset = dissect_ndr_lm_nt_hash_helper(tvb,offset,pinfo, tree, di, drep,
+                                           hf_netlogon_nt_chal_resp,
+                                           nt_cb);
+    offset = dissect_ndr_lm_nt_hash_helper(tvb,offset,pinfo, tree, di, drep,
+                                           hf_netlogon_lm_chal_resp,
+                                           lm_cb);
     return offset;
-#if 0
-    offset = dissect_ndr_counted_byte_array_cb(
-        tvb, offset, pinfo, tree, di, drep, hf_netlogon_nt_chal_resp,
-        dissect_nt_chal_resp_cb,GINT_TO_POINTER(2));
-
-    offset = dissect_ndr_counted_byte_array(tvb, offset, pinfo, tree, di, drep,
-                                            hf_netlogon_lm_chal_resp, 0);
-
-    return offset;
-#endif
 }
 
 
@@ -1205,10 +1418,11 @@ netlogon_dissect_NETWORK_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_SERVICE_INFO(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGON_IDENTITY_INFO(tvb, offset,
-                                                  pinfo, tree, di, drep);
+                                                  pinfo, tree, di, drep,
+                                                  NULL);
 
     offset = netlogon_dissect_LM_OWF_PASSWORD(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -1222,10 +1436,11 @@ netlogon_dissect_SERVICE_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_GENERIC_INFO(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGON_IDENTITY_INFO(tvb, offset,
-                                                  pinfo, tree, di, drep);
+                                                  pinfo, tree, di, drep,
+                                                  NULL);
 
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_package_name, 0|CB_STR_SAVE);
@@ -1238,6 +1453,85 @@ netlogon_dissect_GENERIC_INFO(tvbuff_t *tvb, int offset,
                                  "Logon Data", -1);
     return offset;
 }
+
+static int
+netlogon_dissect_KRB5_TICKET_BLOB(tvbuff_t *tvb, int offset, int length,
+                                  packet_info *pinfo, proto_tree *tree,
+                                  dcerpc_info *di, uint8_t *drep _U_)
+{
+    tvbuff_t *subtvb = NULL;
+
+    if (di->conformant_run) {
+        return offset;
+    }
+
+    subtvb = tvb_new_subset_length(tvb, offset, length);
+    offset += length;
+    dissect_kerberos_main(subtvb, pinfo, tree, false, NULL);
+    return offset;
+}
+
+static int
+netlogon_dissect_BYTE_ARRAY_AS_KRB5_TICKET(tvbuff_t *tvb, int offset,
+                                           packet_info *pinfo, proto_tree *tree,
+                                           dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_KRB5_TICKET_BLOB);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_TICKET_INFO(tvbuff_t *tvb, int offset,
+                             packet_info *pinfo, proto_tree *tree,
+                             dcerpc_info *di, uint8_t *drep)
+{
+    static int * const hf_netlogon_ticket_logon_options_bits[] = {
+        &hf_netlogon_ticket_logon_options_0000000000000001,
+        &hf_netlogon_ticket_logon_options_0000000000010000,
+        &hf_netlogon_ticket_logon_options_0000000000020000,
+        &hf_netlogon_ticket_logon_options_0000000100000000,
+        &hf_netlogon_ticket_logon_options_0000000200000000,
+        &hf_netlogon_ticket_logon_options_0001000000000000,
+        &hf_netlogon_ticket_logon_options_0002000000000000,
+        NULL
+    };
+    uint64_t options = 0;
+
+    if (di->conformant_run) {
+        /* just a run to handle conformant arrays, no scalars to dissect */
+        return offset;
+    }
+
+    offset = netlogon_dissect_LOGON_IDENTITY_INFO(tvb, offset,
+                                                  pinfo, tree, di, drep,
+                                                  NULL);
+
+    offset = dissect_ndr_uint64(tvb, offset, pinfo, tree, di, drep,
+                                -1, &options);
+    proto_tree_add_bitmask_value_with_flags(tree, tvb, offset-8,
+                                            hf_netlogon_ticket_logon_options,
+                                            ett_netlogon_ticket_logon_options,
+                                            hf_netlogon_ticket_logon_options_bits,
+                                            options,
+                                            BMT_NO_APPEND);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_ticket_logon_service_ticket_size, NULL);
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_BYTE_ARRAY_AS_KRB5_TICKET, NDR_POINTER_UNIQUE,
+                                 "Service Ticket", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_ticket_logon_additional_ticket_size, NULL);
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_BYTE_ARRAY_AS_KRB5_TICKET, NDR_POINTER_UNIQUE,
+                                 "Additional Ticket", -1);
+
+    return offset;
+}
+
 /*
  * IDL typedef [switch_type(short)] union {
  * IDL    [case(1)][unique] INTERACTIVE_INFO *iinfo;
@@ -1248,9 +1542,9 @@ netlogon_dissect_GENERIC_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_LEVEL(tvbuff_t *tvb, int offset,
                        packet_info *pinfo, proto_tree *tree,
-                       dcerpc_info *di, guint8 *drep)
+                       dcerpc_info *di, uint8_t *drep)
 {
-    guint16 level = 0;
+    uint16_t level = 0;
 
     offset = dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_level16, &level);
@@ -1291,6 +1585,11 @@ netlogon_dissect_LEVEL(tvbuff_t *tvb, int offset,
                                      netlogon_dissect_SERVICE_INFO, NDR_POINTER_UNIQUE,
                                      "SERVICE_TRANSITIVE_INFO", -1);
         break;
+    case 8:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_TICKET_INFO, NDR_POINTER_UNIQUE,
+                                     "TICKET_INFO", -1);
+        break;
     }
     return offset;
 }
@@ -1303,7 +1602,7 @@ netlogon_dissect_LEVEL(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CREDENTIAL(tvbuff_t *tvb, int offset,
                             packet_info *pinfo _U_, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep _U_)
+                            dcerpc_info *di, uint8_t *drep _U_)
 {
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect.*/
@@ -1327,14 +1626,14 @@ netlogon_dissect_CREDENTIAL(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_AUTHENTICATOR(tvbuff_t *tvb, int offset,
                                packet_info *pinfo, proto_tree *tree,
-                               dcerpc_info *di, guint8 *drep)
+                               dcerpc_info *di, uint8_t *drep)
 {
-    nstime_t ts;
-
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect */
         return offset;
     }
+
+    ALIGN_TO_4_BYTES;
 
     offset = netlogon_dissect_CREDENTIAL(tvb, offset,
                                          pinfo, tree, di, drep);
@@ -1346,51 +1645,12 @@ netlogon_dissect_AUTHENTICATOR(tvbuff_t *tvb, int offset,
      * AUTHENTICATORs, but like random junk in "return_authenticator"
      * AUTHENTICATORs.
      */
-    ALIGN_TO_4_BYTES;
-    ts.secs = tvb_get_letohl(tvb, offset);
-    ts.nsecs = 0;
-    proto_tree_add_time(tree, hf_netlogon_timestamp, tvb, offset, 4, &ts);
+    proto_tree_add_item(tree, hf_netlogon_timestamp, tvb, offset, 4, ENC_TIME_SECS|ENC_LITTLE_ENDIAN);
     offset+= 4;
 
     return offset;
 }
 
-
-static const true_false_string group_attrs_mandatory = {
-    "The MANDATORY bit is SET",
-    "The mandatory bit is NOT set",
-};
-static const true_false_string group_attrs_enabled_by_default = {
-    "The ENABLED_BY_DEFAULT bit is SET",
-    "The enabled_by_default bit is NOT set",
-};
-static const true_false_string group_attrs_enabled = {
-    "The enabled bit is SET",
-    "The enabled bit is NOT set",
-};
-static int
-netlogon_dissect_GROUP_MEMBERSHIP_ATTRIBUTES(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
-{
-    guint32 mask;
-    static const int * attr[] = {
-        &hf_netlogon_group_attrs_enabled,
-        &hf_netlogon_group_attrs_enabled_by_default,
-        &hf_netlogon_group_attrs_mandatory,
-        NULL
-    };
-
-    if(di->conformant_run){
-        /*just a run to handle conformant arrays, nothing to dissect */
-        return offset;
-    }
-
-    offset=dissect_ndr_uint32(tvb, offset, pinfo, NULL, di, drep,
-                              -1, &mask);
-
-    proto_tree_add_bitmask_value_with_flags(parent_tree, tvb, offset-4, hf_netlogon_attrs, ett_group_attrs, attr, mask, BMT_NO_APPEND);
-    return offset;
-}
 
 /*
  * IDL typedef struct {
@@ -1401,10 +1661,11 @@ netlogon_dissect_GROUP_MEMBERSHIP_ATTRIBUTES(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_GROUP_MEMBERSHIP(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *parent_tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
+    uint32_t rid = 0;
 
     if(parent_tree){
         tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
@@ -1412,10 +1673,12 @@ netlogon_dissect_GROUP_MEMBERSHIP(tvbuff_t *tvb, int offset,
     }
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_group_rid, NULL);
+                                hf_netlogon_group_rid, &rid);
+    if (tree) {
+        proto_item_append_text(item, " RID=%"PRIu32"", rid);
+    }
 
-    offset = netlogon_dissect_GROUP_MEMBERSHIP_ATTRIBUTES(tvb, offset,
-                                                          pinfo, tree, di, drep);
+    offset = dissect_ndr_nt_SE_GROUP_ATTRIBUTES(tvb, offset, pinfo, tree, di, drep);
 
     return offset;
 }
@@ -1423,7 +1686,7 @@ netlogon_dissect_GROUP_MEMBERSHIP(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_GROUP_MEMBERSHIP_ARRAY(tvbuff_t *tvb, int offset,
                                         packet_info *pinfo, proto_tree *tree,
-                                        dcerpc_info *di, guint8 *drep)
+                                        dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_GROUP_MEMBERSHIP);
@@ -1439,7 +1702,7 @@ netlogon_dissect_GROUP_MEMBERSHIP_ARRAY(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_USER_SESSION_KEY(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo _U_, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep _U_)
+                                  dcerpc_info *di, uint8_t *drep _U_)
 {
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect.*/
@@ -1465,10 +1728,10 @@ static const true_false_string user_flags_resource_groups= {
 };
 static int
 netlogon_dissect_USER_FLAGS(tvbuff_t *tvb, int offset,
-                            packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                            packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 mask;
-    static const int * flags[] = {
+    uint32_t mask;
+    static int * const flags[] = {
         &hf_netlogon_user_flags_resource_groups,
         &hf_netlogon_user_flags_extra_sids,
         NULL
@@ -1484,6 +1747,104 @@ netlogon_dissect_USER_FLAGS(tvbuff_t *tvb, int offset,
 
     proto_tree_add_bitmask_value_with_flags(parent_tree, tvb, offset-4, hf_netlogon_user_flags, ett_user_flags, flags, mask, BMT_NO_APPEND);
     return offset;
+}
+
+static int
+netlogon_dissect_GROUP_MEMBERSHIPS(tvbuff_t *tvb, int offset,
+                                   packet_info *pinfo, proto_tree *tree,
+                                   dcerpc_info *di, uint8_t *drep,
+                                   int hf_count, const char *array_name)
+{
+    uint32_t rgc;
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_count, &rgc);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_GROUP_MEMBERSHIP_ARRAY, NDR_POINTER_UNIQUE,
+                                 array_name, -1);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_DOMAIN_GROUP_MEMBERSHIPS(tvbuff_t *tvb, int offset,
+                        packet_info *pinfo, proto_tree *parent_tree,
+                        dcerpc_info *di, uint8_t *drep,
+                        int hf_count, const char *name)
+{
+        proto_item *item=NULL;
+        proto_tree *tree=NULL;
+        int old_offset=offset;
+
+        if(parent_tree){
+                tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
+                                              ett_domain_group_memberships,
+                                              &item, name);
+        }
+
+        offset = dissect_ndr_nt_PSID(tvb, offset, pinfo, tree, di, drep);
+
+        offset = netlogon_dissect_GROUP_MEMBERSHIPS(tvb, offset,
+                                                    pinfo, tree,
+                                                    di, drep,
+                                                    hf_count,
+                                                    "GroupIDs");
+
+        proto_item_set_len(item, offset-old_offset);
+        return offset;
+}
+
+static int
+netlogon_dissect_DOMAIN_GROUP_MEMBERSHIPS_WRAPPER(tvbuff_t *tvb, int offset,
+                        packet_info *pinfo, proto_tree *tree,
+                        dcerpc_info *di, uint8_t *drep)
+{
+        return netlogon_dissect_DOMAIN_GROUP_MEMBERSHIPS(tvb, offset,
+                                                         pinfo, tree,
+                                                         di, drep,
+                                                         hf_netlogon_domaingroupcount,
+                                                         "DomainGroupIDs");
+}
+
+static int
+netlogon_dissect_DOMAIN_GROUP_MEMBERSHIP_ARRAY(tvbuff_t *tvb, int offset,
+                                        packet_info *pinfo, proto_tree *tree,
+                                        dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_DOMAIN_GROUP_MEMBERSHIPS_WRAPPER);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_DOMAINS_GROUP_MEMBERSHIPS(tvbuff_t *tvb, int offset,
+                        packet_info *pinfo, proto_tree *parent_tree,
+                        dcerpc_info *di, uint8_t *drep,
+                        int hf_count, const char *name)
+{
+        proto_item *item=NULL;
+        proto_tree *tree=NULL;
+        int old_offset=offset;
+        uint32_t rgc;
+
+        if(parent_tree){
+                tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
+                                              ett_domains_group_memberships,
+                                              &item, name);
+        }
+
+        offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                    hf_count, &rgc);
+
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_DOMAIN_GROUP_MEMBERSHIP_ARRAY,
+                                     NDR_POINTER_UNIQUE,
+                                     name, -1);
+
+        proto_item_set_len(item, offset-old_offset);
+        return offset;
 }
 
 /*
@@ -1519,7 +1880,7 @@ netlogon_dissect_USER_FLAGS(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_VALIDATION_SAM_INFO(tvbuff_t *tvb, int offset,
                                      packet_info *pinfo, proto_tree *tree,
-                                     dcerpc_info *di, guint8 *drep)
+                                     dcerpc_info *di, uint8_t *drep)
 {
 
     offset = dissect_ndr_nt_NTTIME(tvb, offset, pinfo, tree, di, drep,
@@ -1570,12 +1931,10 @@ netlogon_dissect_VALIDATION_SAM_INFO(tvbuff_t *tvb, int offset,
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_group_rid, NULL);
 
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_num_rids, NULL);
-
-    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_GROUP_MEMBERSHIP_ARRAY, NDR_POINTER_UNIQUE,
-                                 "GROUP_MEMBERSHIP_ARRAY", -1);
+    offset = netlogon_dissect_GROUP_MEMBERSHIPS(tvb, offset,
+                              pinfo, tree, di, drep,
+                              hf_netlogon_num_rids,
+                              "GroupIDs");
 
     offset = netlogon_dissect_USER_FLAGS(tvb, offset,
                                          pinfo, tree, di, drep);
@@ -1661,7 +2020,7 @@ netlogon_dissect_VALIDATION_SAM_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_VALIDATION_SAM_INFO2(tvbuff_t *tvb, int offset,
                                       packet_info *pinfo, proto_tree *tree,
-                                      dcerpc_info *di, guint8 *drep)
+                                      dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_VALIDATION_SAM_INFO(tvb,offset,pinfo,tree,di,drep);
 #if 0
@@ -1762,7 +2121,7 @@ netlogon_dissect_VALIDATION_SAM_INFO2(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_VALIDATION_SAM_INFO4(tvbuff_t *tvb, int offset,
                                       packet_info *pinfo, proto_tree *tree,
-                                      dcerpc_info *di, guint8 *drep)
+                                      dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_VALIDATION_SAM_INFO2(tvb,offset,pinfo,tree,di,drep);
 
@@ -1803,6 +2162,107 @@ netlogon_dissect_VALIDATION_SAM_INFO4(tvbuff_t *tvb, int offset,
                                         hf_netlogon_dummy_string10, 0);
     return offset;
 }
+
+static int
+netlogon_dissect_VALIDATION_TICKET_LOGON_CLAIMS_BLOB(tvbuff_t *tvb, int offset, int length,
+                                                     packet_info *pinfo, proto_tree *tree,
+                                                     dcerpc_info *di _U_, uint8_t *drep _U_)
+{
+    return netlogon_dissect_CLAIMS_SET_METADATA_BLOB(tvb, offset, length,
+                                                     pinfo,
+                                                     tree,
+                                                     hf_netlogon_ticket_logon_claims,
+                                                     ett_netlogon_ticket_logon_claims,
+                                                     "Claims:");
+}
+
+static int
+netlogon_dissect_VALIDATION_TICKET_LOGON_CLAIMS(tvbuff_t *tvb,
+                                                int offset,
+                                                packet_info *pinfo,
+                                                proto_tree *tree,
+                                                dcerpc_info *di,
+                                                uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_VALIDATION_TICKET_LOGON_CLAIMS_BLOB);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_VALIDATION_TICKET_LOGON(tvbuff_t *tvb, int offset,
+                                         packet_info *pinfo, proto_tree *tree,
+                                         dcerpc_info *di, uint8_t *drep)
+{
+    static int * const hf_netlogon_ticket_logon_results_bits[] = {
+        &hf_netlogon_ticket_logon_results_0000000000000001,
+        &hf_netlogon_ticket_logon_results_0000000100000000,
+        &hf_netlogon_ticket_logon_results_0000000200000000,
+        &hf_netlogon_ticket_logon_results_0000000400000000,
+        &hf_netlogon_ticket_logon_results_0000000800000000,
+        &hf_netlogon_ticket_logon_results_0000001000000000,
+        &hf_netlogon_ticket_logon_results_0000002000000000,
+        &hf_netlogon_ticket_logon_results_0000004000000000,
+        &hf_netlogon_ticket_logon_results_0001000000000000,
+        &hf_netlogon_ticket_logon_results_0002000000000000,
+        &hf_netlogon_ticket_logon_results_0004000000000000,
+        &hf_netlogon_ticket_logon_results_0008000000000000,
+        &hf_netlogon_ticket_logon_results_0010000000000000,
+        &hf_netlogon_ticket_logon_results_0020000000000000,
+        &hf_netlogon_ticket_logon_results_0040000000000000,
+        NULL
+    };
+    uint64_t results = 0;
+
+    if (di->conformant_run) {
+        return offset;
+    }
+
+    offset = dissect_ndr_uint64(tvb, offset, pinfo, tree, di, drep,
+                                -1, &results);
+    proto_tree_add_bitmask_value_with_flags(tree, tvb, offset-8,
+                                            hf_netlogon_ticket_logon_results,
+                                            ett_netlogon_ticket_logon_results,
+                                            hf_netlogon_ticket_logon_results_bits,
+                                            results,
+                                            BMT_NO_APPEND);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_ticket_logon_kerberos_status, NULL);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_ticket_logon_netlogon_status, NULL);
+
+    offset = lsarpc_dissect_struct_lsa_String(tvb, offset, pinfo, tree, di, drep,
+                                              hf_netlogon_ticket_logon_source_of_status, 0);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_VALIDATION_SAM_INFO4,
+                                 NDR_POINTER_UNIQUE,
+                                 "USER", -1);
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_VALIDATION_SAM_INFO4,
+                                 NDR_POINTER_UNIQUE,
+                                 "DEVICE", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_ticket_logon_user_claims_size, NULL);
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_VALIDATION_TICKET_LOGON_CLAIMS,
+                                 NDR_POINTER_UNIQUE,
+                                 "USER_CLAIMS", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_ticket_logon_device_claims_size, NULL);
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_VALIDATION_TICKET_LOGON_CLAIMS,
+                                 NDR_POINTER_UNIQUE,
+                                 "DEVICE_CLAIMS", -1);
+
+    return offset;
+}
+
 /*
  * IDL typedef struct {
  * IDL   uint64 LogonTime;
@@ -1841,9 +2301,8 @@ netlogon_dissect_VALIDATION_SAM_INFO4(tvbuff_t *tvb, int offset,
 int
 netlogon_dissect_PAC_LOGON_INFO(tvbuff_t *tvb, int offset,
                                 packet_info *pinfo, proto_tree *tree,
-                                dcerpc_info *di, guint8 *drep)
+                                dcerpc_info *di, uint8_t *drep)
 {
-    guint32 rgc;
     offset = netlogon_dissect_VALIDATION_SAM_INFO(tvb,offset,pinfo,tree,di, drep);
 #if 0
     int i;
@@ -1937,15 +2396,10 @@ netlogon_dissect_PAC_LOGON_INFO(tvbuff_t *tvb, int offset,
                                  dissect_ndr_nt_SID_AND_ATTRIBUTES_ARRAY, NDR_POINTER_UNIQUE,
                                  "SID_AND_ATTRIBUTES_ARRAY:", -1);
 
-
-    offset = dissect_ndr_nt_PSID(tvb, offset, pinfo, tree, di, drep);
-
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_resourcegroupcount, &rgc);
-
-    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_GROUP_MEMBERSHIP_ARRAY, NDR_POINTER_UNIQUE,
-                                 "ResourceGroupIDs", -1);
+    offset = netlogon_dissect_DOMAIN_GROUP_MEMBERSHIPS(tvb, offset,
+                              pinfo, tree, di, drep,
+                              hf_netlogon_resourcegroupcount,
+                              "ResourceGroupIDs");
 
     return offset;
 }
@@ -1953,7 +2407,7 @@ netlogon_dissect_PAC_LOGON_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_S4U_Transited_Service_name(tvbuff_t *tvb, int offset,
                                              packet_info *pinfo, proto_tree *tree,
-                                             dcerpc_info *di, guint8 *drep)
+                                             dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_transited_service, 1);
@@ -1964,7 +2418,7 @@ netlogon_dissect_S4U_Transited_Service_name(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_S4U_Transited_Services_array(tvbuff_t *tvb, int offset,
                                               packet_info *pinfo, proto_tree *tree,
-                                              dcerpc_info *di, guint8 *drep)
+                                              dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_S4U_Transited_Service_name);
@@ -1975,7 +2429,7 @@ netlogon_dissect_S4U_Transited_Services_array(tvbuff_t *tvb, int offset,
 int
 netlogon_dissect_PAC_S4U_DELEGATION_INFO(tvbuff_t *tvb, int offset,
                                             packet_info *pinfo, proto_tree *tree,
-                                            dcerpc_info *di, guint8 *drep)
+                                            dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_s4u2proxytarget, 0);
@@ -1990,13 +2444,664 @@ netlogon_dissect_PAC_S4U_DELEGATION_INFO(tvbuff_t *tvb, int offset,
     return offset;
 }
 
+struct device_sid_callback_args {
+    const char **device_sid_ptr;
+    uint32_t user_rid;
+    const char *domain_sid;
+    const char *device_sid;
+};
+
+static void device_sid_callback_fnct(packet_info *pinfo _U_,
+                                     proto_tree *tree _U_,
+                                     proto_item *item _U_,
+                                     dcerpc_info *di,
+                                     tvbuff_t *tvb _U_,
+                                     int start_offset _U_,
+                                     int end_offset _U_,
+                                     void *callback_args)
+{
+    struct device_sid_callback_args *args =
+        (struct device_sid_callback_args *)callback_args;
+    dcerpc_call_value *dcv = (dcerpc_call_value *)di->call_data;
+    const char *p = NULL;
+    ptrdiff_t len;
+
+    if (di->ptype != UINT8_MAX) {
+        return;
+    }
+
+    if (dcv == NULL) {
+        return;
+    }
+
+    if (args == NULL) {
+        return;
+    }
+
+    args->domain_sid = (const char *)dcv->private_data;
+    if (args->domain_sid == NULL) {
+        /* this should not happen... */
+        return;
+    }
+
+    len = strnlen(args->domain_sid, 64);
+
+    /* remove any debug info after the sid */
+    p = memchr(args->domain_sid, ' ', len);
+    if (p != NULL) {
+        ptrdiff_t mlen = p - args->domain_sid;
+        if (mlen < len) {
+            len = mlen;
+        }
+    }
+    p = memchr(args->domain_sid, '(', len);
+    if (p != NULL) {
+        ptrdiff_t mlen = p - args->domain_sid;
+        if (mlen < len) {
+            len = mlen;
+        }
+    }
+
+    /*
+     * we know we're called dissect_krb5_PAC_DEVICE_INFO
+     * so we should allocate the device_sid on wmem_epan_scope()
+     */
+    args->device_sid = wmem_strdup_printf(wmem_epan_scope(),
+                                          "%*.*s-%" PRIu32,
+                                          (int)len, (int)len,
+                                          args->domain_sid,
+                                          args->user_rid);
+    *args->device_sid_ptr = args->device_sid;
+}
+
+/*
+ * IDL typedef struct {
+ * IDL   long UserId;
+ * IDL   long PrimaryGroupId;
+ * IDL   SID AccountDomainId;
+ * IDL   long AccountGroupCount;
+ * IDL   [size_is(AccountGroupCount)] PGROUP_MEMBERSHIP AccountGroupIds;
+ * IDL   ULONG SidCount;
+ * IDL   [size_is(SidCount)] PKERB_SID_AND_ATTRIBUTES ExtraSids;
+ * IDL   ULONG DomainGroupCount;
+ * IDL   [size_is(DomainGroupCount)] PDOMAIN_GROUP_MEMBERSHIP DomainGroup;
+ * IDL } PAC_DEVICE_INFO;
+ */
+int
+netlogon_dissect_PAC_DEVICE_INFO(tvbuff_t *tvb, int offset,
+                                 packet_info *pinfo, proto_tree *tree,
+                                 dcerpc_info *di, uint8_t *drep)
+{
+    dcerpc_call_value *dcv = (dcerpc_call_value *)di->call_data;
+    struct device_sid_callback_args *args = NULL;
+    uint32_t *user_rid_ptr = NULL;
+
+    if (dcv && di->ptype == UINT8_MAX && dcv->private_data) {
+        args = wmem_new0(pinfo->pool, struct device_sid_callback_args);
+        /*
+         * dissect_krb5_PAC_DEVICE_INFO passes
+         * a pointer to const char *device_sid
+         */
+        args->device_sid_ptr = dcv->private_data;
+        user_rid_ptr = &args->user_rid;
+    }
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_user_rid, user_rid_ptr);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_group_rid, NULL);
+
+    offset = dissect_ndr_nt_PSID_cb(tvb, offset, pinfo, tree, di, drep,
+                                    device_sid_callback_fnct, args);
+
+    offset = netlogon_dissect_GROUP_MEMBERSHIPS(tvb, offset,
+                              pinfo, tree, di, drep,
+                              hf_netlogon_accountdomaingroupcount,
+                              "AccountDomainGroupIds");
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_num_sid, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 dissect_ndr_nt_SID_AND_ATTRIBUTES_ARRAY, NDR_POINTER_UNIQUE,
+                                 "ExtraSids:SID_AND_ATTRIBUTES_ARRAY:", -1);
+
+    offset = netlogon_dissect_DOMAINS_GROUP_MEMBERSHIPS(tvb, offset,
+                              pinfo, tree, di, drep,
+                              hf_netlogon_membership_domains_count,
+                              "ExtraDomain Membership Array");
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_INT64_VALUE(tvbuff_t *tvb, int offset,
+                                   packet_info *pinfo, proto_tree *tree,
+                                   dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint64(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claim_int64_value, NULL);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_INT64_ARRAY(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_INT64_VALUE);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_INT64_VALUES(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claim_value_count, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_INT64_ARRAY, NDR_POINTER_UNIQUE,
+                                 "Claim INT64 Values:", -1);
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_UINT64_VALUE(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint64(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claim_uint64_value, NULL);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_UINT64_ARRAY(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_UINT64_VALUE);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_UINT64_VALUES(tvbuff_t *tvb, int offset,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claim_value_count, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_UINT64_ARRAY, NDR_POINTER_UNIQUE,
+                                 "Claim UINT64 Values:", -1);
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_STRING_VALUE(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_UNIQUE, "Claim STRING Value",
+                                          hf_netlogon_claim_string_value, 0);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_STRING_ARRAY(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_STRING_VALUE);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_STRING_VALUES(tvbuff_t *tvb, int offset,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claim_value_count, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_STRING_ARRAY, NDR_POINTER_UNIQUE,
+                                 "Claim STRING Values:", -1);
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_BOOLEAN_VALUE(tvbuff_t *tvb, int offset,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint64(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claim_boolean_value, NULL);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_BOOLEAN_ARRAY(tvbuff_t *tvb, int offset,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_BOOLEAN_VALUE);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIM_BOOLEAN_VALUES(tvbuff_t *tvb, int offset,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claim_value_count, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIM_BOOLEAN_ARRAY, NDR_POINTER_UNIQUE,
+                                 "Claim BOOLEAN Values:", -1);
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_ENTRY_WRAPPER(tvbuff_t *tvb, int offset,
+                                      packet_info *pinfo, proto_tree *tree,
+                                      dcerpc_info *di, uint8_t *drep)
+{
+    uint1632_t type;
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_UNIQUE, "Claim ID",
+                                          hf_netlogon_claim_id, 0);
+
+    offset = dissect_ndr_uint1632(tvb, offset, pinfo, tree, di, drep,
+                                  hf_netlogon_claim_type, &type);
+
+    UNION_ALIGN_TO_4_BYTES;
+    switch (type) {
+    case 1:
+        offset = netlogon_dissect_CLAIM_INT64_VALUES(tvb, offset, pinfo, tree, di, drep);
+        break;
+    case 2:
+        offset = netlogon_dissect_CLAIM_UINT64_VALUES(tvb, offset, pinfo, tree, di, drep);
+        break;
+    case 3:
+        offset = netlogon_dissect_CLAIM_STRING_VALUES(tvb, offset, pinfo, tree, di, drep);
+        break;
+    case 6:
+        offset = netlogon_dissect_CLAIM_BOOLEAN_VALUES(tvb, offset, pinfo, tree, di, drep);
+        break;
+    }
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_ENTRY_ARRAY(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIMS_ENTRY_WRAPPER);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_ARRAY_WRAPPER(tvbuff_t *tvb, int offset,
+                                      packet_info *pinfo, proto_tree *tree,
+                                      dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint1632(tvb, offset, pinfo, tree, di, drep,
+                                  hf_netlogon_claims_source_type, NULL);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_count, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIMS_ENTRY_ARRAY, NDR_POINTER_UNIQUE,
+                                 "Claims Entries:", -1);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_ARRAYS(tvbuff_t *tvb, int offset,
+                                   packet_info *pinfo, proto_tree *tree,
+                                   dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIMS_ARRAY_WRAPPER);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET(tvbuff_t *tvb, int offset,
+                            packet_info *pinfo, proto_tree *tree,
+                            dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_set_size, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_CLAIMS_SET_ARRAYS, NDR_POINTER_UNIQUE,
+                                 "Claims Set ARRAYS:", -1);
+
+    offset = dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_reserved_type, NULL);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_reserved_field_size, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_BYTE_array, NDR_POINTER_UNIQUE,
+                                 "Reserved Field:", -1);
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_BUFFER(tvbuff_t *tvb, int offset, int length,
+                                   packet_info *pinfo, proto_tree *tree,
+                                   dcerpc_info *caller_di, uint1632_t format)
+{
+    uint8_t drep[4] = { 0x10, 0x00, 0x00, 0x00}; /* fake DREP struct */
+    /* fake dcerpc_info struct */
+    dcerpc_call_value call_data = { .flags = 0, };
+    dcerpc_info di = { .ptype = UINT8_MAX, .call_data = &call_data, };
+    tvbuff_t *subtvb = NULL;
+    int suboffset = 0;
+
+    if (caller_di->conformant_run) {
+        /* just a run to handle conformant arrays, no scalars to dissect */
+        return offset;
+    }
+
+    switch (format) {
+    case 0:
+        subtvb = tvb_new_subset_length(tvb, offset, length);
+        break;
+    case 2:
+        subtvb = tvb_uncompress_lznt1(tvb, offset, length);
+        if (subtvb != NULL) {
+            add_new_data_source(pinfo, subtvb, "Claims LZNT1 decompressed");
+        }
+        break;
+    case 3:
+        subtvb = tvb_uncompress_lz77(tvb, offset, length);
+        if (subtvb != NULL) {
+            add_new_data_source(pinfo, subtvb, "Claims XPRESS decompressed");
+        }
+        break;
+    case 4:
+        subtvb = tvb_uncompress_lz77huff(tvb, offset, length);
+        if (subtvb != NULL) {
+            add_new_data_source(pinfo, subtvb, "Claims XPRESS+HUFF decompressed");
+        }
+        break;
+    }
+
+    if (subtvb == NULL) {
+        proto_tree_add_item(tree, hf_netlogon_blob, tvb, offset, length,
+                            ENC_NA);
+        offset += length;
+        return offset;
+    }
+    offset += length;
+
+    suboffset = nt_dissect_MIDL_NDRHEADERBLOB(tree, subtvb, suboffset, &drep[0]);
+
+    init_ndr_pointer_list(&di);
+    dissect_ndr_pointer(subtvb, suboffset, pinfo, tree, &di, drep,
+                        netlogon_dissect_CLAIMS_SET, NDR_POINTER_UNIQUE,
+                        "Claims Set:", -1);
+    free_ndr_pointer_list(&di);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_BUFFER_0(tvbuff_t *tvb, int offset, int length,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep _U_)
+{
+    return netlogon_dissect_CLAIMS_SET_BUFFER(tvb, offset, length,
+                                              pinfo, tree, di, 0);
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_ucarray_0(tvbuff_t *tvb, int offset,
+                                      packet_info *pinfo, proto_tree *tree,
+                                      dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_CLAIMS_SET_BUFFER_0);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_BUFFER_2(tvbuff_t *tvb, int offset, int length,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep _U_)
+{
+    return netlogon_dissect_CLAIMS_SET_BUFFER(tvb, offset, length,
+                                              pinfo, tree, di, 2);
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_ucarray_2(tvbuff_t *tvb, int offset,
+                                      packet_info *pinfo, proto_tree *tree,
+                                      dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_CLAIMS_SET_BUFFER_2);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_BUFFER_3(tvbuff_t *tvb, int offset, int length,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep _U_)
+{
+    return netlogon_dissect_CLAIMS_SET_BUFFER(tvb, offset, length,
+                                              pinfo, tree, di, 3);
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_ucarray_3(tvbuff_t *tvb, int offset,
+                                      packet_info *pinfo, proto_tree *tree,
+                                      dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_CLAIMS_SET_BUFFER_3);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_BUFFER_4(tvbuff_t *tvb, int offset, int length,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep _U_)
+{
+    return netlogon_dissect_CLAIMS_SET_BUFFER(tvb, offset, length,
+                                              pinfo, tree, di, 4);
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_ucarray_4(tvbuff_t *tvb, int offset,
+                                      packet_info *pinfo, proto_tree *tree,
+                                      dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_CLAIMS_SET_BUFFER_4);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_BUFFER_U(tvbuff_t *tvb, int offset, int length,
+                                     packet_info *pinfo _U_, proto_tree *tree,
+                                     dcerpc_info *di _U_, uint8_t *drep _U_)
+{
+    proto_tree_add_item(tree, hf_netlogon_blob, tvb, offset, length,
+                        ENC_NA);
+    offset += length;
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_ucarray_U(tvbuff_t *tvb, int offset,
+                                      packet_info *pinfo, proto_tree *tree,
+                                      dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_CLAIMS_SET_BUFFER_U);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_CLAIMS_SET_METADATA(tvbuff_t *tvb,
+                                     int offset,
+                                     packet_info *pinfo,
+                                     proto_tree *tree,
+                                     dcerpc_info *di,
+                                     uint8_t *drep)
+{
+    int format_offset;
+    uint1632_t format = 0;
+
+    if (di->conformant_run) {
+        /* just a run to handle conformant arrays, no scalars to dissect */
+        return offset;
+    }
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_set_size, NULL);
+
+    ALIGN_TO_4_OR_8_BYTES;
+    if (di->call_data->flags & DCERPC_IS_NDR64) {
+        format_offset = offset + 8;
+        format = tvb_get_uint32(tvb, format_offset, DREP_ENC_INTEGER(drep));
+    } else { \
+        format_offset = offset + 4;
+        format = tvb_get_uint16(tvb, format_offset, DREP_ENC_INTEGER(drep));
+    }
+    switch (format) {
+    case 0:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_CLAIMS_SET_ucarray_0,
+                                     NDR_POINTER_UNIQUE,
+                                     "Claims Set Uncompressed:", -1);
+        break;
+    case 2:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_CLAIMS_SET_ucarray_2,
+                                     NDR_POINTER_UNIQUE,
+                                     "Claims Set LZNT1:", -1);
+        break;
+    case 3:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_CLAIMS_SET_ucarray_3,
+                                     NDR_POINTER_UNIQUE,
+                                     "Claims Set XPRESS:", -1);
+        break;
+    case 4:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_CLAIMS_SET_ucarray_4,
+                                     NDR_POINTER_UNIQUE,
+                                     "Claims Set XPRESS+HUFF:", -1);
+        break;
+    default:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_CLAIMS_SET_ucarray_U,
+                                     NDR_POINTER_UNIQUE,
+                                     "Claims Set Unknown Compression:", -1);
+    }
+
+    offset = dissect_ndr_uint1632(tvb, offset, pinfo, tree, di, drep,
+                                  hf_netlogon_claims_compression_format, NULL);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_set_uncompressed_size, NULL);
+
+    offset = dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_reserved_type, NULL);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_claims_reserved_field_size, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_BYTE_array, NDR_POINTER_UNIQUE,
+                                 "Reserved Field:", -1);
+
+    return offset;
+}
+
+int
+netlogon_dissect_CLAIMS_SET_METADATA_BLOB(tvbuff_t *tvb,
+                                          int offset,
+                                          int length,
+                                          packet_info *pinfo,
+                                          proto_tree *parent_tree,
+                                          int hf_index,
+                                          int ett_index,
+                                          const char *info_str)
+{
+    proto_item *item;
+    proto_tree *tree;
+    uint8_t drep[4] = { 0x10, 0x00, 0x00, 0x00}; /* fake DREP struct */
+    /* fake dcerpc_info struct */
+    dcerpc_call_value call_data = { .flags = 0, };
+    dcerpc_info di = { .ptype = UINT8_MAX, .call_data = &call_data, };
+
+    item = proto_tree_add_item(parent_tree, hf_index, tvb, offset, length, ENC_NA);
+    tree = proto_item_add_subtree(item, ett_index);
+
+    if (length == 0) {
+        proto_tree_add_item(tree, hf_netlogon_blob, tvb, offset, length,
+                            ENC_NA);
+        return offset;
+    }
+
+    offset = nt_dissect_MIDL_NDRHEADERBLOB(tree, tvb, offset, &drep[0]);
+
+    init_ndr_pointer_list(&di);
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, &di, drep,
+                                 netlogon_dissect_CLAIMS_SET_METADATA,
+                                 NDR_POINTER_UNIQUE,
+                                 info_str, -1);
+    free_ndr_pointer_list(&di);
+
+    return offset;
+}
+
 #if 0
 static int
 netlogon_dissect_PAC(tvbuff_t *tvb, int offset,
                      packet_info *pinfo, proto_tree *tree,
-                     dcerpc_info *di, guint8 *drep _U_)
+                     dcerpc_info *di, uint8_t *drep _U_)
 {
-    guint32 pac_size;
+    uint32_t pac_size;
 
     if(di->conformant_run){
         return offset;
@@ -2015,9 +3120,9 @@ netlogon_dissect_PAC(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_AUTH(tvbuff_t *tvb, int offset,
                       packet_info *pinfo, proto_tree *tree,
-                      dcerpc_info *di, guint8 *drep _U_)
+                      dcerpc_info *di, uint8_t *drep _U_)
 {
-    guint32 auth_size;
+    uint32_t auth_size;
 
     if(di->conformant_run){
         return offset;
@@ -2037,7 +3142,7 @@ netlogon_dissect_AUTH(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_VALIDATION_GENERIC_INFO2 (tvbuff_t *tvb, int offset,
                                            packet_info *pinfo, proto_tree *tree,
-                                           dcerpc_info *di, guint8 *drep)
+                                           dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_data_length, NULL);
@@ -2071,7 +3176,7 @@ netlogon_dissect_VALIDATION_GENERIC_INFO2 (tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_VALIDATION_PAC_INFO(tvbuff_t *tvb, int offset,
                                      packet_info *pinfo, proto_tree *tree,
-                                     dcerpc_info *di, guint8 *drep)
+                                     dcerpc_info *di, uint8_t *drep)
 {
     int i;
 
@@ -2136,14 +3241,15 @@ netlogon_dissect_VALIDATION_PAC_INFO(tvbuff_t *tvb, int offset,
  * IDL    [case(5)][unique] VALIDATION_GENERIC_INFO *generic2;
  * IDL    [case(5)][unique] VALIDATION_GENERIC_INFO *generic2;
  * IDL    [case(6)][unique] VALIDATION_SAM_INFO4 *sam4;
+ * IDL    [case(7)][unique] VALIDATION_TICKET_LOGON *ticket;
  * IDL } VALIDATION;
  */
 static int
 netlogon_dissect_VALIDATION(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
-    guint16 level = 0;
+    uint16_t level = 0;
 
     offset = dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_validation_level, &level);
@@ -2180,9 +3286,167 @@ netlogon_dissect_VALIDATION(tvbuff_t *tvb, int offset,
                                      netlogon_dissect_VALIDATION_SAM_INFO4, NDR_POINTER_UNIQUE,
                                      "VALIDATION_SAM_INFO4:", -1);
         break;
+    case 7:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_VALIDATION_TICKET_LOGON, NDR_POINTER_UNIQUE,
+                                     "VALIDATION_TICKET_LOGON:", -1);
+        break;
     }
     return offset;
 }
+
+static int
+netlogon_forest_trust_info(tvbuff_t *tvb, int offset, packet_info *pinfo,
+                           proto_tree *tree, dcerpc_info *di, uint8_t *drep)
+{
+    offset = lsarpc_dissect_struct_lsa_ForestTrustInformation(tvb,
+                                                              offset,
+                                                              pinfo,
+                                                              tree,
+                                                              di,
+                                                              drep,
+                                                              hf_netlogon_forest_trust_info,
+                                                              0);
+
+    return offset;
+}
+
+/*
+ * IDL NET_API_STATUS DsrGetForestTrustInformation(
+ * IDL     [in, unique, string] LOGONSRV_HANDLE ServerName,
+ * IDL     [in, unique, string] wchar_t* TrustedDomainName,
+ * IDL     [in] DWORD Flags,
+ * IDL     [out] PLSA_FOREST_TRUST_INFORMATION* ForestTrustInfo
+ * IDL );
+ */
+static int
+netlogon_dissect_dsrgetforesttrustinformation_rqst(tvbuff_t *tvb,
+                                                   int offset,
+                                                   packet_info *pinfo,
+                                                   proto_tree *tree,
+                                                   dcerpc_info *di,
+                                                   uint8_t *drep)
+{
+    static int * const hf_netlogon_forest_trust_info_flags_bits[] = {
+        &hf_netlogon_forest_trust_info_flags_00000001,
+        NULL
+    };
+    uint32_t flags = 0;
+
+    if (di->conformant_run) {
+        return offset;
+    }
+
+    offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
+                                              pinfo, tree, di, drep);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_UNIQUE, "Trusted Domain Name",
+                                          hf_netlogon_domain_name, 0);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                -1, &flags);
+    proto_tree_add_bitmask_value_with_flags(tree, tvb, offset-8,
+                                            hf_netlogon_forest_trust_info_flags,
+                                            ett_netlogon_forest_trust_info_flags,
+                                            hf_netlogon_forest_trust_info_flags_bits,
+                                            flags,
+                                            BMT_NO_APPEND);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_dsrgetforesttrustinformation_reply(tvbuff_t *tvb,
+                                                    int offset,
+                                                    packet_info *pinfo,
+                                                    proto_tree *tree,
+                                                    dcerpc_info *di,
+                                                    uint8_t *drep)
+{
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_forest_trust_info, NDR_POINTER_UNIQUE,
+                                 "ForestTrustInfo:", -1);
+
+    offset = dissect_werror(tvb, offset, pinfo, tree, di, drep,
+                            hf_netlogon_werr_rc, NULL);
+
+    return offset;
+}
+
+/*
+ * IDL NTSTATUS NetrGetForestTrustInformation(
+ * IDL     [in, unique, string] LOGONSRV_HANDLE ServerName,
+ * IDL     [in, string] wchar_t* ComputerName,
+ * IDL     [in] PNETLOGON_AUTHENTICATOR Authenticator,
+ * IDL     [out] PNETLOGON_AUTHENTICATOR ReturnAuthenticator,
+ * IDL     [in] DWORD Flags,
+ * IDL     [out] PLSA_FOREST_TRUST_INFORMATION* ForestTrustInfo
+ * IDL );
+ */
+static int
+netlogon_dissect_netrgetforesttrustinformation_rqst(tvbuff_t *tvb,
+                                                    int offset,
+                                                    packet_info *pinfo,
+                                                    proto_tree *tree,
+                                                    dcerpc_info *di,
+                                                    uint8_t *drep)
+{
+    static int * const hf_netlogon_forest_trust_info_flags_bits[] = {
+        &hf_netlogon_forest_trust_info_flags_00000001,
+        NULL
+    };
+    uint32_t flags = 0;
+
+    if (di->conformant_run) {
+        return offset;
+    }
+
+    offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
+                                              pinfo, tree, di, drep);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "Computer Name",
+                                          hf_netlogon_computer_name, 0);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: credential", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                -1, &flags);
+    proto_tree_add_bitmask_value_with_flags(tree, tvb, offset-8,
+                                            hf_netlogon_forest_trust_info_flags,
+                                            ett_netlogon_forest_trust_info_flags,
+                                            hf_netlogon_forest_trust_info_flags_bits,
+                                            flags,
+                                            BMT_NO_APPEND);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_netrgetforesttrustinformation_reply(tvbuff_t *tvb,
+                                                     int offset,
+                                                     packet_info *pinfo,
+                                                     proto_tree *tree,
+                                                     dcerpc_info *di,
+                                                     uint8_t *drep)
+{
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: return_authenticator", -1);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_forest_trust_info, NDR_POINTER_UNIQUE,
+                                 "ForestTrustInfo:", -1);
+
+    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
+                              hf_netlogon_rc, NULL);
+
+    return offset;
+}
+
 /*
  * IDL long NetrLogonSamLogonWithFlags(
  * IDL      [in][unique][string] wchar_t *ServerName,
@@ -2193,13 +3457,13 @@ netlogon_dissect_VALIDATION(tvbuff_t *tvb, int offset,
  * IDL      [in][ref] LOGON_LEVEL *logonlevel,
  * IDL      [in] short ValidationLevel,
  * IDL      [out][ref] VALIDATION *validation,
- * IDL      [out][ref] boolean Authorative
+ * IDL      [out][ref] boolean Authoritative
  * IDL      [in][out] unsigned long ExtraFlags
  * IDL );
  */
 static int
 netlogon_dissect_netrlogonsamlogonflags_rqst(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -2233,7 +3497,7 @@ netlogon_dissect_netrlogonsamlogonflags_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonsamlogonflags_reply(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_UNIQUE,
@@ -2266,12 +3530,12 @@ netlogon_dissect_netrlogonsamlogonflags_reply(tvbuff_t *tvb, int offset,
  * IDL      [in][ref] LOGON_LEVEL *logonlevel,
  * IDL      [in] short ValidationLevel,
  * IDL      [out][ref] VALIDATION *validation,
- * IDL      [out][ref] boolean Authorative
+ * IDL      [out][ref] boolean Authoritative
  * IDL );
  */
 static int
 netlogon_dissect_netrlogonsamlogon_rqst(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -2303,7 +3567,7 @@ netlogon_dissect_netrlogonsamlogon_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonsamlogon_reply(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_UNIQUE,
@@ -2335,7 +3599,7 @@ netlogon_dissect_netrlogonsamlogon_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrlogonsamlogoff_rqst(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -2363,7 +3627,7 @@ netlogon_dissect_netrlogonsamlogoff_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netrlogonsamlogoff_reply(tvbuff_t *tvb, int offset,
-                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
@@ -2376,25 +3640,245 @@ netlogon_dissect_netrlogonsamlogoff_reply(tvbuff_t *tvb, int offset,
     return offset;
 }
 
-static void generate_hash_key(packet_info *pinfo,unsigned char is_server,netlogon_auth_key *key,char* name)
+static void generate_hash_key(packet_info *pinfo,unsigned char is_server,netlogon_auth_key *key)
 {
     if(is_server) {
-        key->dstport = pinfo->srcport;
-        key->srcport = pinfo->destport;
-        copy_address_shallow(&key->dst,&pinfo->src);
-        copy_address_shallow(&key->src,&pinfo->dst);
-        /* name has been durably allocated */
-        key->name = name;
+        copy_address_shallow(&key->server,&pinfo->src);
+        copy_address_shallow(&key->client,&pinfo->dst);
     }
     else {
-        copy_address_shallow(&key->dst,&pinfo->dst);
-        copy_address_shallow(&key->src,&pinfo->src);
-        key->dstport = pinfo->destport;
-        key->srcport = pinfo->srcport;
-        /* name has been durably allocated */
-        key->name = name;
+        copy_address_shallow(&key->server,&pinfo->dst);
+        copy_address_shallow(&key->client,&pinfo->src);
     }
 
+}
+
+static netlogon_auth_vars *create_global_netlogon_auth_vars(packet_info *pinfo,
+                                                            const char *computer_name,
+                                                            unsigned char is_server)
+{
+    netlogon_auth_vars *vars = NULL;
+    netlogon_auth_vars *old_vars_head = NULL;
+    netlogon_auth_vars *last = NULL;
+    netlogon_auth_vars *cur = NULL;
+    netlogon_auth_vars *new_vars_head = NULL;
+    netlogon_auth_key key;
+
+    vars = wmem_new0(wmem_file_scope(), netlogon_auth_vars);
+    vars->client_name = wmem_strdup(wmem_file_scope(), computer_name);
+    vars->start = pinfo->num;
+    vars->auth_fd_num = -1;
+    vars->next_start = -1;
+    vars->next = NULL;
+
+    generate_hash_key(pinfo, is_server, &key);
+    old_vars_head = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths, &key);
+    for (cur = old_vars_head; cur != NULL; last = cur, cur = cur->next) {
+        if (cur->start == vars->start) {
+            ws_debug("It seems that I already record this vars start packet = %d",vars->start);
+            wmem_free(wmem_file_scope(), vars);
+            return cur;
+        }
+
+        if (cur->start > vars->start) {
+            vars->next = cur;
+            vars->next_start = cur->start;
+            if (last != NULL) {
+                last->next = vars;
+                last->next_start = vars->start;
+            }
+            break;
+        }
+        if (new_vars_head == NULL) {
+            new_vars_head = cur;
+        }
+
+        if (cur->next == NULL) {
+            cur->next = vars;
+            cur->next_start = vars->start;
+            break;
+        }
+        if (cur->next->start > vars->start) {
+            vars->next = cur->next;
+            vars->next_start = cur->next_start;
+            cur->next = vars;
+            cur->next_start = vars->start;
+            break;
+        }
+    }
+    if (new_vars_head == NULL) {
+        new_vars_head = vars;
+    }
+
+    for (cur = new_vars_head; cur != NULL; cur = cur->next) {
+        if (cur->auth_fd_num != -1) {
+            ws_assert(cur->start <= cur->auth_fd_num);
+            ws_abort_if_fail(cur->start <= cur->auth_fd_num);
+        }
+        if (cur->next == NULL) {
+            ws_assert(cur->next_start == -1);
+            ws_abort_if_fail(cur->next_start == -1);
+            continue;
+        }
+        ws_assert(cur->start < cur->next->start);
+        ws_abort_if_fail(cur->start < cur->next->start);
+        ws_assert(cur->next_start == cur->next->start);
+        ws_abort_if_fail(cur->next_start == cur->next->start);
+    }
+
+    if (old_vars_head != new_vars_head) {
+        netlogon_auth_key *k = (netlogon_auth_key *)wmem_memdup(wmem_file_scope(), &key, sizeof(netlogon_auth_key));
+        copy_address_wmem(wmem_file_scope(), &k->client, &key.client);
+        copy_address_wmem(wmem_file_scope(), &k->server, &key.server);
+        if (old_vars_head != NULL) {
+                wmem_map_remove(netlogon_auths, &key);
+        }
+        wmem_map_insert(netlogon_auths, k, vars);
+    }
+
+    return vars;
+}
+
+static netlogon_auth_vars *find_tmp_netlogon_auth_vars(packet_info *pinfo, unsigned char is_server)
+{
+    netlogon_auth_vars *lvars = NULL;
+    netlogon_auth_vars *avars = NULL;
+    netlogon_auth_key akey;
+
+    generate_hash_key(pinfo, is_server, &akey);
+    lvars = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths, &akey);
+
+    for (; lvars != NULL; lvars = lvars->next) {
+        int fd_num = (int) pinfo->num;
+
+        if (fd_num <= lvars->start) {
+            /*
+             * Before it even started,
+             * can't be used..., keep
+             * avars if we already found
+             * one.
+             */
+            break;
+        }
+        /*
+         * remember the current match,
+         * but try to find a better one...
+         */
+        avars = lvars;
+        if (lvars->auth_fd_num == -1) {
+            /*
+             * No ServerAuthenticate{,1,3}, keep
+             * avars if we already found one,
+             * but try to find a better one...
+             */
+            continue;
+        }
+        if (fd_num <= lvars->auth_fd_num) {
+            /*
+             * Before ServerAuthenticate{,1,3},
+             * take it...
+             */
+            break;
+        }
+        /*
+         * try to find a better one...
+         */
+        avars = NULL;
+    }
+
+    return avars;
+}
+
+static netlogon_auth_vars *find_global_netlogon_auth_vars(packet_info *pinfo, unsigned char is_server)
+{
+    netlogon_auth_vars *lvars = NULL;
+    netlogon_auth_vars *avars = NULL;
+    netlogon_auth_key akey;
+
+    generate_hash_key(pinfo, is_server, &akey);
+    lvars = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths, &akey);
+
+    for (; lvars != NULL; lvars = lvars->next) {
+        int fd_num = (int) pinfo->num;
+
+        if (fd_num <= lvars->start) {
+            /*
+             * Before it even started,
+             * can't be used..., keep
+             * avars if we already found
+             * one.
+             */
+            break;
+        }
+        if (lvars->auth_fd_num == -1) {
+            /*
+             * No ServerAuthenticate{,1,3},
+             * no session key available,
+             * just ignore...
+             */
+            continue;
+        }
+        if (fd_num <= lvars->auth_fd_num) {
+            /*
+             * Before ServerAuthenticate{,1,3}
+             * can't be used..., keep
+             * avars if we already found
+             * one.
+             */
+            break;
+        }
+        /*
+         * remember the current match,
+         * but try to find a better one...
+         */
+        avars = lvars;
+    }
+
+    return avars;
+}
+
+static netlogon_auth_vars *find_or_create_schannel_netlogon_auth_vars(packet_info *pinfo,
+                                                                      dcerpc_auth_info *auth_info,
+                                                                      unsigned char is_server)
+{
+    dcerpc_auth_schannel_key skey = {
+        .conv = find_or_create_conversation(pinfo),
+        .transport_salt = dcerpc_get_transport_salt(pinfo),
+        .auth_context_id = auth_info->auth_context_id,
+    };
+    dcerpc_auth_schannel_key *sk = NULL;
+    netlogon_auth_vars *svars = NULL;
+    netlogon_auth_vars *avars = NULL;
+
+    svars = (netlogon_auth_vars *)wmem_map_lookup(schannel_auths, &skey);
+    if (svars != NULL) {
+        return svars;
+    }
+
+    avars = find_global_netlogon_auth_vars(pinfo, is_server);
+    if (avars == NULL) {
+        return NULL;
+    }
+
+    sk = wmem_memdup(wmem_file_scope(), &skey, sizeof(dcerpc_auth_schannel_key));
+    if (sk == NULL) {
+        return NULL;
+    }
+
+    svars = wmem_memdup(wmem_file_scope(), avars, sizeof(netlogon_auth_vars));
+    if (svars == NULL) {
+        return NULL;
+    }
+    svars->client_name = wmem_strdup(wmem_file_scope(), avars->client_name);
+    if (svars->client_name == NULL) {
+        return NULL;
+    }
+    svars->next_start = -1;
+    svars->next = NULL;
+
+    wmem_map_insert(schannel_auths, sk, svars);
+
+    return svars;
 }
 
 /*
@@ -2407,13 +3891,10 @@ static void generate_hash_key(packet_info *pinfo,unsigned char is_server,netlogo
  */
 static int
 netlogon_dissect_netrserverreqchallenge_rqst(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     /*int oldoffset = offset;*/
     netlogon_auth_vars *vars;
-    netlogon_auth_vars *existing_vars;
-    netlogon_auth_key key;
-    guint8 tab[8] = { 0,0,0,0,0,0,0,0};
     dcerpc_call_value *dcv = (dcerpc_call_value *)di->call_data;
 
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset, pinfo, tree, di, drep);
@@ -2424,81 +3905,24 @@ netlogon_dissect_netrserverreqchallenge_rqst(tvbuff_t *tvb, int offset,
         cb_wstr_postprocess,
         GINT_TO_POINTER(CB_STR_COL_INFO |CB_STR_SAVE | 1));
 
-    debugprintf("1)Len %d offset %d txt %s\n",(int) strlen(dcv->private_data),offset,(char*)dcv->private_data);
-    vars = wmem_new0(wmem_file_scope(), netlogon_auth_vars);
-    vars->client_name = wmem_strdup(wmem_file_scope(), (const guint8 *)dcv->private_data);
-    debugprintf("2)Len %d offset %d txt %s\n",(int) strlen(dcv->private_data),offset,vars->client_name);
+    ws_debug("1)Len %d offset %d txt %s",(int) strlen((char *)dcv->private_data),offset,(char*)dcv->private_data);
+    vars = create_global_netlogon_auth_vars(pinfo, (char*)dcv->private_data, 0);
+    ws_debug("2)Len %d offset %d txt %s",(int) strlen((char *)dcv->private_data),offset,vars->client_name);
 
     offset = dissect_dcerpc_8bytes(tvb, offset, pinfo, tree, drep,
                                    hf_client_challenge,&vars->client_challenge);
-    memcpy(tab,&vars->client_challenge,8);
 
-    vars->start = pinfo->num;
-    vars->next_start = -1;
-    vars->next = NULL;
-
-    generate_hash_key(pinfo,0,&key,NULL);
-    existing_vars = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths, &key);
-    if (!existing_vars) {
-        netlogon_auth_key *k = (netlogon_auth_key *)wmem_memdup(wmem_file_scope(), &key, sizeof(netlogon_auth_key));
-        copy_address_wmem(wmem_file_scope(), &k->src, &key.src);
-        copy_address_wmem(wmem_file_scope(), &k->dst, &key.dst);
-        debugprintf("Adding initial vars with this start packet = %d\n",vars->start);
-        wmem_map_insert(netlogon_auths, k, vars);
-    }
-    else {
-        while(existing_vars->next != NULL && existing_vars->start < vars->start) {
-            debugprintf("Looping to find existing vars ...\n");
-            existing_vars = existing_vars->next;
-        }
-        if(existing_vars->next != NULL || existing_vars->start == vars->start) {
-            debugprintf("It seems that I already record this vars start packet = %d\n",vars->start);
-            wmem_free(wmem_file_scope(), vars);
-        }
-        else {
-            debugprintf("Adding a new entry with this start packet = %d\n",vars->start);
-            existing_vars->next_start = pinfo->num;
-            existing_vars->next = vars;
-        }
-    }
-    /* used by other rpc that use schannel ie lsa */
-#if 0
-    generate_hash_key(pinfo,0,&key,vars->client_name);
-    existing_vars = NULL;
-    existing_vars = wmem_map_lookup(schannel_auths, key);
-    if (!existing_vars)
-    {
-        netlogon_auth_key *k = (netlogon_auth_key *)wmem_memdup(wmem_file_scope(), &key, sizeof(netlogon_auth_key));
-        copy_address_wmem(wmem_file_scope(), &k->src, &key.src);
-        copy_address_wmem(wmem_file_scope(), &k->dst, &key.dst);
-        wmem_map_insert(schannel_auths, k, vars);
-    }
-    else
-    {
-        while(existing_vars->next != NULL && existing_vars->start <= vars->start) {
-            existing_vars = existing_vars->next;
-        }
-        if(existing_vars->next != NULL || existing_vars == vars) {
-            debugprintf("It seems that I already record this vars (schannel hash)%d\n",vars->start);
-        }
-        else {
-            existing_vars->next_start = pinfo->num;
-            existing_vars->next = vars;
-        }
-#endif
     return offset;
 }
 
 static int
 netlogon_dissect_netrserverreqchallenge_reply(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     netlogon_auth_vars *vars;
-    netlogon_auth_key key;
-    guint64 server_challenge;
+    uint64_t server_challenge;
 
-    generate_hash_key(pinfo,1,&key,NULL);
-    vars = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths,(gconstpointer*) &key);
+    vars = find_tmp_netlogon_auth_vars(pinfo, 1);
 
     offset = dissect_dcerpc_8bytes(tvb, offset, pinfo, tree, drep,
                                    hf_server_challenge, &server_challenge);
@@ -2509,24 +3933,12 @@ netlogon_dissect_netrserverreqchallenge_reply(tvbuff_t *tvb, int offset,
     offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
                               hf_netlogon_rc, NULL);
     if(vars != NULL) {
-        while(vars !=NULL && vars->next_start != -1 && vars->next_start < (int)pinfo->num )
-        {
-            vars = vars->next;
-            debugprintf("looping challenge reply... %d %d \n", vars->next_start, pinfo->num);
-        }
-        if(vars == NULL)
-        {
-            debugprintf("Something strange happened while searching for challenge_reply\n");
-        }
-        else
-        {
-            vars->server_challenge = server_challenge;
-        }
+        vars->server_challenge = server_challenge;
     }
 /*
   else
   {
-  debugprintf("Vars not found in challenge reply\n");
+  ws_debug("Vars not found in challenge reply");
   }
 */
     return offset;
@@ -2536,10 +3948,10 @@ netlogon_dissect_netrserverreqchallenge_reply(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_NETLOGON_SECURE_CHANNEL_TYPE(tvbuff_t *tvb, int offset,
                                               packet_info *pinfo, proto_tree *tree,
-                                              dcerpc_info *di, guint8 *drep)
+                                              dcerpc_info *di, uint8_t *drep)
 {
-    offset = dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_secure_channel_type, NULL);
+    offset = dissect_ndr_uint1632(tvb, offset, pinfo, tree, di, drep,
+                                  hf_netlogon_secure_channel_type, NULL);
 
     return offset;
 }
@@ -2557,7 +3969,7 @@ netlogon_dissect_NETLOGON_SECURE_CHANNEL_TYPE(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrserverauthenticate_rqst(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -2578,17 +3990,17 @@ netlogon_dissect_netrserverauthenticate_rqst(tvbuff_t *tvb, int offset,
     return offset;
 }
 static int
+netlogon_dissect_netrserverauthenticate023_reply(tvbuff_t *tvb, int offset,
+                                                 packet_info *pinfo,
+                                                 proto_tree *tree,
+                                                 dcerpc_info *di,
+                                                 uint8_t *drep,
+                                                 int version);
+static int
 netlogon_dissect_netrserverauthenticate_reply(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_CREDENTIAL, NDR_POINTER_REF,
-                                 "CREDENTIAL: server challenge", -1);
-
-    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
-                              hf_netlogon_rc, NULL);
-
-    return offset;
+    return netlogon_dissect_netrserverauthenticate023_reply(tvb,offset,pinfo,tree,di,drep,0);
 }
 
 
@@ -2601,7 +4013,7 @@ netlogon_dissect_netrserverauthenticate_reply(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_ENCRYPTED_LM_OWF_PASSWORD(tvbuff_t *tvb, int offset,
                                            packet_info *pinfo _U_, proto_tree *tree,
-                                           dcerpc_info *di, guint8 *drep _U_)
+                                           dcerpc_info *di, uint8_t *drep _U_)
 {
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect.*/
@@ -2628,7 +4040,7 @@ netlogon_dissect_ENCRYPTED_LM_OWF_PASSWORD(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrserverpasswordset_rqst(tvbuff_t *tvb, int offset,
-                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -2654,7 +4066,7 @@ netlogon_dissect_netrserverpasswordset_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netrserverpasswordset_reply(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -2683,7 +4095,7 @@ netlogon_dissect_netrserverpasswordset_reply(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_DELETE_USER(tvbuff_t *tvb, int offset,
                                    packet_info *pinfo, proto_tree *tree,
-                                   dcerpc_info *di, guint8 *drep)
+                                   dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_UNIQUE, "Account Name", hf_netlogon_acct_name, 0);
@@ -2726,9 +4138,9 @@ netlogon_dissect_DELTA_DELETE_USER(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_SENSITIVE_DATA(tvbuff_t *tvb, int offset,
                                 packet_info *pinfo, proto_tree *tree,
-                                dcerpc_info *di, guint8 *drep)
+                                dcerpc_info *di, uint8_t *drep)
 {
-    guint32 data_len;
+    uint32_t data_len;
 
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect */
@@ -2747,7 +4159,7 @@ netlogon_dissect_SENSITIVE_DATA(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_USER_PRIVATE_INFO(tvbuff_t *tvb, int offset,
                                    packet_info *pinfo, proto_tree *tree,
-                                   dcerpc_info *di, guint8 *drep)
+                                   dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep,
                                hf_netlogon_sensitive_data_flag, NULL);
@@ -2806,7 +4218,7 @@ netlogon_dissect_USER_PRIVATE_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_USER(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_acct_name, 3);
@@ -2946,7 +4358,7 @@ netlogon_dissect_DELTA_USER(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_DOMAIN(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_domain_name, 3);
@@ -3028,7 +4440,7 @@ netlogon_dissect_DELTA_DOMAIN(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_GROUP(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *tree,
-                             dcerpc_info *di, guint8 *drep)
+                             dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_group_name, 3);
@@ -3089,7 +4501,7 @@ netlogon_dissect_DELTA_GROUP(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_RENAME(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         di->hf_index, 0);
@@ -3128,7 +4540,7 @@ netlogon_dissect_DELTA_RENAME(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_RID(tvbuff_t *tvb, int offset,
                      packet_info *pinfo, proto_tree *tree,
-                     dcerpc_info *di, guint8 *drep)
+                     dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_user_rid, NULL);
@@ -3139,7 +4551,7 @@ netlogon_dissect_RID(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_RID_array(tvbuff_t *tvb, int offset,
                            packet_info *pinfo, proto_tree *tree,
-                           dcerpc_info *di, guint8 *drep)
+                           dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_RID);
@@ -3150,7 +4562,7 @@ netlogon_dissect_RID_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_ATTRIB(tvbuff_t *tvb, int offset,
                         packet_info *pinfo, proto_tree *tree,
-                        dcerpc_info *di, guint8 *drep)
+                        dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_attrs, NULL);
@@ -3161,7 +4573,7 @@ netlogon_dissect_ATTRIB(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_ATTRIB_array(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_ATTRIB);
@@ -3183,7 +4595,7 @@ netlogon_dissect_ATTRIB_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_GROUP_MEMBER(tvbuff_t *tvb, int offset,
                                     packet_info *pinfo, proto_tree *tree,
-                                    dcerpc_info *di, guint8 *drep)
+                                    dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_RID_array, NDR_POINTER_UNIQUE,
@@ -3231,7 +4643,7 @@ netlogon_dissect_DELTA_GROUP_MEMBER(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_ALIAS(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *tree,
-                             dcerpc_info *di, guint8 *drep)
+                             dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_alias_name, 0);
@@ -3284,7 +4696,7 @@ netlogon_dissect_DELTA_ALIAS(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_ALIAS_MEMBER(tvbuff_t *tvb, int offset,
                                     packet_info *pinfo, proto_tree *tree,
-                                    dcerpc_info *di, guint8 *drep)
+                                    dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_nt_PSID_ARRAY(tvb, offset, pinfo, tree, di, drep);
 
@@ -3307,7 +4719,7 @@ netlogon_dissect_DELTA_ALIAS_MEMBER(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_EVENT_AUDIT_OPTION(tvbuff_t *tvb, int offset,
                                     packet_info *pinfo, proto_tree *tree,
-                                    dcerpc_info *di, guint8 *drep)
+                                    dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_event_audit_option, NULL);
@@ -3318,7 +4730,7 @@ netlogon_dissect_EVENT_AUDIT_OPTION(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_EVENT_AUDIT_OPTIONS_ARRAY(tvbuff_t *tvb, int offset,
                                            packet_info *pinfo, proto_tree *tree,
-                                           dcerpc_info *di, guint8 *drep)
+                                           dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_EVENT_AUDIT_OPTION);
@@ -3340,7 +4752,7 @@ netlogon_dissect_EVENT_AUDIT_OPTIONS_ARRAY(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_QUOTA_LIMITS(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *parent_tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -3401,7 +4813,7 @@ netlogon_dissect_QUOTA_LIMITS(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_POLICY(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_max_log_size, NULL);
@@ -3469,7 +4881,7 @@ netlogon_dissect_DELTA_POLICY(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CONTROLLER(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_dc_name, 0);
@@ -3480,7 +4892,7 @@ netlogon_dissect_CONTROLLER(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CONTROLLER_ARRAY(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_CONTROLLER);
@@ -3509,7 +4921,7 @@ netlogon_dissect_CONTROLLER_ARRAY(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_TRUSTED_DOMAINS(tvbuff_t *tvb, int offset,
                                        packet_info *pinfo, proto_tree *tree,
-                                       dcerpc_info *di, guint8 *drep)
+                                       dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_domain_name, 0);
@@ -3557,7 +4969,7 @@ netlogon_dissect_DELTA_TRUSTED_DOMAINS(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_PRIV_ATTR(tvbuff_t *tvb, int offset,
                            packet_info *pinfo, proto_tree *tree,
-                           dcerpc_info *di, guint8 *drep)
+                           dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_attrs, NULL);
@@ -3568,7 +4980,7 @@ netlogon_dissect_PRIV_ATTR(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_PRIV_ATTR_ARRAY(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_PRIV_ATTR);
@@ -3579,7 +4991,7 @@ netlogon_dissect_PRIV_ATTR_ARRAY(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_PRIV_NAME(tvbuff_t *tvb, int offset,
                            packet_info *pinfo, proto_tree *tree,
-                           dcerpc_info *di, guint8 *drep)
+                           dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_privilege_name, 1);
@@ -3590,7 +5002,7 @@ netlogon_dissect_PRIV_NAME(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_PRIV_NAME_ARRAY(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_PRIV_NAME);
@@ -3622,7 +5034,7 @@ netlogon_dissect_PRIV_NAME_ARRAY(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_ACCOUNTS(tvbuff_t *tvb, int offset,
                                 packet_info *pinfo, proto_tree *tree,
-                                dcerpc_info *di, guint8 *drep)
+                                dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_privilege_entries, NULL);
@@ -3686,9 +5098,9 @@ netlogon_dissect_DELTA_ACCOUNTS(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CIPHER_VALUE_DATA(tvbuff_t *tvb, int offset,
                                    packet_info *pinfo, proto_tree *tree,
-                                   dcerpc_info *di, guint8 *drep)
+                                   dcerpc_info *di, uint8_t *drep)
 {
-    guint32 data_len;
+    uint32_t data_len;
 
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect */
@@ -3713,7 +5125,7 @@ netlogon_dissect_CIPHER_VALUE_DATA(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CIPHER_VALUE(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *parent_tree,
-                              dcerpc_info *di, guint8 *drep, const char *name, int hf_index)
+                              dcerpc_info *di, uint8_t *drep, const char *name, int hf_index)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -3759,7 +5171,7 @@ netlogon_dissect_CIPHER_VALUE(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_SECRET(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_CIPHER_VALUE(tvb, offset,
                                            pinfo, tree, di, drep,
@@ -3818,7 +5230,7 @@ netlogon_dissect_DELTA_SECRET(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_MODIFIED_COUNT(tvbuff_t *tvb, int offset,
                                 packet_info *pinfo, proto_tree *tree,
-                                dcerpc_info *di, guint8 *drep)
+                                dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_duint32(tvb, offset, pinfo, tree, di, drep,
                                  hf_netlogon_modify_count, NULL);
@@ -3904,12 +5316,12 @@ static const value_string delta_type_vals[] = {
 static int
 netlogon_dissect_DELTA_UNION(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *parent_tree,
-                             dcerpc_info *di, guint8 *drep)
+                             dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
     int old_offset=offset;
-    guint16 level = 0;
+    uint16_t level = 0;
 
     if(parent_tree){
         tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
@@ -4037,12 +5449,12 @@ netlogon_dissect_DELTA_UNION(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_ID_UNION(tvbuff_t *tvb, int offset,
                                 packet_info *pinfo, proto_tree *parent_tree,
-                                dcerpc_info *di, guint8 *drep)
+                                dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
     int old_offset=offset;
-    guint16 level = 0;
+    uint16_t level = 0;
 
     if(parent_tree){
         tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
@@ -4151,12 +5563,12 @@ netlogon_dissect_DELTA_ID_UNION(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_ENUM(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *parent_tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
     int old_offset=offset;
-    guint16 type;
+    uint16_t type;
 
     if(parent_tree){
         tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
@@ -4182,7 +5594,7 @@ netlogon_dissect_DELTA_ENUM(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_ENUM_array(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_DELTA_ENUM);
@@ -4199,7 +5611,7 @@ netlogon_dissect_DELTA_ENUM_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DELTA_ENUM_ARRAY(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_num_deltas, NULL);
@@ -4226,7 +5638,7 @@ netlogon_dissect_DELTA_ENUM_ARRAY(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrdatabasedeltas_rqst(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_REF, "Server Handle", hf_netlogon_logonsrv_handle, 0);
@@ -4256,7 +5668,7 @@ netlogon_dissect_netrdatabasedeltas_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netrdatabasedeltas_reply(tvbuff_t *tvb, int offset,
-                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -4291,7 +5703,7 @@ netlogon_dissect_netrdatabasedeltas_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrdatabasesync_rqst(tvbuff_t *tvb, int offset,
-                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_REF, "Server Handle", hf_netlogon_logonsrv_handle, 0);
@@ -4322,7 +5734,7 @@ netlogon_dissect_netrdatabasesync_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrdatabasesync_reply(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -4351,18 +5763,18 @@ netlogon_dissect_netrdatabasesync_reply(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_UAS_INFO_0(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
-    guint32 time_created;
+    uint32_t time_created;
     if(di->conformant_run){
         /*just a run to handle conformant arrays, nothing to dissect */
         return offset;
     }
 
-    proto_tree_add_item(tree, hf_netlogon_computer_name, tvb, offset, 16, ENC_ASCII|ENC_NA);
+    proto_tree_add_item(tree, hf_netlogon_computer_name, tvb, offset, 16, ENC_ASCII);
     offset += 16;
 
-    time_created = tvb_get_guint32(tvb, offset, DREP_ENC_INTEGER(drep));
+    time_created = tvb_get_uint32(tvb, offset, DREP_ENC_INTEGER(drep));
     proto_tree_add_uint_format_value(tree, hf_netlogon_time_created, tvb, offset, 4, time_created, "unknown time format");
     offset+= 4;
 
@@ -4390,7 +5802,7 @@ netlogon_dissect_UAS_INFO_0(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netraccountdeltas_rqst(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -4423,7 +5835,7 @@ netlogon_dissect_netraccountdeltas_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netraccountdeltas_reply(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -4468,7 +5880,7 @@ netlogon_dissect_netraccountdeltas_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netraccountsync_rqst(tvbuff_t *tvb, int offset,
-                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -4497,7 +5909,7 @@ netlogon_dissect_netraccountsync_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netraccountsync_reply(tvbuff_t *tvb, int offset,
-                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -4536,7 +5948,7 @@ netlogon_dissect_netraccountsync_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrgetdcname_rqst(tvbuff_t *tvb, int offset,
-                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_REF, "Server Handle", hf_netlogon_logonsrv_handle, 0);
@@ -4548,7 +5960,7 @@ netlogon_dissect_netrgetdcname_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netrgetdcname_reply(tvbuff_t *tvb, int offset,
-                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_UNIQUE, "Domain", hf_netlogon_dc_name, 0);
@@ -4570,7 +5982,7 @@ netlogon_dissect_netrgetdcname_reply(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_NETLOGON_INFO_1(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_flags, NULL);
@@ -4593,7 +6005,7 @@ netlogon_dissect_NETLOGON_INFO_1(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_NETLOGON_INFO_2(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_flags, NULL);
@@ -4626,7 +6038,7 @@ netlogon_dissect_NETLOGON_INFO_2(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_NETLOGON_INFO_3(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_flags, NULL);
@@ -4663,9 +6075,9 @@ netlogon_dissect_NETLOGON_INFO_3(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CONTROL_QUERY_INFORMATION(tvbuff_t *tvb, int offset,
                                            packet_info *pinfo, proto_tree *tree,
-                                           dcerpc_info *di, guint8 *drep)
+                                           dcerpc_info *di, uint8_t *drep)
 {
-    guint32 level = 0;
+    uint32_t level = 0;
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_level, &level);
@@ -4703,7 +6115,7 @@ netlogon_dissect_CONTROL_QUERY_INFORMATION(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrlogoncontrol_rqst(tvbuff_t *tvb, int offset,
-                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -4718,14 +6130,14 @@ netlogon_dissect_netrlogoncontrol_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netrlogoncontrol_reply(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_CONTROL_QUERY_INFORMATION, NDR_POINTER_REF,
                                  "CONTROL_QUERY_INFORMATION:", -1);
 
-    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
-                              hf_netlogon_dos_rc, NULL);
+    offset = dissect_werror(tvb, offset, pinfo, tree, di, drep,
+                            hf_netlogon_werr_rc, NULL);
 
     return offset;
 }
@@ -4740,7 +6152,7 @@ netlogon_dissect_netrlogoncontrol_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrgetanydcname_rqst(tvbuff_t *tvb, int offset,
-                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_UNIQUE, "Server Handle",
@@ -4753,7 +6165,7 @@ netlogon_dissect_netrgetanydcname_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netrgetanydcname_reply(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_UNIQUE, "Domain", hf_netlogon_dc_name, 0);
@@ -4783,9 +6195,9 @@ netlogon_dissect_netrgetanydcname_reply(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_CONTROL_DATA_INFORMATION(tvbuff_t *tvb, int offset,
                                           packet_info *pinfo, proto_tree *tree,
-                                          dcerpc_info *di, guint8 *drep)
+                                          dcerpc_info *di, uint8_t *drep)
 {
-    guint32 level = 0;
+    uint32_t level = 0;
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_level, &level);
@@ -4828,7 +6240,7 @@ netlogon_dissect_CONTROL_DATA_INFORMATION(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrlogoncontrol2_rqst(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -4848,21 +6260,9 @@ netlogon_dissect_netrlogoncontrol2_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogoncontrol2_reply(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 status;
-
-    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_CONTROL_QUERY_INFORMATION, NDR_POINTER_REF,
-                                 "CONTROL_QUERY_INFORMATION:", -1);
-
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf_netlogon_werr_rc, &status);
-
-    if (status != 0)
-        col_append_fstr(pinfo->cinfo, COL_INFO, ", Error: %s", val_to_str_ext(status, &WERR_errors_ext, "Unknown WERR error 0x%08x"));
-
-
-    return offset;
+    return netlogon_dissect_netrlogoncontrol_reply(tvb, offset, pinfo, tree, di, drep);
 }
 
 
@@ -4883,7 +6283,7 @@ netlogon_dissect_netrlogoncontrol2_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrdatabasesync2_rqst(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_REF, "Server Handle", hf_netlogon_logonsrv_handle, 0);
@@ -4916,7 +6316,7 @@ netlogon_dissect_netrdatabasesync2_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrdatabasesync2_reply(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -4949,7 +6349,7 @@ netlogon_dissect_netrdatabasesync2_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrdatabaseredo_rqst(tvbuff_t *tvb, int offset,
-                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_REF, "Server Handle", hf_netlogon_logonsrv_handle, 0);
@@ -4977,7 +6377,7 @@ netlogon_dissect_netrdatabaseredo_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrdatabaseredo_reply(tvbuff_t *tvb, int offset,
-                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                        packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -5005,7 +6405,7 @@ netlogon_dissect_netrdatabaseredo_reply(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrlogoncontrol2ex_rqst(tvbuff_t *tvb, int offset,
-                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -5024,16 +6424,9 @@ netlogon_dissect_netrlogoncontrol2ex_rqst(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_netrlogoncontrol2ex_reply(tvbuff_t *tvb, int offset,
-                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_CONTROL_QUERY_INFORMATION, NDR_POINTER_REF,
-                                 "CONTROL_QUERY_INFORMATION:", -1);
-
-    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
-                              hf_netlogon_dos_rc, NULL);
-
-    return offset;
+    return netlogon_dissect_netrlogoncontrol_reply(tvb, offset, pinfo, tree, di, drep);
 }
 
 
@@ -5057,17 +6450,17 @@ static const value_string dc_address_types[] = {
 };
 
 
-#define RQ_ROOT_FOREST              0x0001
-#define RQ_DC_XFOREST               0x0002
-#define RQ_RODC_DIF_DOMAIN          0x0004
-#define RQ_NTLM_FROM_RODC           0x0008
+#define RQ_ROOT_FOREST              0x00000001
+#define RQ_DC_XFOREST               0x00000002
+#define RQ_RODC_DIF_DOMAIN          0x00000004
+#define RQ_NTLM_FROM_RODC           0x00000008
 
-#define DS_DOMAIN_IN_FOREST         0x0001
-#define DS_DOMAIN_DIRECT_OUTBOUND   0x0002
-#define DS_DOMAIN_TREE_ROOT         0x0004
-#define DS_DOMAIN_PRIMARY           0x0008
-#define DS_DOMAIN_NATIVE_MODE       0x0010
-#define DS_DOMAIN_DIRECT_INBOUND    0x0020
+#define DS_DOMAIN_IN_FOREST         0x00000001
+#define DS_DOMAIN_DIRECT_OUTBOUND   0x00000002
+#define DS_DOMAIN_TREE_ROOT         0x00000004
+#define DS_DOMAIN_PRIMARY           0x00000008
+#define DS_DOMAIN_NATIVE_MODE       0x00000010
+#define DS_DOMAIN_DIRECT_INBOUND    0x00000020
 
 static const true_false_string trust_inbound = {
     "There is a DIRECT INBOUND trust for the servers domain",
@@ -5097,10 +6490,10 @@ static const true_false_string trust_tree_root = {
 
 static int
 netlogon_dissect_DOMAIN_TRUST_FLAGS(tvbuff_t *tvb, int offset,
-                                    packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                                    packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 mask;
-    static const int * flags[] = {
+    uint32_t mask;
+    static int * const flags[] = {
         &hf_netlogon_trust_flags_inbound,
         &hf_netlogon_trust_flags_native_mode,
         &hf_netlogon_trust_flags_primary,
@@ -5155,10 +6548,10 @@ static const true_false_string trust_attribs_treat_as_external = {
 
 static int
 netlogon_dissect_DOMAIN_TRUST_ATTRIBS(tvbuff_t *tvb, int offset,
-                                      packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                                      packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 mask;
-    static const int * attr[] = {
+    uint32_t mask;
+    static int * const attr[] = {
         &hf_netlogon_trust_attribs_treat_as_external,
         &hf_netlogon_trust_attribs_within_forest,
         &hf_netlogon_trust_attribs_cross_organization,
@@ -5270,10 +6663,10 @@ static const true_false_string get_dcname_request_flags_return_flat_name = {
 };
 static int
 netlogon_dissect_GET_DCNAME_REQUEST_FLAGS(tvbuff_t *tvb, int offset,
-                                          packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                                          packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 mask;
-    static const int * flags[] = {
+    uint32_t mask;
+    static int * const flags[] = {
         &hf_netlogon_get_dcname_request_flags_return_flat_name,
         &hf_netlogon_get_dcname_request_flags_return_dns_name,
         &hf_netlogon_get_dcname_request_flags_is_flat_name,
@@ -5375,11 +6768,11 @@ static const true_false_string dc_flags_dns_forest_flag = {
 };
 static int
 netlogon_dissect_DC_FLAGS(tvbuff_t *tvb, int offset,
-                          packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                          packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 mask;
+    uint32_t mask;
     proto_item *item;
-    static const int * flags[] = {
+    static int * const flags[] = {
         &hf_netlogon_dc_flags_dns_forest_flag,
         &hf_netlogon_dc_flags_dns_domain_flag,
         &hf_netlogon_dc_flags_dns_controller_flag,
@@ -5415,7 +6808,7 @@ netlogon_dissect_DC_FLAGS(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_pointer_long(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32 (tvb, offset, pinfo, tree, di, drep,
                                  di->hf_index, NULL);
@@ -5426,7 +6819,7 @@ netlogon_dissect_pointer_long(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_pointer_char(tvbuff_t *tvb, int offset,
                               packet_info *pinfo, proto_tree *tree,
-                              dcerpc_info *di, guint8 *drep)
+                              dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep,
                                di->hf_index, NULL);
@@ -5437,7 +6830,7 @@ netlogon_dissect_pointer_char(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_UNICODE_MULTI_byte(tvbuff_t *tvb, int offset,
                                     packet_info *pinfo, proto_tree *tree,
-                                    dcerpc_info *di, guint8 *drep)
+                                    dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep,
                                hf_netlogon_unknown_char, NULL);
@@ -5448,7 +6841,7 @@ netlogon_dissect_UNICODE_MULTI_byte(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_UNICODE_MULTI_array(tvbuff_t *tvb, int offset,
                                      packet_info *pinfo, proto_tree *tree,
-                                     dcerpc_info *di, guint8 *drep)
+                                     dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_UNICODE_MULTI_byte);
@@ -5459,7 +6852,7 @@ netlogon_dissect_UNICODE_MULTI_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_UNICODE_MULTI(tvbuff_t *tvb, int offset,
                                packet_info *pinfo, proto_tree *parent_tree,
-                               dcerpc_info *di, guint8 *drep)
+                               dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -5484,7 +6877,7 @@ netlogon_dissect_UNICODE_MULTI(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DOMAIN_CONTROLLER_INFO(tvbuff_t *tvb, int offset,
                                         packet_info *pinfo, proto_tree *parent_tree,
-                                        dcerpc_info *di, guint8 *drep)
+                                        dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -5531,20 +6924,20 @@ netlogon_dissect_DOMAIN_CONTROLLER_INFO(tvbuff_t *tvb, int offset,
 static int
 dissect_ndr_trust_extension(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
-    guint32 len,max;
+    uint64_t len,max;
 
     if(di->conformant_run){
         return offset;
     }
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_trust_max, &max);
+    offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep,
+                                  hf_netlogon_trust_max, &max);
 
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+    offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_trust_offset, NULL);
 
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+    offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_trust_len, &len);
 
     if( max * 2 == 16 ) {
@@ -5566,9 +6959,9 @@ dissect_ndr_trust_extension(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_BLOB_array(tvbuff_t *tvb, int offset,
                             packet_info *pinfo, proto_tree *tree,
-                            dcerpc_info *di, guint8 *drep)
+                            dcerpc_info *di, uint8_t *drep)
 {
-    guint32 len;
+    uint32_t len;
 
     if(di->conformant_run){
         return offset;
@@ -5587,10 +6980,10 @@ netlogon_dissect_BLOB_array(tvbuff_t *tvb, int offset,
 static int
 dissect_ndr_ulongs_as_counted_string(tvbuff_t *tvb, int offset,
                                      packet_info *pinfo, proto_tree *tree,
-                                     dcerpc_info *di, guint8 *drep, int hf_index)
+                                     dcerpc_info *di, uint8_t *drep, int hf_index)
 {
-    guint16 len, size;
-    gboolean add_subtree = TRUE; /* Manage room for evolution*/
+    uint16_t len, size;
+    bool add_subtree = true; /* Manage room for evolution*/
     proto_item *item;
     proto_tree *subtree = tree;
 
@@ -5626,36 +7019,36 @@ dissect_ndr_ulongs_as_counted_string(tvbuff_t *tvb, int offset,
 }
 
 static int
-DomainInfo_sid_(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+DomainInfo_sid_(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    offset = lsarpc_dissect_struct_dom_sid2(tvb, offset, pinfo, tree, di, drep, DomainInfo_sid, 0);
+    offset = lsarpc_dissect_struct_dom_sid2(tvb, offset, pinfo, tree, di, drep, hf_domain_info_sid, 0);
 
     return offset;
 }
 static int
-dissect_element_lsa_DnsDomainInfo_sid(tvbuff_t *tvb , int offset , packet_info *pinfo , proto_tree *tree , dcerpc_info *di, guint8 *drep )
+dissect_element_lsa_DnsDomainInfo_sid(tvbuff_t *tvb , int offset , packet_info *pinfo , proto_tree *tree , dcerpc_info *di, uint8_t *drep )
 {
-    offset = dissect_ndr_embedded_pointer(tvb, offset, pinfo, tree, di, drep, DomainInfo_sid_, NDR_POINTER_UNIQUE, "Pointer to Sid (dom_sid2)",DnsDomainInfo_sid);
+    offset = dissect_ndr_embedded_pointer(tvb, offset, pinfo, tree, di, drep, DomainInfo_sid_, NDR_POINTER_UNIQUE, "Pointer to Sid (dom_sid2)", hf_dns_domain_info_sid);
 
     return offset;
 }
 static int
-dissect_element_lsa_DnsDomainInfo_domain_guid(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep )
+dissect_element_lsa_DnsDomainInfo_domain_guid(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep )
 {
-    offset = dissect_ndr_uuid_t(tvb, offset, pinfo, tree, di, drep, DnsDomainInfo_domain_guid, NULL);
+    offset = dissect_ndr_uuid_t(tvb, offset, pinfo, tree, di, drep, hf_dns_domain_info_domain_guid, NULL);
 
     return offset;
 }
 
 
-static int dissect_part_DnsDomainInfo(tvbuff_t *tvb , int offset, packet_info *pinfo, proto_tree *tree , dcerpc_info *di, guint8 *drep,  int hf_index _U_, guint32 param _U_)
+static int dissect_part_DnsDomainInfo(tvbuff_t *tvb , int offset, packet_info *pinfo, proto_tree *tree , dcerpc_info *di, uint8_t *drep,  int hf_index _U_, uint32_t param _U_)
 {
 
-    offset = lsarpc_dissect_struct_lsa_StringLarge(tvb, offset, pinfo, tree, di, drep, DnsDomainInfo_name, 0);
+    offset = lsarpc_dissect_struct_lsa_StringLarge(tvb, offset, pinfo, tree, di, drep, hf_dns_domain_info_name, 0);
 
-    offset = lsarpc_dissect_struct_lsa_StringLarge(tvb,offset, pinfo, tree, di, drep, DnsDomainInfo_dns_domain, 0);
+    offset = lsarpc_dissect_struct_lsa_StringLarge(tvb,offset, pinfo, tree, di, drep, hf_dns_domain_info_dns_domain, 0);
 
-    offset = lsarpc_dissect_struct_lsa_StringLarge(tvb,offset, pinfo, tree, di, drep, DnsDomainInfo_dns_forest, 0);
+    offset = lsarpc_dissect_struct_lsa_StringLarge(tvb,offset, pinfo, tree, di, drep, hf_dns_domain_info_dns_forest, 0);
 
     offset = dissect_element_lsa_DnsDomainInfo_domain_guid(tvb, offset, pinfo, tree, di, drep);
 
@@ -5669,7 +7062,7 @@ static int dissect_part_DnsDomainInfo(tvbuff_t *tvb , int offset, packet_info *p
 static int
 netlogon_dissect_ONE_DOMAIN_INFO(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *parent_tree,
-                                 dcerpc_info *di, guint8 *drep)
+                                 dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -5685,7 +7078,7 @@ netlogon_dissect_ONE_DOMAIN_INFO(tvbuff_t *tvb, int offset,
 
     /* It is structed as a string but it's not ... it's 4 ulong */
     offset = dissect_ndr_ulongs_as_counted_string(tvb, offset, pinfo, tree, di, drep,
-                                                  hf_netlogon_trust_extention);
+                                                  hf_netlogon_trust_extension);
 
     offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
                                         hf_netlogon_dummy_string2, 0);
@@ -5715,7 +7108,7 @@ netlogon_dissect_ONE_DOMAIN_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DOMAIN_TRUST_INFO(tvbuff_t *tvb, int offset,
                                    packet_info *pinfo, proto_tree *tree,
-                                   dcerpc_info *di, guint8 *drep)
+                                   dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_ONE_DOMAIN_INFO);
@@ -5727,11 +7120,11 @@ netlogon_dissect_DOMAIN_TRUST_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_LSA_POLICY_INFO(tvbuff_t *tvb, int offset,
                                  packet_info *pinfo, proto_tree *tree,
-                                 dcerpc_info *di, guint8 *drep )
+                                 dcerpc_info *di, uint8_t *drep )
 {
     proto_item *item=NULL;
     proto_tree *subtree=NULL;
-    guint32 len;
+    uint32_t len;
 
     if(di->conformant_run){
         return offset;
@@ -5757,7 +7150,7 @@ netlogon_dissect_LSA_POLICY_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_WORKSTATION_INFO(tvbuff_t *tvb , int offset ,
                                   packet_info *pinfo , proto_tree *tree ,
-                                  dcerpc_info *di, guint8 *drep )
+                                  dcerpc_info *di, uint8_t *drep )
 {
     /* This is not the good way to do it ... it stinks ...
      * but after half of a day fighting against wireshark and ndr ...
@@ -5803,7 +7196,7 @@ netlogon_dissect_WORKSTATION_INFO(tvbuff_t *tvb , int offset ,
                                 hf_netlogon_workstation_flags, NULL);
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_dummy2_long, NULL);
+                                hf_netlogon_supportedenctypes, NULL);
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_dummy3_long, NULL);
@@ -5816,7 +7209,7 @@ netlogon_dissect_WORKSTATION_INFO(tvbuff_t *tvb , int offset ,
 static int
 netlogon_dissect_WORKSTATION_INFORMATION(tvbuff_t *tvb , int offset ,
                                          packet_info *pinfo , proto_tree *tree ,
-                                         dcerpc_info *di, guint8 *drep ) {
+                                         dcerpc_info *di, uint8_t *drep ) {
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_WORKSTATION_INFO, NDR_POINTER_UNIQUE,
@@ -5827,7 +7220,7 @@ netlogon_dissect_WORKSTATION_INFORMATION(tvbuff_t *tvb , int offset ,
 static int
 netlogon_dissect_DOMAIN_INFO(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *tree,
-                             dcerpc_info *di, guint8 *drep)
+                             dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_ONE_DOMAIN_INFO(tvb, offset, pinfo, tree, di, drep);
 
@@ -5878,19 +7271,24 @@ netlogon_dissect_DOMAIN_INFO(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DOMAIN_INFORMATION(tvbuff_t *tvb, int offset,
                                     packet_info *pinfo, proto_tree *tree,
-                                    dcerpc_info *di, guint8 *drep)
+                                    dcerpc_info *di, uint8_t *drep)
 {
-    guint32 level = 0;
+    uint32_t level;
 
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_level, &level);
+    UNION_ALIGN_TO_5_BYTES;
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf_netlogon_level, &level);
+    UNION_ALIGN_TO_5_BYTES;
 
-    ALIGN_TO_4_BYTES;
-    switch(level){
+    switch (level) {
     case 1:
         offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                      netlogon_dissect_DOMAIN_INFO, NDR_POINTER_UNIQUE,
                                      "DOMAIN_INFO", -1);
+        break;
+    case 2:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_LSA_POLICY_INFO, NDR_POINTER_UNIQUE,
+                                     "LSA_POLICY_INFO", -1);
         break;
     }
 
@@ -5898,36 +7296,226 @@ netlogon_dissect_DOMAIN_INFORMATION(tvbuff_t *tvb, int offset,
 }
 
 static int
-netlogon_dissect_UNICODE_STRING_512(tvbuff_t *tvb, int offset,
+netlogon_dissect_netr_CryptPassword(tvbuff_t *tvb, int offset,
                                     packet_info *pinfo, proto_tree *parent_tree,
-                                    dcerpc_info *di, guint8 *drep)
+                                    dcerpc_info *di, uint8_t *drep)
 {
+    int ret_offset = offset + 516;
     proto_item *item=NULL;
     proto_tree *tree=NULL;
-    int old_offset=offset;
-    int i;
+    netlogon_auth_vars *vars = NULL;
+    uint32_t pw_len;
+    char *pw = NULL;
+    uint32_t confounder_len;
+    bool version_present = false;
+
+    /*
+     * We have
+     * uint16 array[256];
+     * uint32 length;
+     *
+     * All these 516 bytes are potentially encrypted.
+     *
+     * The unencrypted length is in bytes in
+     * instead of uint16 units, so it's a multiple
+     * of 2 and it should be smaller than 512 -
+     * SIZEOF(NL_PASSWORD_VERSION), so it's 500
+     * as SIZEOF(NL_PASSWORD_VERSION) is 12.
+     * The confounder should also be there with
+     * a few bytes.
+     *
+     * Real clients typically use 28 or 240,
+     * which means 14 or 120 uint16 characters.
+     *
+     * So if the value is larger than 500 or
+     * bit 1 is set it's very likely an
+     * encrypted value.
+     */
+    tvb_ensure_bytes_exist(tvb, offset, 516);
 
     if(parent_tree){
-        tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
-                                   ett_UNICODE_STRING_512, &item, "UNICODE_STRING_512:");
+        tree = proto_tree_add_subtree(parent_tree, tvb, offset, 516,
+                                      ett_netr_CryptPassword, &item,
+                                      "netr_CryptPassword:");
     }
 
-    for(i=0;i<512;i++){
-        offset = dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep,
-                                    hf_netlogon_unknown_short, NULL);
+    vars = find_global_netlogon_auth_vars(pinfo, 0);
+    pw_len = tvb_get_uint32(tvb, offset+512, DREP_ENC_INTEGER(drep));
+    if (pw_len > 500 || pw_len & 0x1) {
+        gcry_error_t err;
+        gcry_cipher_hd_t cipher_hd = NULL;
+        uint8_t *buffer = NULL;
+        tvbuff_t *dectvb = NULL;
+
+        proto_tree_add_bytes_format(tree, hf_netlogon_blob,
+                                    tvb, offset, 516, NULL,
+                                    "Encrypted netr_CryptPassword");
+
+        if (vars == NULL) {
+                expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                                       &ei_netlogon_session_key,
+                                       "No session key found");
+                return ret_offset;
+        }
+
+        err = prepare_session_key_cipher(vars, &cipher_hd);
+        if (err != 0) {
+            expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                                   &ei_netlogon_session_key,
+                                   "Decryption not possible (%s/%s) with "
+                                   "session key learned in frame %d ("
+                                   "%02x%02x%02x%02x"
+                                   ") from %s",
+                                   gcry_strsource(err),
+                                   gcry_strerror(err),
+                                   vars->auth_fd_num,
+                                   vars->session_key[0] & 0xFF,
+                                   vars->session_key[1] & 0xFF,
+                                   vars->session_key[2] & 0xFF,
+                                   vars->session_key[3] & 0xFF,
+                                   vars->nthash.key_origin);
+            ws_warning("GCRY: prepare_session_key_cipher %s/%s\n",
+                       gcry_strsource(err), gcry_strerror(err));
+            return ret_offset;
+        }
+
+        buffer = (uint8_t*)tvb_memdup(pinfo->pool, tvb, offset, 516);
+        if (buffer == NULL) {
+            gcry_cipher_close(cipher_hd);
+            return ret_offset;
+        }
+
+        err = gcry_cipher_decrypt(cipher_hd, buffer, 516, NULL, 0);
+        gcry_cipher_close(cipher_hd);
+        if (err != 0) {
+            ws_warning("GCRY: gcry_cipher_decrypt %s/%s\n",
+                       gcry_strsource(err), gcry_strerror(err));
+            return ret_offset;
+        }
+
+        dectvb = tvb_new_child_real_data(tvb, buffer, 516, 516);
+        if (dectvb == NULL) {
+            return ret_offset;
+        }
+
+        pw_len = tvb_get_uint32(dectvb, 512, DREP_ENC_INTEGER(drep));
+        if ((pw_len > 500) || (pw_len & 0x1)) {
+            expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                                   &ei_netlogon_session_key,
+                                   "Unusable session key learned in frame %d ("
+                                   "%02x%02x%02x%02x"
+                                   ") from %s",
+                                   vars->auth_fd_num,
+                                   vars->session_key[0] & 0xFF,
+                                   vars->session_key[1] & 0xFF,
+                                   vars->session_key[2] & 0xFF,
+                                   vars->session_key[3] & 0xFF,
+                                   vars->nthash.key_origin);
+            return ret_offset;
+        }
+
+        expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                               &ei_netlogon_session_key,
+                               "Used session key learned in frame %d ("
+                               "%02x%02x%02x%02x"
+                               ") from %s",
+                               vars->auth_fd_num,
+                               vars->session_key[0] & 0xFF,
+                               vars->session_key[1] & 0xFF,
+                               vars->session_key[2] & 0xFF,
+                               vars->session_key[3] & 0xFF,
+                               vars->nthash.key_origin);
+        add_new_data_source(pinfo, dectvb, "netr_CryptPassword (Decrypted)");
+        tvb = dectvb;
+        offset = 0;
+        proto_tree_add_bytes_format(tree, hf_netlogon_blob,
+                                    tvb, offset, 516, NULL,
+                                    "Decrypted netr_CryptPassword");
+    } else {
+        proto_tree_add_bytes_format(tree, hf_netlogon_blob,
+                                    tvb, offset, 516, NULL,
+                                    "Unencryption netr_CryptPassword");
+        if (vars != NULL) {
+            expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                                   &ei_netlogon_session_key,
+                                   "Not encrypted with session key learned in frame %d ("
+                                   "%02x%02x%02x%02x"
+                                   ") from %s",
+                                   vars->auth_fd_num,
+                                   vars->session_key[0] & 0xFF,
+                                   vars->session_key[1] & 0xFF,
+                                   vars->session_key[2] & 0xFF,
+                                   vars->session_key[3] & 0xFF,
+                                   vars->nthash.key_origin);
+        } else {
+            expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                                   &ei_netlogon_session_key,
+                                   "Not encrypted and no session key found nor needed");
+        }
     }
 
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_unknown_long, NULL);
+    confounder_len = 512 - pw_len;
+    if (confounder_len >= 12) {
+        uint32_t voffset = confounder_len - 12;
+        uint32_t rf;
+        uint32_t vp;
 
-    proto_item_set_len(item, offset-old_offset);
-    return offset;
+        rf = tvb_get_uint32(tvb, voffset+0, DREP_ENC_INTEGER(drep));
+        vp = tvb_get_uint32(tvb, voffset+8, DREP_ENC_INTEGER(drep));
+        if (rf == 0 && vp == 0x02231968) {
+            confounder_len -= 12;
+            version_present = true;
+        }
+    }
+
+    if (confounder_len > 0) {
+        proto_tree_add_bytes_format(tree, hf_netlogon_blob,
+                                    tvb, offset, confounder_len,
+                                    NULL, "Confounder: %"PRIu32" byte%s",
+                                    confounder_len,
+                                    plurality(confounder_len, "", "s"));
+        offset += confounder_len;
+    }
+
+    if (version_present) {
+        proto_item *vitem=NULL;
+        proto_tree *vtree=NULL;
+
+        if (tree) {
+            vtree = proto_tree_add_subtree(tree, tvb, offset, 12,
+                                           ett_NL_PASSWORD_VERSION, &vitem,
+                                           "NL_PASSWORD_VERSION:");
+        }
+
+        offset = dissect_ndr_uint32(tvb, offset, pinfo, vtree, di, drep,
+                                    hf_netlogon_password_version_reserved, NULL);
+        offset = dissect_ndr_uint32(tvb, offset, pinfo, vtree, di, drep,
+                                    hf_netlogon_password_version_number, NULL);
+        offset = dissect_ndr_uint32(tvb, offset, pinfo, vtree, di, drep,
+                                    hf_netlogon_password_version_present, NULL);
+    }
+
+    proto_tree_add_bytes_format(tree, hf_netlogon_blob,
+                                tvb, offset, pw_len, NULL,
+                                "Raw Password Bytes: %"PRIu32" byte%s",
+                                pw_len,
+                                plurality(pw_len, "", "s"));
+    pw = (char *)tvb_get_string_enc(pinfo->pool, tvb, offset, pw_len,
+                                    ENC_UTF_16|DREP_ENC_INTEGER(drep));
+    proto_tree_add_string(tree, hf_netlogon_new_password, tvb, offset,
+                          pw_len, pw);
+    offset += pw_len;
+
+    /*offset = */dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_len, NULL);
+
+    return ret_offset;
 }
 
 static int
 netlogon_dissect_element_844_byte(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep,
                                hf_netlogon_unknown_char, NULL);
@@ -5938,7 +7526,7 @@ netlogon_dissect_element_844_byte(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_element_844_array(tvbuff_t *tvb, int offset,
                                    packet_info *pinfo, proto_tree *tree,
-                                   dcerpc_info *di, guint8 *drep)
+                                   dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_element_844_byte);
@@ -5949,7 +7537,7 @@ netlogon_dissect_element_844_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_TYPE_50(tvbuff_t *tvb, int offset,
                          packet_info *pinfo, proto_tree *parent_tree,
-                         dcerpc_info *di, guint8 *drep)
+                         dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -5974,7 +7562,7 @@ netlogon_dissect_TYPE_50(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_TYPE_50_ptr(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *tree,
-                             dcerpc_info *di, guint8 *drep)
+                             dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_TYPE_50, NDR_POINTER_UNIQUE,
@@ -5985,9 +7573,9 @@ netlogon_dissect_TYPE_50_ptr(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_DS_DOMAIN_TRUSTS(tvbuff_t *tvb, int offset,
-                                  packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, guint8 *drep)
+                                  packet_info *pinfo, proto_tree *parent_tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 tmp;
+    uint32_t tmp;
     proto_item *item=NULL;
     proto_tree *tree=NULL;
     int old_offset=offset;
@@ -6030,7 +7618,7 @@ netlogon_dissect_DS_DOMAIN_TRUSTS(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_DS_DOMAIN_TRUSTS_ARRAY(tvbuff_t *tvb, int offset,
                                         packet_info *pinfo, proto_tree *tree,
-                                        dcerpc_info *di, guint8 *drep)
+                                        dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_DS_DOMAIN_TRUSTS);
@@ -6041,7 +7629,7 @@ netlogon_dissect_DS_DOMAIN_TRUSTS_ARRAY(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_element_865_byte(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep,
                                hf_netlogon_unknown_char, NULL);
@@ -6052,7 +7640,7 @@ netlogon_dissect_element_865_byte(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_element_865_array(tvbuff_t *tvb, int offset,
                                    packet_info *pinfo, proto_tree *tree,
-                                   dcerpc_info *di, guint8 *drep)
+                                   dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_element_865_byte);
@@ -6063,7 +7651,7 @@ netlogon_dissect_element_865_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_element_866_byte(tvbuff_t *tvb, int offset,
                                   packet_info *pinfo, proto_tree *tree,
-                                  dcerpc_info *di, guint8 *drep)
+                                  dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint8(tvb, offset, pinfo, tree, di, drep,
                                hf_netlogon_unknown_char, NULL);
@@ -6074,7 +7662,7 @@ netlogon_dissect_element_866_byte(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_element_866_array(tvbuff_t *tvb, int offset,
                                    packet_info *pinfo, proto_tree *tree,
-                                   dcerpc_info *di, guint8 *drep)
+                                   dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_element_866_byte);
@@ -6085,7 +7673,7 @@ netlogon_dissect_element_866_array(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_TYPE_52(tvbuff_t *tvb, int offset,
                          packet_info *pinfo, proto_tree *parent_tree,
-                         dcerpc_info *di, guint8 *drep)
+                         dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
@@ -6114,7 +7702,7 @@ netlogon_dissect_TYPE_52(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_TYPE_52_ptr(tvbuff_t *tvb, int offset,
                              packet_info *pinfo, proto_tree *tree,
-                             dcerpc_info *di, guint8 *drep)
+                             dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_TYPE_52, NDR_POINTER_UNIQUE,
@@ -6124,18 +7712,22 @@ netlogon_dissect_TYPE_52_ptr(tvbuff_t *tvb, int offset,
 
 
 static int
-netlogon_dissect_TYPE_44(tvbuff_t *tvb, int offset,
+netlogon_dissect_Capabilities(tvbuff_t *tvb, int offset,
                          packet_info *pinfo, proto_tree *parent_tree,
-                         dcerpc_info *di, guint8 *drep)
+                         dcerpc_info *di, uint8_t *drep)
 {
     proto_item *item=NULL;
     proto_tree *tree=NULL;
+    proto_item *pitem=NULL;
+    proto_item *nitem=NULL;
     int old_offset=offset;
-    guint32 level = 0;
+    uint32_t level = 0;
 
     if(parent_tree){
+        pitem = proto_tree_get_parent(parent_tree);
         tree = proto_tree_add_subtree(parent_tree, tvb, offset, 0,
-                                   ett_TYPE_44, &item, "TYPE_44:");
+                                      ett_CAPABILITIES, &item,
+                                      "Capabilities");
     }
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
@@ -6143,9 +7735,25 @@ netlogon_dissect_TYPE_44(tvbuff_t *tvb, int offset,
 
     ALIGN_TO_4_BYTES;
     switch(level){
-    case 1:
-        offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                    hf_netlogon_unknown_long, NULL);
+    case 1: {
+        uint32_t flags;
+        dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, -1, &flags);
+        nitem = netlogon_dissect_neg_options(tvb,tree,flags,offset);
+        proto_item_set_text(nitem, "NegotiatedFlags: 0x%08x", flags);
+        proto_item_set_text(item, "ServerCapabilities");
+        proto_item_append_text(pitem, ": ServerCapabilities");
+        offset +=4;
+        }
+        break;
+    case 2: {
+        uint32_t flags;
+        dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, -1, &flags);
+        nitem = netlogon_dissect_neg_options(tvb,tree,flags,offset);
+        proto_item_set_text(nitem, "RequestedFlags: 0x%08x", flags);
+        proto_item_set_text(item, "RequestedFlags");
+        proto_item_append_text(pitem, ": RequestedFlags");
+        offset +=4;
+        }
         break;
     }
 
@@ -6156,34 +7764,27 @@ netlogon_dissect_TYPE_44(tvbuff_t *tvb, int offset,
 static int
 netlogon_dissect_WORKSTATION_BUFFER(tvbuff_t *tvb, int offset,
                                     packet_info *pinfo, proto_tree *tree,
-                                    dcerpc_info *di, guint8 *drep)
+                                    dcerpc_info *di, uint8_t *drep)
 {
-    guint32 level;
+    uint32_t level;
 
-    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_level, &level);
-    if (level == 2) {
-        /* Specs are not very clear (as usual ...) it seems that the
-         * structure in both case is a NETLOGON_WORKSTATION_INFO
-         * but in this case only the LSA POLICY INFO will contain
-         * something
-         */
-        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                     netlogon_dissect_WORKSTATION_INFORMATION, NDR_POINTER_UNIQUE,
-                                     "LSA POLICY INFO", -1);
+    UNION_ALIGN_TO_5_BYTES;
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf_netlogon_level, &level);
+    UNION_ALIGN_TO_5_BYTES;
+
+    switch (level) {
+    case 1:
+    case 2:
+        offset = netlogon_dissect_WORKSTATION_INFORMATION(tvb, offset, pinfo, tree, di, drep);
+        break;
     }
-    else {
-        if (level == 1) {
-            offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                         netlogon_dissect_WORKSTATION_INFORMATION, NDR_POINTER_UNIQUE,
-                                         "WORKSTATION INFORMATION", -1);}
-    }
+
     return offset;
 }
 
 static int
 netlogon_dissect_netrenumeratetrusteddomains_rqst(tvbuff_t *tvb, int offset,
-                                                  packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                  packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6194,7 +7795,7 @@ netlogon_dissect_netrenumeratetrusteddomains_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrenumeratetrusteddomains_reply(tvbuff_t *tvb, int offset,
-                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_UNICODE_MULTI, NDR_POINTER_REF,
@@ -6208,7 +7809,7 @@ netlogon_dissect_netrenumeratetrusteddomains_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetdcname_rqst(tvbuff_t *tvb, int offset,
-                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6233,7 +7834,7 @@ netlogon_dissect_dsrgetdcname_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetdcname_reply(tvbuff_t *tvb, int offset,
-                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_DOMAIN_CONTROLLER_INFO, NDR_POINTER_UNIQUE,
@@ -6247,25 +7848,39 @@ netlogon_dissect_dsrgetdcname_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogondummyroutine1_rqst(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
-                                              pinfo, tree, di, drep);
+    uint32_t level = 0;
+    proto_item *litem = NULL;
 
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
-                                          NDR_POINTER_UNIQUE, "unknown string",
-                                          hf_netlogon_unknown_string, 0);
+                                          NDR_POINTER_REF, "Server Handle",
+                                          hf_netlogon_logonsrv_handle, 0);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_UNIQUE, "Computer Name",
+                                          hf_netlogon_computer_name, 0);
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: credential", -1);
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_UNIQUE,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: return_authenticator", -1);
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_unknown_long, NULL);
+                                -1, &level);
+    litem = proto_tree_add_item(tree, hf_netlogon_level, tvb, offset-4, 4,
+                                DREP_ENC_INTEGER(drep));
+    switch(level){
+    case 1:
+        proto_item_append_text(litem, " (ServerCapabilities)");
+        break;
+    case 2:
+        proto_item_append_text(litem, " (RequestedFlags)");
+        break;
+    }
 
     return offset;
 }
@@ -6273,15 +7888,15 @@ netlogon_dissect_netrlogondummyroutine1_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogondummyroutine1_reply(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_UNIQUE,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: return_authenticator", -1);
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_TYPE_44, NDR_POINTER_UNIQUE,
-                                 "TYPE_44 pointer: unknown_TYPE_44", -1);
+                                 netlogon_dissect_Capabilities, NDR_POINTER_REF,
+                                 "Capabilities", -1);
 
     offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
                               hf_netlogon_rc, NULL);
@@ -6291,7 +7906,7 @@ netlogon_dissect_netrlogondummyroutine1_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonsetservicebits_rqst(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6308,7 +7923,7 @@ netlogon_dissect_netrlogonsetservicebits_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonsetservicebits_reply(tvbuff_t *tvb, int offset,
-                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
                               hf_netlogon_rc, NULL);
@@ -6319,7 +7934,7 @@ netlogon_dissect_netrlogonsetservicebits_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogongettrustrid_rqst(tvbuff_t *tvb, int offset,
-                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6334,7 +7949,7 @@ netlogon_dissect_netrlogongettrustrid_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogongettrustrid_reply(tvbuff_t *tvb, int offset,
-                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_pointer_long, NDR_POINTER_UNIQUE,
@@ -6349,7 +7964,7 @@ netlogon_dissect_netrlogongettrustrid_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogoncomputeserverdigest_rqst(tvbuff_t *tvb, int offset,
-                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6369,7 +7984,7 @@ netlogon_dissect_netrlogoncomputeserverdigest_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_BYTE_16_array(tvbuff_t *tvb, int offset,
-                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     int i;
 
@@ -6383,7 +7998,7 @@ netlogon_dissect_BYTE_16_array(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogoncomputeserverdigest_reply(tvbuff_t *tvb, int offset,
-                                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_BYTE_16_array, NDR_POINTER_UNIQUE,
@@ -6397,7 +8012,7 @@ netlogon_dissect_netrlogoncomputeserverdigest_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogoncomputeclientdigest_rqst(tvbuff_t *tvb, int offset,
-                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6419,7 +8034,7 @@ netlogon_dissect_netrlogoncomputeclientdigest_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogoncomputeclientdigest_reply(tvbuff_t *tvb, int offset,
-                                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_BYTE_16_array, NDR_POINTER_UNIQUE,
@@ -6430,12 +8045,12 @@ netlogon_dissect_netrlogoncomputeclientdigest_reply(tvbuff_t *tvb, int offset,
 
     return offset;
 }
-static int netlogon_dissect_neg_options(tvbuff_t *tvb,proto_tree *tree,guint32 flags,int offset)
+
+static proto_item *
+netlogon_dissect_neg_options(tvbuff_t *tvb,proto_tree *tree,uint32_t flags,int offset)
 {
-    static const int * hf_flags[] = {
-#if 0
+    static int * const hf_flags[] = {
         &hf_netlogon_neg_flags_80000000,
-#endif
         &hf_netlogon_neg_flags_40000000,
         &hf_netlogon_neg_flags_20000000,
 #if 0
@@ -6444,9 +8059,9 @@ static int netlogon_dissect_neg_options(tvbuff_t *tvb,proto_tree *tree,guint32 f
         &hf_netlogon_neg_flags_4000000,
         &hf_netlogon_neg_flags_2000000,
         &hf_netlogon_neg_flags_800000,
+        &hf_netlogon_neg_flags_400000,
 #endif
         &hf_netlogon_neg_flags_1000000,
-        &hf_netlogon_neg_flags_400000,
         &hf_netlogon_neg_flags_200000,
         &hf_netlogon_neg_flags_100000,
         &hf_netlogon_neg_flags_80000,
@@ -6472,23 +8087,31 @@ static int netlogon_dissect_neg_options(tvbuff_t *tvb,proto_tree *tree,guint32 f
         NULL
     };
 
-    proto_tree_add_bitmask_value_with_flags(tree, tvb, offset, hf_netlogon_neg_flags, ett_authenticate_flags, hf_flags, flags, BMT_NO_APPEND);
-
-    return 0;
+    return proto_tree_add_bitmask_value_with_flags(tree, tvb, offset, hf_netlogon_neg_flags, ett_authenticate_flags, hf_flags, flags, BMT_NO_APPEND);
 }
 
 static int
 netlogon_dissect_netrserverauthenticate3_rqst(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    guint32 flags;
+    uint32_t flags;
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
+    ALIGN_TO_5_BYTES
+
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_REF, "Acct Name", hf_netlogon_acct_name, 0);
 
+    if (di->call_data->flags & DCERPC_IS_NDR64) {
+        ALIGN_TO_4_BYTES
+    } else {
+        ALIGN_TO_2_BYTES
+    }
+
     offset = netlogon_dissect_NETLOGON_SECURE_CHANNEL_TYPE(tvb, offset,
                                                            pinfo, tree, di, drep);
+
+    ALIGN_TO_5_BYTES
 
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_REF, "Computer Name", hf_netlogon_computer_name, 0);
@@ -6509,9 +8132,58 @@ netlogon_dissect_netrserverauthenticate3_rqst(tvbuff_t *tvb, int offset,
 
     flags = tvb_get_letohl (tvb, offset);
     netlogon_dissect_neg_options(tvb,tree,flags,offset);
-    seen.isseen = FALSE;
+    seen.isseen = false;
     seen.num = 0;
     offset +=4;
+    return offset;
+}
+
+static int
+netlogon_dissect_netrserverauthenticatekerberos_rqst(tvbuff_t *tvb, int offset,
+                                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
+{
+    netlogon_auth_vars *vars = NULL;
+    dcerpc_call_value *dcv = (dcerpc_call_value *)di->call_data;
+    uint32_t flags;
+    offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
+                                              pinfo, tree, di, drep);
+    ALIGN_TO_5_BYTES
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "Acct Name", hf_netlogon_acct_name, 0);
+
+    if (di->call_data->flags & DCERPC_IS_NDR64) {
+        ALIGN_TO_4_BYTES
+    } else {
+        ALIGN_TO_2_BYTES
+    }
+
+    offset = netlogon_dissect_NETLOGON_SECURE_CHANNEL_TYPE(tvb, offset,
+                                                           pinfo, tree, di, drep);
+
+    ALIGN_TO_5_BYTES
+
+    offset = dissect_ndr_pointer_cb(
+        tvb, offset, pinfo, tree, di, drep,
+        dissect_ndr_wchar_cvstring, NDR_POINTER_REF,
+        "Computer Name", hf_netlogon_computer_name,
+        cb_wstr_postprocess,
+        GINT_TO_POINTER(CB_STR_COL_INFO |CB_STR_SAVE | 1));
+
+    ws_debug("1)Len %d offset %d txt %s",(int) strlen((char *)dcv->private_data),offset,(char*)dcv->private_data);
+    vars = create_global_netlogon_auth_vars(pinfo, (char*)dcv->private_data, 0);
+    ws_debug("2)Len %d offset %d txt %s",(int) strlen((char *)dcv->private_data),offset,vars->client_name);
+
+    ALIGN_TO_4_BYTES;
+
+    flags = tvb_get_letohl (tvb, offset);
+    netlogon_dissect_neg_options(tvb,tree,flags,offset);
+    seen.isseen = false;
+    seen.num = 0;
+    offset +=4;
+
+    vars->flags = flags;
+
     return offset;
 }
 
@@ -6528,193 +8200,229 @@ netlogon_dissect_netrserverauthenticate3_rqst(tvbuff_t *tvb, int offset,
  */
 static int
 netlogon_dissect_netrserverauthenticate2_rqst(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     return netlogon_dissect_netrserverauthenticate3_rqst(tvb,offset,pinfo,tree,di,drep);
 }
 
-#ifdef HAVE_KERBEROS
-static void str_to_unicode(const char *nt_password, char *nt_password_unicode)
-{
-    size_t password_len = 0;
-    size_t i;
-
-    password_len = strlen(nt_password);
-    if(nt_password_unicode != NULL)
-    {
-        for(i=0;i<(password_len);i++)
-        {
-            nt_password_unicode[i*2]=nt_password[i];
-            nt_password_unicode[i*2+1]=0;
-        }
-        nt_password_unicode[2*password_len]='\0';
-    }
-}
-
-static guint32 get_keytab_as_list(md4_pass **p_pass_list, const char* ntlm_pass)
-{
-    enc_key_t *ek;
-    md4_pass* pass_list;
-    md4_pass ntlm_pass_hash;
-    int i = 0;
-    guint32 nb_pass = 0;
-    char ntlm_pass_unicode[258];
-    int add_ntlm = 0;
-    int password_len;
-
-    if(!krb_decrypt){
-        *p_pass_list=NULL;
-        return 0;
-    }
-    read_keytab_file_from_preferences();
-    memset(ntlm_pass_hash.md4,0,sizeof(md4_pass));
-
-    for(ek=enc_key_list;ek;ek=ek->next){
-        if( ek->keylength == 16 ) {
-            nb_pass++;
-        }
-    }
-
-    if (ntlm_pass[0] != '\0' && ( strlen(ntlm_pass) < 129 )) {
-        nb_pass++;
-        debugprintf("Password: %s\n",ntlm_pass);
-        password_len = (int)strlen(ntlm_pass);
-        str_to_unicode(ntlm_pass,ntlm_pass_unicode);
-        gcry_md_hash_buffer(GCRY_MD_MD4, ntlm_pass_hash.md4, ntlm_pass_unicode, password_len*2);
-        printnbyte(ntlm_pass_hash.md4,16,"Hash of the NT pass: ","\n");
-        add_ntlm = 1;
-    }
-
-    *p_pass_list = (md4_pass *)wmem_alloc(wmem_packet_scope(), nb_pass*sizeof(md4_pass));
-    pass_list=*p_pass_list;
-    if(add_ntlm) {
-        memcpy(pass_list[0].md4,&(ntlm_pass_hash.md4),sizeof(md4_pass));
-        i++;
-    }
-
-    for(ek=enc_key_list;ek;ek=ek->next){
-        if( ek->keylength == 16 ) {
-            memcpy(pass_list[i].md4,ek->keyvalue,16);
-            i++;
-        }
-    }
-    return nb_pass;
-}
-#endif
-
 static int
-netlogon_dissect_netrserverauthenticate23_reply(tvbuff_t *tvb, int offset,
-                                                packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep, int version3)
+netlogon_dissect_netrserverauthenticate023_reply(tvbuff_t *tvb, int offset,
+                                                 packet_info *pinfo,
+                                                 proto_tree *tree,
+                                                 dcerpc_info *di,
+                                                 uint8_t *drep,
+                                                 int version)
 {
-    guint32 flags;
+    uint32_t flags = 0;
     netlogon_auth_vars *vars;
-    netlogon_auth_key key;
-    guint64 server_cred;
+    uint64_t server_cred;
 
     offset = dissect_dcerpc_8bytes(tvb, offset, pinfo, tree, drep,
                                    hf_server_credential, &server_cred);
 
-    flags = tvb_get_letohl (tvb, offset);
-    netlogon_dissect_neg_options(tvb,tree,flags,offset);
-    offset +=4;
-
+    if (version >= 2) {
+        flags = tvb_get_letohl (tvb, offset);
+        netlogon_dissect_neg_options(tvb,tree,flags,offset);
+        offset +=4;
+    }
     ALIGN_TO_4_BYTES;
-    if(version3) {
+    if (version >= 3) {
         offset = dissect_dcerpc_uint32(tvb, offset, pinfo, tree, drep,
                                        hf_server_rid, NULL);
     }
     offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
                               hf_netlogon_rc, NULL);
 
-    generate_hash_key(pinfo, 1 , &key, NULL);
-
-    vars = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths, &key);
+    vars = find_tmp_netlogon_auth_vars(pinfo, 1);
     if(vars != NULL) {
-        debugprintf("Found some vars (ie. server/client challenges), let's see if I can get a session key\n");
-        while(vars != NULL && vars->next_start != -1 && vars->next_start < (int) pinfo->num ) {
-            debugprintf("looping auth reply...\n");
-            vars = vars->next;
-        }
-        if(vars == NULL ) {
-            debugprintf("Something strange happened while searching for authenticate_reply\n");
-        }
-        else {
-#ifdef HAVE_KERBEROS
+        ws_debug("Found some vars (ie. server/client challenges), let's see if I can get a session key");
+        {
             md4_pass *pass_list=NULL;
-            guint32 list_size = 0;
+            const md4_pass *used_md4 = NULL;
+            const char *used_method = NULL;
+            uint32_t list_size = 0;
             unsigned int i = 0;
             md4_pass password;
-#endif
-            guint8 session_key[16];
+            uint8_t session_key[16];
             int found = 0;
 
             vars->flags = flags;
-            vars->can_decrypt = FALSE;
-#ifdef HAVE_KERBEROS
-            list_size = get_keytab_as_list(&pass_list,gbl_nt_password);
-            debugprintf("Found %d passwords \n",list_size);
-#endif
-            if( flags & NETLOGON_FLAG_STRONGKEY ) {
-#ifdef HAVE_KERBEROS
-                guint8 zeros[4] = { 0 };
-                guint8 md5[HASH_MD5_LENGTH];
-                gcry_md_hd_t md5_handle;
-                guint8 buf[8] = { 0 };
-                guint64 calculated_cred;
+            vars->can_decrypt = false;
+            list_size = get_md4pass_list(pinfo->pool, &pass_list);
+            ws_debug("Found %d passwords ",list_size);
+            if( flags & NETLOGON_FLAG_AES )
+            {
+                uint8_t salt_buf[16] = { 0 };
+                uint8_t sha256[HASH_SHA2_256_LENGTH];
+                uint64_t calculated_cred;
 
-                if (!gcry_md_open(&md5_handle, GCRY_MD_MD5, 0)) {
-                    gcry_md_write(md5_handle, zeros, 4);
-                    gcry_md_write(md5_handle, (guint8*)&vars->client_challenge, 8);
-                    gcry_md_write(md5_handle, (guint8*)&vars->server_challenge, 8);
-                    memcpy(md5, gcry_md_read(md5_handle, 0), 16);
-                    gcry_md_close(md5_handle);
-                }
-                printnbyte(md5,8,"MD5:","\n");
-                printnbyte((guint8*)&vars->client_challenge,8,"Client challenge:","\n");
-                printnbyte((guint8*)&vars->server_challenge,8,"Server challenge:","\n");
-                printnbyte((guint8*)&server_cred,8,"Server creds:","\n");
+                memcpy(&salt_buf[0], (uint8_t*)&vars->client_challenge, 8);
+                memcpy(&salt_buf[8], (uint8_t*)&vars->server_challenge, 8);
+
+                used_method = "AES";
+                ws_log_buffer((uint8_t*)&vars->client_challenge, 8, "Client challenge");
+                ws_log_buffer((uint8_t*)&vars->server_challenge, 8, "Server challenge");
+                ws_log_buffer((uint8_t*)&server_cred, 8, "Server creds");
                 for(i=0;i<list_size;i++)
                 {
+                    used_md4 = &pass_list[i];
                     password = pass_list[i];
-                    if (!ws_hmac_buffer(GCRY_MD_MD5, session_key, md5, HASH_MD5_LENGTH, (guint8*) &password, 16)) {
-                        crypt_des_ecb(buf,(unsigned char*)&vars->server_challenge,session_key);
-                        crypt_des_ecb((unsigned char*)&calculated_cred,buf,session_key+7);
-#if 0
-                        printnbyte((guint8*)&calculated_cred,8,"Calculated creds:","\n");
-#endif
+                    ws_log_buffer((uint8_t*)&password, 16, "NTHASH");
+                    if (!ws_hmac_buffer(GCRY_MD_SHA256, sha256, salt_buf, sizeof(salt_buf), (uint8_t*) &password, 16)) {
+                        gcry_error_t err;
+                        gcry_cipher_hd_t cipher_hd = NULL;
+                        uint8_t iv[16] = { 0 };
+
+                        /* truncate the session key to 16 bytes */
+                        memcpy(session_key, sha256, 16);
+                        ws_log_buffer((uint8_t*)session_key, 16, "Session Key");
+
+                        /* Open the cipher */
+                        err = gcry_cipher_open(&cipher_hd, GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_CFB8, 0);
+                        if (err != 0) {
+                            ws_warning("GCRY: cipher open %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+                            break;
+                        }
+
+                        /* Set the initial value */
+                        err = gcry_cipher_setiv(cipher_hd, iv, sizeof(iv));
+                        if (err != 0) {
+                            ws_warning("GCRY: setiv %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+                            gcry_cipher_close(cipher_hd);
+                            break;
+                        }
+
+                        /* Set the key */
+                        err = gcry_cipher_setkey(cipher_hd, session_key, 16);
+                        if (err != 0) {
+                            ws_warning("GCRY: setkey %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+                            gcry_cipher_close(cipher_hd);
+                            break;
+                        }
+
+                        calculated_cred = 0x1234567812345678;
+                        err = gcry_cipher_encrypt(cipher_hd,
+                                                  (uint8_t *)&calculated_cred, 8,
+                                                  (const uint8_t *)&vars->server_challenge, 8);
+                        if (err != 0) {
+                            ws_warning("GCRY: encrypt %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+                            gcry_cipher_close(cipher_hd);
+                            break;
+                        }
+
+                        /* Done with the cipher */
+                        gcry_cipher_close(cipher_hd);
+
+                        ws_log_buffer((uint8_t*)&calculated_cred, 8, "Calculated creds");
+
                         if(calculated_cred==server_cred) {
                             found = 1;
                             break;
                         }
                     }
                 }
-#endif
+            } else if ( flags & NETLOGON_FLAG_STRONGKEY ) {
+                uint8_t zeros[4] = { 0 };
+                uint8_t md5[HASH_MD5_LENGTH] = { 0 };
+                gcry_md_hd_t md5_handle;
+                uint8_t buf[8] = { 0 };
+                uint64_t calculated_cred;
+
+                used_method = "MD5";
+                if (!gcry_md_open(&md5_handle, GCRY_MD_MD5, 0)) {
+                    gcry_md_write(md5_handle, zeros, 4);
+                    gcry_md_write(md5_handle, (uint8_t*)&vars->client_challenge, 8);
+                    gcry_md_write(md5_handle, (uint8_t*)&vars->server_challenge, 8);
+                    memcpy(md5, gcry_md_read(md5_handle, 0), 16);
+                    gcry_md_close(md5_handle);
+                }
+                ws_log_buffer(md5, 8, "MD5");
+                ws_log_buffer((uint8_t*)&vars->client_challenge, 8, "Client challenge");
+                ws_log_buffer((uint8_t*)&vars->server_challenge, 8, "Server challenge");
+                ws_log_buffer((uint8_t*)&server_cred, 8, "Server creds");
+                for(i=0;i<list_size;i++)
+                {
+                    used_md4 = &pass_list[i];
+                    password = pass_list[i];
+                    if (!ws_hmac_buffer(GCRY_MD_MD5, session_key, md5, HASH_MD5_LENGTH, (uint8_t*) &password, 16)) {
+                        crypt_des_ecb(buf,(unsigned char*)&vars->server_challenge,session_key);
+                        crypt_des_ecb((unsigned char*)&calculated_cred,buf,session_key+7);
+                        ws_log_buffer((uint8_t*)&calculated_cred, 8, "Calculated creds");
+                        if(calculated_cred==server_cred) {
+                            found = 1;
+                            break;
+                        }
+                    }
+                }
             }
-#if 0 /* Fix -Wduplicated-branches */
-            else if( flags&NETLOGON_FLAG_USEAES)
-            {
-                /* Not implemented */
-                debugprintf("AES not supported yet\n");
-                memset(session_key,0,16);
-            }
-#endif
             else
             {
-                /*Not implemented*/
-                debugprintf("Else case not implemented\n");
-                memset(session_key,0,16);
+                uint32_t c1 = (uint32_t)(vars->client_challenge & UINT32_MAX);
+                uint32_t c2 = (uint32_t)((vars->client_challenge >> 32) & UINT32_MAX);
+                uint32_t s1 = (uint32_t)(vars->server_challenge & UINT32_MAX);
+                uint32_t s2 = (uint32_t)((vars->server_challenge >> 32) & UINT32_MAX);
+                uint32_t sum1 = c1 + s1;
+                uint32_t sum2 = c2 + s2;
+                uint64_t sum = (uint64_t)sum1 | ((uint64_t)sum2 << 32);
+
+                used_method = "DES";
+                ws_log_buffer((uint8_t*)&sum, 8,"SUM for DES");
+                ws_log_buffer((uint8_t*)&vars->client_challenge,8,"Client challenge");
+                ws_log_buffer((uint8_t*)&vars->server_challenge,8,"Server challenge");
+                ws_log_buffer((uint8_t*)&server_cred,8,"Server creds");
+                for(i=0;i<list_size;i++)
+                {
+                    uint8_t buf[8] = { 0 };
+                    uint64_t calculated_cred;
+
+                    memset(session_key, 0, 16);
+
+                    used_md4 = &pass_list[i];
+                    crypt_des_ecb(buf, (unsigned char*)&sum, used_md4->md4);
+                    crypt_des_ecb((unsigned char*)session_key, buf, used_md4->md4+9);
+
+                    crypt_des_ecb(buf,(unsigned char*)&vars->server_challenge,session_key);
+                    crypt_des_ecb((unsigned char*)&calculated_cred,buf,session_key+7);
+                    ws_log_buffer((uint8_t*)&calculated_cred,8,"Calculated creds");
+                    if(calculated_cred==server_cred) {
+                        found = 1;
+                        break;
+                    }
+                }
             }
             if(found) {
+                vars->nthash = *used_md4;
+                vars->auth_fd_num = pinfo->num;
                 memcpy(&vars->session_key,session_key,16);
-                debugprintf("Found the good session key !\n");
+                ws_debug("Found the good session key !");
+                expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                         &ei_netlogon_auth_nthash,
+                         "%s authenticated using %s (%02x%02x%02x%02x...)",
+                         used_method, used_md4->key_origin,
+                         used_md4->md4[0] & 0xFF, used_md4->md4[1] & 0xFF,
+                         used_md4->md4[2] & 0xFF, used_md4->md4[3] & 0xFF);
+                expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                         &ei_netlogon_session_key,
+                         "session key ("
+                         "%02x%02x%02x%02x"
+                         "%02x%02x%02x%02x"
+                         "%02x%02x%02x%02x"
+                         "%02x%02x%02x%02x"
+                         ")",
+                         session_key[0] & 0xFF,  session_key[1] & 0xFF,
+                         session_key[2] & 0xFF,  session_key[3] & 0xFF,
+                         session_key[4] & 0xFF,  session_key[5] & 0xFF,
+                         session_key[6] & 0xFF,  session_key[7] & 0xFF,
+                         session_key[8] & 0xFF,  session_key[9] & 0xFF,
+                         session_key[10] & 0xFF, session_key[11] & 0xFF,
+                         session_key[12] & 0xFF, session_key[13] & 0xFF,
+                         session_key[14] & 0xFF, session_key[15] & 0xFF);
             }
             else {
-                debugprintf("Session key not found !\n");
+                ws_debug("Session key not found !");
                 memset(&vars->session_key,0,16);
             }
         }
-    } else {
-        printnbyte((guint8*)&vars->session_key, 16, "Session key:","\n");
     }
 
     return offset;
@@ -6722,22 +8430,58 @@ netlogon_dissect_netrserverauthenticate23_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrserverauthenticate3_reply(tvbuff_t *tvb, int offset,
-                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    return netlogon_dissect_netrserverauthenticate23_reply(tvb,offset,pinfo,tree,di,drep,1);
+    return netlogon_dissect_netrserverauthenticate023_reply(tvb,offset,pinfo,tree,di,drep,3);
 }
 
 static int
 netlogon_dissect_netrserverauthenticate2_reply(tvbuff_t *tvb, int offset,
-                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
-    return netlogon_dissect_netrserverauthenticate23_reply(tvb,offset,pinfo,tree,di,drep,0);
+    return netlogon_dissect_netrserverauthenticate023_reply(tvb,offset,pinfo,tree,di,drep,2);
+}
+
+static int
+netlogon_dissect_netrserverauthenticatekerberos_reply(tvbuff_t *tvb, int offset,
+                                                      packet_info *pinfo,
+                                                      proto_tree *tree,
+                                                      dcerpc_info *di,
+                                                      uint8_t *drep)
+{
+    netlogon_auth_vars *vars = NULL;
+    uint32_t flags = 0;
+
+    flags = tvb_get_letohl (tvb, offset);
+    netlogon_dissect_neg_options(tvb,tree,flags,offset);
+    offset +=4;
+    ALIGN_TO_4_BYTES;
+    offset = dissect_dcerpc_uint32(tvb, offset, pinfo, tree, drep,
+                                   hf_server_rid, NULL);
+    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
+                              hf_netlogon_rc, NULL);
+
+    vars = find_tmp_netlogon_auth_vars(pinfo, 1);
+    if (vars != NULL) {
+        vars->flags = flags;
+        snprintf(vars->nthash.key_origin, NTLMSSP_MAX_ORIG_LEN,
+                 "ServerAuthenticateKerberos(%s) at frame %u",
+                 vars->client_name, pinfo->num);
+        vars->auth_fd_num = pinfo->num;
+        expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+                               &ei_netlogon_session_key,
+                               "zero session key");
+    } else {
+        ws_debug("ServerAuthenticateKerberos request not found !");
+    }
+
+    return offset;
 }
 
 
 static int
 netlogon_dissect_dsrgetdcnameex_rqst(tvbuff_t *tvb, int offset,
-                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6760,7 +8504,7 @@ netlogon_dissect_dsrgetdcnameex_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetdcnameex_reply(tvbuff_t *tvb, int offset,
-                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_DOMAIN_CONTROLLER_INFO, NDR_POINTER_UNIQUE,
@@ -6774,7 +8518,7 @@ netlogon_dissect_dsrgetdcnameex_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetsitename_rqst(tvbuff_t *tvb, int offset,
-                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6785,7 +8529,7 @@ netlogon_dissect_dsrgetsitename_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetsitename_reply(tvbuff_t *tvb, int offset,
-                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
 
     /* XXX hmmm this does not really look like a UNIQUE pointer but
@@ -6804,7 +8548,7 @@ netlogon_dissect_dsrgetsitename_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogongetdomaininfo_rqst(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     /* Unlike the other NETLOGON RPCs, this is not a unique pointer. */
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
@@ -6820,6 +8564,8 @@ netlogon_dissect_netrlogongetdomaininfo_rqst(tvbuff_t *tvb, int offset,
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: return_authenticator", -1);
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_level, NULL);
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_WORKSTATION_BUFFER, NDR_POINTER_REF,
                                  "WORKSTATION_BUFFER", -1);
@@ -6829,7 +8575,7 @@ netlogon_dissect_netrlogongetdomaininfo_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogongetdomaininfo_reply(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -6847,27 +8593,27 @@ netlogon_dissect_netrlogongetdomaininfo_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrserverpasswordset2_rqst(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
 
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
-                                          NDR_POINTER_UNIQUE, "unknown string",
-                                          hf_netlogon_unknown_string, 0);
+                                          NDR_POINTER_REF, "Acct Name",
+                                          hf_netlogon_acct_name, 0);
 
-    offset = dissect_ndr_uint16(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_unknown_short, NULL);
+    offset = netlogon_dissect_NETLOGON_SECURE_CHANNEL_TYPE(tvb, offset,
+                                                           pinfo, tree, di, drep);
 
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
-                                          NDR_POINTER_UNIQUE, "unknown string",
-                                          hf_netlogon_unknown_string, 0);
+                                          NDR_POINTER_REF, "Computer Name",
+                                          hf_netlogon_computer_name, 0);
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: credential", -1);
 
-    offset = netlogon_dissect_UNICODE_STRING_512(tvb, offset,
+    offset = netlogon_dissect_netr_CryptPassword(tvb, offset,
                                                  pinfo, tree, di, drep);
 
     return offset;
@@ -6876,10 +8622,10 @@ netlogon_dissect_netrserverpasswordset2_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrserverpasswordset2_reply(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_UNIQUE,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: return_authenticator", -1);
 
     offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
@@ -6890,7 +8636,7 @@ netlogon_dissect_netrserverpasswordset2_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrserverpasswordget_rqst(tvbuff_t *tvb, int offset,
-                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6915,7 +8661,7 @@ netlogon_dissect_netrserverpasswordget_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrserverpasswordget_reply(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
@@ -6931,27 +8677,215 @@ netlogon_dissect_netrserverpasswordget_reply(tvbuff_t *tvb, int offset,
     return offset;
 }
 
+#if GCRYPT_VERSION_NUMBER >= 0x010800 /* 1.8.0 */
+static gcry_error_t prepare_session_key_cipher_aes(netlogon_auth_vars *vars,
+                                                   gcry_cipher_hd_t *_cipher_hd)
+{
+    gcry_error_t err;
+    gcry_cipher_hd_t cipher_hd = NULL;
+    uint8_t iv[16] = { 0 };
+
+    /* Open the cipher */
+    err = gcry_cipher_open(&cipher_hd, GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_CFB8, 0);
+    if (err != 0) {
+        ws_warning("GCRY: cipher open %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        return err;
+    }
+
+    /* Set the initial value */
+    err = gcry_cipher_setiv(cipher_hd, iv, sizeof(iv));
+    if (err != 0) {
+        ws_warning("GCRY: setiv %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return err;
+    }
+
+    /* Set the key */
+    err = gcry_cipher_setkey(cipher_hd, vars->session_key, 16);
+    if (err != 0) {
+        ws_warning("GCRY: setkey %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return err;
+    }
+
+    *_cipher_hd = cipher_hd;
+    return 0;
+}
+#endif
+
+static gcry_error_t prepare_session_key_cipher_strong(netlogon_auth_vars *vars,
+                                                      gcry_cipher_hd_t *_cipher_hd)
+{
+    gcry_error_t err;
+    gcry_cipher_hd_t cipher_hd = NULL;
+
+    /* Open the cipher */
+    err = gcry_cipher_open(&cipher_hd, GCRY_CIPHER_ARCFOUR, GCRY_CIPHER_MODE_STREAM, 0);
+    if (err != 0) {
+        ws_warning("GCRY: cipher open %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        return err;
+    }
+
+    /* Set the key */
+    err = gcry_cipher_setkey(cipher_hd, vars->session_key, 16);
+    if (err != 0) {
+        ws_warning("GCRY: setkey %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return err;
+    }
+
+    *_cipher_hd = cipher_hd;
+    return 0;
+}
+
+static gcry_error_t prepare_session_key_cipher(netlogon_auth_vars *vars,
+                                               gcry_cipher_hd_t *_cipher_hd)
+{
+    *_cipher_hd = NULL;
+
+#if GCRYPT_VERSION_NUMBER >= 0x010800 /* 1.8.0 */
+    if (vars->flags & NETLOGON_FLAG_AES) {
+        return prepare_session_key_cipher_aes(vars, _cipher_hd);
+    }
+#endif
+
+    if (vars->flags & NETLOGON_FLAG_STRONGKEY) {
+        return prepare_session_key_cipher_strong(vars, _cipher_hd);
+    }
+
+    return GPG_ERR_UNSUPPORTED_ALGORITHM;
+}
+
+static int
+netlogon_dissect_opaque_buffer_block(tvbuff_t *tvb, int offset, int length,
+                                     packet_info *pinfo, proto_tree *tree,
+                                     dcerpc_info *di, uint8_t *drep _U_)
+{
+    int orig_offset = offset;
+    unsigned char is_server = 0;
+    netlogon_auth_vars *vars;
+    gcry_error_t err;
+    gcry_cipher_hd_t cipher_hd = NULL;
+    uint8_t *buffer = NULL;
+    tvbuff_t *dectvb = NULL;
+    uint32_t expected_len;
+    uint32_t decrypted_len;
+
+    proto_tree_add_item(tree, di->hf_index, tvb, offset, length, ENC_NA);
+    offset += length;
+
+    if (length < 8) {
+        return offset;
+    }
+
+    vars = find_global_netlogon_auth_vars(pinfo, is_server);
+    if (vars == NULL ) {
+        ws_debug("Vars not found %d (packet_data)",wmem_map_size(netlogon_auths));
+        expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+            &ei_netlogon_session_key,
+            "No session key found");
+        return offset;
+    }
+
+    err = prepare_session_key_cipher(vars, &cipher_hd);
+    if (err != 0) {
+        ws_warning("GCRY: prepare_session_key_cipher %s/%s\n",
+                   gcry_strsource(err), gcry_strerror(err));
+        return offset;
+    }
+
+    buffer = (uint8_t*)tvb_memdup(pinfo->pool, tvb, orig_offset, length);
+    if (buffer == NULL) {
+        gcry_cipher_close(cipher_hd);
+        return offset;
+    }
+
+    err = gcry_cipher_decrypt(cipher_hd, buffer, length, NULL, 0);
+    gcry_cipher_close(cipher_hd);
+    if (err != 0) {
+        ws_warning("GCRY: prepare_session_key_cipher %s/%s\n",
+                   gcry_strsource(err), gcry_strerror(err));
+        return offset;
+    }
+
+    dectvb = tvb_new_child_real_data(tvb, buffer, length, length);
+    if (dectvb == NULL) {
+        return offset;
+    }
+
+    expected_len = length - 8;
+    decrypted_len = tvb_get_letohl(dectvb, 4);
+    if (decrypted_len != expected_len) {
+        expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+             &ei_netlogon_session_key,
+             "Unusable session key learned in frame %d ("
+             "%02x%02x%02x%02x"
+             ") from %s",
+             vars->auth_fd_num,
+             vars->session_key[0] & 0xFF,  vars->session_key[1] & 0xFF,
+             vars->session_key[2] & 0xFF,  vars->session_key[3] & 0xFF,
+             vars->nthash.key_origin);
+        return offset;
+    }
+
+    expert_add_info_format(pinfo, proto_tree_get_parent(tree),
+             &ei_netlogon_session_key,
+             "Using session key learned in frame %d ("
+             "%02x%02x%02x%02x"
+             ") from %s",
+             vars->auth_fd_num,
+             vars->session_key[0] & 0xFF,  vars->session_key[1] & 0xFF,
+             vars->session_key[2] & 0xFF,  vars->session_key[3] & 0xFF,
+             vars->nthash.key_origin);
+
+    add_new_data_source(pinfo, dectvb, "OpaqueBuffer (Decrypted)");
+
+    proto_tree_add_item(tree, hf_netlogon_opaque_buffer_dec, dectvb, 0, length, ENC_NA);
+    return offset;
+}
+
+static int
+netlogon_dissect_opaque_buffer(tvbuff_t *tvb, int offset,
+                            packet_info *pinfo, proto_tree *tree,
+                            dcerpc_info *di, uint8_t *drep)
+{
+    offset = dissect_ndr_ucarray_block(tvb, offset, pinfo, tree, di, drep,
+                                       netlogon_dissect_opaque_buffer_block);
+
+    return offset;
+}
+
+/*
+ * IDL long NetrLogonSendToSam(
+ * IDL      [in][unique][string] wchar_t *ServerName,
+ * IDL      [in][ref][string] wchar_t *Workstation,
+ * IDL      [in][ref] AUTHENTICATOR *credential,
+ * IDL      [in][out][ref] AUTHENTICATOR *returnauthenticator,
+ * IDL      [in, size_is(OpaqueBufferSize)][ref] UCHAR * OpaqueBuffer,
+ * IDL      [in] ULONG OpaqueBufferSize
+ * IDL );
+ */
 static int
 netlogon_dissect_netrlogonsendtosam_rqst(tvbuff_t *tvb, int offset,
-                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                         packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
 
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
-                                          NDR_POINTER_UNIQUE, "unknown string",
-                                          hf_netlogon_unknown_string, 0);
+                                          NDR_POINTER_REF, "Computer Name",
+                                          hf_netlogon_computer_name, 0);
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: credential", -1);
 
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_BYTE_array, NDR_POINTER_UNIQUE,
-                                 "BYTE pointer: unknown_BYTE", -1);
+                                 netlogon_dissect_opaque_buffer, NDR_POINTER_REF,
+                                 "OpaqueBuffer", hf_netlogon_opaque_buffer_enc);
 
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
-                                hf_netlogon_unknown_long, NULL);
+                                hf_netlogon_opaque_buffer_size, NULL);
 
     return offset;
 }
@@ -6959,10 +8893,10 @@ netlogon_dissect_netrlogonsendtosam_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonsendtosam_reply(tvbuff_t *tvb, int offset,
-                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
-                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_UNIQUE,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
                                  "AUTHENTICATOR: return_authenticator", -1);
 
     offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
@@ -6973,7 +8907,7 @@ netlogon_dissect_netrlogonsendtosam_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsraddresstositenamesw_rqst(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -6991,7 +8925,7 @@ netlogon_dissect_dsraddresstositenamesw_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsraddresstositenamesw_reply(tvbuff_t *tvb, int offset,
-                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                              packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_TYPE_50_ptr, NDR_POINTER_UNIQUE,
@@ -7005,7 +8939,7 @@ netlogon_dissect_dsraddresstositenamesw_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetdcnameex2_rqst(tvbuff_t *tvb, int offset,
-                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                      packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -7038,7 +8972,7 @@ netlogon_dissect_dsrgetdcnameex2_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetdcnameex2_reply(tvbuff_t *tvb, int offset,
-                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                       packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_DOMAIN_CONTROLLER_INFO, NDR_POINTER_UNIQUE,
@@ -7052,7 +8986,7 @@ netlogon_dissect_dsrgetdcnameex2_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogongettimeserviceparentdomain_rqst(tvbuff_t *tvb, int offset,
-                                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -7063,7 +8997,7 @@ netlogon_dissect_netrlogongettimeserviceparentdomain_rqst(tvbuff_t *tvb, int off
 
 static int
 netlogon_dissect_netrlogongettimeserviceparentdomain_reply(tvbuff_t *tvb, int offset,
-                                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
                                           NDR_POINTER_UNIQUE, "unknown string",
@@ -7081,7 +9015,7 @@ netlogon_dissect_netrlogongettimeserviceparentdomain_reply(tvbuff_t *tvb, int of
 
 static int
 netlogon_dissect_netrenumeratetrusteddomainsex_rqst(tvbuff_t *tvb, int offset,
-                                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                    packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -7091,7 +9025,7 @@ netlogon_dissect_netrenumeratetrusteddomainsex_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrenumeratetrusteddomainsex_reply(tvbuff_t *tvb, int offset,
-                                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                     packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_entries, NULL);
@@ -7108,7 +9042,7 @@ netlogon_dissect_netrenumeratetrusteddomainsex_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsraddresstositenamesexw_rqst(tvbuff_t *tvb, int offset,
-                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -7126,7 +9060,7 @@ netlogon_dissect_dsraddresstositenamesexw_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsraddresstositenamesexw_reply(tvbuff_t *tvb, int offset,
-                                                packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_TYPE_52_ptr, NDR_POINTER_UNIQUE,
@@ -7141,7 +9075,7 @@ netlogon_dissect_dsraddresstositenamesexw_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_site_name_item(tvbuff_t *tvb, int offset,
-                                packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_counted_string_cb(
         tvb, offset, pinfo, tree, di, drep, hf_netlogon_site_name,
@@ -7152,7 +9086,7 @@ netlogon_dissect_site_name_item(tvbuff_t *tvb, int offset,
 }
 static int
 netlogon_dissect_site_name_array(tvbuff_t *tvb, int offset,
-                                 packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                 packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_site_name_item);
@@ -7162,7 +9096,7 @@ netlogon_dissect_site_name_array(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_site_names(tvbuff_t *tvb, int offset,
-                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_count, NULL);
@@ -7176,7 +9110,7 @@ netlogon_dissect_site_names(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetdcsitecoveragew_rqst(tvbuff_t *tvb, int offset,
-                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                            packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -7187,7 +9121,7 @@ netlogon_dissect_dsrgetdcsitecoveragew_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrgetdcsitecoveragew_reply(tvbuff_t *tvb, int offset,
-                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                             packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_site_names, NDR_POINTER_UNIQUE,
@@ -7201,7 +9135,7 @@ netlogon_dissect_dsrgetdcsitecoveragew_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonsamlogonex_rqst(tvbuff_t *tvb, int offset,
-                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                          packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
 
     offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
@@ -7250,7 +9184,7 @@ netlogon_dissect_netrlogonsamlogonex_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_netrlogonsamlogonex_reply(tvbuff_t *tvb, int offset,
-                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                           packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
                                  netlogon_dissect_VALIDATION, NDR_POINTER_REF,
@@ -7282,10 +9216,210 @@ netlogon_dissect_netrlogonsamlogonex_reply(tvbuff_t *tvb, int offset,
     return offset;
 }
 
+static int
+netlogon_dissect_netrservertrustpasswordsget_rqst(tvbuff_t *tvb,
+                                             int offset,
+                                             packet_info *pinfo,
+                                             proto_tree *tree,
+                                             dcerpc_info *di,
+                                             uint8_t *drep)
+{
+    offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
+                                              pinfo, tree, di, drep);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "Acct Name",
+                                          hf_netlogon_acct_name, 0);
+
+    offset = netlogon_dissect_NETLOGON_SECURE_CHANNEL_TYPE(tvb, offset,
+                                                           pinfo, tree, di, drep);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "Computer Name",
+                                          hf_netlogon_computer_name, 0);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: credential", -1);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_netrservertrustpasswordsget_reply(tvbuff_t *tvb,
+                                              int offset,
+                                              packet_info *pinfo,
+                                              proto_tree *tree,
+                                              dcerpc_info *di,
+                                              uint8_t *drep)
+{
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: return_authenticator", -1);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NT_OWF_PASSWORD, NDR_POINTER_REF,
+                                 "NT_OWF_PASSWORD pointer: new_password", -1);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NT_OWF_PASSWORD, NDR_POINTER_REF,
+                                 "NT_OWF_PASSWORD pointer: old_password", -1);
+
+    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
+                              hf_netlogon_rc, NULL);
+
+    return offset;
+}
+
+
+static int
+netlogon_dissect_netrservergettrustinfo_rqst(tvbuff_t *tvb,
+                                             int offset,
+                                             packet_info *pinfo,
+                                             proto_tree *tree,
+                                             dcerpc_info *di,
+                                             uint8_t *drep)
+{
+    offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
+                                              pinfo, tree, di, drep);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "Acct Name",
+                                          hf_netlogon_acct_name, 0);
+
+    offset = netlogon_dissect_NETLOGON_SECURE_CHANNEL_TYPE(tvb, offset,
+                                                           pinfo, tree, di, drep);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "Computer Name",
+                                          hf_netlogon_computer_name, 0);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: credential", -1);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_NL_GENERIC_RPC_DATA_UINT32_ARRAY(tvbuff_t *tvb, int offset,
+                                                  packet_info *pinfo _U_, proto_tree *tree,
+                                                  dcerpc_info *di, uint8_t *drep _U_)
+{
+    if(di->conformant_run){
+        /*just a run to handle conformant arrays, nothing to dissect.*/
+        return offset;
+    }
+
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_DOMAIN_TRUST_ATTRIBS);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_NL_GENERIC_RPC_DATA_STRING(tvbuff_t *tvb, int offset,
+                                            packet_info *pinfo _U_, proto_tree *tree,
+                                            dcerpc_info *di, uint8_t *drep _U_)
+{
+    if(di->conformant_run){
+        /*just a run to handle conformant arrays, nothing to dissect.*/
+        return offset;
+    }
+// TODO
+    offset = dissect_ndr_counted_string(tvb, offset, pinfo, tree, di, drep,
+                                        hf_netlogon_package_name, 0|CB_STR_SAVE);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_NL_GENERIC_RPC_DATA_STRING_ARRAY(tvbuff_t *tvb, int offset,
+                                                  packet_info *pinfo _U_, proto_tree *tree,
+                                                  dcerpc_info *di, uint8_t *drep _U_)
+{
+    if(di->conformant_run){
+        /*just a run to handle conformant arrays, nothing to dissect.*/
+        return offset;
+    }
+
+    offset = dissect_ndr_ucarray(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NL_GENERIC_RPC_DATA_STRING);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_NL_GENERIC_RPC_DATA(tvbuff_t *tvb, int offset,
+                                     packet_info *pinfo _U_, proto_tree *parent_tree,
+                                     dcerpc_info *di, uint8_t *drep _U_)
+{
+    proto_item *item=NULL;
+    proto_tree *tree=NULL;
+
+    if(di->conformant_run){
+        /*just a run to handle conformant arrays, nothing to dissect.*/
+        return offset;
+    }
+
+    if(parent_tree){
+        tree = proto_tree_add_subtree(parent_tree, tvb, offset, -1,
+                                      ett_NL_GENERIC_RPC_DATA, &item,
+                                      "NL_GENERIC_RPC_DATA:");
+    }
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_trust_len, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NL_GENERIC_RPC_DATA_UINT32_ARRAY,
+                                 NDR_POINTER_UNIQUE,
+                                 "UINT32 ARRAY pointer: ", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_trust_len, NULL);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NL_GENERIC_RPC_DATA_STRING_ARRAY,
+                                 NDR_POINTER_UNIQUE,
+                                 "STRING ARRAY pointer: ", -1);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_netrservergettrustinfo_reply(tvbuff_t *tvb,
+                                              int offset,
+                                              packet_info *pinfo,
+                                              proto_tree *tree,
+                                              dcerpc_info *di,
+                                              uint8_t *drep)
+{
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: return_authenticator", -1);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NT_OWF_PASSWORD, NDR_POINTER_REF,
+                                 "NT_OWF_PASSWORD pointer: new_password", -1);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NT_OWF_PASSWORD, NDR_POINTER_REF,
+                                 "NT_OWF_PASSWORD pointer: old_password", -1);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_NL_GENERIC_RPC_DATA, NDR_POINTER_UNIQUE,
+                                 "NL_GENERIC_RPC_DATA pointer: trust_info", -1);
+
+    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
+                              hf_netlogon_rc, NULL);
+
+    return offset;
+}
 
 static int
 netlogon_dissect_dsrenumeratedomaintrusts_rqst(tvbuff_t *tvb, int offset,
-                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                               packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -7298,7 +9432,7 @@ netlogon_dissect_dsrenumeratedomaintrusts_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrenumeratedomaintrusts_reply(tvbuff_t *tvb, int offset,
-                                                packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
                                 hf_netlogon_entries, NULL);
@@ -7315,7 +9449,7 @@ netlogon_dissect_dsrenumeratedomaintrusts_reply(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrderegisterdnshostrecords_rqst(tvbuff_t *tvb, int offset,
-                                                  packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                  packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
     offset = netlogon_dissect_LOGONSRV_HANDLE(tvb, offset,
                                               pinfo, tree, di, drep);
@@ -7340,8 +9474,144 @@ netlogon_dissect_dsrderegisterdnshostrecords_rqst(tvbuff_t *tvb, int offset,
 
 static int
 netlogon_dissect_dsrderegisterdnshostrecords_reply(tvbuff_t *tvb, int offset,
-                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, guint8 *drep)
+                                                   packet_info *pinfo, proto_tree *tree, dcerpc_info *di, uint8_t *drep)
 {
+    offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
+                              hf_netlogon_rc, NULL);
+
+    return offset;
+}
+
+/*
+ * TODO
+ * IDL long NetrChainSetClientAttributes(
+ * IDL );
+
+NetrChainSetClientAttributes(
+[in,string,ref] LOGONSRV_HANDLE PrimaryName,
+[in,string,ref] wchar_t * ChainedFromServerName,
+[in,string,ref] wchar_t * ChainedForClientName,
+[in,ref] PNETLOGON_AUTHENTICATOR Authenticator,
+[in,out,ref] PNETLOGON_AUTHENTICATOR ReturnAuthenticator,
+[in] DWORD dwInVersion,
+[in,ref] [switch_is(dwInVersion)]
+NL_IN_CHAIN_SET_CLIENT_ATTRIBUTES *pmsgIn,
+[in,out,ref] DWORD * pdwOutVersion,
+[in,out,ref] [switch_is(*pdwOutVersion)]
+NL_OUT_CHAIN_SET_CLIENT_ATTRIBUTES *pmsgOut
+);
+
+typedef struct _NL_OSVERSIONINFO_V1{
+DWORD dwOSVersionInfoSize;
+DWORD dwMajorVersion;
+DWORD dwMinorVersion;
+DWORD dwBuildNumber;
+DWORD dwPlatformId;
+wchar_t szCSDVersion[128];
+USHORT wServicePackMajor;
+USHORT wServicePackMinor;
+USHORT wSuiteMask;
+UCHAR wProductType;
+UCHAR wReserved;
+} NL_OSVERSIONINFO_V1;
+typedef struct _NL_IN_CHAIN_SET_CLIENT_ATTRIBUTES_V1{
+[unique,string] wchar_t * ClientDnsHostName;
+[unique] NL_OSVERSIONINFO_V1 *OsVersionInfo_V1;
+[unique,string] wchar_t * OsName;
+} NL_IN_CHAIN_SET_CLIENT_ATTRIBUTES_V1;
+typedef [switch_type(DWORD)] union{
+[case(1)] NL_IN_CHAIN_SET_CLIENT_ATTRIBUTES_V1 V1;
+} NL_IN_CHAIN_SET_CLIENT_ATTRIBUTES;
+typedef struct _NL_OUT_CHAIN_SET_CLIENT_ATTRIBUTES_V1{
+[unique,string] wchar_t *HubName;
+[unique,string] wchar_t **OldDnsHostName;
+[unique] ULONG * SupportedEncTypes;
+} NL_OUT_CHAIN_SET_CLIENT_ATTRIBUTES_V1;
+typedef [switch_type(DWORD)] union{
+[case(1)] NL_OUT_CHAIN_SET_CLIENT_ATTRIBUTES_V1 V1;
+} NL_OUT_CHAIN_SET_CLIENT_ATTRIBUTES;
+
+static int
+netlogon_dissect_NL_IN_CHAIN_SET_CLIENT_ATTRIBUTES(tvbuff_t *tvb, int offset,
+                                    packet_info *pinfo, proto_tree *tree,
+                                    dcerpc_info *di, uint8_t *drep)
+{
+    uint32_t level;
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_level, &level);
+    switch (level) {
+    case 1:
+        offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                     netlogon_dissect_WORKSTATION_INFORMATION, NDR_POINTER_UNIQUE,
+                                     "LSA POLICY INFO", -1);
+        break;
+    }
+    return offset;
+}
+ */
+static int
+netlogon_dissect_netrchainsetclientattributes_rqst(tvbuff_t *tvb, int offset,
+                                                   packet_info *pinfo,
+                                                   proto_tree *tree,
+                                                   dcerpc_info *di,
+                                                   uint8_t *drep)
+{
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "Server Handle",
+                                          hf_netlogon_logonsrv_handle, 0);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "ChainedFromServerName",
+                                          hf_netlogon_computer_name, 0);
+
+    offset = dissect_ndr_str_pointer_item(tvb, offset, pinfo, tree, di, drep,
+                                          NDR_POINTER_REF, "ChainedForClientName",
+                                          hf_netlogon_computer_name, 0);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: credential", -1);
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: return_authenticator", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_level, NULL); // in_version
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 NULL, NDR_POINTER_REF,
+                                 "IN_CHAIN_SET_CLIENT_ATTRIBUTES", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_level, NULL); // out_version
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 NULL, NDR_POINTER_REF,
+                                 "OUT_CHAIN_SET_CLIENT_ATTRIBUTES", -1);
+
+    return offset;
+}
+
+static int
+netlogon_dissect_netrchainsetclientattributes_reply(tvbuff_t *tvb, int offset,
+                                                    packet_info *pinfo,
+                                                    proto_tree *tree,
+                                                    dcerpc_info *di,
+                                                    uint8_t *drep)
+{
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 netlogon_dissect_AUTHENTICATOR, NDR_POINTER_REF,
+                                 "AUTHENTICATOR: return_authenticator", -1);
+
+    offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep,
+                                hf_netlogon_level, NULL); // out_version
+
+    offset = dissect_ndr_pointer(tvb, offset, pinfo, tree, di, drep,
+                                 NULL, NDR_POINTER_REF,
+                                 "OUT_CHAIN_SET_CLIENT_ATTRIBUTES", -1);
+
     offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep,
                               hf_netlogon_rc, NULL);
 
@@ -7350,22 +9620,22 @@ netlogon_dissect_dsrderegisterdnshostrecords_reply(tvbuff_t *tvb, int offset,
 
 /* Dissect secure channel stuff */
 
-static int hf_netlogon_secchan_nl_message_type = -1;
-static int hf_netlogon_secchan_nl_message_flags = -1;
-static int hf_netlogon_secchan_nl_message_flags_nb_domain = -1;
-static int hf_netlogon_secchan_nl_message_flags_nb_host = -1;
-static int hf_netlogon_secchan_nl_message_flags_dns_domain = -1;
-static int hf_netlogon_secchan_nl_message_flags_dns_host = -1;
-static int hf_netlogon_secchan_nl_message_flags_nb_host_utf8 = -1;
-static int hf_netlogon_secchan_nl_nb_domain = -1;
-static int hf_netlogon_secchan_nl_nb_host = -1;
-static int hf_netlogon_secchan_nl_dns_domain = -1;
-static int hf_netlogon_secchan_nl_dns_host = -1;
-static int hf_netlogon_secchan_nl_nb_host_utf8 = -1;
+static int hf_netlogon_secchan_nl_message_type;
+static int hf_netlogon_secchan_nl_message_flags;
+static int hf_netlogon_secchan_nl_message_flags_nb_domain;
+static int hf_netlogon_secchan_nl_message_flags_nb_host;
+static int hf_netlogon_secchan_nl_message_flags_dns_domain;
+static int hf_netlogon_secchan_nl_message_flags_dns_host;
+static int hf_netlogon_secchan_nl_message_flags_nb_host_utf8;
+static int hf_netlogon_secchan_nl_nb_domain;
+static int hf_netlogon_secchan_nl_nb_host;
+static int hf_netlogon_secchan_nl_dns_domain;
+static int hf_netlogon_secchan_nl_dns_host;
+static int hf_netlogon_secchan_nl_nb_host_utf8;
 
-static gint ett_secchan_verf = -1;
-static gint ett_secchan_nl_auth_message = -1;
-static gint ett_secchan_nl_auth_message_flags = -1;
+static int ett_secchan_verf;
+static int ett_secchan_nl_auth_message;
+static int ett_secchan_nl_auth_message_flags;
 
 static const value_string nl_auth_types[] = {
     { 0x00000000,         "Request"},
@@ -7377,13 +9647,14 @@ static const value_string nl_auth_types[] = {
 /* MS-NRPC : 2.2.1.3.1 NL_AUTH_MESSAGE */
 static int dissect_secchan_nl_auth_message(tvbuff_t *tvb, int offset,
                                            packet_info *pinfo,
-                                           proto_tree *tree, dcerpc_info *di _U_, guint8 *drep)
+                                           proto_tree *tree, dcerpc_info *di _U_, uint8_t *drep)
 {
+    dcerpc_auth_info *auth_info = di->auth_info;
     proto_item *item = NULL;
     proto_tree *subtree = NULL;
-    guint32 messagetype;
-    guint64 messageflags;
-    static const int *flag_fields[] = {
+    uint32_t messagetype;
+    uint64_t messageflags;
+    static int * const flag_fields[] = {
         &hf_netlogon_secchan_nl_message_flags_nb_domain,
         &hf_netlogon_secchan_nl_message_flags_nb_host,
         &hf_netlogon_secchan_nl_message_flags_dns_domain,
@@ -7392,6 +9663,8 @@ static int dissect_secchan_nl_auth_message(tvbuff_t *tvb, int offset,
         NULL
     };
     int len;
+    netlogon_auth_vars *vars = NULL;
+    unsigned char is_server;
 
     if (tree) {
         subtree = proto_tree_add_subtree(
@@ -7424,51 +9697,85 @@ static int dissect_secchan_nl_auth_message(tvbuff_t *tvb, int offset,
     /* netbios domain name */
     if (messageflags&0x00000001) {
         len = tvb_strsize(tvb, offset);
-        proto_tree_add_item(subtree, hf_netlogon_secchan_nl_nb_domain, tvb, offset, len, ENC_ASCII|ENC_NA);
+        proto_tree_add_item(subtree, hf_netlogon_secchan_nl_nb_domain, tvb, offset, len, ENC_ASCII);
         offset += len;
     }
 
     /* netbios host name */
     if (messageflags&0x00000002) {
         len = tvb_strsize(tvb, offset);
-        proto_tree_add_item(subtree, hf_netlogon_secchan_nl_nb_host, tvb, offset, len, ENC_ASCII|ENC_NA);
+        proto_tree_add_item(subtree, hf_netlogon_secchan_nl_nb_host, tvb, offset, len, ENC_ASCII);
         offset += len;
     }
 
     /* DNS domain name */
     if (messageflags&0x00000004) {
         int old_offset=offset;
-        char str[256];
+        char *str;
 
-        offset=dissect_mscldap_string(tvb, offset, str, 255, FALSE);
+        offset=dissect_mscldap_string(pinfo->pool, tvb, offset, 255, &str);
         proto_tree_add_string(subtree, hf_netlogon_secchan_nl_dns_domain, tvb, old_offset, offset-old_offset, str);
     }
 
     /* DNS host name */
     if (messageflags&0x00000008) {
         int old_offset=offset;
-        char str[256];
+        char *str;
 
-        offset=dissect_mscldap_string(tvb, offset, str, 255, FALSE);
+        offset=dissect_mscldap_string(pinfo->pool, tvb, offset, 255, &str);
         proto_tree_add_string(subtree, hf_netlogon_secchan_nl_dns_host, tvb, old_offset, offset-old_offset, str);
     }
 
     /* NetBios host name (UTF8) */
     if (messageflags&0x00000010) {
         int old_offset=offset;
-        char str[256];
+        char *str;
 
-        offset=dissect_mscldap_string(tvb, offset, str, 255, FALSE);
+        offset=dissect_mscldap_string(pinfo->pool, tvb, offset, 255, &str);
         proto_tree_add_string(subtree, hf_netlogon_secchan_nl_nb_host_utf8, tvb, old_offset, offset-old_offset, str);
     }
 
+    switch (di->ptype) {
+    case PDU_BIND:
+    case PDU_ALTER:
+    case PDU_AUTH3:
+        is_server = 0;
+        break;
+    case PDU_BIND_ACK:
+    case PDU_BIND_NAK:
+    case PDU_ALTER_ACK:
+    case PDU_FAULT:
+        is_server = 1;
+        break;
+    default:
+        return offset;
+    }
+
+    vars = find_or_create_schannel_netlogon_auth_vars(pinfo, auth_info, is_server);
+    if (vars != NULL) {
+        expert_add_info_format(pinfo, proto_tree_get_parent(subtree),
+                               &ei_netlogon_session_key,
+                               "Using session key learned in frame %d ("
+                               "%02x%02x%02x%02x"
+                               ") from %s",
+                               vars->auth_fd_num,
+                               vars->session_key[0] & 0xFF,
+                               vars->session_key[1] & 0xFF,
+                               vars->session_key[2] & 0xFF,
+                               vars->session_key[3] & 0xFF,
+                               vars->nthash.key_origin);
+    }
+    else
+    {
+        ws_debug("Vars not found (is null %d) %d (dissect_verf)",vars==NULL,wmem_map_size(netlogon_auths));
+    }
 
     return offset;
 }
 
 /* Subdissectors */
 
-static dcerpc_sub_dissector dcerpc_netlogon_dissectors[] = {
+static const dcerpc_sub_dissector dcerpc_netlogon_dissectors[] = {
     { NETLOGON_NETRLOGONUASLOGON, "NetrLogonUasLogon",
       netlogon_dissect_netrlogonuaslogon_rqst,
       netlogon_dissect_netrlogonuaslogon_reply },
@@ -7532,7 +9839,7 @@ static dcerpc_sub_dissector dcerpc_netlogon_dissectors[] = {
     { NETLOGON_DSRGETDCNAME, "DsrGetDcName",
       netlogon_dissect_dsrgetdcname_rqst,
       netlogon_dissect_dsrgetdcname_reply },
-    { NETLOGON_NETRLOGONDUMMYROUTINE1, "NetrLogonDummyRoutine1",
+    { NETLOGON_NETRLOGONDUMMYROUTINE1, "NetrLogonGetCapabilities",
       netlogon_dissect_netrlogondummyroutine1_rqst,
       netlogon_dissect_netrlogondummyroutine1_reply },
     { NETLOGON_NETRLOGONSETSERVICEBITS, "NetrLogonSetServiceBits",
@@ -7597,56 +9904,60 @@ static dcerpc_sub_dissector dcerpc_netlogon_dissectors[] = {
       netlogon_dissect_dsrderegisterdnshostrecords_rqst,
       netlogon_dissect_dsrderegisterdnshostrecords_reply },
     { NETLOGON_NETRSERVERTRUSTPASSWORDSGET, "NetrServerTrustPasswordsGet",
-      NULL, NULL },
+      netlogon_dissect_netrservertrustpasswordsget_rqst,
+      netlogon_dissect_netrservertrustpasswordsget_reply },
     { NETLOGON_DSRGETFORESTTRUSTINFORMATION, "DsrGetForestTrustInformation",
-      NULL, NULL },
+      netlogon_dissect_dsrgetforesttrustinformation_rqst,
+      netlogon_dissect_dsrgetforesttrustinformation_reply },
     { NETLOGON_NETRGETFORESTTRUSTINFORMATION, "NetrGetForestTrustInformation",
-      NULL, NULL },
+      netlogon_dissect_netrgetforesttrustinformation_rqst,
+      netlogon_dissect_netrgetforesttrustinformation_reply },
     { NETLOGON_NETRLOGONSAMLOGONWITHFLAGS, "NetrLogonSamLogonWithFlags",
       netlogon_dissect_netrlogonsamlogonflags_rqst,
       netlogon_dissect_netrlogonsamlogonflags_reply },
     { NETLOGON_NETRSERVERGETTRUSTINFO, "NetrServerGetTrustInfo",
+      netlogon_dissect_netrservergettrustinfo_rqst,
+      netlogon_dissect_netrservergettrustinfo_reply },
+    { NETLOGON_DSRUPDATEREADONLYSERVERDNSRECORDS, "DsrUpdateReadOnlyServerDnsRecords",
       NULL, NULL },
+    { NETLOGON_NETRCHAINSETCLIENTATTRIBUTES, "NetrChainSetClientAttributes",
+      netlogon_dissect_netrchainsetclientattributes_rqst,
+      netlogon_dissect_netrchainsetclientattributes_reply },
+    { NETLOGON_NETRSERVERAUTHENTICATEKERBEROS, "NetrServerAuthenticateKerberos",
+      netlogon_dissect_netrserverauthenticatekerberos_rqst,
+      netlogon_dissect_netrserverauthenticatekerberos_reply },
     {0, NULL, NULL,  NULL }
 };
 
-static int hf_netlogon_secchan_verf = -1;
-static int hf_netlogon_secchan_verf_signalg = -1;
-static int hf_netlogon_secchan_verf_sealalg = -1;
-static int hf_netlogon_secchan_verf_flag = -1;
-static int hf_netlogon_secchan_verf_digest = -1;
-static int hf_netlogon_secchan_verf_seq = -1;
-static int hf_netlogon_secchan_verf_nonce = -1;
+static int hf_netlogon_secchan_verf;
+static int hf_netlogon_secchan_verf_signalg;
+static int hf_netlogon_secchan_verf_sealalg;
+static int hf_netlogon_secchan_verf_flag;
+static int hf_netlogon_secchan_verf_digest;
+static int hf_netlogon_secchan_verf_seq;
+static int hf_netlogon_secchan_verf_nonce;
 
 static const value_string sign_algs[] = {
     { 0x0077, "HMAC-MD5"},
+    { 0x0013, "HMAC-SHA256"},
     { 0, NULL}
 };
 
 static const value_string seal_algs[] = {
     { 0xFFFF, "Not Encrypted"},
     { 0x007A, "RC4"},
+    { 0x001A, "AES-128"},
     { 0, NULL}
 };
 
-static int get_seal_key(const guint8 *session_key,int key_len,guint64 sequence,guint8* seal_key)
+static int get_seal_key(const uint8_t *session_key,int key_len,uint8_t* seal_key)
 {
-    guint8 zeros[4] = { 0 };
-    guint8 *buf = (guint8 *)wmem_alloc(wmem_packet_scope(), key_len);
-    guint8 buf2[HASH_MD5_LENGTH];
-    guint8 zero_sk[16];
-    int i = 0;
-    memset(zero_sk,0,16);
+    uint8_t zero_sk[16] = { 0 };
+
     memset(seal_key,0,16);
     if(memcmp(session_key,zero_sk,16)) {
-        for(i=0;i<key_len;i++) {
-            buf[i] = session_key[i] ^ 0xF0;
-        }
-        if (ws_hmac_buffer(GCRY_MD_MD5, buf2, zeros, 4, buf, key_len)) {
-            return 0;
-        }
-        if (ws_hmac_buffer(GCRY_MD_MD5, seal_key, (guint8*)&sequence, 8, buf2, HASH_MD5_LENGTH)) {
-            return 0;
+        for(int i=0;i<key_len;i++) {
+            seal_key[i] = session_key[i] ^ 0xF0;
         }
         return 1;
     } else {
@@ -7655,20 +9966,63 @@ static int get_seal_key(const guint8 *session_key,int key_len,guint64 sequence,g
 
 }
 
-static guint64 uncrypt_sequence(guint8* session_key,guint64 checksum,guint64 enc_seq,unsigned char is_server _U_)
+static uint64_t uncrypt_sequence_aes(uint8_t* session_key,uint64_t checksum,uint64_t enc_seq,unsigned char is_server _U_)
 {
-    guint8 zeros[4] = { 0 };
-    guint8 buf[HASH_MD5_LENGTH];
-    guint8 key[HASH_MD5_LENGTH];
+    gcry_error_t err;
+    gcry_cipher_hd_t cipher_hd = NULL;
+    uint8_t iv[16] = { 0 };
+
+    memcpy(&iv[0], (uint8_t*)&checksum, 8);
+    memcpy(&iv[8], (uint8_t*)&checksum, 8);
+
+    /* Open the cipher */
+    err = gcry_cipher_open(&cipher_hd, GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_CFB8, 0);
+    if (err != 0) {
+        ws_warning("GCRY: cipher open %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        return 0;
+    }
+
+    /* Set the initial value */
+    err = gcry_cipher_setiv(cipher_hd, iv, sizeof(iv));
+    if (err != 0) {
+        ws_warning("GCRY: setiv %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return 0;
+    }
+
+    /* Set the key */
+    err = gcry_cipher_setkey(cipher_hd, session_key, 16);
+    if (err != 0) {
+        ws_warning("GCRY: setkey %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return 0;
+    }
+
+    err = gcry_cipher_decrypt(cipher_hd, (uint8_t*) &enc_seq, 8, NULL, 0);
+    if (err != 0) {
+        ws_warning("GCRY: encrypt %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return 0;
+    }
+    /* Done with the cipher */
+    gcry_cipher_close(cipher_hd);
+    return enc_seq;
+}
+
+static uint64_t uncrypt_sequence_md5(uint8_t* session_key,uint64_t checksum,uint64_t enc_seq,unsigned char is_server _U_)
+{
+    uint8_t zeros[4] = { 0 };
+    uint8_t buf[HASH_MD5_LENGTH];
+    uint8_t key[HASH_MD5_LENGTH];
     gcry_cipher_hd_t rc4_handle;
-    guint8 *p_seq = (guint8*) &enc_seq;
-    /*guint32 temp;*/
+    uint8_t *p_seq = (uint8_t*) &enc_seq;
+    /*uint32_t temp;*/
 
     if (ws_hmac_buffer(GCRY_MD_MD5, buf, zeros, 4, session_key, 16)) {
         return 0;
     }
 
-    if (ws_hmac_buffer(GCRY_MD_MD5, key, (guint8*)&checksum, 8, buf, HASH_MD5_LENGTH)) {
+    if (ws_hmac_buffer(GCRY_MD_MD5, key, (uint8_t*)&checksum, 8, buf, HASH_MD5_LENGTH)) {
         return 0;
     }
 
@@ -7678,9 +10032,9 @@ static guint64 uncrypt_sequence(guint8* session_key,guint64 checksum,guint64 enc
       }
       gcry_cipher_close(rc4_handle);
     }
-    /*temp = *((guint32*)p_seq);
-     *((guint32*)p_seq) = *((guint32*)p_seq+1);
-     *((guint32*)p_seq+1) = temp;
+    /*temp = *((uint32_t*)p_seq);
+     *((uint32_t*)p_seq) = *((uint32_t*)p_seq+1);
+     *((uint32_t*)p_seq+1) = temp;
 
      if(!is_server) {
      *p_seq = *p_seq & 0x7F;
@@ -7689,92 +10043,189 @@ static guint64 uncrypt_sequence(guint8* session_key,guint64 checksum,guint64 enc
     return enc_seq;
 }
 
+static uint64_t uncrypt_sequence(uint32_t flags, uint8_t* session_key,uint64_t checksum,uint64_t enc_seq,unsigned char is_server _U_)
+{
+    if (flags & NETLOGON_FLAG_AES) {
+        return uncrypt_sequence_aes(session_key, checksum, enc_seq, is_server);
+    }
+
+    return uncrypt_sequence_md5(session_key, checksum, enc_seq, is_server);
+}
+
+static gcry_error_t prepare_decryption_cipher_aes(netlogon_auth_vars *vars,
+                                                  gcry_cipher_hd_t *_cipher_hd)
+{
+    gcry_error_t err;
+    gcry_cipher_hd_t cipher_hd = NULL;
+    uint64_t sequence = vars->seq;
+
+    uint8_t iv[16] = { 0 };
+
+    memcpy(&iv[0], (uint8_t*)&sequence, 8);
+    memcpy(&iv[8], (uint8_t*)&sequence, 8);
+
+    /* Open the cipher */
+    err = gcry_cipher_open(&cipher_hd, GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_CFB8, 0);
+    if (err != 0) {
+        ws_warning("GCRY: cipher open %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        return 0;
+    }
+
+    /* Set the initial value */
+    err = gcry_cipher_setiv(cipher_hd, iv, sizeof(iv));
+    if (err != 0) {
+        ws_warning("GCRY: setiv %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return 0;
+    }
+
+    /* Set the key */
+    err = gcry_cipher_setkey(cipher_hd, vars->encryption_key, 16);
+    if (err != 0) {
+        ws_warning("GCRY: setkey %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return 0;
+    }
+
+    *_cipher_hd = cipher_hd;
+    return 0;
+}
+
+static gcry_error_t prepare_decryption_cipher_md5(netlogon_auth_vars *vars,
+                                                  gcry_cipher_hd_t *_cipher_hd)
+{
+    gcry_error_t err;
+    gcry_cipher_hd_t cipher_hd = NULL;
+    uint8_t zeros[4] = { 0 };
+    uint64_t sequence = vars->seq;
+    uint8_t tmp[HASH_MD5_LENGTH] = { 0 };
+    uint8_t seal_key[16] = { 0 };
+
+    err = ws_hmac_buffer(GCRY_MD_MD5, tmp, zeros, 4, vars->encryption_key, 16);
+    if (err != 0) {
+        ws_warning("GCRY: GCRY_MD_MD5 %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        return err;
+    }
+    err = ws_hmac_buffer(GCRY_MD_MD5, seal_key, (uint8_t*)&sequence, 8, tmp, HASH_MD5_LENGTH);
+    if (err != 0) {
+        ws_warning("GCRY: GCRY_MD_MD5 %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        return err;
+    }
+
+    /* Open the cipher */
+    err = gcry_cipher_open(&cipher_hd, GCRY_CIPHER_ARCFOUR, GCRY_CIPHER_MODE_STREAM, 0);
+    if (err != 0) {
+        ws_warning("GCRY: cipher open %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        return err;
+    }
+
+    /* Set the key */
+    err = gcry_cipher_setkey(cipher_hd, seal_key, 16);
+    if (err != 0) {
+        ws_warning("GCRY: setkey %s/%s\n", gcry_strsource(err), gcry_strerror(err));
+        gcry_cipher_close(cipher_hd);
+        return err;
+    }
+
+    *_cipher_hd = cipher_hd;
+    return 0;
+}
+
+static gcry_error_t prepare_decryption_cipher(netlogon_auth_vars *vars,
+                                              gcry_cipher_hd_t *_cipher_hd)
+{
+    *_cipher_hd = NULL;
+
+    if (vars->flags & NETLOGON_FLAG_AES) {
+        return prepare_decryption_cipher_aes(vars, _cipher_hd);
+    }
+
+    return prepare_decryption_cipher_md5(vars, _cipher_hd);
+}
+
 static tvbuff_t *
 dissect_packet_data(tvbuff_t *tvb ,tvbuff_t *auth_tvb _U_,
                     int offset , packet_info *pinfo ,dcerpc_auth_info *auth_info _U_,unsigned char is_server)
 {
 
     tvbuff_t  *buf = NULL;
-    guint8* decrypted;
+    uint8_t* decrypted;
     netlogon_auth_vars *vars;
-    netlogon_auth_key key;
-    /*debugprintf("Dissection of request data offset %d len=%d on packet %d\n",offset,tvb_length_remaining(tvb,offset),pinfo->num);*/
+    /*ws_debug("Dissection of request data offset %d len=%d on packet %d",offset,tvb_length_remaining(tvb,offset),pinfo->num);*/
 
-    generate_hash_key(pinfo,is_server,&key,NULL);
-    vars = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths, &key);
-
-    if(vars != NULL  ) {
-        while(vars != NULL && vars->next_start != -1 && vars->next_start < (int) pinfo->num ) {
-            vars = vars->next;
-        }
-        if(vars == NULL ) {
-            debugprintf("Vars not found %d (packet_data)\n",wmem_map_size(netlogon_auths));
-            return(buf);
-        }
-        else {
-            if(vars->can_decrypt == TRUE) {
-                gcry_cipher_hd_t rc4_handle;
-                int data_len;
-                guint64 copyconfounder = vars->confounder;
-
-                data_len = tvb_captured_length_remaining(tvb,offset);
-                if (data_len < 0) {
-                    return NULL;
-                }
-                if (gcry_cipher_open (&rc4_handle, GCRY_CIPHER_ARCFOUR, GCRY_CIPHER_MODE_STREAM, 0)) {
-                  return NULL;
-                }
-                if (gcry_cipher_setkey(rc4_handle, vars->encryption_key, 16)) {
-                  gcry_cipher_close(rc4_handle);
-                  return NULL;
-                }
-                gcry_cipher_decrypt(rc4_handle, (guint8*)&copyconfounder, 8, NULL, 0);
-                decrypted = (guint8*)tvb_memdup(pinfo->pool, tvb, offset,data_len);
-                gcry_cipher_reset(rc4_handle);
-                gcry_cipher_decrypt(rc4_handle, decrypted, data_len, NULL, 0);
-                gcry_cipher_close(rc4_handle);
-                buf = tvb_new_child_real_data(tvb, decrypted, data_len, data_len);
-                /* Note: caller does add_new_data_source(...) */
-            }
-            else {
-                debugprintf("Session key not found can't decrypt ...\n");
-            }
-        }
-    } else {
-        debugprintf("Vars not found  %d (packet_data)\n",wmem_map_size(netlogon_auths));
+    vars = find_or_create_schannel_netlogon_auth_vars(pinfo, auth_info, is_server);
+    if (vars == NULL) {
+        ws_debug("Vars not found  %d (packet_data)",wmem_map_size(netlogon_auths));
         return(buf);
+    }
+
+    if (vars->can_decrypt == true) {
+        gcry_error_t err;
+        gcry_cipher_hd_t cipher_hd = NULL;
+        int data_len;
+        uint64_t copyconfounder = vars->confounder;
+
+        data_len = tvb_captured_length_remaining(tvb,offset);
+        if (data_len < 0) {
+            return NULL;
+        }
+        err = prepare_decryption_cipher(vars, &cipher_hd);
+        if (err != 0) {
+            ws_warning("GCRY: prepare_decryption_cipher %s/%s",
+                      gcry_strsource(err), gcry_strerror(err));
+            return NULL;
+        }
+        gcry_cipher_decrypt(cipher_hd, (uint8_t*)&copyconfounder, 8, NULL, 0);
+        decrypted = (uint8_t*)tvb_memdup(pinfo->pool, tvb, offset,data_len);
+        if (!(vars->flags & NETLOGON_FLAG_AES)) {
+            gcry_cipher_reset(cipher_hd);
+        }
+        gcry_cipher_decrypt(cipher_hd, decrypted, data_len, NULL, 0);
+        gcry_cipher_close(cipher_hd);
+        buf = tvb_new_child_real_data(tvb, decrypted, data_len, data_len);
+        /* Note: caller does add_new_data_source(...) */
+    } else {
+        ws_debug("Session key not found can't decrypt ...");
     }
 
     return(buf);
 }
 
-static tvbuff_t* dissect_request_data( tvbuff_t *tvb ,tvbuff_t *auth_tvb ,
-                                       int offset , packet_info *pinfo ,dcerpc_auth_info *auth_info )
+static tvbuff_t* dissect_request_data(tvbuff_t *header_tvb _U_,
+                                      tvbuff_t *payload_tvb,
+                                      tvbuff_t *trailer_tvb _U_,
+                                      tvbuff_t *auth_tvb,
+                                      packet_info *pinfo,
+                                      dcerpc_auth_info *auth_info)
 {
-    return dissect_packet_data(tvb,auth_tvb,offset,pinfo,auth_info,0);
+    return dissect_packet_data(payload_tvb,auth_tvb,0,pinfo,auth_info,0);
 }
-static tvbuff_t* dissect_response_data( tvbuff_t *tvb ,tvbuff_t *auth_tvb ,
-                                        int offset , packet_info *pinfo ,dcerpc_auth_info *auth_info )
+
+static tvbuff_t* dissect_response_data(tvbuff_t *header_tvb _U_,
+                                       tvbuff_t *payload_tvb,
+                                       tvbuff_t *trailer_tvb _U_,
+                                       tvbuff_t *auth_tvb,
+                                       packet_info *pinfo,
+                                       dcerpc_auth_info *auth_info)
 {
-    return dissect_packet_data(tvb,auth_tvb,offset,pinfo,auth_info,1);
+    return dissect_packet_data(payload_tvb,auth_tvb,0,pinfo,auth_info,1);
 }
 
 /* MS-NRPC 2.2.1.3.2 */
 static int
 dissect_secchan_verf(tvbuff_t *tvb, int offset, packet_info *pinfo,
-                     proto_tree *tree, guint8 *drep, unsigned char is_server)
+                     proto_tree *tree, uint8_t *drep,
+                     dcerpc_auth_info *auth_info,
+                     unsigned char is_server)
 {
     netlogon_auth_vars *vars;
-    netlogon_auth_key key;
     proto_item *vf = NULL;
     proto_tree *subtree = NULL;
-    guint64 encrypted_seq;
-    guint64 digest;
-    guint64 confounder = 0;
+    uint64_t encrypted_seq;
+    uint64_t digest = 0;
+    uint64_t confounder = 0;
     int update_vars = 0;
 
-    generate_hash_key(pinfo,is_server,&key,NULL);
-    vars = (netlogon_auth_vars *)wmem_map_lookup(netlogon_auths,(gconstpointer*) &key);
     if(  ! (seen.isseen && seen.num == pinfo->num) ) {
         /*
          * Create a new tree, and split into x components ...
@@ -7798,7 +10249,7 @@ dissect_secchan_verf(tvbuff_t *tvb, int offset, packet_info *pinfo,
         offset = dissect_dcerpc_8bytes(tvb, offset, pinfo, subtree, drep,
                                        hf_netlogon_secchan_verf_digest, &digest);
 
-        /* In some cases the nonce if the data/signture are encrypted ("integrity/seal  in MS language")*/
+        /* In some cases the nonce if the data/signature are encrypted ("integrity/seal  in MS language")*/
 
         if (tvb_bytes_exist(tvb, offset, 8)) {
             offset = dissect_dcerpc_8bytes(tvb, offset, pinfo, subtree, drep,
@@ -7806,61 +10257,56 @@ dissect_secchan_verf(tvbuff_t *tvb, int offset, packet_info *pinfo,
         }
         update_vars = 1;
     }
-    if( vars != NULL ) {
-        while(vars != NULL && vars->next_start != -1 && vars->next_start <  (int)pinfo->num ) {
-            vars = vars->next;
-        }
-        if(vars == NULL ) {
-            debugprintf("Vars not found %d (packet_data)\n",wmem_map_size(netlogon_auths));
-            return(offset);
-        }
-        else {
-            if(update_vars) {
-                vars->confounder = confounder;
-                vars->seq = uncrypt_sequence(vars->session_key,digest,encrypted_seq,is_server);
-            }
 
-            if(get_seal_key(vars->session_key,16,vars->seq,vars->encryption_key))
-            {
-                vars->can_decrypt = TRUE;
-            }
-            else
-            {
-                debugprintf("get seal key returned 0\n");
-            }
-        }
+    /*ws_debug("Setting isseen to true, old packet %d new %d",seen.num,pinfo->num);*/
+    seen.isseen = true;
+    seen.num = pinfo->num;
+
+    vars = find_or_create_schannel_netlogon_auth_vars(pinfo, auth_info, is_server);
+    if (vars == NULL) {
+        ws_debug("Vars not found %d (packet_data)",wmem_map_size(netlogon_auths));
+        return(offset);
+    }
+    if(update_vars) {
+        vars->confounder = confounder;
+        vars->seq = uncrypt_sequence(vars->flags,vars->session_key,digest,encrypted_seq,is_server);
+    }
+
+    if(get_seal_key(vars->session_key,16,vars->encryption_key))
+    {
+        vars->can_decrypt = true;
     }
     else
     {
-        debugprintf("Vars not found (is null %d) %d (dissect_verf)\n",vars==NULL,wmem_map_size(netlogon_auths));
+        ws_debug("get seal key returned 0");
     }
-    /*debugprintf("Setting isseen to true, old packet %d new %d\n",seen.num,pinfo->num);*/
-    seen.isseen = TRUE;
-    seen.num = pinfo->num;
+
+    if (vars->can_decrypt) {
+        expert_add_info_format(pinfo, proto_tree_get_parent(subtree),
+                 &ei_netlogon_session_key,
+                 "Using session key learned in frame %d ("
+                 "%02x%02x%02x%02x"
+                 ") from %s",
+                 vars->auth_fd_num,
+                 vars->session_key[0] & 0xFF,  vars->session_key[1] & 0xFF,
+                 vars->session_key[2] & 0xFF,  vars->session_key[3] & 0xFF,
+                 vars->nthash.key_origin);
+    }
 
     return offset;
 }
 static int
 dissect_request_secchan_verf(tvbuff_t *tvb, int offset, packet_info *pinfo ,
-                             proto_tree *tree, dcerpc_info *di _U_, guint8 *drep )
+                             proto_tree *tree, dcerpc_info *di _U_, uint8_t *drep )
 {
-    return dissect_secchan_verf(tvb,offset,pinfo,tree,drep,0);
+    return dissect_secchan_verf(tvb,offset,pinfo,tree,drep, di->auth_info, 0);
 }
 static int
 dissect_response_secchan_verf(tvbuff_t *tvb, int offset, packet_info *pinfo ,
-                              proto_tree *tree, dcerpc_info *di _U_, guint8 *drep )
+                              proto_tree *tree, dcerpc_info *di _U_, uint8_t *drep )
 {
-    return dissect_secchan_verf(tvb,offset,pinfo,tree,drep,1);
+    return dissect_secchan_verf(tvb,offset,pinfo,tree,drep, di->auth_info, 1);
 }
-
-/* Secure channel types */
-
-static const value_string sec_chan_type_vals[] = {
-    { SEC_CHAN_WKSTA,  "Workstation" },
-    { SEC_CHAN_DOMAIN, "Domain trust" },
-    { SEC_CHAN_BDC,    "Backup domain controller" },
-    { 0, NULL }
-};
 
 void
 proto_register_dcerpc_netlogon(void)
@@ -7939,6 +10385,18 @@ proto_register_dcerpc_netlogon(void)
                 "Len", "netlogon.len", FT_UINT32, BASE_DEC,
                 NULL, 0, "Length", HFILL }},
 
+        { &hf_netlogon_password_version_reserved, {
+                "ReservedField", "netlogon.password_version.reservedfield", FT_UINT32, BASE_HEX,
+                NULL, 0, "ReservedField zero", HFILL }},
+
+        { &hf_netlogon_password_version_number, {
+                "PasswordVersionNumber", "netlogon.password_version.number", FT_UINT32, BASE_HEX,
+                NULL, 0, "PasswordVersionNumber trust", HFILL }},
+
+        { &hf_netlogon_password_version_present, {
+                "PasswordVersionPresent", "netlogon.password_version.present", FT_UINT32, BASE_HEX,
+                NULL, 0, "PasswordVersionPresent magic", HFILL }},
+
         { &hf_netlogon_priv, {
                 "Priv", "netlogon.priv", FT_UINT32, BASE_DEC,
                 NULL, 0, NULL, HFILL }},
@@ -7987,6 +10445,10 @@ proto_register_dcerpc_netlogon(void)
           { "Unknown string", "netlogon.unknown_string", FT_STRING, BASE_NONE,
             NULL, 0, "Unknown string. If you know what this is, contact wireshark developers.", HFILL }},
 
+        { &hf_netlogon_new_password,
+          { "New Password", "netlogon.new_password", FT_STRING, BASE_NONE,
+            NULL, 0, "New Password for Computer or Trust", HFILL }},
+
         { &hf_netlogon_TrustedDomainName_string,
           { "TrustedDomainName", "netlogon.TrustedDomainName", FT_STRING, BASE_NONE,
             NULL, 0, "TrustedDomainName string.", HFILL }},
@@ -7999,21 +10461,33 @@ proto_register_dcerpc_netlogon(void)
           { "Dummy String", "netlogon.dummy_string", FT_STRING, BASE_NONE,
             NULL, 0, "Dummy String. Used is reserved for next evolutions.", HFILL }},
 
-        { &hf_netlogon_trust_extention,
-          { "Trust extension", "netlogon.trust.extention", FT_STRING, BASE_NONE,
+        { &hf_netlogon_trust_extension,
+          { "Trust extension", "netlogon.trust.extension", FT_STRING, BASE_NONE,
             NULL, 0, "Trusts extension.", HFILL }},
 
         { &hf_netlogon_trust_offset,
-          { "Offset", "netlogon.trust.extention_offset", FT_UINT32, BASE_DEC,
+          { "Offset", "netlogon.trust.extension_offset", FT_UINT32, BASE_DEC,
             NULL, 0, "Trusts extension.", HFILL }},
 
         { &hf_netlogon_trust_len,
-          { "Length", "netlogon.trust.extention_length", FT_UINT32, BASE_DEC,
+          { "Length", "netlogon.trust.extension_length", FT_UINT32, BASE_DEC,
             NULL, 0, NULL, HFILL }},
 
         { &hf_netlogon_trust_max,
-          { "Max Count", "netlogon.trust.extention.maxcount", FT_UINT32, BASE_DEC,
+          { "Max Count", "netlogon.trust.extension.maxcount", FT_UINT32, BASE_DEC,
             NULL, 0, NULL, HFILL }},
+
+        { &hf_netlogon_opaque_buffer_enc,
+          { "Encrypted", "netlogon.sendtosam.opaquebuffer.enc", FT_BYTES, BASE_NONE,
+            NULL, 0x0, "OpaqueBuffer (Encrypted)", HFILL }},
+
+        { &hf_netlogon_opaque_buffer_dec,
+          { "Decrypted", "netlogon.sendtosam.opaquebuffer.dec", FT_BYTES, BASE_NONE,
+            NULL, 0x0, "OpaqueBuffer (Decrypted)", HFILL }},
+
+        { &hf_netlogon_opaque_buffer_size,
+          { "OpaqueBufferSize", "netlogon.sendtosam.opaquebuffer.size", FT_UINT32, BASE_HEX,
+            NULL, 0x0, "Size of the OpaqueBuffer", HFILL }},
 
         { &hf_netlogon_dummy_string2,
           { "Dummy String2", "netlogon.dummy_string", FT_STRING, BASE_NONE,
@@ -8098,11 +10572,11 @@ proto_register_dcerpc_netlogon(void)
 
         { &hf_netlogon_supportedenctypes,
           { "Supported Encryption Types", "netlogon.encryption.types", FT_UINT32, BASE_HEX,
-            NULL, 0x0, "Encryption types", HFILL }},
+            NULL, 0x0, NULL, HFILL }},
 
         { &hf_netlogon_workstation_flags,
           { "Workstation Flags", "netlogon.workstation.flags", FT_UINT32, BASE_HEX,
-            NULL, 0x0, "Flags", HFILL }},
+            NULL, 0x0, NULL, HFILL }},
 
         { &hf_netlogon_reserved,
           { "Reserved", "netlogon.reserved", FT_UINT32, BASE_HEX,
@@ -8155,11 +10629,9 @@ proto_register_dcerpc_netlogon(void)
           { "Length", "netlogon.sensitive_data_len", FT_UINT32, BASE_DEC,
             NULL, 0x0, "Length of sensitive data", HFILL }},
 
-#if 0
         { &hf_netlogon_nt_chal_resp,
           { "NT Chal resp", "netlogon.nt_chal_resp", FT_BYTES, BASE_NONE,
             NULL, 0, "Challenge response for NT authentication", HFILL }},
-#endif
 
         { &hf_netlogon_lm_chal_resp,
           { "LM Chal resp", "netlogon.lm_chal_resp", FT_BYTES, BASE_NONE,
@@ -8254,6 +10726,18 @@ proto_register_dcerpc_netlogon(void)
         { &hf_netlogon_resourcegroupcount,
           { "ResourceGroup count", "netlogon.resourcegroupcount", FT_UINT32, BASE_DEC,
             NULL, 0, "Number of Resource Groups", HFILL }},
+
+        { &hf_netlogon_accountdomaingroupcount,
+          { "AccountDomainGroup count", "netlogon.accountdomaingroupcount", FT_UINT32, BASE_DEC,
+            NULL, 0, "Number of Account Domain Groups", HFILL }},
+
+        { &hf_netlogon_domaingroupcount,
+          { "DomainGroup count", "netlogon.domaingroupcount", FT_UINT32, BASE_DEC,
+            NULL, 0, "Number of Domain Groups", HFILL }},
+
+        { &hf_netlogon_membership_domains_count,
+          { "Membership Domains count", "netlogon.membershipsdomainscount", FT_UINT32, BASE_DEC,
+            NULL, 0, "Number of ExtraDomain Membership Arrays", HFILL }},
 
         { &hf_netlogon_computer_name,
           { "Computer Name", "netlogon.computer_name", FT_STRING, BASE_NONE,
@@ -8405,7 +10889,7 @@ proto_register_dcerpc_netlogon(void)
 
         { &hf_netlogon_secure_channel_type,
           { "Sec Chan Type", "netlogon.sec_chan_type", FT_UINT16, BASE_DEC,
-            VALS(sec_chan_type_vals), 0x0, "Secure Channel Type", HFILL }},
+            VALS(misc_netr_SchannelType_vals), 0x0, "Secure Channel Type", HFILL }},
 
         { &hf_netlogon_restart_state,
           { "Restart State", "netlogon.restart_state", FT_UINT16, BASE_DEC,
@@ -8551,47 +11035,47 @@ proto_register_dcerpc_netlogon(void)
           { "Negotiation options", "netlogon.neg_flags", FT_UINT32, BASE_HEX,
             NULL, 0x0, "Negotiation Flags", HFILL }},
 
-#if 0
         { &hf_netlogon_neg_flags_80000000,
-          { "Not used 80000000", "ntlmssp.neg_flags.na8000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_80000000, "Not used", HFILL }},
-#endif
+          { "Supports Kerberos Auth", "ntlmssp.neg_flags.supports_kerberos_auth", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_80000000, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_40000000,
-          { "Authenticated RPC supported", "ntlmssp.neg_flags.na8000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_40000000, NULL, HFILL }},
+          { "Authenticated RPC supported", "ntlmssp.neg_flags.na4000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_40000000, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_20000000,
-          { "Authenticated RPC via lsass supported", "ntlmssp.neg_flags.na8000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_20000000, "rpc via lsass", HFILL }},
+          { "Authenticated RPC via lsass supported", "ntlmssp.neg_flags.na2000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_20000000, NULL, HFILL }},
 
 #if 0
         { &hf_netlogon_neg_flags_10000000,
-          { "Not used 10000000", "ntlmssp.neg_flags.na8000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_10000000, "Not used", HFILL }},
+          { "Not used 10000000", "ntlmssp.neg_flags.na1000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_10000000, NULL, HFILL }},
 #endif
 
 #if 0
         { &hf_netlogon_neg_flags_8000000,
-          { "Not used 8000000", "ntlmssp.neg_flags.na800000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_8000000, "Not used", HFILL }},
+          { "Not used 8000000", "ntlmssp.neg_flags.na800000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_8000000, NULL, HFILL }},
 #endif
 
 #if 0
         { &hf_netlogon_neg_flags_4000000,
-          { "Not used 4000000", "ntlmssp.neg_flags.na400000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_4000000, "Not used", HFILL }},
+          { "Not used 4000000", "ntlmssp.neg_flags.na400000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_4000000, NULL, HFILL }},
 #endif
 
 #if 0
         { &hf_netlogon_neg_flags_2000000,
-          { "Not used 2000000", "ntlmssp.neg_flags.na200000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_2000000, "Not used", HFILL }},
+          { "Not used 2000000", "ntlmssp.neg_flags.na200000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_2000000, NULL, HFILL }},
 #endif
 
         { &hf_netlogon_neg_flags_1000000,
-          { "AES supported", "ntlmssp.neg_flags.na100000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_1000000, "AES", HFILL }},
+          { "AES supported", "ntlmssp.neg_flags.na1000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_AES, NULL, HFILL }},
 
 #if 0
         { &hf_netlogon_neg_flags_800000,
-          { "Not used 800000", "ntlmssp.neg_flags.na8000000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_800000, "Not used", HFILL }},
+          { "Not used 800000", "ntlmssp.neg_flags.na800000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_800000, "Not used", HFILL }},
 #endif
 
+#if 0
         { &hf_netlogon_neg_flags_400000,
-          { "AES & SHA2 supported", "ntlmssp.neg_flags.na400000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_USEAES, "AES&SHA2", HFILL }},
+          { "Not used 400000", "ntlmssp.neg_flags.na400000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_400000, "AES&SHA2", HFILL }},
+#endif
 
         { &hf_netlogon_neg_flags_200000,
           { "RODC pass-through", "ntlmssp.neg_flags.na200000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_200000, "rodc pt", HFILL }},
@@ -8603,16 +11087,16 @@ proto_register_dcerpc_netlogon(void)
           { "Cross forest trust", "ntlmssp.neg_flags.na80000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_80000, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_40000,
-          { "GetDomainInfo supported", "ntlmssp.neg_flags.na40000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_40000, "GetDomainInfo", HFILL }},
+          { "GetDomainInfo supported", "ntlmssp.neg_flags.na40000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_40000, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_20000,
           { "ServerPasswordSet2 supported", "ntlmssp.neg_flags.na20000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_20000, "PasswordSet2", HFILL }},
 
         { &hf_netlogon_neg_flags_10000,
-          { "DNS trusts supported", "ntlmssp.neg_flags.na10000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_10000, "DNS Trusts", HFILL }},
+          { "DNS trusts supported", "ntlmssp.neg_flags.na10000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_10000, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_8000,
-          { "Transitive trusts", "ntlmssp.neg_flags.na8000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_8000, "Transitive trust", HFILL }},
+          { "Transitive trusts", "ntlmssp.neg_flags.na8000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_8000, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_4000,
           { "Strong key", "ntlmssp.neg_flags.na4000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_STRONGKEY, NULL, HFILL }},
@@ -8624,7 +11108,7 @@ proto_register_dcerpc_netlogon(void)
           { "Avoid replication account database", "ntlmssp.neg_flags.na1000", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_1000, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_800,
-          { "Concurent RPC", "ntlmssp.neg_flags.na800", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_800, NULL, HFILL }},
+          { "Concurrent RPC", "ntlmssp.neg_flags.na800", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_800, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_400,
           { "Generic pass-through", "ntlmssp.neg_flags.na400", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_400, NULL, HFILL }},
@@ -8645,16 +11129,16 @@ proto_register_dcerpc_netlogon(void)
           { "Restarting full DC sync", "ntlmssp.neg_flags.na20", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_20, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_10,
-          { "BDC handling Changelogs", "ntlmssp.neg_flags.na10", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_10, "BDC Changelog", HFILL }},
+          { "BDC handling Changelogs", "ntlmssp.neg_flags.na10", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_10, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_8,
-          { "Promotion count(deprecated)", "ntlmssp.neg_flags.na8", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_8, "Promotion count", HFILL }},
+          { "Promotion count(deprecated)", "ntlmssp.neg_flags.na8", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_8, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_4,
-          { "RC4 encryption", "ntlmssp.neg_flags.na4", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_4, "RC4", HFILL }},
+          { "RC4 encryption", "ntlmssp.neg_flags.na4", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_4, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_2,
-          { "NT3.5 BDC continuous update", "ntlmssp.neg_flags.na2", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_2, "NT3.5", HFILL }},
+          { "NT3.5 BDC continuous update", "ntlmssp.neg_flags.na2", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_2, NULL, HFILL }},
 
         { &hf_netlogon_neg_flags_1,
           { "Account lockout", "ntlmssp.neg_flags.na1", FT_BOOLEAN, 32, TFS(&tfs_set_notset), NETLOGON_FLAG_1, NULL, HFILL }},
@@ -9058,7 +11542,7 @@ proto_register_dcerpc_netlogon(void)
 
         { &hf_netlogon_secchan_verf,
           { "Secure Channel Verifier", "netlogon.secchan.verifier", FT_NONE, BASE_NONE,
-            NULL, 0x0, "Verifier", HFILL }},
+            NULL, 0x0, NULL, HFILL }},
 
         { &hf_netlogon_secchan_verf_signalg,
           { "Sign algorithm", "netlogon.secchan.signalg", FT_UINT16, BASE_HEX,
@@ -9083,21 +11567,6 @@ proto_register_dcerpc_netlogon(void)
         { &hf_netlogon_secchan_verf_nonce,
           { "Nonce", "netlogon.secchan.nonce", FT_BYTES, BASE_NONE, NULL,
             0x0, NULL, HFILL }},
-
-        { &hf_netlogon_group_attrs_mandatory,
-          { "Mandatory", "netlogon.groups.attrs.mandatory",
-            FT_BOOLEAN, 32, TFS(&group_attrs_mandatory), 0x00000001,
-            "The group attributes MANDATORY flag", HFILL }},
-
-        { &hf_netlogon_group_attrs_enabled_by_default,
-          { "Enabled By Default", "netlogon.groups.attrs.enabled_by_default",
-            FT_BOOLEAN, 32, TFS(&group_attrs_enabled_by_default), 0x00000002,
-            "The group attributes ENABLED_BY_DEFAULT flag", HFILL }},
-
-        { &hf_netlogon_group_attrs_enabled,
-          { "Enabled", "netlogon.groups.attrs.enabled",
-            FT_BOOLEAN, 32, TFS(&group_attrs_enabled), 0x00000004,
-            "The group attributes ENABLED flag", HFILL }},
 
         { &hf_netlogon_user_flags_extra_sids,
           { "Extra SIDs", "netlogon.user.flags.extra_sids",
@@ -9200,18 +11669,18 @@ proto_register_dcerpc_netlogon(void)
             NULL, 0x0, NULL, HFILL }},
 #endif
 
-        { &DnsDomainInfo_sid,
-          { "Sid", "lsarpc.lsa_DnsDomainInfo.sid", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
-        { &DomainInfo_sid,
-          { "Sid", "lsarpc.lsa_DomainInfo.sid", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
-        { &DnsDomainInfo_domain_guid,
-          { "Domain Guid", "lsarpc.lsa_DnsDomainInfo.domain_guid", FT_GUID, BASE_NONE, NULL, 0, NULL, HFILL }},
-        { &DnsDomainInfo_dns_forest,
-          { "Dns Forest", "lsarpc.lsa_DnsDomainInfo.dns_forest", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
-        { &DnsDomainInfo_dns_domain,
-          { "Dns Domain", "lsarpc.lsa_DnsDomainInfo.dns_domain", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
-        { &DnsDomainInfo_name,
-          { "Name", "lsarpc.lsa_DnsDomainInfo.name", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+        { &hf_dns_domain_info_sid,
+          { "Sid", "netlogon.lsa_DnsDomainInfo.sid", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+        { &hf_domain_info_sid,
+          { "Sid", "netlogon.lsa_DomainInfo.sid", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+        { &hf_dns_domain_info_domain_guid,
+          { "Domain Guid", "netlogon.lsa_DnsDomainInfo.domain_guid", FT_GUID, BASE_NONE, NULL, 0, NULL, HFILL }},
+        { &hf_dns_domain_info_dns_forest,
+          { "Dns Forest", "netlogon.lsa_DnsDomainInfo.dns_forest", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+        { &hf_dns_domain_info_dns_domain,
+          { "Dns Domain", "netlogon.lsa_DnsDomainInfo.dns_domain", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+        { &hf_dns_domain_info_name,
+          { "Name", "netlogon.lsa_DnsDomainInfo.name", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
         { &hf_netlogon_s4u2proxytarget,
           { "S4U2proxyTarget", "netlogon.s4u2proxytarget", FT_STRING, BASE_NONE,
             NULL, 0, "Target for constrained delegation using s4u2proxy", HFILL }},
@@ -9227,9 +11696,206 @@ proto_register_dcerpc_netlogon(void)
         { &hf_netlogon_time_created,
           { "Time Created", "netlogon.time_created", FT_UINT32, BASE_DEC,
             NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claims_set_size,
+          { "Claims Set Size", "netlogon.claims_set_size", FT_UINT32, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claims_compression_format,
+          { "Claims Compression Format", "netlogon.claims_compression_format", FT_UINT1632, BASE_DEC,
+            VALS(netlogon_claims_compression_format_vals), 0, NULL, HFILL }},
+        { &hf_netlogon_claims_set_uncompressed_size,
+          { "Claims Set Uncompressed Size", "netlogon.claims_set_uncompressed_size", FT_UINT32, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claims_reserved_type,
+          { "Claims Reserved Type", "netlogon.claims_reserved_type", FT_UINT16, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claims_reserved_field_size,
+          { "Claims Reserved Field Size", "netlogon.claims_reserved_field_size", FT_UINT32, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claims_source_type,
+          { "Claims Source Type", "netlogon.claims_source_type", FT_UINT1632, BASE_DEC,
+            VALS(hf_netlogon_claims_source_type_vals), 0, NULL, HFILL }},
+        { &hf_netlogon_claims_count,
+          { "Claims Count", "netlogon.claims_count", FT_UINT32, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claim_id,
+          { "Claim ID", "netlogon.claim_id", FT_STRING, BASE_NONE,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claim_type,
+          { "Claim Type", "netlogon.claim_type", FT_UINT1632, BASE_DEC,
+            VALS(netlogon_claim_type_vals), 0, NULL, HFILL }},
+        { &hf_netlogon_claim_value_count,
+          { "Claim Value Count", "netlogon.claim_value_count", FT_UINT32, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claim_int64_value,
+          { "Claim INT64 Value", "netlogon.claim_int64_value", FT_INT64, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claim_uint64_value,
+          { "Claim UINT64 Value", "netlogon.claim_uint64_value", FT_UINT64, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claim_string_value,
+          { "Claim STRING Value", "netlogon.claim_string_value", FT_STRING, BASE_NONE,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_claim_boolean_value,
+          { "Claim BOOLEAN Value", "netlogon.claim_boolean_value", FT_UINT64, BASE_DEC,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_options, {
+          "Request Options",
+          "netlogon.ticket_logon_options",
+          FT_UINT64, BASE_HEX, NULL, 0x0, "Requested Options", HFILL }},
+        { &hf_netlogon_ticket_logon_options_0000000000000001, {
+          "No Authorization Data",
+          "netlogon.ticket_logon_options.no_authorization_data",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000000000001, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_options_0000000000010000, {
+          "Skip Resource Groups",
+          "netlogon.ticket_logon_options.skip_resource_groups",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000000010000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_options_0000000000020000, {
+          "Skip A2A Checks",
+          "netlogon.ticket_logon_options.skip_a2a_checks",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000000020000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_options_0000000100000000, {
+          "Skip SID Filtering",
+          "netlogon.ticket_logon_options.skip_sid_filter",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000100000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_options_0000000200000000, {
+          "Skip Namespace Filtering",
+          "netlogon.ticket_logon_options.skip_namespace_filter",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000200000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_options_0001000000000000, {
+          "Skip PAC Signatures",
+          "netlogon.ticket_logon_options.skip_pac_signatures",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0001000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_options_0002000000000000, {
+          "Remove Resource Groups",
+          "netlogon.ticket_logon_options.remove_resource_groups",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0002000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_service_ticket_size,
+          { "Service Ticket Size", "netlogon.ticket_logon_service_ticket_size",
+            FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_additional_ticket_size,
+          { "Additional Ticket Size", "netlogon.ticket_logon_additional_ticket_size",
+            FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results, {
+          "Results",
+          "netlogon.ticket_logon_results",
+          FT_UINT64, BASE_HEX, NULL, 0x0, "Request Results", HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000000000000001, {
+          "Failed_Logon",
+          "netlogon.ticket_logon_results.failed_logon",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000000000001, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000000100000000, {
+          "Ticket Decryption Failed",
+          "netlogon.ticket_logon_results.ticket_decryption_failed",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000100000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000000200000000, {
+          "PAC Validation Failed",
+          "netlogon.ticket_logon_results.pac_validation_failed",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000200000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000000400000000, {
+          "Compound Source",
+          "netlogon.ticket_logon_results.compound_source",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000400000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000000800000000, {
+          "Source User Claims",
+          "netlogon.ticket_logon_results.source_user_claims",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000000800000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000001000000000, {
+          "Source Device Claims",
+          "netlogon.ticket_logon_results.source_device_claims",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000001000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000002000000000, {
+          "Full Signature Present",
+          "netlogon.ticket_logon_results.full_signature_present",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000002000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0000004000000000, {
+          "Resource Groups Removed",
+          "netlogon.ticket_logon_results.resource_groups_removed",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0000004000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0001000000000000, {
+          "User SIDS Failed",
+          "netlogon.ticket_logon_results.user_sids_failed",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0001000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0002000000000000, {
+          "User Namespace Failed",
+          "netlogon.ticket_logon_results.user_namespace_failed",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0002000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0004000000000000, {
+          "User Failed A2A",
+          "netlogon.ticket_logon_results.user_failed_a2a",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0004000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0008000000000000, {
+          "Device SIDS Failed",
+          "netlogon.ticket_logon_results.device_sids_failed",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0008000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0010000000000000, {
+          "Device Namespace Failed",
+          "netlogon.ticket_logon_results.device_namespace_failed",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0010000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0020000000000000, {
+          "User SIDS Filtered",
+          "netlogon.ticket_logon_results.user_sids_filtered",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0020000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_results_0040000000000000, {
+          "Device SIDS Filtered",
+          "netlogon.ticket_logon_results.device_sids_filtered",
+          FT_BOOLEAN, 64, TFS(&tfs_set_notset),
+          0x0040000000000000, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_kerberos_status,
+          { "Kerberos NTSTATUS", "netlogon.ticket_logon_kerberos_status",
+            FT_UINT32, BASE_HEX|BASE_EXT_STRING, &NT_errors_ext, 0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_netlogon_status,
+          { "Netlogon NTSTATUS", "netlogon.ticket_logon_netlogon_status",
+            FT_UINT32, BASE_HEX|BASE_EXT_STRING, &NT_errors_ext, 0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_source_of_status,
+          { "Source Of Status", "netlogon.ticket_logon_source_of_status",
+            FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_user_claims_size,
+          { "User Claims Size", "netlogon.ticket_logon_user_claims_size",
+            FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_device_claims_size,
+          { "Device Claims Size", "netlogon.ticket_logon_device_claims_size",
+            FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_ticket_logon_claims,
+          { "Claims", "netlogon.ticket_logon_claims", FT_BYTES, BASE_NONE,
+            NULL, 0x0, NULL, HFILL }},
+        { &hf_netlogon_forest_trust_info_flags, {
+          "Flags",
+          "netlogon.forest_trust_info_flags",
+          FT_UINT32, BASE_HEX, NULL, 0x0, "Forest Trust Info Flags", HFILL }},
+        { &hf_netlogon_forest_trust_info_flags_00000001, {
+          "Update Trusted Domain Object",
+          "netlogon.forest_trust_info_flags.update_tdo",
+          FT_BOOLEAN, 32, TFS(&tfs_set_notset),
+          0x00000001, NULL, HFILL }},
+        { &hf_netlogon_forest_trust_info,
+          { "Forest Trust Info", "netlogon.forest_trust_info",
+            FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
+
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_dcerpc_netlogon,
         &ett_authenticate_flags,
         &ett_CYPHER_VALUE,
@@ -9238,11 +11904,13 @@ proto_register_dcerpc_netlogon(void)
         &ett_DELTA_ENUM,
         &ett_UNICODE_MULTI,
         &ett_DOMAIN_CONTROLLER_INFO,
-        &ett_UNICODE_STRING_512,
+        &ett_netr_CryptPassword,
+        &ett_NL_PASSWORD_VERSION,
+        &ett_NL_GENERIC_RPC_DATA,
         &ett_TYPE_50,
         &ett_TYPE_52,
         &ett_DELTA_ID_UNION,
-        &ett_TYPE_44,
+        &ett_CAPABILITIES,
         &ett_DELTA_UNION,
         &ett_LM_OWF_PASSWORD,
         &ett_NT_OWF_PASSWORD,
@@ -9261,18 +11929,36 @@ proto_register_dcerpc_netlogon(void)
         &ett_group_attrs,
         &ett_user_flags,
         &ett_nt_counted_longs_as_string,
-        &ett_user_account_control
+        &ett_user_account_control,
+        &ett_wstr_LOGON_IDENTITY_INFO_string,
+        &ett_domain_group_memberships,
+        &ett_domains_group_memberships,
+        &ett_netlogon_ticket_logon_options,
+        &ett_netlogon_ticket_logon_results,
+        &ett_netlogon_ticket_logon_claims,
+        &ett_netlogon_forest_trust_info_flags,
     };
+    static ei_register_info ei[] = {
+     { &ei_netlogon_auth_nthash, {
+       "netlogon.authenticated", PI_SECURITY, PI_CHAT,
+       "Authenticated NTHASH", EXPFILL
+     }},
+     { &ei_netlogon_session_key, {
+       "netlogon.sessionkey", PI_SECURITY, PI_CHAT,
+       "SessionKey", EXPFILL
+     }},
+    };
+    expert_module_t* expert_netlogon;
 
     proto_dcerpc_netlogon = proto_register_protocol("Microsoft Network Logon", "RPC_NETLOGON", "rpc_netlogon");
 
     proto_register_field_array(proto_dcerpc_netlogon, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
+    expert_netlogon = expert_register_protocol(proto_dcerpc_netlogon);
+    expert_register_field_array(expert_netlogon, ei, array_length(ei));
 
     netlogon_auths = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(), netlogon_auth_hash, netlogon_auth_equal);
-#if 0
-    schannel_auths = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(), netlogon_auth_hash, netlogon_auth_equal);
-#endif
+    schannel_auths = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(), dcerpc_auth_schannel_key_hash, dcerpc_auth_schannel_key_equal);
 }
 
 static dcerpc_auth_subdissector_fns secchan_auth_fns = {
@@ -9289,7 +11975,7 @@ void
 proto_reg_handoff_dcerpc_netlogon(void)
 {
     /* Register protocol as dcerpc */
-    seen.isseen = FALSE;
+    seen.isseen = false;
     seen.num = 0;
     dcerpc_init_uuid(proto_dcerpc_netlogon, ett_dcerpc_netlogon,
                      &uuid_dcerpc_netlogon, ver_dcerpc_netlogon,
@@ -9305,7 +11991,7 @@ proto_reg_handoff_dcerpc_netlogon(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

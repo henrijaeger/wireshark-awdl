@@ -1,15 +1,14 @@
-/* interface_toolbar.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef INTERFACE_TOOLBAR_H
 #define INTERFACE_TOOLBAR_H
-
-#include <glib.h>
 
 #include "ui/iface_toolbar.h"
 #include "funnel_text_dialog.h"
@@ -60,17 +59,17 @@ private slots:
     void startReaderThread(QString ifname, void *control_in);
     void updateWidgets();
 
-    void onControlButtonPressed();
-    void onLogButtonPressed();
-    void onHelpButtonPressed();
-    void onRestoreButtonPressed();
+    void onControlButtonClicked();
+    void onLogButtonClicked();
+    void onHelpButtonClicked();
+    void onRestoreButtonClicked();
     void onCheckBoxChanged(int state);
     void onComboBoxChanged(int idx);
     void onLineEditChanged();
 
     void closeLog();
 
-    void on_interfacesComboBox_currentIndexChanged(const QString &ifname);
+    void on_interfacesComboBox_currentTextChanged(const QString &ifname);
 
 private:
     void initializeControls(const iface_toolbar *toolbar);
@@ -95,16 +94,3 @@ private:
 };
 
 #endif // INTERFACE_TOOLBAR_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -14,10 +14,11 @@
 #include <glib.h>
 
 #include <epan/epan.h>
-#include <wiretap/wtap.h>
 #include <epan/frame_data.h>
 #include <epan/column-utils.h>
 #include <epan/timestamp.h>
+#include <wiretap/wtap.h>
+#include <wsutil/ws_assert.h>
 
 #define COMPARE_FRAME_NUM()     ((fdata1->num < fdata2->num) ? -1 : \
                                  (fdata1->num > fdata2->num) ? 1 : \
@@ -33,8 +34,8 @@
    if both packets' times are reference times, we compare the
    times of the packets. */
 #define COMPARE_TS_REAL(time1, time2) \
-                ((fdata1->flags.ref_time && !fdata2->flags.ref_time) ? -1 : \
-                 (!fdata1->flags.ref_time && fdata2->flags.ref_time) ? 1 : \
+                ((fdata1->ref_time && !fdata2->ref_time) ? -1 : \
+                 (!fdata1->ref_time && fdata2->ref_time) ? 1 : \
                  ((time1).secs < (time2).secs) ? -1 : \
                  ((time1).secs > (time2).secs) ? 1 : \
                  ((time1).nsecs < (time2).nsecs) ? -1 :\
@@ -44,7 +45,7 @@
 #define COMPARE_TS(ts) COMPARE_TS_REAL(fdata1->ts, fdata2->ts)
 
 void
-frame_delta_abs_time(const struct epan_session *epan, const frame_data *fdata, guint32 prev_num, nstime_t *delta)
+frame_delta_abs_time(const struct epan_session *epan, const frame_data *fdata, uint32_t prev_num, nstime_t *delta)
 {
   const nstime_t *prev_abs_ts = (prev_num) ? epan_get_frame_ts(epan, prev_num) : NULL;
 
@@ -58,7 +59,7 @@ frame_delta_abs_time(const struct epan_session *epan, const frame_data *fdata, g
   }
 }
 
-static gint
+static int
 frame_data_time_delta_compare(const struct epan_session *epan, const frame_data *fdata1, const frame_data *fdata2)
 {
   nstime_t del_cap_ts1, del_cap_ts2;
@@ -69,7 +70,7 @@ frame_data_time_delta_compare(const struct epan_session *epan, const frame_data 
   return COMPARE_TS_REAL(del_cap_ts1, del_cap_ts2);
 }
 
-static gint
+static int
 frame_data_time_delta_rel_compare(const struct epan_session *epan, const frame_data *fdata1, const frame_data *fdata2)
 {
   nstime_t del_rel_ts1, del_rel_ts2;
@@ -80,7 +81,7 @@ frame_data_time_delta_rel_compare(const struct epan_session *epan, const frame_d
   return COMPARE_TS_REAL(del_rel_ts1, del_rel_ts2);
 }
 
-static gint
+static int
 frame_data_time_delta_dis_compare(const struct epan_session *epan, const frame_data *fdata1, const frame_data *fdata2)
 {
   nstime_t del_dis_ts1, del_dis_ts2;
@@ -91,12 +92,15 @@ frame_data_time_delta_dis_compare(const struct epan_session *epan, const frame_d
   return COMPARE_TS_REAL(del_dis_ts1, del_dis_ts2);
 }
 
-gint
+int
 frame_data_compare(const struct epan_session *epan, const frame_data *fdata1, const frame_data *fdata2, int field)
 {
   switch (field) {
   case COL_NUMBER:
     return COMPARE_FRAME_NUM();
+
+  case COL_NUMBER_DIS:
+    return COMPARE_NUM(dis_num);
 
   case COL_CLS_TIME:
     switch (timestamp_get_type()) {
@@ -151,21 +155,23 @@ frame_data_compare(const struct epan_session *epan, const frame_data *fdata1, co
 }
 
 void
-frame_data_init(frame_data *fdata, guint32 num, const wtap_rec *rec,
-                gint64 offset, guint32 cum_bytes)
+frame_data_init(frame_data *fdata, uint32_t num, const wtap_rec *rec,
+                int64_t offset, uint32_t cum_bytes)
 {
   fdata->pfd = NULL;
   fdata->num = num;
+  fdata->dis_num = num;
   fdata->file_off = offset;
-  fdata->subnum = 0;
-  fdata->flags.passed_dfilter = 0;
-  fdata->flags.dependent_of_displayed = 0;
-  fdata->flags.encoding = PACKET_CHAR_ENC_CHAR_ASCII;
-  fdata->flags.visited = 0;
-  fdata->flags.marked = 0;
-  fdata->flags.ref_time = 0;
-  fdata->flags.ignored = 0;
-  fdata->flags.has_ts = (rec->presence_flags & WTAP_HAS_TS) ? 1 : 0;
+  fdata->passed_dfilter = 1;
+  fdata->dependent_of_displayed = 0;
+  fdata->dependent_frames = NULL;
+  fdata->encoding = PACKET_CHAR_ENC_CHAR_ASCII;
+  fdata->visited = 0;
+  fdata->marked = 0;
+  fdata->ref_time = 0;
+  fdata->ignored = 0;
+  fdata->has_ts = (rec->presence_flags & WTAP_HAS_TS) ? 1 : 0;
+  fdata->tcp_snd_manual_analysis = 0;
   switch (rec->rec_type) {
 
   case REC_TYPE_PACKET:
@@ -179,27 +185,55 @@ frame_data_init(frame_data *fdata, guint32 num, const wtap_rec *rec,
     /*
      * XXX
      */
-    fdata->pkt_len = 0;
-    fdata->cap_len = 0;
+    fdata->pkt_len = rec->rec_header.ft_specific_header.record_len;
+    fdata->cum_bytes = cum_bytes + rec->rec_header.ft_specific_header.record_len;
+    fdata->cap_len = rec->rec_header.ft_specific_header.record_len;
     break;
 
   case REC_TYPE_SYSCALL:
     /*
      * XXX - is cum_bytes supposed to count non-packet bytes?
      */
-    fdata->pkt_len = rec->rec_header.syscall_header.event_len;
-    fdata->cum_bytes = cum_bytes + rec->rec_header.syscall_header.event_len;
-    fdata->cap_len = rec->rec_header.syscall_header.event_filelen;
+    fdata->pkt_len = rec->rec_header.syscall_header.event_data_len;
+    fdata->cum_bytes = cum_bytes + rec->rec_header.syscall_header.event_data_len;
+    fdata->cap_len = rec->rec_header.syscall_header.event_data_len;
     break;
+
+  case REC_TYPE_SYSTEMD_JOURNAL_EXPORT:
+    /*
+     * XXX - is cum_bytes supposed to count non-packet bytes?
+     */
+    fdata->pkt_len = rec->rec_header.systemd_journal_export_header.record_len;
+    fdata->cum_bytes = cum_bytes + rec->rec_header.systemd_journal_export_header.record_len;
+    fdata->cap_len = rec->rec_header.systemd_journal_export_header.record_len;
+    break;
+
+  case REC_TYPE_CUSTOM_BLOCK:
+    /*
+     * XXX - is cum_bytes supposed to count non-packet bytes?
+     */
+    switch (rec->rec_header.custom_block_header.pen) {
+    case PEN_NFLX:
+      fdata->pkt_len = rec->rec_header.custom_block_header.length - 4;
+      fdata->cum_bytes = cum_bytes + rec->rec_header.custom_block_header.length - 4;
+      fdata->cap_len = rec->rec_header.custom_block_header.length - 4;
+      break;
+    default:
+      fdata->pkt_len = rec->rec_header.custom_block_header.length;
+      fdata->cum_bytes = cum_bytes + rec->rec_header.custom_block_header.length;
+      fdata->cap_len = rec->rec_header.custom_block_header.length;
+      break;
+    }
+    break;
+
   }
 
-  /* To save some memory, we coerce it into a gint16 */
-  g_assert(rec->tsprec <= G_MAXINT16);
-  fdata->tsprec = (gint16)rec->tsprec;
+  /* To save some memory, we coerce it into 4 bits */
+  ws_assert(rec->tsprec <= 0xF);
+  fdata->tsprec = (unsigned int)rec->tsprec;
   fdata->abs_ts = rec->ts;
-  fdata->flags.has_phdr_comment = (rec->opt_comment != NULL);
-  fdata->flags.has_user_comment = 0;
-  fdata->flags.need_colorize = 0;
+  fdata->has_modified_block = 0;
+  fdata->need_colorize = 0;
   fdata->color_filter = NULL;
   fdata->shift_offset.secs = 0;
   fdata->shift_offset.nsecs = 0;
@@ -215,13 +249,29 @@ frame_data_set_before_dissect(frame_data *fdata,
 {
   nstime_t rel_ts;
 
+  /* If this frame doesn't have a time stamp, don't set it as the
+   * reference frame used for calculating time deltas, set elapsed
+   * time, etc. We also won't need to calculate the delta of this
+   * frame's timestamp to any other frame.
+   */
+  if (!fdata->has_ts) {
+    /* If it was marked as a reference time frame anyway (should we
+     * allow that?), clear the existing reference frame so that the
+     * next frame with a time stamp will become the reference frame.
+     */
+    if(fdata->ref_time) {
+      *frame_ref = NULL;
+    }
+    return;
+  }
+
   /* Don't have the reference frame, set to current */
   if (*frame_ref == NULL)
     *frame_ref = fdata;
 
   /* if this frames is marked as a reference time frame,
      set reference frame this frame */
-  if(fdata->flags.ref_time)
+  if(fdata->ref_time)
     *frame_ref = fdata;
 
   /* Get the time elapsed between the first packet and this packet. */
@@ -230,8 +280,7 @@ frame_data_set_before_dissect(frame_data *fdata,
   /* If it's greater than the current elapsed time, set the elapsed time
      to it (we check for "greater than" so as not to be confused by
      time moving backwards). */
-  if ((gint32)elapsed_time->secs < rel_ts.secs
-    || ((gint32)elapsed_time->secs == rel_ts.secs && (gint32)elapsed_time->nsecs < rel_ts.nsecs)) {
+  if (nstime_cmp(elapsed_time, &rel_ts) < 0) {
     *elapsed_time = rel_ts;
   }
 
@@ -241,12 +290,12 @@ frame_data_set_before_dissect(frame_data *fdata,
 
 void
 frame_data_set_after_dissect(frame_data *fdata,
-                guint32 *cum_bytes)
+                uint32_t *cum_bytes)
 {
   /* This frame either passed the display filter list or is marked as
      a time reference frame.  All time reference frames are displayed
      even if they don't pass the display filter */
-  if(fdata->flags.ref_time){
+  if(fdata->ref_time){
     /* if this was a TIME REF frame we should reset the cul bytes field */
     *cum_bytes = fdata->pkt_len;
     fdata->cum_bytes = *cum_bytes;
@@ -260,12 +309,16 @@ frame_data_set_after_dissect(frame_data *fdata,
 void
 frame_data_reset(frame_data *fdata)
 {
-  fdata->flags.visited = 0;
-  fdata->subnum = 0;
+  fdata->visited = 0;
 
   if (fdata->pfd) {
     g_slist_free(fdata->pfd);
     fdata->pfd = NULL;
+  }
+
+  if (fdata->dependent_frames) {
+    g_hash_table_destroy(fdata->dependent_frames);
+    fdata->dependent_frames = NULL;
   }
 }
 
@@ -276,10 +329,15 @@ frame_data_destroy(frame_data *fdata)
     g_slist_free(fdata->pfd);
     fdata->pfd = NULL;
   }
+
+  if (fdata->dependent_frames) {
+    g_hash_table_destroy(fdata->dependent_frames);
+    fdata->dependent_frames = NULL;
+  }
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 2

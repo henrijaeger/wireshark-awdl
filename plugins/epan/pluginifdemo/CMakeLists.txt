@@ -10,14 +10,20 @@
 include(WiresharkPlugin)
 
 # Plugin name and version info (major minor micro extra)
-set_module_info(pluginifdemo 0 0 1 0)
+set_module_info(pluginifdemo 0 0 2 0)
 
 SET(CMAKE_AUTOMOC ON)
 SET(CMAKE_AUTOUIC ON)
 
-find_package(Qt5Core)
-find_package(Qt5PrintSupport)
-find_package(Qt5Widgets)
+if(USE_qt6)
+	set(qtver "6")
+else()
+	set(qtver "5")
+endif()
+
+find_package(Qt${qtver}Core)
+find_package(Qt${qtver}PrintSupport)
+find_package(Qt${qtver}Widgets)
 
 set(DISSECTOR_SRC
 	pluginifdemo.c
@@ -34,22 +40,25 @@ set(PLUGIN_FILES
 )
 
 set_source_files_properties(
-	${PLUGIN_FILES}
+	plugin.c
 	PROPERTIES
-	COMPILE_FLAGS ${WERROR_COMMON_FLAGS}
+	SKIP_AUTOGEN ON
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
+set_source_files_properties(
+	${PLUGIN_FILES}
+	PROPERTIES
+	COMPILE_FLAGS "${WERROR_COMMON_FLAGS}"
+)
 
 register_plugin_files(plugin.c
 	plugin
 	${DISSECTOR_SRC}
 )
 
-add_plugin_library(pluginifdemo epan)
+add_wireshark_plugin_library(pluginifdemo epan)
 
-target_link_libraries(pluginifdemo epan Qt5::Core Qt5::Widgets Qt5::PrintSupport)
+target_link_libraries(pluginifdemo epan Qt${qtver}::Core Qt${qtver}::Widgets Qt${qtver}::PrintSupport)
 
 install_plugin(pluginifdemo epan)
 
@@ -58,7 +67,8 @@ CHECKAPI(
 	NAME
 	  pluginifdemo
 	SWITCHES
-	  -g abort -g termoutput -build
+	  --group dissectors-prohibited
+	  --group dissectors-restricted
 	SOURCES
 	  ${DISSECTOR_SRC}
 	  ${DISSECTOR_HEADERS}

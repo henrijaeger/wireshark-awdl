@@ -16,7 +16,7 @@
 #include <ui/qt/manager/preference_manager.h>
 #include <ui/qt/widgets/range_syntax_lineedit.h>
 #include "ui/qt/widgets/wireshark_file_dialog.h"
-#include <ui/qt/wireshark_application.h>
+#include <ui/qt/main_application.h>
 #include <ui/qt/uat_dialog.h>
 
 #include <QDir>
@@ -51,9 +51,9 @@ public:
     BoolPreference(QObject * parent = Q_NULLPTR) : WiresharkPreference(parent) {}
     virtual QWidget * editor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index)
     {
-        ((QAbstractItemModel*)index.model())->setData(index, QString("BOOL"), Qt::EditRole);
+        const_cast<QAbstractItemModel*>(index.model())->setData(index, QStringLiteral("BOOL"), Qt::EditRole);
         return WiresharkPreference::editor(parent, option, index);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_BOOL, BoolPreference)
 
@@ -64,21 +64,37 @@ public:
     virtual QWidget * editor(QWidget *parent, const QStyleOptionViewItem &/*option*/, const QModelIndex &/*index*/)
     {
         return new QLineEdit(parent);
-    };
+    }
 
     virtual void setData(QWidget *editor, const QModelIndex &index)
     {
         QLineEdit* line = static_cast<QLineEdit*>(editor);
         line->setText(index.model()->data(index, Qt::DisplayRole).toString());
-    };
+    }
 
     virtual void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index)
     {
         QLineEdit* line = static_cast<QLineEdit*>(editor);
         model->setData(index, line->text(), Qt::EditRole);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_STRING, StringPreference)
+REGISTER_PREFERENCE_TYPE(PREF_CUSTOM, StringPreference)
+REGISTER_PREFERENCE_TYPE(PREF_DISSECTOR, StringPreference)
+
+class PasswordPreference : public StringPreference
+{
+public:
+    PasswordPreference(QObject * parent = Q_NULLPTR) : StringPreference(parent) {}
+    virtual QWidget * editor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index)
+    {
+        QLineEdit *le = static_cast<QLineEdit *>(StringPreference::editor(parent, option, index));
+
+        le->setEchoMode(QLineEdit::PasswordEchoOnEdit);
+        return le;
+    }
+};
+REGISTER_PREFERENCE_TYPE(PREF_PASSWORD, PasswordPreference)
 
 class UIntPreference : public StringPreference
 {
@@ -86,7 +102,6 @@ public:
     UIntPreference(QObject * parent = Q_NULLPTR) : StringPreference(parent) {}
 };
 REGISTER_PREFERENCE_TYPE(PREF_UINT, UIntPreference)
-REGISTER_PREFERENCE_TYPE(PREF_DECODE_AS_UINT, UIntPreference)
 
 class EnumPreference : public WiresharkPreference
 {
@@ -95,7 +110,7 @@ public:
     virtual QWidget * editor(QWidget *parent, const QStyleOptionViewItem &/*option*/, const QModelIndex &/*index*/)
     {
         return new QComboBox(parent);
-    };
+    }
 
     virtual void setData(QWidget *editor, const QModelIndex &index)
     {
@@ -107,13 +122,13 @@ public:
             if (prefs_get_enum_value(pref->getPref(), pref_stashed) == ev->value)
                 combo->setCurrentIndex(combo->count() - 1);
         }
-    };
+    }
 
     virtual void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index)
     {
         QComboBox* combo = static_cast<QComboBox*>(editor);
         model->setData(index, combo->itemData(combo->currentIndex()), Qt::EditRole);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_ENUM, EnumPreference)
 
@@ -124,19 +139,19 @@ public:
     virtual QWidget * editor(QWidget *parent, const QStyleOptionViewItem &/*option*/, const QModelIndex &/*index*/)
     {
         return new RangeSyntaxLineEdit(parent);
-    };
+    }
 
     virtual void setData(QWidget *editor, const QModelIndex &index)
     {
         RangeSyntaxLineEdit* syntax = static_cast<RangeSyntaxLineEdit*>(editor);
         syntax->setText(index.model()->data(index, Qt::DisplayRole).toString());
-    };
+    }
 
     virtual void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index)
     {
         RangeSyntaxLineEdit* syntax = static_cast<RangeSyntaxLineEdit*>(editor);
         model->setData(index, syntax->text(), Qt::EditRole);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_RANGE, RangePreference)
 REGISTER_PREFERENCE_TYPE(PREF_DECODE_AS_RANGE, RangePreference)
@@ -145,21 +160,28 @@ class ColorPreference : public WiresharkPreference
 {
 public:
     ColorPreference(QObject * parent = Q_NULLPTR) : WiresharkPreference(parent) {}
-    virtual QWidget * editor(QWidget * parent, const QStyleOptionViewItem &option, const QModelIndex &index)
+    virtual QWidget * editor(QWidget * parent, const QStyleOptionViewItem &/*option*/, const QModelIndex &/*index*/)
     {
-        QColorDialog color_dlg;
-        color_t color = *prefs_get_color_value(prefsItem()->getPref(), pref_stashed);
+        QColorDialog* color_dlg = new QColorDialog(parent);
+        color_dlg->setWindowModality(Qt::ApplicationModal);
+        color_dlg->show();
+        return color_dlg;
+    }
 
-        color_dlg.setCurrentColor(QColor(
-                                      color.red >> 8,
-                                      color.green >> 8,
-                                      color.blue >> 8
-                                      ));
-        if (color_dlg.exec() == QDialog::Accepted)
-            ((QAbstractItemModel*)index.model())->setData(index, color_dlg.currentColor().name(), Qt::EditRole);
+    virtual void setData(QWidget *editor, const QModelIndex &index)
+    {
+        QColorDialog* color_dlg = static_cast<QColorDialog*>(editor);
+        QColor color = QColor("#" + index.model()->data(index, Qt::DisplayRole).toString());
+        color_dlg->setCurrentColor(color);
+    }
 
-        return WiresharkPreference::editor(parent, option, index);
-    };
+    virtual void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index)
+    {
+        QColorDialog* color_dlg = static_cast<QColorDialog*>(editor);
+        if (color_dlg->result() == QDialog::Accepted) {
+            model->setData(index, color_dlg->currentColor().name(), Qt::EditRole);
+        }
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_COLOR, ColorPreference)
 
@@ -169,13 +191,13 @@ public:
     SaveFilePreference(QObject * parent = Q_NULLPTR) : WiresharkPreference(parent) {}
     virtual QWidget * editor(QWidget * parent, const QStyleOptionViewItem &option, const QModelIndex &index)
     {
-        QString filename = WiresharkFileDialog::getSaveFileName(parent, wsApp->windowTitleString(prefs_get_title(prefsItem()->getPref())),
+        QString filename = WiresharkFileDialog::getSaveFileName(parent, mainApp->windowTitleString(prefs_get_title(prefsItem()->getPref())),
                                                     index.model()->data(index, Qt::DisplayRole).toString());
         if (!filename.isEmpty()) {
-            ((QAbstractItemModel*)index.model())->setData(index, QDir::toNativeSeparators(filename), Qt::EditRole);
+            const_cast<QAbstractItemModel*>(index.model())->setData(index, QDir::toNativeSeparators(filename), Qt::EditRole);
         }
         return WiresharkPreference::editor(parent, option, index);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_SAVE_FILENAME, SaveFilePreference)
 
@@ -185,13 +207,13 @@ public:
     OpenFilePreference(QObject * parent = Q_NULLPTR) : WiresharkPreference(parent) {}
     virtual QWidget * editor(QWidget * parent, const QStyleOptionViewItem &option, const QModelIndex &index)
     {
-        QString filename = WiresharkFileDialog::getOpenFileName(parent, wsApp->windowTitleString(prefs_get_title(prefsItem()->getPref())),
+        QString filename = WiresharkFileDialog::getOpenFileName(parent, mainApp->windowTitleString(prefs_get_title(prefsItem()->getPref())),
                                                         index.model()->data(index, Qt::DisplayRole).toString());
         if (!filename.isEmpty()) {
-            ((QAbstractItemModel*)index.model())->setData(index, QDir::toNativeSeparators(filename), Qt::EditRole);
+            const_cast<QAbstractItemModel*>(index.model())->setData(index, QDir::toNativeSeparators(filename), Qt::EditRole);
         }
         return WiresharkPreference::editor(parent, option, index);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_OPEN_FILENAME, OpenFilePreference)
 
@@ -201,13 +223,13 @@ public:
     DirNamePreference(QObject * parent = Q_NULLPTR) : WiresharkPreference(parent) {}
     virtual QWidget * editor(QWidget * parent, const QStyleOptionViewItem &option, const QModelIndex &index)
     {
-        QString filename = WiresharkFileDialog::getExistingDirectory(parent, wsApp->windowTitleString(prefs_get_title(prefsItem()->getPref())),
+        QString filename = WiresharkFileDialog::getExistingDirectory(parent, mainApp->windowTitleString(prefs_get_title(prefsItem()->getPref())),
                                                     index.model()->data(index, Qt::DisplayRole).toString());
         if (!filename.isEmpty()) {
-            ((QAbstractItemModel*)index.model())->setData(index, QDir::toNativeSeparators(filename), Qt::EditRole);
+            const_cast<QAbstractItemModel*>(index.model())->setData(index, QDir::toNativeSeparators(filename), Qt::EditRole);
         }
         return WiresharkPreference::editor(parent, option, index);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_DIRNAME, DirNamePreference)
 
@@ -217,25 +239,10 @@ public:
     UatPreference(QObject * parent = Q_NULLPTR) : WiresharkPreference(parent) {}
     virtual QWidget * editor(QWidget * parent, const QStyleOptionViewItem &option, const QModelIndex &index)
     {
-        if (prefsItem()->getPrefGUIType() == GUI_ALL || prefsItem()->getPrefGUIType() == GUI_QT) {
-            UatDialog uat_dlg(parent, prefs_get_uat_value(prefsItem()->getPref()));
-            uat_dlg.exec();
-        }
+        UatDialog uat_dlg(parent, prefs_get_uat_value(prefsItem()->getPref()));
+        uat_dlg.exec();
+
         return WiresharkPreference::editor(parent, option, index);
-    };
+    }
 };
 REGISTER_PREFERENCE_TYPE(PREF_UAT, UatPreference)
-
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

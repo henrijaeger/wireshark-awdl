@@ -1,4 +1,4 @@
-/* capture_file_properties_dialog.h
+/** @file
  *
  * GSoC 2013 - QtShark
  *
@@ -6,14 +6,13 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef CAPTURE_FILE_PROPERTIES_DIALOG_H
 #define CAPTURE_FILE_PROPERTIES_DIALOG_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include <string.h>
 #include <time.h>
@@ -61,23 +60,10 @@ private:
 
 private slots:
     void updateWidgets();
+    void addCaptureComment();
     void on_buttonBox_helpRequested();
-    void on_buttonBox_accepted();
     void on_buttonBox_clicked(QAbstractButton *button);
     void on_buttonBox_rejected();
 };
 
 #endif
-
-/*
-* Editor modelines
-*
-* Local Variables:
-* c-basic-offset: 4
-* tab-width: 8
-* indent-tabs-mode: nil
-* End:
-*
-* ex: set shiftwidth=4 tabstop=8 expandtab:
-* :indentSize=4:tabSize=8:noTabs=true:
-*/

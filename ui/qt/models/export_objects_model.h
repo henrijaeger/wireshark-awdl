@@ -1,4 +1,5 @@
-/* export_objects_model.h
+/** @file
+ *
  * Data model for Export Objects.
  *
  * Wireshark - Network traffic analyzer
@@ -30,6 +31,7 @@ class ExportObjectModel : public QAbstractTableModel
 
 public:
     ExportObjectModel(register_eo_t* eo, QObject *parent);
+    virtual ~ExportObjectModel();
 
     enum ExportObjectColumn {
         colPacket = 0,
@@ -45,7 +47,7 @@ public:
     void resetObjects();
 
     bool saveEntry(QModelIndex &index, QString filename);
-    bool saveAllEntries(QString path);
+    void saveAllEntries(QString path);
 
     const char* getTapListenerName();
     void* getTapData();
@@ -69,13 +71,21 @@ private:
 
 class ExportObjectProxyModel : public QSortFilterProxyModel
 {
-    Q_OBJECT
 public:
 
     explicit ExportObjectProxyModel(QObject * parent = Q_NULLPTR);
 
+    void setContentFilterString(QString contentFilter);
+    void setTextFilterString(QString textFilter);
+
 protected:
     bool lessThan(const QModelIndex &source_left, const QModelIndex &source_right) const;
+    bool filterAcceptsRow(int source_row, const QModelIndex &source_parent) const;
+
+private:
+    QString contentFilter_;
+    QString textFilter_;
+
 };
 
 #endif // EXPORT_OBJECTS_MODEL_H

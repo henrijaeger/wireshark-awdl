@@ -1,4 +1,4 @@
-/* srt_table.h
+/** @file
  * GUI independent helper routines common to all service response time (SRT) taps.
  *
  * Wireshark - Network traffic analyzer
@@ -13,7 +13,7 @@
 
 #include "tap.h"
 #include "timestats.h"
-#include "wmem/wmem.h"
+#include <epan/wmem_scopes.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,12 +40,9 @@ typedef struct _srt_stat_table {
 
 struct register_srt;
 struct _srt_data_t;
-typedef void (*srt_gui_init_cb)(srt_stat_table* rst, void* gui_data); /* GTK+ only? */
-typedef void (*srt_gui_reset_cb)(srt_stat_table* rst, void* gui_data);  /* GTK+ only? */
-typedef void (*srt_gui_free_cb)(srt_stat_table* rst, void* gui_data);  /* GTK+ only? */
 typedef void (*srt_proc_table_cb)(srt_stat_table* rst, int indx, struct _srt_data_t* gui_data);
-typedef void (*srt_init_cb)(struct register_srt* srt, GArray* srt_array, srt_gui_init_cb gui_callback, void* gui_data);
-typedef guint (*srt_param_handler_cb)(struct register_srt* srt, const char* opt_arg, char** err);
+typedef void (*srt_init_cb)(struct register_srt* srt, GArray* srt_array);
+typedef unsigned (*srt_param_handler_cb)(struct register_srt* srt, const char* opt_arg, char** err);
 
 /** tap data
  */
@@ -129,26 +126,22 @@ WS_DLL_PUBLIC void free_srt_table_data(srt_stat_table *rst);
  *
  * @param srt Registered SRT
  * @param srt_array SRT table array
- * @param gui_callback optional callback from GUI
- * @param callback_data callback data needed for GUI
  */
-WS_DLL_PUBLIC void free_srt_table(register_srt_t *srt, GArray* srt_array, srt_gui_free_cb gui_callback, void *callback_data);
+WS_DLL_PUBLIC void free_srt_table(register_srt_t *srt, GArray* srt_array);
 
 /** Reset ALL tables in the srt.
  *
  * @param srt_array SRT table array
- * @param gui_callback optional callback from GUI
- * @param callback_data callback data needed for GUI
  */
-WS_DLL_PUBLIC void reset_srt_table(GArray* srt_array, srt_gui_reset_cb gui_callback, void *callback_data);
+WS_DLL_PUBLIC void reset_srt_table(GArray* srt_array);
 
-/** Interator to walk srt tables and execute func
+/** Iterator to walk srt tables and execute func
  * Used for initialization
  *
- * @param func action to be performed on all converation tables
+ * @param func action to be performed on all conversation tables
  * @param user_data any data needed to help perform function
  */
-WS_DLL_PUBLIC void srt_table_iterate_tables(wmem_foreach_func func, gpointer user_data);
+WS_DLL_PUBLIC void srt_table_iterate_tables(wmem_foreach_func func, void *user_data);
 
 /** Return filter used for register_tap_listener
  *
@@ -163,10 +156,8 @@ WS_DLL_PUBLIC void srt_table_get_filter(register_srt_t* srt, const char *opt_arg
  *
  * @param srt Registered SRT
  * @param srt_array SRT table array
- * @param gui_callback optional callback from GUI
- * @param callback_data callback data needed for GUI
  */
-WS_DLL_PUBLIC void srt_table_dissector_init(register_srt_t* srt, GArray* srt_array, srt_gui_init_cb gui_callback, void *callback_data);
+WS_DLL_PUBLIC void srt_table_dissector_init(register_srt_t* srt, GArray* srt_array);
 
 /** Helper function to get tap string name
  * Caller is responsible for freeing returned string
@@ -174,7 +165,7 @@ WS_DLL_PUBLIC void srt_table_dissector_init(register_srt_t* srt, GArray* srt_arr
  * @param srt Registered SRT
  * @return SRT tap string
  */
-WS_DLL_PUBLIC gchar* srt_table_get_tap_string(register_srt_t* srt);
+WS_DLL_PUBLIC char* srt_table_get_tap_string(register_srt_t* srt);
 
 /** Init an srt table data structure.
  *
@@ -184,13 +175,11 @@ WS_DLL_PUBLIC gchar* srt_table_get_tap_string(register_srt_t* srt);
  * @param num_procs number of procedures
  * @param proc_column_name procedure column name (if different from "Procedure")
  * @param filter_string table filter string or NULL
- * @param gui_callback optional GUI callback
- * @param gui_data GUI content data
  * @param table_specific_data Table specific data
  * @return newly created srt_stat_table
  */
 WS_DLL_PUBLIC srt_stat_table* init_srt_table(const char *name, const char *short_name, GArray *srt_array, int num_procs, const char* proc_column_name,
-                const char *filter_string, srt_gui_init_cb gui_callback, void* gui_data, void* table_specific_data);
+                const char *filter_string, void* table_specific_data);
 
 /** Init an srt table row data structure.
  *

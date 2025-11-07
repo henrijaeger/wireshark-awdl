@@ -1,10 +1,11 @@
-/* packet_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef PACKET_DIALOG_H
 #define PACKET_DIALOG_H
@@ -13,6 +14,7 @@
 
 #include "epan/epan_dissect.h"
 #include "wiretap/wtap.h"
+#include "wsutil/buffer.h"
 
 #include <ui/qt/utils/field_information.h>
 
@@ -31,34 +33,34 @@ public:
     explicit PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata);
     ~PacketDialog();
 
+protected:
+    void captureFileClosing();
+
+signals:
+    void showProtocolPreferences(const QString module_name);
+    void editProtocolPreference(pref_t *pref, module_t *module);
+
 private slots:
     void on_buttonBox_helpRequested();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    void viewVisibilityStateChanged(Qt::CheckState);
+#else
+    void viewVisibilityStateChanged(int);
+#endif
+    void layoutChanged(int);
 
-    void captureFileClosing();
     void setHintText(FieldInformation *);
+    void setHintTextSelected(FieldInformation*);
 
 private:
     Ui::PacketDialog *ui;
 
+    pref_t *pref_packet_dialog_layout_;
     QString col_info_;
     ProtoTree *proto_tree_;
     ByteViewTab *byte_view_tab_;
-    epan_dissect_t edt_;
     wtap_rec rec_;
-    guint8 *packet_data_;
+    epan_dissect_t edt_;
 };
 
 #endif // PACKET_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

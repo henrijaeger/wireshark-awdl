@@ -16,16 +16,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#ifdef DEBUG
-#include <stdio.h>
-#include <wsutil/ws_printf.h> /* ws_debug_printf */
-#endif
 
 #include <epan/packet.h>
 
 #include "asn1.h"
 
-void asn1_ctx_init(asn1_ctx_t *actx, asn1_enc_e encoding, gboolean aligned, packet_info *pinfo) {
+void asn1_ctx_init(asn1_ctx_t *actx, asn1_enc_e encoding, bool aligned, packet_info *pinfo) {
   memset(actx, '\0', sizeof(*actx));
   actx->signature = ASN1_CTX_SIGNATURE;
   actx->encoding = encoding;
@@ -33,7 +29,7 @@ void asn1_ctx_init(asn1_ctx_t *actx, asn1_enc_e encoding, gboolean aligned, pack
   actx->pinfo = pinfo;
 }
 
-gboolean asn1_ctx_check_signature(asn1_ctx_t *actx) {
+bool asn1_ctx_check_signature(asn1_ctx_t *actx) {
   return actx && (actx->signature == ASN1_CTX_SIGNATURE);
 }
 
@@ -52,22 +48,22 @@ void asn1_ctx_clean_epdv(asn1_ctx_t *actx) {
 
 /*--- stack/parameters ---*/
 
-void asn1_stack_frame_push(asn1_ctx_t *actx, const gchar *name) {
+void asn1_stack_frame_push(asn1_ctx_t *actx, const char *name) {
   asn1_stack_frame_t *frame;
 
-  frame = wmem_new0(wmem_packet_scope(), asn1_stack_frame_t);
+  frame = wmem_new0(actx->pinfo->pool, asn1_stack_frame_t);
   frame->name = name;
   frame->next = actx->stack;
   actx->stack = frame;
 }
 
-void asn1_stack_frame_pop(asn1_ctx_t *actx, const gchar *name) {
+void asn1_stack_frame_pop(asn1_ctx_t *actx, const char *name) {
   DISSECTOR_ASSERT(actx->stack);
   DISSECTOR_ASSERT(!strcmp(actx->stack->name, name));
   actx->stack = actx->stack->next;
 }
 
-void asn1_stack_frame_check(asn1_ctx_t *actx, const gchar *name, const asn1_par_def_t *par_def) {
+void asn1_stack_frame_check(asn1_ctx_t *actx, const char *name, const asn1_par_def_t *par_def) {
   const asn1_par_def_t *pd = par_def;
   asn1_par_t *par;
 
@@ -85,7 +81,7 @@ void asn1_stack_frame_check(asn1_ctx_t *actx, const gchar *name, const asn1_par_
   DISSECTOR_ASSERT(!par);
 }
 
-static asn1_par_t *get_par_by_name(asn1_ctx_t *actx, const gchar *name) {
+static asn1_par_t *get_par_by_name(asn1_ctx_t *actx, const char *name) {
   asn1_par_t *par = NULL;
 
   DISSECTOR_ASSERT(actx->stack);
@@ -103,7 +99,7 @@ static asn1_par_t *push_new_par(asn1_ctx_t *actx) {
 
   DISSECTOR_ASSERT(actx->stack);
 
-  par = wmem_new0(wmem_packet_scope(), asn1_par_t);
+  par = wmem_new0(actx->pinfo->pool, asn1_par_t);
 
   pp = &(actx->stack->par);
   while (*pp)
@@ -113,7 +109,7 @@ static asn1_par_t *push_new_par(asn1_ctx_t *actx) {
   return par;
 }
 
-void asn1_param_push_boolean(asn1_ctx_t *actx, gboolean value) {
+void asn1_param_push_boolean(asn1_ctx_t *actx, bool value) {
   asn1_par_t *par;
 
   par = push_new_par(actx);
@@ -121,7 +117,7 @@ void asn1_param_push_boolean(asn1_ctx_t *actx, gboolean value) {
   par->value.v_boolean = value;
 }
 
-void asn1_param_push_integer(asn1_ctx_t *actx, gint32 value) {
+void asn1_param_push_integer(asn1_ctx_t *actx, int32_t value) {
   asn1_par_t *par;
 
   par = push_new_par(actx);
@@ -129,7 +125,7 @@ void asn1_param_push_integer(asn1_ctx_t *actx, gint32 value) {
   par->value.v_integer = value;
 }
 
-gboolean asn1_param_get_boolean(asn1_ctx_t *actx, const gchar *name) {
+bool asn1_param_get_boolean(asn1_ctx_t *actx, const char *name) {
   asn1_par_t *par = NULL;
 
   par = get_par_by_name(actx, name);
@@ -137,7 +133,7 @@ gboolean asn1_param_get_boolean(asn1_ctx_t *actx, const gchar *name) {
   return par->value.v_boolean;
 }
 
-gint32 asn1_param_get_integer(asn1_ctx_t *actx, const gchar *name) {
+int32_t asn1_param_get_integer(asn1_ctx_t *actx, const char *name) {
   asn1_par_t *par = NULL;
 
   par = get_par_by_name(actx, name);
@@ -153,7 +149,7 @@ void rose_ctx_init(rose_ctx_t *rctx) {
   rctx->signature = ROSE_CTX_SIGNATURE;
 }
 
-gboolean rose_ctx_check_signature(rose_ctx_t *rctx) {
+bool rose_ctx_check_signature(rose_ctx_t *rctx) {
   return rctx && (rctx->signature == ROSE_CTX_SIGNATURE);
 }
 
@@ -188,10 +184,10 @@ rose_ctx_t *get_rose_ctx(void *ptr) {
 }
 
 /** Only tested for BER */
-double asn1_get_real(const guint8 *real_ptr, gint len) {
-  guint8 octet;
-  const guint8 *p;
-  guint8 *buf;
+double asn1_get_real(const uint8_t *real_ptr, int len) {
+  uint8_t octet;
+  const uint8_t *p;
+  uint8_t *buf;
   double val = 0;
 
   /* 8.5.2    If the real value is the value zero,
@@ -204,14 +200,14 @@ double asn1_get_real(const guint8 *real_ptr, gint len) {
   len -= 1;
   if (octet & 0x80) {  /* binary encoding */
     int i;
-    gboolean Eneg;
-    gint8 S; /* Sign */
-    guint8 B; /* Base */
-    guint8 F; /* scaling Factor */
-    gint32 E = 0; /* Exponent (supported max 3 octets/24 bit) */
-    guint64 N = 0; /* N (supported max 8 octets/64 bit) */
+    bool Eneg;
+    int8_t S; /* Sign */
+    uint8_t B; /* Base */
+    uint8_t F; /* scaling Factor */
+    int32_t E = 0; /* Exponent (supported max 3 octets/24 bit) */
+    uint64_t N = 0; /* N (supported max 8 octets/64 bit) */
 
-    guint8 lenE, lenN;
+    uint8_t lenE, lenN;
 
     if(octet & 0x40) S = -1; else S = 1;
     switch(octet & 0x30) {
@@ -227,18 +223,19 @@ double asn1_get_real(const guint8 *real_ptr, gint len) {
 
     /* 8.5.6.4 Exponent length */
     lenE = (octet & 0x3) + 1;
-    if(lenE == 4)
-    {
-      /* we can't handle exponents > 24 bits */
-      /* TODO Next octet(s) define length of exponent */
-      DISSECTOR_ASSERT_NOT_REACHED();
-    }
 
-    Eneg = (*p) & 0x80 ? TRUE : FALSE;
+    /* we can't handle exponents > 24 bits */
+    /* TODO Next octet(s) define length of exponent */
+    DISSECTOR_ASSERT(lenE != 4);
+
+    /* Ensure the buffer len and its content are coherent */
+    DISSECTOR_ASSERT(lenE < len);
+
+    Eneg = ((*p) & 0x80) ? true : false;
     for (i = 0; i < lenE; i++) {
       if(Eneg) {
         /* 2's complement: inverse bits */
-        E = (E<<8) | ((guint8) ~(*p));
+        E = (E<<8) | ((uint8_t) ~(*p));
       } else {
         E = (E<<8) | *p;
       }
@@ -250,23 +247,20 @@ double asn1_get_real(const guint8 *real_ptr, gint len) {
     }
 
     lenN = len - lenE;
-    if(lenN > 8)
-    {
-      /* we can't handle integers > 64 bits */
-      DISSECTOR_ASSERT_NOT_REACHED();
-    }
+
+    /* we can't handle integers > 64 bits */
+    DISSECTOR_ASSERT(lenN <= 8);
+
     for (i=0; i<lenN; i++) {
       N = (N<<8) | *p;
       p++;
     }
     val = (double) S * N * pow(2, F) * pow(B, E);
-#ifdef DEBUG
-    ws_debug_printf("S = %d, N = %lu, F = %u, B = %u, E = %d -> %f\n", S, N, F, B, E, val);
-#endif
   } else if (octet & 0x40) {  /* SpecialRealValue */
     switch (octet & 0x3F) {
       case 0x00: val = HUGE_VAL; break;
       case 0x01: val = -HUGE_VAL; break;
+      case 0x02: val = NAN; break;
     }
   } else {  /* decimal encoding */
     buf = g_strndup(p, len);
@@ -278,7 +272,7 @@ double asn1_get_real(const guint8 *real_ptr, gint len) {
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

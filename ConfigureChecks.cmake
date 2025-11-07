@@ -9,20 +9,10 @@
 
 include(CMakePushCheckState)
 
-if(WIN32)
-	# Prepopulate some values. Compilation checks on Windows can be slow.
-	set(HAVE_FCNTL_H TRUE)
-	set(HAVE_SYS_STAT_H TRUE)
-	set(HAVE_FLOORL TRUE)
-	set(HAVE_LRINT TRUE)
-endif(WIN32)
-
 #check system for includes
 include(CheckIncludeFile)
 include(CheckIncludeFiles)
 check_include_file("arpa/inet.h"            HAVE_ARPA_INET_H)
-check_include_file("fcntl.h"                HAVE_FCNTL_H)
-check_include_file("getopt.h"               HAVE_GETOPT_H)
 check_include_file("grp.h"                  HAVE_GRP_H)
 #
 # This may require <sys/types.h> to be included
@@ -31,13 +21,9 @@ check_include_files("sys/types.h;ifaddrs.h" HAVE_IFADDRS_H)
 check_include_file("netinet/in.h"           HAVE_NETINET_IN_H)
 check_include_file("netdb.h"                HAVE_NETDB_H)
 check_include_file("pwd.h"                  HAVE_PWD_H)
-check_include_file("sys/ioctl.h"            HAVE_SYS_IOCTL_H)
 check_include_file("sys/select.h"           HAVE_SYS_SELECT_H)
 check_include_file("sys/socket.h"           HAVE_SYS_SOCKET_H)
-check_include_file("sys/sockio.h"           HAVE_SYS_SOCKIO_H)
-check_include_file("sys/stat.h"             HAVE_SYS_STAT_H)
 check_include_file("sys/time.h"             HAVE_SYS_TIME_H)
-check_include_file("sys/types.h"            HAVE_SYS_TYPES_H)
 check_include_file("sys/utsname.h"          HAVE_SYS_UTSNAME_H)
 check_include_file("sys/wait.h"             HAVE_SYS_WAIT_H)
 check_include_file("unistd.h"               HAVE_UNISTD_H)
@@ -79,71 +65,98 @@ include(CheckSymbolExists)
 # Platform-specific functions used in platform-specific code.
 # We check for them only on the platform on which we use them.
 #
-if(CMAKE_SYSTEM_NAME STREQUAL "SunOS" AND CMAKE_SYSTEM_VERSION MATCHES "5[.][0-9.]*")
+if(CMAKE_SYSTEM_NAME STREQUAL "HP-UX")
+	#
+	# HP-UX
+	#
+	cmake_push_check_state()
+	set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_DL_LIBS})
+	check_function_exists("dlget"           HAVE_DLGET)
+	cmake_pop_check_state()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "SunOS" AND CMAKE_SYSTEM_VERSION MATCHES "5[.][0-9.]*")
 	#
 	# Solaris
 	#
 	check_function_exists("getexecname"     HAVE_GETEXECNAME)
 endif()
 
-#
-# Use check_symbol_exists just in case math.h does something magic
-# and there's not actually a function named floorl()
-#
-cmake_push_check_state()
-set(CMAKE_REQUIRED_INCLUDES ${M_INCLUDE_DIRS})
-set(CMAKE_REQUIRED_LIBRARIES ${M_LIBRARIES})
-check_symbol_exists("floorl" "math.h"    HAVE_FLOORL)
-check_symbol_exists("lrint"  "math.h"    HAVE_LRINT) # GTK+ only
-cmake_pop_check_state()
-
-check_function_exists("getopt_long"      HAVE_GETOPT_LONG)
-if(HAVE_GETOPT_LONG)
-	#
-	# The OS has getopt_long(), so it might have optreset.
-	# Do we have it?
-	#
-	if(HAVE_GETOPT_H)
-		check_symbol_exists("optreset" "getopt.h" HAVE_OPTRESET)
-	else()
-		check_symbol_exists("optreset"           HAVE_OPTRESET)
-	endif()
-else()
-	#
-	# The OS doesn't have getopt_long(), so we're using the GNU libc
-	# version that we have in wsutil.  It doesn't have optreset, so we
-	# don't need to check for it.
-	#
-	# However, it uses alloca(), so we may need to include alloca.h;
-	# check for it.
-	#
-	check_include_file("alloca.h"    HAVE_ALLOCA_H)
+check_symbol_exists("clock_gettime"  "time.h"   HAVE_CLOCK_GETTIME)
+# Some platforms (macOS pre 10.15) are non-conformant with C11 and lack timespec_get()
+check_symbol_exists("timespec_get"   "time.h"   HAVE_TIMESPEC_GET)
+if(NOT MSVC)
+	check_symbol_exists("localtime_r"    "time.h"   HAVE_LOCALTIME_R)
+	check_symbol_exists("gmtime_r"       "time.h"   HAVE_GMTIME_R)
+	check_symbol_exists("timegm"         "time.h"   HAVE_TIMEGM)
+	check_symbol_exists("tzset"          "time.h"   HAVE_TZSET)
+	check_symbol_exists("tzname"         "time.h"   HAVE_TZNAME)
+	check_symbol_exists("getline"	     "stdio.h"  HAVE_GETLINE)
 endif()
 check_function_exists("getifaddrs"       HAVE_GETIFADDRS)
 check_function_exists("issetugid"        HAVE_ISSETUGID)
-check_function_exists("mkstemps"         HAVE_MKSTEMPS)
 check_function_exists("setresgid"        HAVE_SETRESGID)
 check_function_exists("setresuid"        HAVE_SETRESUID)
-check_function_exists("strptime"         HAVE_STRPTIME)
 if (APPLE)
 	cmake_push_check_state()
 	set(CMAKE_REQUIRED_LIBRARIES ${APPLE_CORE_FOUNDATION_LIBRARY})
 	check_function_exists("CFPropertyListCreateWithStream" HAVE_CFPROPERTYLISTCREATEWITHSTREAM)
 	cmake_pop_check_state()
 endif()
+if(UNIX)
+	cmake_push_check_state()
+	list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+	check_symbol_exists("memmem"        "string.h"   HAVE_MEMMEM)
+	check_symbol_exists("memrchr"       "string.h"   HAVE_MEMRCHR)
+	check_symbol_exists("strerrorname_np" "string.h" HAVE_STRERRORNAME_NP)
+	check_symbol_exists("strptime"      "time.h"     HAVE_STRPTIME)
+	check_symbol_exists("vasprintf"     "stdio.h"    HAVE_VASPRINTF)
+	cmake_pop_check_state()
+endif()
 
 #Struct members
 include(CheckStructHasMember)
-check_struct_has_member("struct sockaddr" sa_len         sys/socket.h HAVE_STRUCT_SOCKADDR_SA_LEN)
-check_struct_has_member("struct stat"     st_flags       sys/stat.h   HAVE_STRUCT_STAT_ST_FLAGS)
+check_struct_has_member("struct stat"     st_blksize     sys/stat.h   HAVE_STRUCT_STAT_ST_BLKSIZE)
 check_struct_has_member("struct stat"     st_birthtime   sys/stat.h   HAVE_STRUCT_STAT_ST_BIRTHTIME)
 check_struct_has_member("struct stat"     __st_birthtime sys/stat.h   HAVE_STRUCT_STAT___ST_BIRTHTIME)
 check_struct_has_member("struct tm"       tm_zone        time.h       HAVE_STRUCT_TM_TM_ZONE)
+check_struct_has_member("struct tm"       tm_gmtoff      time.h       HAVE_STRUCT_TM_TM_GMTOFF)
 
-#Symbols but NOT enums or types
-check_symbol_exists(tzname "time.h" HAVE_TZNAME)
+# Types
+include(CheckTypeSize)
+check_type_size("ssize_t"       SSIZE_T)
 
-# Check for stuff that isn't testable via the tests above
+#
+# Check if the libc vsnprintf() conforms to C99. If this fails we may
+# need to fall-back on GLib I/O.
+#
+# If cross-compiling we can't check so just assume this requirement is met.
+#
+if(NOT CMAKE_CROSSCOMPILING)
+	check_c_source_runs("
+		#include <stdio.h>
+
+		#pragma GCC diagnostic push
+		#pragma GCC diagnostic ignored \"-Wall\"
+		int main(void)
+		{
+			/* Check that snprintf() and vsnprintf() don't return
+			* -1 if the buffer is too small. C99 says this value
+			* is the length that would be written not including
+			* the nul byte. */
+			char buf[3];
+			return snprintf(buf, sizeof(buf), \"%s\", \"ABCDEF\") > 0 ? 0 : 1;
+		}
+		#pragma GCC diagnostic pop"
+		HAVE_C99_VSNPRINTF
+	)
+	if (NOT HAVE_C99_VSNPRINTF)
+		message(FATAL_ERROR
+"Building Wireshark requires a C99 compliant vsnprintf() and this \
+target does not meet that requirement. Compiling for ${CMAKE_SYSTEM} \
+using ${CMAKE_C_COMPILER_ID}. Please report this issue to the Wireshark \
+developers at wireshark-dev@wireshark.org."
+		)
+	endif()
+endif()
 
 #
 # *If* we found libnl, check if we can use nl80211 stuff with it.
@@ -185,7 +198,7 @@ if (NL_FOUND)
 endif()
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

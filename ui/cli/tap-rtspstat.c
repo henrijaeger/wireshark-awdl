@@ -8,7 +8,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -24,6 +25,10 @@
 #include <epan/stat_tap_ui.h>
 #include <epan/dissectors/packet-rtsp.h>
 
+#include <wsutil/wslog.h>
+
+#include <wsutil/cmdarg_err.h>
+
 void register_tap_listener_rtspstat(void);
 
 /* used to keep track of the statictics for an entire program interface */
@@ -37,16 +42,16 @@ typedef struct _rtsp_stats_t {
  * for example it can be { 3, 404, "Not Found" ,...}
  * which means we captured 3 reply rtsp/1.1 404 Not Found */
 typedef struct _rtsp_response_code_t {
-	guint32 	 packets;		/* 3 */
-	guint	 	 response_code;	/* 404 */
-	const gchar	*name;			/* Not Found */
+	uint32_t 	 packets;		/* 3 */
+	unsigned	 	 response_code;	/* 404 */
+	const char	*name;			/* Not Found */
 	rtspstat_t	*sp;
 } rtsp_response_code_t;
 
 /* used to keep track of the stats for a specific request string */
 typedef struct _rtsp_request_methode_t {
-	gchar		*response;	/* eg. : SETUP */
-	guint32		 packets;
+	char		*response;	/* eg. : SETUP */
+	uint32_t		 packets;
 	rtspstat_t	*sp;
 } rtsp_request_methode_t;
 
@@ -71,7 +76,7 @@ rtsp_init_hash( rtspstat_t *sp)
 	sp->hash_requests = g_hash_table_new( g_str_hash, g_str_equal);
 }
 static void
-rtsp_draw_hash_requests( gchar *key _U_ , rtsp_request_methode_t *data, gchar * format)
+rtsp_draw_hash_requests( char *key _U_ , rtsp_request_methode_t *data, char * format)
 {
 	if (data->packets == 0)
 		return;
@@ -79,10 +84,10 @@ rtsp_draw_hash_requests( gchar *key _U_ , rtsp_request_methode_t *data, gchar * 
 }
 
 static void
-rtsp_draw_hash_responses( gpointer* key _U_ , rtsp_response_code_t *data, char * format)
+rtsp_draw_hash_responses( void ** key _U_ , rtsp_response_code_t *data, char * format)
 {
 	if (data == NULL) {
-		g_warning("No data available, key=%d\n", GPOINTER_TO_INT(key));
+		ws_warning("No data available, key=%d\n", GPOINTER_TO_INT(key));
 		exit(EXIT_FAILURE);
 	}
 	if (data->packets == 0)
@@ -96,19 +101,19 @@ rtsp_draw_hash_responses( gpointer* key _U_ , rtsp_response_code_t *data, char *
 /* NOT USED at this moment */
 /*
 static void
-rtsp_free_hash( gpointer key, gpointer value, gpointer user_data _U_ )
+rtsp_free_hash( void *key, void *value, void *user_data _U_ )
 {
 	g_free(key);
 	g_free(value);
 }
 */
 static void
-rtsp_reset_hash_responses(gchar *key _U_ , rtsp_response_code_t *data, gpointer ptr _U_ )
+rtsp_reset_hash_responses(char *key _U_ , rtsp_response_code_t *data, void *ptr _U_ )
 {
 	data->packets = 0;
 }
 static void
-rtsp_reset_hash_requests(gchar *key _U_ , rtsp_request_methode_t *data, gpointer ptr _U_ )
+rtsp_reset_hash_requests(char *key _U_ , rtsp_request_methode_t *data, void *ptr _U_ )
 {
 	data->packets = 0;
 }
@@ -123,8 +128,8 @@ rtspstat_reset(void *psp  )
 
 }
 
-static int
-rtspstat_packet(void *psp , packet_info *pinfo _U_, epan_dissect_t *edt _U_, const void *pri)
+static tap_packet_status
+rtspstat_packet(void *psp , packet_info *pinfo _U_, epan_dissect_t *edt _U_, const void *pri, tap_flags_t flags _U_)
 {
 	const rtsp_info_value_t *value = (const rtsp_info_value_t *)pri;
 	rtspstat_t *sp = (rtspstat_t *) psp;
@@ -138,13 +143,13 @@ rtspstat_packet(void *psp , packet_info *pinfo _U_, epan_dissect_t *edt _U_, con
 				sp->hash_responses,
 				GINT_TO_POINTER(value->response_code));
 		if (sc == NULL) {
-			gint key;
+			int key;
 			/* non standard status code ; we classify it as others
 			 * in the relevant category (Informational,Success,Redirection,Client Error,Server Error)
 			 */
 			int i = value->response_code;
 			if ((i < 100) || (i >= 600)) {
-				return 0;
+				return TAP_PACKET_DONT_REDRAW;
 			}
 			else if (i < 200) {
 				key = 199;	/* Hopefully, this status code will never be used */
@@ -165,7 +170,7 @@ rtspstat_packet(void *psp , packet_info *pinfo _U_, epan_dissect_t *edt _U_, con
 				sp->hash_responses,
 				GINT_TO_POINTER(key));
 			if (sc == NULL)
-				return 0;
+				return TAP_PACKET_DONT_REDRAW;
 		}
 		sc->packets++;
 	}
@@ -185,9 +190,9 @@ rtspstat_packet(void *psp , packet_info *pinfo _U_, epan_dissect_t *edt _U_, con
 			sc->packets++;
 		}
 	} else {
-		return 0;
+		return TAP_PACKET_DONT_REDRAW;
 	}
-	return 1;
+	return TAP_PACKET_REDRAW;
 }
 
 
@@ -197,17 +202,17 @@ rtspstat_draw(void *psp  )
 	rtspstat_t *sp = (rtspstat_t *)psp;
 	printf("\n");
 	printf("===================================================================\n");
-	if (! sp->filter[0])
+	if (!sp->filter || !sp->filter[0])
 		printf("RTSP Statistics\n");
 	else
 		printf("RTSP Statistics with filter %s\n", sp->filter);
 
-	printf(	"* RTSP Status Codes in reply packets\n");
+	printf("* RTSP Response Status Codes                Packets\n");
 	g_hash_table_foreach( sp->hash_responses, (GHFunc)rtsp_draw_hash_responses,
-		(gpointer)"    RTSP %3d %s\n");
-	printf("* List of RTSP Request methods\n");
+		(void *)"  %3d %-35s %9d\n");
+	printf("* RTSP Request Methods                      Packets\n");
 	g_hash_table_foreach( sp->hash_requests,  (GHFunc)rtsp_draw_hash_requests,
-		(gpointer)"    %9s %d \n");
+		(void *)"  %-39s %9d\n");
 	printf("===================================================================\n");
 }
 
@@ -228,7 +233,7 @@ rtspstat_init(const char *opt_arg, void *userdata _U_)
 		filter = NULL;
 	}
 
-	sp = (rtspstat_t *)g_malloc( sizeof(rtspstat_t) );
+	sp = g_new(rtspstat_t, 1);
 	sp->filter = g_strdup(filter);
 	/*g_hash_table_foreach( rtsp_status, (GHFunc)rtsp_reset_hash_responses, NULL);*/
 
@@ -240,12 +245,13 @@ rtspstat_init(const char *opt_arg, void *userdata _U_)
 			0,
 			rtspstat_reset,
 			rtspstat_packet,
-			rtspstat_draw);
+			rtspstat_draw,
+			NULL);
 	if (error_string) {
 		/* error, we failed to attach to the tap. clean up */
 		g_free(sp->filter);
 		g_free(sp);
-		fprintf (stderr, "tshark: Couldn't register rtsp,stat tap: %s\n",
+		cmdarg_err("Couldn't register rtsp,stat tap: %s",
 				error_string->str);
 		g_string_free(error_string, TRUE);
 		exit(1);
@@ -270,7 +276,7 @@ register_tap_listener_rtspstat(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

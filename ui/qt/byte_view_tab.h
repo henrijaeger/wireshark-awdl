@@ -1,10 +1,11 @@
-/* byte_view_tab.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef BYTE_VIEW_TAB_H
 #define BYTE_VIEW_TAB_H
@@ -35,15 +36,19 @@ public slots:
     /* Set the capture file */
     void setCaptureFile(capture_file *cf);
     /* Creates the tabs and data, depends on an dissection which has already run */
-    void selectedFrameChanged(int);
+    void selectedFrameChanged(QList<int>);
     /* Selects or marks a field */
     void selectedFieldChanged(FieldInformation *);
     /* Highlights field */
     void highlightedFieldChanged(FieldInformation *);
+    void captureFileClosing(void);
 
 signals:
     void fieldSelected(FieldInformation *);
     void fieldHighlight(FieldInformation *);
+    void byteViewSettingsChanged(void);
+    void byteViewUnmarkField(void);
+    void detachData(void);
 
 private:
     capture_file *cap_file_;
@@ -51,6 +56,7 @@ private:
                                packet in the packet dialog and false if the
                                packet dissection context can change. */
     epan_dissect_t *edt_;   /* Packet dissection result for the currently selected packet. */
+    bool disable_hover_;
 
     void setTabsVisible();
     ByteViewText * findByteViewTextForTvb(tvbuff_t * search, int * idx = 0);
@@ -70,16 +76,3 @@ private slots:
 };
 
 #endif // BYTE_VIEW_TAB_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

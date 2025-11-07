@@ -10,6 +10,7 @@
 
 #include "syntax-tree.h"
 #include "sttype-set.h"
+#include <wsutil/ws_assert.h>
 
 /*
  * The GSList stores a list of elements of the set. Each element is represented
@@ -18,35 +19,55 @@
  */
 
 static void
-slist_stnode_free(gpointer data, gpointer user_data _U_)
+slist_stnode_free(void *data)
 {
 	if (data) {
-		stnode_free((stnode_t *)data);
+		stnode_free(data);
 	}
 }
 
 void
 set_nodelist_free(GSList *params)
 {
-	g_slist_foreach(params, slist_stnode_free, NULL);
-	g_slist_free(params);
+	g_slist_free_full(params, slist_stnode_free);
 }
 
-void
-sttype_set_replace_element(stnode_t *node, stnode_t *oldnode, stnode_t *newnode)
+static void
+sttype_set_free(void *value)
 {
-	GSList	*nodelist = (GSList*)stnode_data(node);
-
-	/* This deliberately checks both the left and right nodes, covering both
-	 * the lower and upper bound for ranges. NULL right nodes (in case of
-	 * normal, non-range elements) will usually not match "oldnode". */
-	while (nodelist) {
-		if (nodelist->data == oldnode) {
-			nodelist->data = newnode;
-			break;
-		}
-		nodelist = g_slist_next(nodelist);
+	/* If the data was not claimed with stnode_steal_data(), free it. */
+	if (value) {
+		set_nodelist_free(value);
 	}
+}
+
+static char *
+sttype_set_tostr(const void *data, bool pretty)
+{
+	const GSList* nodelist = data;
+	stnode_t *lower, *upper;
+	GString *repr = g_string_new("");
+
+	while (nodelist) {
+		lower = nodelist->data;
+		g_string_append(repr, stnode_tostr(lower, pretty));
+
+		/* Set elements are always in pairs; upper may be null. */
+		nodelist = g_slist_next(nodelist);
+		ws_assert(nodelist);
+		upper = nodelist->data;
+		if (upper != NULL) {
+			g_string_append(repr, "..");
+			g_string_append(repr, stnode_tostr(upper, pretty));
+		}
+
+		nodelist = g_slist_next(nodelist);
+		if (nodelist != NULL) {
+			g_string_append_c(repr, ' ');
+		}
+	}
+
+	return g_string_free(repr, FALSE);
 }
 
 void
@@ -54,17 +75,17 @@ sttype_register_set(void)
 {
 	static sttype_t set_type = {
 		STTYPE_SET,
-		"SET",
 		NULL,
+		sttype_set_free,
 		NULL,
-		NULL
+		sttype_set_tostr
 	};
 
 	sttype_register(&set_type);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

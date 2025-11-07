@@ -9,18 +9,29 @@
 
 ADD_CUSTOM_CMAKE_INCLUDE()
 
-include_directories(
-	${CMAKE_CURRENT_BINARY_DIR}
-	${CMAKE_CURRENT_SOURCE_DIR}
+set(CRYPT_HEADER_FILES
+	dot11decrypt_debug.h
+	dot11decrypt_int.h
+	dot11decrypt_system.h
+	dot11decrypt_user.h
+	dot11decrypt_util.h
+	dot11decrypt_ws.h
+	kasumi.h
+	wep-wpadefs.h
 )
 
 set(CRYPT_FILES
 	dot11decrypt.c
-	dot11decrypt_ccmp.c
-	dot11decrypt_rijndael.c
 	dot11decrypt_tkip.c
+	dot11decrypt_util.c
 	${CUSTOM_CRYPT_SRC}
 )
+
+list(APPEND CRYPT_FILES
+	dot11decrypt_ccmp.c
+	dot11decrypt_gcmp.c
+)
+
 source_group(crypt FILES ${CRYPT_FILES})
 
 set_source_files_properties(
@@ -30,7 +41,18 @@ set_source_files_properties(
 )
 
 add_library(crypt OBJECT
+	#Included so that Visual Studio can properly put header files in solution
+	${CRYPT_HEADER_FILES}
+
 	${CRYPT_FILES}
+)
+
+target_include_directories(crypt
+	SYSTEM PRIVATE
+		${GCRYPT_INCLUDE_DIRS}
+	PRIVATE
+		${CMAKE_CURRENT_BINARY_DIR}
+		${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 set_target_properties(crypt PROPERTIES
@@ -42,13 +64,12 @@ CHECKAPI(
 	NAME
 	  crypt
 	SWITCHES
-	  -g termoutput -build
 	SOURCES
 	  ${CRYPT_FILES}
 )
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

@@ -1,4 +1,4 @@
-/* ws_pipe.h
+/** @file
  *
  * Routines for handling pipes.
  *
@@ -11,6 +11,8 @@
 
 #ifndef __WS_PIPE_H__
 #define __WS_PIPE_H__
+
+#include <stdbool.h>
 
 // ws_symbol_export and WS_INVALID_PID
 #include "wsutil/processes.h"
@@ -29,27 +31,23 @@
 
 typedef struct _ws_pipe_t {
     GPid pid;
-    gchar *stderr_msg;
-    gint exitcode;
-    gint stdin_fd;
-    gint stdout_fd;
-    gint stderr_fd;
-#ifdef _WIN32
-    HANDLE threadId;
-#endif
+    GIOChannel *stdin_io;
+    GIOChannel *stdout_io;
+    GIOChannel *stderr_io;
 } ws_pipe_t;
 
 /**
  * @brief Run a process using g_spawn_sync on UNIX and Linux, and
  *        CreateProcess on Windows. Wait for it to finish.
- * @param [IN] dirname Initial working directory.
+ * @param [IN] working_directory Initial working directory.
  * @param [IN] command Command to run.
  * @param [IN] argc Number of arguments for the command, not including the command itself.
- * @param [IN] argv Arguments for the command, not including the command itself.
+ * @param [IN] args Arguments for the command, not including the command itself.
+ * The last element must be NULL.
  * @param [OUT] command_output If not NULL, receives a copy of the command output. Must be g_freed.
- * @return TRUE on success or FALSE on failure.
+ * @return true on success or false on failure.
  */
-WS_DLL_PUBLIC gboolean ws_pipe_spawn_sync ( gchar * dirname, gchar * command, gint argc, gchar ** argv, gchar ** command_output );
+WS_DLL_PUBLIC bool ws_pipe_spawn_sync(const char * working_directory, const char * command, int argc, char ** args, char ** command_output);
 
 /**
  * @brief Initialize a ws_pipe_t struct. Sets .pid to WS_INVALID_PID and all other members to 0 or NULL.
@@ -60,7 +58,7 @@ WS_DLL_PUBLIC void ws_pipe_init(ws_pipe_t *ws_pipe);
 /**
  * @brief Checks whether a pipe is valid (for reading or writing).
  */
-static inline gboolean ws_pipe_valid(ws_pipe_t *ws_pipe)
+static inline bool ws_pipe_valid(ws_pipe_t *ws_pipe)
 {
     return ws_pipe && ws_pipe->pid && ws_pipe->pid != WS_INVALID_PID;
 }
@@ -79,32 +77,22 @@ WS_DLL_PUBLIC GPid ws_pipe_spawn_async (ws_pipe_t * ws_pipe, GPtrArray * args );
  * @param pipe_handles An array of handles
  * @param num_pipe_handles The size of the array.
  * @param pid Child process PID.
- * @return TRUE on success or FALSE on failure.
+ * @return true on success or false on failure.
  */
-WS_DLL_PUBLIC gboolean ws_pipe_wait_for_pipe(HANDLE * pipe_handles, int num_pipe_handles, HANDLE pid);
+WS_DLL_PUBLIC bool ws_pipe_wait_for_pipe(HANDLE * pipe_handles, int num_pipe_handles, HANDLE pid);
 #endif
 
 /**
  * @brief Check to see if a file descriptor has data available.
- * @param pipe_fd File descriptor, usually ws_pipe_t .stdout_fd or .stderr_fd.
- * @return TRUE if data is available or FALSE otherwise.
+ * @param pipe_fd File descriptor.
+ * @return true if data is available or false otherwise.
  */
-WS_DLL_PUBLIC gboolean ws_pipe_data_available(int pipe_fd);
-
-/**
- * @brief Read up to buffer_size - 1 bytes from a pipe and append '\0' to the buffer.
- * @param read_pipe File descriptor, usually ws_pipe_t .stdout_fd or .stderr_fd.
- * @param buffer String buffer.
- * @param buffer_size String buffer size.
- * @return TRUE if zero or more bytes were read without error, FALSE otherwise.
- */
-WS_DLL_PUBLIC gboolean ws_read_string_from_pipe(ws_pipe_handle read_pipe,
-    gchar *buffer, size_t buffer_size);
+WS_DLL_PUBLIC bool ws_pipe_data_available(int pipe_fd);
 
 #endif /* __WS_PIPE_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

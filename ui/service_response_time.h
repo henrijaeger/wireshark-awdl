@@ -1,4 +1,5 @@
-/* service_response_time.h
+/** @file
+ *
  * Copied from ui/gtk/service_response_time_table.h, 2003 Ronnie Sahlberg
  * Helper routines and structs common to all service response time statistics
  * taps.
@@ -7,7 +8,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 /** @file
  *  Helper routines common to all service response time statistics taps.

@@ -1,4 +1,4 @@
-/* supported_protocols_model.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -77,7 +77,6 @@ private:
 
 class SupportedProtocolsProxyModel : public QSortFilterProxyModel
 {
-    Q_OBJECT
 public:
 
     explicit SupportedProtocolsProxyModel(QObject * parent = Q_NULLPTR);
@@ -96,16 +95,3 @@ private:
 };
 
 #endif // SUPPORTED_PROTOCOLS_MODEL_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

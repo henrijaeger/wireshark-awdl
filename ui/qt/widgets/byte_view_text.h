@@ -1,4 +1,4 @@
-/* byte_view_text.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -45,13 +45,17 @@ public:
 signals:
     void byteHovered(int pos);
     void byteSelected(int pos);
+    void byteViewSettingsChanged();
 
 public slots:
     void setMonospaceFont(const QFont &mono_font);
+    void updateByteViewSettings();
+    void detachData();
 
     void markProtocol(int start, int length);
     void markField(int start, int length, bool scroll_to = true);
     void markAppendix(int start, int length);
+    void unmarkField();
 
 protected:
     virtual void paintEvent(QPaintEvent *);
@@ -73,8 +77,10 @@ private:
     } HighlightMode;
 
     QTextLayout *layout_;
-    const QByteArray data_;
+    QByteArray data_;
 
+    void updateLayoutMetrics();
+    int stringWidth(const QString &line);
     void drawLine(QPainter *painter, const int offset, const int row_y);
     bool addFormatRange(QList<QTextLayout::FormatRange> &fmt_list, int start, int length, HighlightMode mode);
     bool addHexFormatRange(QList<QTextLayout::FormatRange> &fmt_list, int mark_start, int mark_length, int tvb_offset, int max_tvb_pos, HighlightMode mode);
@@ -84,6 +90,7 @@ private:
     int byteOffsetAtPixel(QPoint pos);
 
     void createContextMenu();
+    void updateContextMenu();
 
     int offsetChars(bool include_pad = true);
     int offsetPixels();
@@ -94,8 +101,7 @@ private:
 
     static const int separator_interval_;
 
-    // Fonts and colors
-    QFont mono_font_;
+    // Colors
     QColor offset_normal_fg_;
     QColor offset_field_fg_;
 
@@ -117,31 +123,31 @@ private:
     bool show_hex_;             // Should we show the hex display?
     bool show_ascii_;           // Should we show the ASCII display?
     int row_width_;             // Number of bytes per line
-    qreal font_width_;          // Single character width and text margin. NOTE: Use fontMetrics::width for multiple characters.
+    int em_width_;              // Single character width and text margin. NOTE: Use fontMetrics::width for multiple characters.
     int line_height_;           // Font line spacing
     QList<QRect> hover_outlines_; // Hovered byte outlines.
 
+    bool allow_hover_selection_;
+
     // Data selection
     QVector<int> x_pos_to_column_;
+
+    // Context menu actions
+    QAction *action_allow_hover_selection_;
+    QAction *action_bytes_hex_;
+    QAction *action_bytes_dec_;
+    QAction *action_bytes_oct_;
+    QAction *action_bytes_bits_;
+    QAction *action_bytes_enc_from_packet_;
+    QAction *action_bytes_enc_ascii_;
+    QAction *action_bytes_enc_ebcdic_;
 
 private slots:
     void copyBytes(bool);
     void setHexDisplayFormat(QAction *action);
     void setCharacterEncoding(QAction *action);
+    void toggleHoverAllowed(bool);
 
 };
 
 #endif // BYTE_VIEW_TEXT_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -9,11 +9,11 @@
  */
 
 #include "expert_info_model.h"
-#include <ui/qt/utils/color_utils.h>
 
 #include "file.h"
+#include <epan/proto.h>
 
-ExpertPacketItem::ExpertPacketItem(expert_info_t& expert_info, column_info *cinfo, ExpertPacketItem* parent) :
+ExpertPacketItem::ExpertPacketItem(const expert_info_t& expert_info, column_info *cinfo, ExpertPacketItem* parent) :
     packet_num_(expert_info.packet_num),
     group_(expert_info.group),
     severity_(expert_info.severity),
@@ -39,12 +39,12 @@ ExpertPacketItem::~ExpertPacketItem()
 
 QString ExpertPacketItem::groupKey(bool group_by_summary, int severity, int group, QString protocol, int expert_hf)
 {
-    QString key = QString("%1|%2|%3")
+    QString key = QStringLiteral("%1|%2|%3")
             .arg(severity)
             .arg(group)
             .arg(protocol);
     if (group_by_summary) {
-        key += QString("|%1").arg(expert_hf);
+        key += QStringLiteral("|%1").arg(expert_hf);
     }
     return key;
 }
@@ -71,13 +71,13 @@ ExpertPacketItem* ExpertPacketItem::child(QString hash)
 
 int ExpertPacketItem::childCount() const
 {
-    return childItems_.count();
+    return static_cast<int>(childItems_.count());
 }
 
 int ExpertPacketItem::row() const
 {
     if (parentItem_)
-        return parentItem_->childItems_.indexOf(const_cast<ExpertPacketItem*>(this));
+        return static_cast<int>(parentItem_->childItems_.indexOf(const_cast<ExpertPacketItem*>(this)));
 
     return 0;
 }
@@ -105,19 +105,21 @@ ExpertInfoModel::~ExpertInfoModel()
 
 void ExpertInfoModel::clear()
 {
-    emit beginResetModel();
+    beginResetModel();
 
     eventCounts_.clear();
     delete root_;
     root_ = createRootItem();
 
-    emit endResetModel();
+    endResetModel();
 }
 
 ExpertPacketItem* ExpertInfoModel::createRootItem()
 {
     static const char* rootName = "ROOT";
-    static expert_info_t root_expert = { 0, -1, -1, -1, rootName, (gchar*)rootName, NULL };
+DIAG_OFF_CAST_AWAY_CONST
+    static expert_info_t root_expert = { 0, -1, -1, -1, rootName, (char*)rootName, NULL };
+DIAG_ON_CAST_AWAY_CONST
 
     return new ExpertPacketItem(root_expert, NULL, NULL);
 }
@@ -237,46 +239,64 @@ Qt::ItemFlags ExpertInfoModel::flags(const QModelIndex &index) const
 
 QVariant ExpertInfoModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || role != Qt::DisplayRole)
+    if (!index.isValid() || (role != Qt::DisplayRole && role != Qt::ToolTipRole))
         return QVariant();
 
     ExpertPacketItem* item = static_cast<ExpertPacketItem*>(index.internalPointer());
     if (item == NULL)
         return QVariant();
 
-    switch ((enum ExpertColumn)index.column()) {
-    case colSeverity:
-        return QString(val_to_str_const(item->severity(), expert_severity_vals, "Unknown"));
-    case colSummary:
-        if (index.parent().isValid())
-        {
-            if (group_by_summary_)
-                return item->colInfo().simplified();
+    if (role == Qt::ToolTipRole)
+    {
+        QString filterName = proto_registrar_get_abbrev(item->hfId());
+        return filterName;
+    }
+    else if (role == Qt::DisplayRole)
+    {
+        switch ((enum ExpertColumn)index.column()) {
+        case colSeverity:
+            return QString(val_to_str_const(item->severity(), expert_severity_vals, "Unknown"));
+        case colSummary:
+            if (index.parent().isValid())
+            {
+                if (item->severity() == PI_COMMENT)
+                    return item->summary().simplified();
+                if (group_by_summary_)
+                    return item->colInfo().simplified();
 
-            return item->summary().simplified();
-        }
-        else
-        {
-            if (group_by_summary_)
                 return item->summary().simplified();
+            }
+            else
+            {
+                if (group_by_summary_)
+                {
+                    if (item->severity() == PI_COMMENT)
+                        return "Packet comments listed below.";
+                    if (item->hfId() != -1) {
+                        return proto_registrar_get_name(item->hfId());
+                    } else {
+                        return item->summary().simplified();
+                    }
+                }
+            }
+            return QVariant();
+        case colGroup:
+            return QString(val_to_str_const(item->group(), expert_group_vals, "Unknown"));
+        case colProtocol:
+            return item->protocol();
+        case colCount:
+            if (!index.parent().isValid())
+            {
+                return item->childCount();
+            }
+            break;
+        case colPacket:
+            return item->packetNum();
+        case colHf:
+            return item->hfId();
+        default:
+            break;
         }
-        return QVariant();
-    case colGroup:
-        return QString(val_to_str_const(item->group(), expert_group_vals, "Unknown"));
-    case colProtocol:
-        return item->protocol();
-    case colCount:
-        if (!index.parent().isValid())
-        {
-            return item->childCount();
-        }
-        break;
-    case colPacket:
-        return item->packetNum();
-    case colHf:
-        return item->hfId();
-    default:
-        break;
     }
 
     return QVariant();
@@ -285,9 +305,9 @@ QVariant ExpertInfoModel::data(const QModelIndex &index, int role) const
 //GUI helpers
 void ExpertInfoModel::setGroupBySummary(bool group_by_summary)
 {
-    emit beginResetModel();
+    beginResetModel();
     group_by_summary_ = group_by_summary;
-    emit endResetModel();
+    endResetModel();
 }
 
 int ExpertInfoModel::rowCount(const QModelIndex &parent) const
@@ -328,15 +348,15 @@ int ExpertInfoModel::rowCount(const QModelIndex &parent) const
     return 0;
 }
 
-int ExpertInfoModel::columnCount(const QModelIndex& ) const
+int ExpertInfoModel::columnCount(const QModelIndex&) const
 {
     return colLast;
 }
 
-void ExpertInfoModel::addExpertInfo(struct expert_info_s& expert_info)
+void ExpertInfoModel::addExpertInfo(const struct expert_info_s& expert_info)
 {
-    QString groupKey = ExpertPacketItem::groupKey(FALSE, expert_info.severity, expert_info.group, QString(expert_info.protocol), expert_info.hf_index);
-    QString summaryKey = ExpertPacketItem::groupKey(TRUE, expert_info.severity, expert_info.group, QString(expert_info.protocol), expert_info.hf_index);
+    QString groupKey = ExpertPacketItem::groupKey(false, expert_info.severity, expert_info.group, QString(expert_info.protocol), expert_info.hf_index);
+    QString summaryKey = ExpertPacketItem::groupKey(true, expert_info.severity, expert_info.group, QString(expert_info.protocol), expert_info.hf_index);
 
     ExpertPacketItem* expert_root = root_->child(groupKey);
     if (expert_root == NULL) {
@@ -375,23 +395,22 @@ void ExpertInfoModel::tapReset(void *eid_ptr)
     model->clear();
 }
 
-gboolean ExpertInfoModel::tapPacket(void *eid_ptr, struct _packet_info *pinfo, struct epan_dissect *, const void *data)
+tap_packet_status ExpertInfoModel::tapPacket(void *eid_ptr, struct _packet_info *pinfo, struct epan_dissect *, const void *data, tap_flags_t)
 {
     ExpertInfoModel *model = static_cast<ExpertInfoModel*>(eid_ptr);
-    expert_info_t   *expert_info = (expert_info_t *) data;
-    gboolean draw_required = FALSE;
+    const expert_info_t *expert_info = (const expert_info_t *) data;
+    tap_packet_status status = TAP_PACKET_DONT_REDRAW;
 
     if (!pinfo || !model || !expert_info)
-        return FALSE;
+        return TAP_PACKET_DONT_REDRAW;
 
     model->addExpertInfo(*expert_info);
 
-    if (model->numEvents((enum ExpertSeverity)expert_info->severity) < 1)
-        draw_required = TRUE;
+    status = TAP_PACKET_REDRAW;
 
     model->eventCounts_[(enum ExpertSeverity)expert_info->severity]++;
 
-    return draw_required;
+    return status;
 }
 
 void ExpertInfoModel::tapDraw(void *eid_ptr)
@@ -400,18 +419,6 @@ void ExpertInfoModel::tapDraw(void *eid_ptr)
     if (!model)
         return;
 
-    emit model->beginResetModel();
-    emit model->endResetModel();
+    model->beginResetModel();
+    model->endResetModel();
 }
-
-/* * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

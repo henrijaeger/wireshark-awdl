@@ -1,19 +1,19 @@
-/* column_preferences_frame.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef COLUMN_PREFERENCES_FRAME_H
 #define COLUMN_PREFERENCES_FRAME_H
 
-#include <QFrame>
+#include <ui/qt/models/column_list_model.h>
 
-class QComboBox;
-class QLineEdit;
-class QTreeWidgetItem;
+#include <QFrame>
+#include <QItemSelection>
 
 namespace Ui {
 class ColumnPreferencesFrame;
@@ -24,51 +24,25 @@ class ColumnPreferencesFrame : public QFrame
     Q_OBJECT
 
 public:
-    explicit ColumnPreferencesFrame(QWidget *parent = 0);
+    explicit ColumnPreferencesFrame(QWidget *parent = Q_NULLPTR);
     ~ColumnPreferencesFrame();
 
     void unstash();
 
-protected:
-    void keyPressEvent(QKeyEvent *evt);
-
 private:
     Ui::ColumnPreferencesFrame *ui;
-
-    int cur_column_;
-    QLineEdit *cur_line_edit_;
-    QString saved_col_string_;
-    QComboBox *cur_combo_box_;
-    int saved_combo_idx_;
-    int saved_custom_combo_idx_;
-
-    void addColumn(bool visible, const char *title, int fmt, const char *custom_fields, int custom_occurrence);
+    ColumnListModel * model_;
+    ColumnProxyModel * proxyModel_;
+    ColumnTypeDelegate * delegate_;
 
 private slots:
-    void updateWidgets(void);
-    void on_columnTreeWidget_currentItemChanged(QTreeWidgetItem *, QTreeWidgetItem *previous);
-    void on_columnTreeWidget_itemActivated(QTreeWidgetItem *item, int column);
-    void lineEditDestroyed();
-    void comboDestroyed();
-    void columnTitleEditingFinished();
-    void columnTypeCurrentIndexChanged(int index);
-    void customFieldsEditingFinished();
-    void customOccurrenceEditingFinished();
+    void selectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
     void on_newToolButton_clicked();
     void on_deleteToolButton_clicked();
+    void on_chkShowDisplayedOnly_stateChanged(int);
+
+    void on_columnTreeView_customContextMenuRequested(const QPoint &pos);
+    void resetAction(bool checked = false);
 };
 
 #endif // COLUMN_PREFERENCES_FRAME_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

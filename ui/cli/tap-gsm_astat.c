@@ -7,7 +7,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 /*
  * This TAP provides statistics for the GSM A Interface:
@@ -44,12 +45,13 @@ typedef struct _gsm_a_stat_t {
 } gsm_a_stat_t;
 
 
-static int
+static tap_packet_status
 gsm_a_stat_packet(
     void                        *tapdata,
     packet_info                 *pinfo _U_,
     epan_dissect_t              *edt _U_,
-    const void                  *data)
+    const void                  *data,
+    tap_flags_t flags  _U_)
 {
     gsm_a_stat_t                *stat_p = (gsm_a_stat_t *)tapdata;
     const gsm_a_tap_rec_t       *tap_p = (const gsm_a_tap_rec_t *)data;
@@ -91,31 +93,30 @@ gsm_a_stat_packet(
             /*
              * unsupported PD
              */
-            return(0);
+            return(TAP_PACKET_DONT_REDRAW);
         }
         break;
 
    case GSM_A_PDU_TYPE_SACCH:
-   switch (tap_p->protocol_disc)
-   {
-   case 0:
-      stat_p->sacch_rr_message_type[tap_p->message_type]++;
-      break;
-   default:
-      /* unknown Short PD */
-      break;
-   }
-   break;
-
+        switch (tap_p->protocol_disc)
+        {
+        case 0:
+            stat_p->sacch_rr_message_type[tap_p->message_type]++;
+            break;
+        default:
+            /* unknown Short PD */
+            break;
+        }
+        break;
 
     default:
         /*
          * unknown PDU type !!!
          */
-        return(0);
+        return(TAP_PACKET_DONT_REDRAW);
     }
 
-    return(1);
+    return(TAP_PACKET_REDRAW);
 }
 
 
@@ -124,7 +125,7 @@ gsm_a_stat_draw(
     void                *tapdata)
 {
     gsm_a_stat_t        *stat_p = (gsm_a_stat_t *)tapdata;
-    guint8              i;
+    uint8_t             i;
 
 
     printf("\n");
@@ -317,7 +318,8 @@ gsm_a_stat_init(const char *opt_arg _U_, void *userdata _U_)
         register_tap_listener("gsm_a", stat_p, NULL, 0,
             NULL,
             gsm_a_stat_packet,
-            gsm_a_stat_draw);
+            gsm_a_stat_draw,
+            NULL);
 
     if (err_p != NULL)
     {
@@ -342,16 +344,3 @@ register_tap_listener_gsm_astat(void)
 {
     register_stat_tap_ui(&gsm_a_stat_ui, NULL);
 }
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

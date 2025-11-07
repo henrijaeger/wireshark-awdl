@@ -1,10 +1,11 @@
-/* display_filter_expression_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef DISPLAY_FILTER_EXPRESSION_DIALOG_H
 #define DISPLAY_FILTER_EXPRESSION_DIALOG_H
@@ -14,6 +15,15 @@
 #include <epan/ftypes/ftypes.h>
 
 #include "geometry_state_dialog.h"
+
+#include <QFutureWatcher>
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+/* Qt6 introduces QPromise interface that makes it possible to add tree entries
+ * protocol by protocol instead of all at once.
+ */
+#define DISPLAY_FILTER_EXPRESSION_DIALOG_USE_QPROMISE
+#endif
 
 class QTreeWidgetItem;
 struct true_false_string;
@@ -36,6 +46,9 @@ signals:
     void insertDisplayFilter(const QString &filter);
 
 private slots:
+#ifdef DISPLAY_FILTER_EXPRESSION_DIALOG_USE_QPROMISE
+    void addTreeItem(int result);
+#endif
     void fillTree();
     void updateWidgets();
 
@@ -47,6 +60,11 @@ private slots:
     void on_buttonBox_helpRequested();
 
 private:
+#ifdef DISPLAY_FILTER_EXPRESSION_DIALOG_USE_QPROMISE
+    QFutureWatcher<QTreeWidgetItem *> *watcher;
+#else
+    QFutureWatcher<QList<QTreeWidgetItem *> *> *watcher;
+#endif
     Ui::DisplayFilterExpressionDialog *ui;
     void fillEnumBooleanValues(const struct true_false_string *tfs);
     void fillEnumIntValues(const struct _value_string *vals, int base);
@@ -59,16 +77,3 @@ private:
 };
 
 #endif // DISPLAY_FILTER_EXPRESSION_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

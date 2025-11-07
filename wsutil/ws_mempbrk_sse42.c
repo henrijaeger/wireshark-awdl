@@ -35,7 +35,7 @@
    Copyright (C) 2010 Free Software Foundation, Inc.
  */
 
-static const gint8 ___m128i_shift_right[31] =
+static const int8_t ___m128i_shift_right[31] =
   {
     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
@@ -51,7 +51,7 @@ __m128i_shift_right (__m128i value, unsigned long int offset)
 
 
 void
-ws_mempbrk_sse42_compile(ws_mempbrk_pattern* pattern, const gchar *needles)
+ws_mempbrk_sse42_compile(ws_mempbrk_pattern* pattern, const char *needles)
 {
     size_t length = strlen(needles);
 
@@ -96,13 +96,13 @@ ws_mempbrk_sse42_compile(ws_mempbrk_pattern* pattern, const gchar *needles)
    X for case 1.  */
 
 const char *
-ws_mempbrk_sse42_exec(const char *s, size_t slen, const ws_mempbrk_pattern* pattern, guchar *found_needle)
+ws_mempbrk_sse42_exec(const char *haystack, size_t haystacklen, const ws_mempbrk_pattern* pattern, unsigned char *found_needle)
 {
   const char *aligned;
   int offset;
 
-  offset = (int) ((size_t) s & 15);
-  aligned = (const char *) ((size_t) s & -16L);
+  offset = (int) ((size_t) haystack & 15);
+  aligned = (const char *) ((size_t) haystack & -16L);
   if (offset != 0)
     {
       /* Check partial string. cast safe it's 16B aligned */
@@ -116,23 +116,23 @@ ws_mempbrk_sse42_exec(const char *s, size_t slen, const ws_mempbrk_pattern* patt
 
       if (cflag) {
         if (found_needle)
-                *found_needle = *(s + length);
-        return s + length;
+                *found_needle = *(haystack + length);
+        return haystack + length;
       }
 
       /* Find where the NULL terminator is.  */
       if (idx < 16 - offset)
       {
          /* found NUL @ 'idx', need to switch to slower mempbrk */
-         return ws_mempbrk_portable_exec(s + idx + 1, slen - idx - 1, pattern, found_needle); /* slen is bigger than 16 & idx < 16 so no undeflow here */
+         return ws_mempbrk_portable_exec(haystack + idx + 1, haystacklen - idx - 1, pattern, found_needle); /* haystacklen is bigger than 16 & idx < 16 so no underflow here */
       }
       aligned += 16;
-      slen -= (16 - offset);
+      haystacklen -= (16 - offset);
     }
   else
-    aligned = s;
+    aligned = haystack;
 
-  while (slen >= 16)
+  while (haystacklen >= 16)
     {
       __m128i value = _mm_load_si128 (cast_128aligned__m128i(aligned));
       int idx = _mm_cmpistri (pattern->mask, value, 0x2);
@@ -148,14 +148,14 @@ ws_mempbrk_sse42_exec(const char *s, size_t slen, const ws_mempbrk_pattern* patt
       if (zflag)
       {
          /* found NUL, need to switch to slower mempbrk */
-         return ws_mempbrk_portable_exec(aligned, slen, pattern, found_needle);
+         return ws_mempbrk_portable_exec(aligned, haystacklen, pattern, found_needle);
       }
       aligned += 16;
-      slen -= 16;
+      haystacklen -= 16;
     }
 
     /* XXX, use mempbrk_slow here? */
-    return ws_mempbrk_portable_exec(aligned, slen, pattern, found_needle);
+    return ws_mempbrk_portable_exec(aligned, haystacklen, pattern, found_needle);
 }
 
 #endif /* HAVE_SSE4_2 */

@@ -25,18 +25,18 @@
 void proto_register_v5ef(void);
 void proto_reg_handoff_v5ef(void);
 
-static int proto_v5ef = -1;
-static int hf_v5ef_direction = -1;
-static int hf_v5ef_address = -1;
-static int hf_v5ef_eah = -1;
-static int hf_v5ef_ea1 = -1;
-static int hf_v5ef_eal = -1;
-static int hf_v5ef_ea2 = -1;
+static int proto_v5ef;
+static int hf_v5ef_direction;
+static int hf_v5ef_address;
+static int hf_v5ef_eah;
+static int hf_v5ef_ea1;
+static int hf_v5ef_eal;
+static int hf_v5ef_ea2;
 
-static gint ett_v5ef = -1;
-static gint ett_v5ef_address = -1;
+static int ett_v5ef;
+static int ett_v5ef_address;
 
-static dissector_handle_t v5dl_handle, lapd_handle, v5ef_handle;
+static dissector_handle_t v5dl_handle, lapd_phdr_handle, v5ef_handle;
 
 
 /*
@@ -58,13 +58,14 @@ static const value_string v5ef_direction_vals[] = {
 #define MAX_V5EF_PACKET_LEN 1024
 
 static int
-dissect_v5ef(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
+dissect_v5ef(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
+	struct isdn_phdr *isdn = (struct isdn_phdr *)data;
 	proto_tree	*v5ef_tree, *addr_tree;
 	proto_item	*v5ef_ti, *addr_ti;
 	int		 direction;
 	int		 v5ef_header_len;
-	guint16		 addr, eah, eal, efaddr;
+	uint16_t		 addr, eah, eal, efaddr;
 	tvbuff_t	*next_tvb;
 	const char	*srcname = "src";
 	const char	*dstname = "dst";
@@ -78,7 +79,7 @@ dissect_v5ef(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
 	efaddr		= (eah << 7) + eal;
 	v5ef_header_len = 2;	/* addr */
 
-	direction = pinfo->pseudo_header->isdn.uton;
+	direction = isdn->uton;
 	if (direction==0) {
 	        srcname = "LE";
 	        dstname = "AN";
@@ -102,7 +103,7 @@ dissect_v5ef(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
 		if (direction != P2P_DIR_UNKNOWN) {
 			direction_ti = proto_tree_add_uint(v5ef_tree, hf_v5ef_direction,
 			                                   tvb, 0, 0, direction);
-			PROTO_ITEM_SET_GENERATED(direction_ti);
+			proto_item_set_generated(direction_ti);
 		}
 
 		addr_ti = proto_tree_add_uint(v5ef_tree, hf_v5ef_address, tvb,
@@ -127,7 +128,7 @@ dissect_v5ef(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
 	if (efaddr>8175)
 		call_dissector(v5dl_handle,next_tvb, pinfo, tree);
 	else
-		call_dissector(lapd_handle,next_tvb, pinfo, tree);
+		call_dissector_with_data(lapd_phdr_handle, next_tvb, pinfo, tree, isdn);
 
 	return tvb_captured_length(tvb);
 }
@@ -143,7 +144,7 @@ proto_register_v5ef(void)
 
 	{ &hf_v5ef_address,
 	  { "Address Field", "v5ef.address", FT_UINT16, BASE_HEX, NULL, 0x0,
-	  	"Address", HFILL }},
+		NULL, HFILL }},
 
 	{ &hf_v5ef_eah,
 	  { "EAH", "v5ef.eah", FT_UINT16, BASE_DEC, NULL, V5EF_EAH,
@@ -162,7 +163,7 @@ proto_register_v5ef(void)
 	  	"Second Address Extension bit", HFILL }},
 	};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_v5ef,
 		&ett_v5ef_address,
 	};
@@ -180,12 +181,12 @@ proto_reg_handoff_v5ef(void)
 {
 	dissector_add_uint("wtap_encap", WTAP_ENCAP_V5_EF, v5ef_handle);
 
-	lapd_handle = find_dissector_add_dependency("lapd", proto_v5ef);
+	lapd_phdr_handle = find_dissector_add_dependency("lapd-phdr", proto_v5ef);
 	v5dl_handle = find_dissector_add_dependency("v5dl", proto_v5ef);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

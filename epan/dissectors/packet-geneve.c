@@ -1,9 +1,14 @@
 /* packet-geneve.c
  * Routines for Geneve - Generic Network Virtualization Encapsulation
- * http://tools.ietf.org/html/draft-ietf-nvo3-geneve
+ * https://tools.ietf.org/html/draft-ietf-nvo3-geneve
+ *
+ * Copyright (c) 2024 cPacket Networks, Inc. All Rights Reserved.
+ * Author: Martin Greenberg <mgreenberg@cpacket.com>
  *
  * Copyright (c) 2014 VMware, Inc. All Rights Reserved.
  * Author: Jesse Gross <jesse@nicira.com>
+ *
+ * Copyright 2021, Atul Sharma <asharm37@ncsu.edu>
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -18,6 +23,9 @@
 #include <epan/packet.h>
 #include <epan/etypes.h>
 #include <epan/expert.h>
+#include <epan/value_string.h>
+#include <epan/tfs.h>
+#include <epan/unit_strings.h>
 
 #define UDP_PORT_GENEVE  6081
 #define GENEVE_VER 0
@@ -38,51 +46,102 @@ static const range_string class_id_names[] = {
     { 0x0102, 0x0102, "Open Virtual Networking (OVN)" },
     { 0x0103, 0x0103, "In-band Network Telemetry (INT)" },
     { 0x0104, 0x0104, "VMware" },
+    { 0x0105, 0x0105, "Amazon.com, Inc."},
+    { 0x0106, 0x0106, "Cisco Systems, Inc." },
+    { 0x0107, 0x0107, "Oracle Corporation" },
+    { 0x0108, 0x0110, "Amazon.com, Inc." },
+    { 0x0111, 0x0118, "IBM" },
+    { 0x0119, 0x0128, "Ericsson" },
+    { 0x0129, 0x0129, "Oxide Computer Company" },
+    { 0x0130, 0x0131, "Cisco Systems, Inc." },
+    { 0x0132, 0x0135, "Google LLC" },
+    { 0x0136, 0x0136, "InfoQuick Global Connection Tech Ltd." },
+    { 0x0137, 0x0163, "Unssigned" },
+    { 0x0164, 0x0164, "cPacket Networks, Inc." },
+    { 0x0165, 0xFEFF, "Unassigned" },
     { 0xFFF0, 0xFFFF, "Experimental" },
     { 0, 0, NULL }
+};
+
+#define GENEVE_GCP_VNID     0x013201
+#define GENEVE_GCP_ENDPOINT 0x013202
+#define GENEVE_GCP_PROFILE  0x013203
+#define GENEVE_CPACKET_METADATA  0x016400
+
+static const val64_string option_names[] = {
+  { GENEVE_GCP_VNID,     "GCP Virtual Network ID" },
+  { GENEVE_GCP_ENDPOINT, "GCP Endpoint ID" },
+  { GENEVE_GCP_PROFILE,  "GCP Profile ID" },
+  { GENEVE_CPACKET_METADATA,  "cPacket Meta-data" },
+  { 0, NULL }
 };
 
 void proto_register_geneve(void);
 void proto_reg_handoff_geneve(void);
 
-static int proto_geneve = -1;
+static dissector_handle_t geneve_handle;
 
-static int hf_geneve_version = -1;
-static int hf_geneve_flags = -1;
-static int hf_geneve_flag_oam = -1;
-static int hf_geneve_flag_critical = -1;
-static int hf_geneve_flag_reserved = -1;
-static int hf_geneve_proto_type = -1;
-static int hf_geneve_vni = -1;
-static int hf_geneve_reserved = -1;
-static int hf_geneve_options = -1;
-static int hf_geneve_option_class = -1;
-static int hf_geneve_option_type = -1;
-static int hf_geneve_option_type_critical = -1;
-static int hf_geneve_option_flags = -1;
-static int hf_geneve_option_flags_reserved = -1;
-static int hf_geneve_option_length = -1;
-static int hf_geneve_opt_unknown = -1;
-static int hf_geneve_opt_unknown_data = -1;
+static int proto_geneve;
 
-static int ett_geneve = -1;
-static int ett_geneve_flags = -1;
-static int ett_geneve_opt_flags = -1;
-static int ett_geneve_options = -1;
-static int ett_geneve_unknown_opt = -1;
+static int hf_geneve_version;
+static int hf_geneve_flags;
+static int hf_geneve_flag_oam;
+static int hf_geneve_flag_critical;
+static int hf_geneve_flag_reserved;
+static int hf_geneve_proto_type;
+static int hf_geneve_vni;
+static int hf_geneve_reserved;
+static int hf_geneve_options;
+static int hf_geneve_option_class;
+static int hf_geneve_option_type;
+static int hf_geneve_option_type_critical;
+static int hf_geneve_option_flags;
+static int hf_geneve_option_flags_reserved;
+static int hf_geneve_option_length;
+static int hf_geneve_option;
+static int hf_geneve_opt_gcp_vnid;
+static int hf_geneve_opt_gcp_reserved;
+static int hf_geneve_opt_gcp_direction;
+static int hf_geneve_opt_gcp_endpoint;
+static int hf_geneve_opt_gcp_profile;
+static int hf_geneve_opt_cpkt_seqnum;
+static int hf_geneve_opt_cpkt_origlen;
+static int hf_geneve_opt_cpkt_reserved;
+static int hf_geneve_opt_cpkt_timestamp;
+static int hf_geneve_opt_cpkt_ts_sec;
+static int hf_geneve_opt_cpkt_ts_nsec;
+static int hf_geneve_opt_cpkt_ts_fracns;
+static int hf_geneve_opt_cpkt_version;
+static int hf_geneve_opt_cpkt_devid;
+static int hf_geneve_opt_cpkt_portid;
 
-static expert_field ei_geneve_ver_unknown = EI_INIT;
-static expert_field ei_geneve_opt_len_invalid = EI_INIT;
+static int hf_geneve_opt_unknown_data;
+
+static int ett_geneve;
+static int ett_geneve_flags;
+static int ett_geneve_opt_flags;
+static int ett_geneve_options;
+static int ett_geneve_opt_data;
+
+static expert_field ei_geneve_ver_unknown;
+static expert_field ei_geneve_opt_len_invalid;
 
 static dissector_table_t ethertype_dissector_table;
 
+static const struct true_false_string tfs_geneve_gcp_direction = {
+  "Egress",
+  "Ingress"
+};
+
 static const char *
-format_unknown_option_name(guint16 opt_class, guint8 opt_type)
+format_option_name(wmem_allocator_t *scope, uint16_t opt_class, uint8_t opt_type)
 {
     const char *name;
 
-    name = wmem_strdup_printf(wmem_packet_scope(),
-                              "Unknown, Class: %s (0x%04x) Type: 0x%02x",
+    name = wmem_strdup_printf(scope,
+                              "%s, Class: %s (0x%04x) Type: 0x%02x",
+                              val64_to_str_const(((uint64_t)opt_class << 8) | opt_type,
+                                                 option_names, "Unknown"),
                               rval_to_str_const(opt_class, class_id_names, "Unknown"),
                               opt_class, opt_type);
 
@@ -90,23 +149,23 @@ format_unknown_option_name(guint16 opt_class, guint8 opt_type)
 }
 
 static void
-dissect_unknown_option(tvbuff_t *tvb, proto_tree *opts_tree, int offset,
-                       guint16 opt_class, guint8 opt_type, int len)
+dissect_option(wmem_allocator_t *scope, tvbuff_t *tvb, proto_tree *opts_tree, int offset,
+               uint16_t opt_class, uint8_t opt_type, int len)
 {
     proto_item *opt_item, *type_item, *hidden_item, *flag_item;
     proto_tree *opt_tree, *flag_tree;
     const char *critical;
-    guint8 flags;
+    uint8_t flags;
 
     critical = opt_type & OPT_TYPE_CRITICAL ? "Critical" : "Non-critical";
 
-    opt_item = proto_tree_add_item(opts_tree, hf_geneve_opt_unknown,
+    opt_item = proto_tree_add_item(opts_tree, hf_geneve_option,
                                    tvb, offset, len, ENC_NA);
     proto_item_set_text(opt_item, "%s (%s)",
-                        format_unknown_option_name(opt_class, opt_type),
+                        format_option_name(scope, opt_class, opt_type),
                         critical);
 
-    opt_tree = proto_item_add_subtree(opt_item, ett_geneve_unknown_opt);
+    opt_tree = proto_item_add_subtree(opt_item, ett_geneve_opt_data);
 
     proto_tree_add_item(opt_tree, hf_geneve_option_class, tvb,
                         offset, 2, ENC_BIG_ENDIAN);
@@ -117,10 +176,10 @@ dissect_unknown_option(tvbuff_t *tvb, proto_tree *opts_tree, int offset,
     proto_item_append_text(type_item, " (%s)", critical);
     hidden_item = proto_tree_add_item(opt_tree, hf_geneve_option_type_critical,
                                       tvb, offset, 1, ENC_BIG_ENDIAN);
-    PROTO_ITEM_SET_HIDDEN(hidden_item);
+    proto_item_set_hidden(hidden_item);
     offset += 1;
 
-    flags = tvb_get_guint8(tvb, offset) >> OPT_FLAGS_SHIFT;
+    flags = tvb_get_uint8(tvb, offset) >> OPT_FLAGS_SHIFT;
     flag_item = proto_tree_add_uint(opt_tree, hf_geneve_option_flags, tvb,
                                     offset, 1, flags);
     flag_tree = proto_item_add_subtree(flag_item, ett_geneve_opt_flags);
@@ -129,14 +188,66 @@ dissect_unknown_option(tvbuff_t *tvb, proto_tree *opts_tree, int offset,
     if (flags) {
         proto_item_append_text(flag_item, " (RSVD)");
     } else {
-        PROTO_ITEM_SET_HIDDEN(flag_item);
+        proto_item_set_hidden(flag_item);
     }
 
     proto_tree_add_uint(opt_tree, hf_geneve_option_length, tvb, offset, 1, len);
     offset += 1;
 
-    proto_tree_add_item(opt_tree, hf_geneve_opt_unknown_data, tvb, offset,
-                        len - 4, ENC_NA);
+    switch (((uint64_t)opt_class << 8) | opt_type) {
+        case GENEVE_GCP_VNID:
+            proto_tree_add_bits_item(opt_tree, hf_geneve_opt_gcp_vnid, tvb, offset * 8,
+                                     28, ENC_BIG_ENDIAN);
+            proto_tree_add_item(opt_tree, hf_geneve_opt_gcp_direction, tvb, offset,
+                                4, ENC_NA);
+            proto_tree_add_item(opt_tree, hf_geneve_opt_gcp_reserved, tvb, offset,
+                                4, ENC_NA);
+            break;
+        case GENEVE_GCP_ENDPOINT:
+            proto_tree_add_item(opt_tree, hf_geneve_opt_gcp_endpoint, tvb, offset,
+                                len - 4, ENC_NA);
+            break;
+        case GENEVE_GCP_PROFILE:
+            proto_tree_add_item(opt_tree, hf_geneve_opt_gcp_profile, tvb, offset,
+                                len - 4, ENC_BIG_ENDIAN);
+            break;
+        case GENEVE_CPACKET_METADATA:
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_seqnum, tvb, offset,
+                                4, ENC_BIG_ENDIAN);
+            offset += 4;
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_origlen, tvb, offset,
+                                2, ENC_BIG_ENDIAN);
+            offset += 2;
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_reserved, tvb, offset,
+                                1, ENC_BIG_ENDIAN);
+            offset += 1;
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_version, tvb, offset,
+                                1, ENC_BIG_ENDIAN);
+            offset += 1;
+            // PTPv2 timestamp has more resolution than NStime supports/displays,
+            // but parse appropriate subsection of into NStime for user convenience
+            proto_tree_add_time_item(opt_tree, hf_geneve_opt_cpkt_timestamp, tvb, offset+2, 8,
+                                     ENC_TIME_SECS_NSECS|ENC_BIG_ENDIAN, NULL, NULL, NULL);
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_ts_sec, tvb, offset,
+                                6, ENC_BIG_ENDIAN);
+            offset += 6;
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_ts_nsec, tvb, offset,
+                                4, ENC_BIG_ENDIAN);
+            offset += 4;
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_ts_fracns, tvb, offset,
+                                2, ENC_BIG_ENDIAN);
+            offset += 2;
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_devid, tvb, offset,
+                                2, ENC_BIG_ENDIAN);
+            offset += 2;
+            proto_tree_add_item(opt_tree, hf_geneve_opt_cpkt_portid, tvb, offset,
+                                2, ENC_BIG_ENDIAN);
+            break;
+        default:
+            proto_tree_add_item(opt_tree, hf_geneve_opt_unknown_data, tvb, offset,
+                                len - 4, ENC_NA);
+            break;
+    }
 }
 
 static void
@@ -145,9 +256,9 @@ dissect_geneve_options(tvbuff_t *tvb, packet_info *pinfo,
 {
     proto_item *opts_item;
     proto_tree *opts_tree;
-    guint16 opt_class;
-    guint8 opt_type;
-    guint8 opt_len;
+    uint16_t opt_class;
+    uint8_t opt_type;
+    uint8_t opt_len;
 
     opts_item = proto_tree_add_item(geneve_tree, hf_geneve_options, tvb,
                                     offset, len, ENC_NA);
@@ -156,22 +267,20 @@ dissect_geneve_options(tvbuff_t *tvb, packet_info *pinfo,
 
     while (len > 0) {
         opt_class = tvb_get_ntohs(tvb, offset);
-        opt_type = tvb_get_guint8(tvb, offset + 2);
-        opt_len = 4 + ((tvb_get_guint8(tvb, offset + 3) & OPT_LEN_MASK) * 4);
+        opt_type = tvb_get_uint8(tvb, offset + 2);
+        opt_len = 4 + ((tvb_get_uint8(tvb, offset + 3) & OPT_LEN_MASK) * 4);
 
         if (opt_len > len) {
             proto_tree_add_expert_format(opts_tree, pinfo,
                                          &ei_geneve_opt_len_invalid, tvb,
                                          offset + 3, 1,
                                          "%s (length of %u is past end of options)",
-                                         format_unknown_option_name(opt_class,
-                                                                    opt_type),
+                                         format_option_name(pinfo->pool, opt_class, opt_type),
                                          opt_len);
             return;
         }
 
-        dissect_unknown_option(tvb, opts_tree, offset,
-                               opt_class, opt_type, opt_len);
+        dissect_option(pinfo->pool, tvb, opts_tree, offset, opt_class, opt_type, opt_len);
 
         offset += opt_len;
         len -= opt_len;
@@ -185,12 +294,12 @@ dissect_geneve(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
     proto_tree *geneve_tree;
     tvbuff_t *next_tvb;
     int offset = 0;
-    guint8 ver_opt;
-    guint8 ver;
-    guint8 flags;
-    guint16 proto_type;
+    uint8_t ver_opt;
+    uint8_t ver;
+    uint8_t flags;
+    uint16_t proto_type;
     int opts_len;
-    static const int * flag_fields[] = {
+    static int * const flag_fields[] = {
         &hf_geneve_flag_oam,
         &hf_geneve_flag_critical,
         &hf_geneve_flag_reserved,
@@ -204,7 +313,7 @@ dissect_geneve(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
     geneve_tree = proto_item_add_subtree(ti, ett_geneve);
 
     /* Version. */
-    ver_opt = tvb_get_guint8(tvb, offset);
+    ver_opt = tvb_get_uint8(tvb, offset);
     ver = ver_opt >> VER_SHIFT;
     proto_tree_add_uint(geneve_tree, hf_geneve_version, tvb,
                         offset, 1, ver);
@@ -223,7 +332,7 @@ dissect_geneve(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
     offset += 1;
 
     /* Flags. */
-    flags = tvb_get_guint8(tvb, offset);
+    flags = tvb_get_uint8(tvb, offset);
     proto_tree_add_bitmask(geneve_tree, tvb, offset, hf_geneve_flags, ett_geneve_flags, flag_fields, ENC_BIG_ENDIAN);
     offset += 1;
 
@@ -247,8 +356,8 @@ dissect_geneve(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _
     /* Reserved. */
     rsvd_item = proto_tree_add_item(geneve_tree, hf_geneve_reserved, tvb,
                                     offset, 1, ENC_BIG_ENDIAN);
-    if (!tvb_get_guint8(tvb, offset)) {
-        PROTO_ITEM_SET_HIDDEN(rsvd_item);
+    if (!tvb_get_uint8(tvb, offset)) {
+        proto_item_set_hidden(rsvd_item);
     }
     offset += 1;
 
@@ -304,7 +413,7 @@ proto_register_geneve(void)
         },
         { &hf_geneve_vni,
           { "Virtual Network Identifier (VNI)", "geneve.vni",
-            FT_UINT24, BASE_HEX, NULL, 0x0,
+            FT_UINT24, BASE_HEX_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_geneve_reserved,
@@ -344,27 +453,102 @@ proto_register_geneve(void)
         },
         { &hf_geneve_option_length,
           { "Length", "geneve.option.length",
-            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, &units_byte_bytes, 0x00,
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_byte_bytes), 0x00,
             NULL, HFILL }
         },
-        { &hf_geneve_opt_unknown,
-          { "Unknown Option", "geneve.option.unknown",
+        { &hf_geneve_option,
+          { "Option", "geneve.option",
             FT_BYTES, BASE_NONE, NULL, 0x00,
             NULL, HFILL }
         },
+        { &hf_geneve_opt_gcp_vnid,
+          { "GCP Virtual Network ID", "geneve.option.gcp.vnid",
+            FT_UINT32, BASE_DEC, NULL, 0x00,
+            NULL, HFILL }
+        },
+        { &hf_geneve_opt_gcp_reserved,
+          { "GCP Reserved bits", "geneve.option.gcp.reserved",
+            FT_BOOLEAN, 32, NULL, 0x0000000E,
+            NULL, HFILL }
+        },
+        { &hf_geneve_opt_gcp_direction,
+          { "GCP Traffic Direction", "geneve.option.gcp.direction",
+            FT_BOOLEAN, 32, TFS(&tfs_geneve_gcp_direction), 0x00000001,
+            NULL, HFILL }
+        },
+        { &hf_geneve_opt_gcp_endpoint,
+          { "GCP Endpoint ID", "geneve.option.gcp.endpoint",
+            FT_BYTES, BASE_NONE, NULL, 0x00,
+            NULL, HFILL }
+        },
+        { &hf_geneve_opt_gcp_profile,
+          { "GCP Profile ID", "geneve.option.gcp.profile",
+            FT_UINT64, BASE_DEC, NULL, 0x00,
+            NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_seqnum,
+         { "cPacket Packet ID", "geneve.option.cPacket.packetid",
+           FT_UINT32, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_origlen,
+         { "cPacket Original length", "geneve.option.cPacket.orig_len",
+           FT_UINT16, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_reserved,
+         { "cPacket Reserved", "geneve.option.cPacket.reserved",
+           FT_UINT8, BASE_HEX, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_version,
+         { "cPacket Metadata version", "geneve.option.cPacket.version",
+           FT_UINT8, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_timestamp,
+         { "cPacket Timestamp", "geneve.option.cPacket.timestamp",
+           FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_ts_sec,
+         { "cPacket Timestamp (s)", "geneve.option.cPacket.ts_sec",
+           FT_UINT48, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_ts_nsec,
+         { "cPacket Timestamp (ns)", "geneve.option.cPacket.ts_nsec",
+           FT_UINT32, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_ts_fracns,
+         { "cPacket Timestamp (frac. ns)", "geneve.option.cPacket.ts_fracns",
+           FT_UINT16, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_devid,
+         { "cPacket Device ID", "geneve.option.cPacket.device_id",
+           FT_UINT16, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
+        { &hf_geneve_opt_cpkt_portid,
+         { "cPacket Port ID", "geneve.option.cPacket.port_id",
+           FT_UINT16, BASE_DEC, NULL, 0x00,
+           NULL, HFILL }
+        },
         { &hf_geneve_opt_unknown_data,
-          { "Option Data", "geneve.option.unknown.data",
+          { "Unknown Option Data", "geneve.option.unknown.data",
             FT_BYTES, BASE_NONE, NULL, 0x00,
             NULL, HFILL }
         },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_geneve,
         &ett_geneve_flags,
         &ett_geneve_options,
         &ett_geneve_opt_flags,
-        &ett_geneve_unknown_opt,
+        &ett_geneve_opt_data,
     };
 
     static ei_register_info ei[] = {
@@ -385,21 +569,20 @@ proto_register_geneve(void)
 
     expert_geneve = expert_register_protocol(proto_geneve);
     expert_register_field_array(expert_geneve, ei, array_length(ei));
+
+    geneve_handle = register_dissector("geneve", dissect_geneve, proto_geneve);
 }
 
 void
 proto_reg_handoff_geneve(void)
 {
-    dissector_handle_t geneve_handle;
-
-    geneve_handle = create_dissector_handle(dissect_geneve, proto_geneve);
     dissector_add_uint_with_preference("udp.port", UDP_PORT_GENEVE, geneve_handle);
 
     ethertype_dissector_table = find_dissector_table("ethertype");
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

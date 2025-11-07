@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <ui/qt/utils/stock_icon.h>
 
@@ -17,18 +18,20 @@
 
 // References:
 //
-// http://standards.freedesktop.org/icon-theme-spec/icon-theme-spec-latest.html
-// http://standards.freedesktop.org/icon-naming-spec/icon-naming-spec-latest.html
+// https://specifications.freedesktop.org/icon-theme-spec/icon-theme-spec-latest.html
+// https://specifications.freedesktop.org/icon-naming-spec/icon-naming-spec-latest.html
 //
-// http://mithatkonar.com/wiki/doku.php/qt/icons
+// https://mithatkonar.com/wiki/doku.php/qt/icons
 //
-// https://developer.apple.com/library/mac/documentation/userexperience/conceptual/applehiguidelines/IconsImages/IconsImages.html#//apple_ref/doc/uid/20000967-TPXREF102
-// http://msdn.microsoft.com/en-us/library/windows/desktop/dn742485.aspx
-// https://developer.gnome.org/hig-book/stable/icons-types.html.en
-// http://msdn.microsoft.com/en-us/library/ms246582.aspx
+// https://web.archive.org/web/20140829010224/https://developer.apple.com/library/mac/documentation/userexperience/conceptual/applehiguidelines/IconsImages/IconsImages.html
+// https://developer.apple.com/design/human-interface-guidelines/macos/icons-and-images/image-size-and-resolution/
+// https://developer.apple.com/design/human-interface-guidelines/macos/icons-and-images/app-icon/
+// https://docs.microsoft.com/en-us/windows/win32/uxguide/vis-icons
+// https://developer.gnome.org/hig/stable/icons-and-artwork.html.en
+// https://docs.microsoft.com/en-us/visualstudio/designers/the-visual-studio-image-library
 
 // To do:
-// - 32x32, 48x48, 64x64, and unscaled (.svg) icons
+// - 32x32, 48x48, 64x64, and unscaled (.svg) icons.
 // - Indent find & go actions when those panes are open.
 // - Replace or remove:
 //   WIRESHARK_STOCK_CAPTURE_FILTER x-capture-filter
@@ -37,13 +40,14 @@
 //   GTK_STOCK_PREFERENCES preferences-system
 //   GTK_STOCK_HELP help-contents
 
-#include "wireshark_application.h"
-
+#include <QApplication>
 #include <QFile>
 #include <QFontMetrics>
 #include <QMap>
 #include <QPainter>
+#include <QPainterPath>
 #include <QStyle>
+#include <QStyleOption>
 
 static const QString path_pfx_ = ":/stock_icons/";
 
@@ -58,24 +62,70 @@ StockIcon::StockIcon(const QString icon_name) :
     }
 
     // Does our theme contain this icon?
-    // X11 only as per the QIcon documentation.
+    // As of Qt 6.7 QIcon has theme icons on Windows and macOS - but it
+    // doesn't have all of them. It looks particularly bad to mix and
+    // match theme icons with our icons next to each other (e.g.
+    // themed "go-previous" and "go-next" but our "go-jump", "go-first",
+    // and "go-last". We could maybe pick and choose certain ones to
+    // use. Note that the QIcon::ThemeIcon enum has a list of "commonly
+    // available" icons on most of the platforms.
+#if !defined(Q_OS_MAC) && !defined(Q_OS_WIN)
     if (hasThemeIcon(icon_name)) {
         QIcon theme_icon = fromTheme(icon_name);
         swap(theme_icon);
         return;
     }
+#endif
 
     // Is this is an icon we've manually mapped to a standard pixmap below?
     if (icon_name_to_standard_pixmap_.contains(icon_name)) {
-        QIcon standard_icon = wsApp->style()->standardIcon(icon_name_to_standard_pixmap_[icon_name]);
+        QIcon standard_icon = qApp->style()->standardIcon(icon_name_to_standard_pixmap_[icon_name]);
         swap(standard_icon);
         return;
     }
 
     // Is this one of our locally sourced, cage-free, organic icons?
-    QStringList types = QStringList() << "14x14" << "16x16" << "24x14" << "24x24";
+    QStringList types = QStringList() << "8x8" << "14x14" << "16x16" << "24x14" << "24x24";
+    QList<QIcon::Mode> icon_modes = QList<QIcon::Mode>()
+            << QIcon::Disabled
+            << QIcon::Active
+            << QIcon::Selected;
     foreach (QString type, types) {
-        QString icon_path = path_pfx_ + QString("%1/%2.png").arg(type).arg(icon_name);
+        // First, check for a template (mask) icon
+        // Templates should be monochrome as described at
+        // https://developer.apple.com/design/human-interface-guidelines/macos/icons-and-images/custom-icons/
+        // Transparency is supported.
+        QString icon_path_template = QStringLiteral("%1%2/%3.template.png").arg(path_pfx_, type, icon_name);
+        if (QFile::exists(icon_path_template)) {
+            QIcon mask_icon = QIcon();
+            mask_icon.addFile(icon_path_template);
+
+            foreach(QSize sz, mask_icon.availableSizes()) {
+                QPixmap mask_pm = mask_icon.pixmap(sz);
+                QImage normal_img(sz, QImage::Format_ARGB32);
+                QPainter painter(&normal_img);
+                QBrush br(qApp->palette().color(QPalette::Active, QPalette::WindowText));
+                painter.fillRect(0, 0, sz.width(), sz.height(), br);
+                painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                painter.drawPixmap(0, 0, mask_pm);
+
+                QPixmap normal_pm = QPixmap::fromImage(normal_img);
+                addPixmap(normal_pm, QIcon::Normal, QIcon::On);
+                addPixmap(normal_pm, QIcon::Normal, QIcon::Off);
+
+                QStyleOption opt = {};
+                opt.palette = qApp->palette();
+                foreach (QIcon::Mode icon_mode, icon_modes) {
+                    QPixmap mode_pm = qApp->style()->generatedIconPixmap(icon_mode, normal_pm, &opt);
+                    addPixmap(mode_pm, icon_mode, QIcon::On);
+                    addPixmap(mode_pm, icon_mode, QIcon::Off);
+                }
+            }
+            continue;
+        }
+
+        // Regular full-color icons
+        QString icon_path = QStringLiteral("%1%2/%3.png").arg(path_pfx_, type, icon_name);
         if (QFile::exists(icon_path)) {
             addFile(icon_path);
         }
@@ -84,17 +134,17 @@ StockIcon::StockIcon(const QString icon_name) :
         // "<name>.selected" for the Active and Selected modes, and
         // "<name>.on" to use for the on (checked) state.
         // XXX Allow more (or all) combinations.
-        QString icon_path_active = path_pfx_ + QString("%1/%2.active.png").arg(type).arg(icon_name);
+        QString icon_path_active = QStringLiteral("%1%2/%3.active.png").arg(path_pfx_, type, icon_name);
         if (QFile::exists(icon_path_active)) {
             addFile(icon_path_active, QSize(), QIcon::Active, QIcon::On);
         }
 
-        QString icon_path_selected = path_pfx_ + QString("%1/%2.selected.png").arg(type).arg(icon_name);
+        QString icon_path_selected = QStringLiteral("%1%2/%3.selected.png").arg(path_pfx_, type, icon_name);
         if (QFile::exists(icon_path_selected)) {
             addFile(icon_path_selected, QSize(), QIcon::Selected, QIcon::On);
         }
 
-        QString icon_path_on = path_pfx_ + QString("%1/%2.on.png").arg(type).arg(icon_name);
+        QString icon_path_on = QStringLiteral("%1%2/%3.on.png").arg(path_pfx_, type, icon_name);
         if (QFile::exists(icon_path_on)) {
             addFile(icon_path_on, QSize(), QIcon::Normal, QIcon::On);
         }
@@ -116,12 +166,84 @@ QIcon StockIcon::colorIcon(const QRgb bg_color, const QRgb fg_color, const QStri
         painter.drawRect(border);
 
         if (!glyph.isEmpty()) {
-            QFont font(wsApp->font());
+            QFont font(qApp->font());
             font.setPointSizeF(size / 2.0);
             painter.setFont(font);
             QRectF bounding = painter.boundingRect(pm.rect(), glyph, Qt::AlignHCenter | Qt::AlignVCenter);
             painter.drawText(bounding, glyph);
         }
+
+        color_icon.addPixmap(pm);
+    }
+    return color_icon;
+}
+
+// Create a triangle icon filled with the specified color.
+QIcon StockIcon::colorIconTriangle(const QRgb bg_color, const QRgb fg_color)
+{
+    QList<int> sizes = QList<int>() << 12 << 16 << 24 << 32 << 48;
+    QIcon color_icon;
+
+    foreach (int size, sizes) {
+        QPixmap pm(size, size);
+        QPainter painter(&pm);
+        QPainterPath triangle;
+        pm.fill();
+        painter.fillRect(0, 0, size-1, size-1, Qt::transparent);
+        painter.setPen(fg_color);
+        painter.setBrush(QColor(bg_color));
+        triangle.moveTo(0, size-1);
+        triangle.lineTo(size-1, size-1);
+        triangle.lineTo((size-1)/2, 0);
+        triangle.closeSubpath();
+        painter.fillPath(triangle, QColor(bg_color));
+
+        color_icon.addPixmap(pm);
+    }
+    return color_icon;
+}
+
+// Create a cross icon filled with the specified color.
+QIcon StockIcon::colorIconCross(const QRgb bg_color, const QRgb fg_color)
+{
+    QList<int> sizes = QList<int>() << 12 << 16 << 24 << 32 << 48;
+    QIcon color_icon;
+
+    foreach (int size, sizes) {
+        QPixmap pm(size, size);
+        QPainter painter(&pm);
+        QPainterPath cross;
+        pm.fill();
+        painter.fillRect(0, 0, size-1, size-1, Qt::transparent);
+        painter.setPen(QPen(QBrush(bg_color), 3));
+        painter.setBrush(QColor(fg_color));
+        cross.moveTo(0, 0);
+        cross.lineTo(size-1, size-1);
+        cross.moveTo(0, size-1);
+        cross.lineTo(size-1, 0);
+        painter.drawPath(cross);
+
+        color_icon.addPixmap(pm);
+    }
+    return color_icon;
+}
+
+// Create a circle icon filled with the specified color.
+QIcon StockIcon::colorIconCircle(const QRgb bg_color, const QRgb fg_color)
+{
+    QList<int> sizes = QList<int>() << 12 << 16 << 24 << 32 << 48;
+    QIcon color_icon;
+
+    foreach (int size, sizes) {
+        QPixmap pm(size, size);
+        QPainter painter(&pm);
+        QRect border(2, 2, size - 3, size - 3);
+        pm.fill();
+        painter.fillRect(0, 0, size-1, size-1, Qt::transparent);
+        painter.setPen(QPen(QBrush(bg_color), 3));
+        painter.setBrush(QColor(fg_color));
+        painter.setBrush(QColor(bg_color));
+        painter.drawEllipse(border);
 
         color_icon.addPixmap(pm);
     }
@@ -137,16 +259,3 @@ void StockIcon::fillIconNameMap()
     icon_name_to_standard_pixmap_["media-playback-start"] = QStyle::SP_MediaPlay;
     icon_name_to_standard_pixmap_["media-playback-stop"] = QStyle::SP_MediaStop;
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -11,15 +11,8 @@
 #ifndef __WIN32UTIL_H__
 #define __WIN32UTIL_H__
 
-/*
- * This is included in ABI checking, so protect it with #ifdef _WIN32,
- * so it doesn't break ABI checking on UN*X.
- */
-#ifdef _WIN32
+#include <wireshark.h>
 
-#include "ws_symbol_export.h"
-
-#include <glib.h>
 #include <windows.h>
 
 /**
@@ -46,12 +39,23 @@ extern "C" {
  * @return The string quoted to be used by CreateProcess
  */
 WS_DLL_PUBLIC
-gchar * protect_arg (const gchar *argv);
+char * protect_arg (const char *argv);
 
-/** Generate a string for a Win32 error.
+/** Tests a UTF-8 string to see if it is a Windows pipe name.
+ * Under Windows, named pipes _must_ have the form "\\<server>\pipe\<pipename>".
+ * <server> may be "." for localhost. This does not check that a pipe server
+ * has actually created the pipe, only that the name is the proper form.
  *
- * @param error The windows error code
- * @return a localized string containing the corresponding error message
+ * @param pipename The UTF-8 string to be checked
+ * @return TRUE if the string is a valid Windows pipe name.
+ */
+WS_DLL_PUBLIC
+bool win32_is_pipe_name(const char* pipe_name);
+
+/** Generate a string for a Windows error.
+ *
+ * @param error The Windows error code
+ * @return a localized UTF-8 string containing the corresponding error message
  */
 WS_DLL_PUBLIC
 const char * win32strerror(DWORD error);
@@ -66,12 +70,20 @@ const char * win32strexception(DWORD exception);
 
 /**
  * @brief ws_pipe_create_process Create a process and assign it to the main application
- *        job object so that it will be killed the the main application exits.
+ *        job object so that it will be killed when the main application exits.
+ *
+ * In order to limit unwanted handle duplicates in subprocesses all handles should be
+ * created as not inheritable and passed in the inherit_handles array. This function
+ * marks the handles as inheritable for as short time as possible. Note that handles
+ * passed to this function will have the inheritable flag cleared on exit. Processes
+ * created with this function inherit only the provided handles.
+ *
  * @param application_name Application name. Will be converted to its UTF-16 equivalent or NULL.
  * @param command_line Command line. Will be converted to its UTF-16 equivalent.
  * @param process_attributes Same as CreateProcess.
  * @param thread_attributes Same as CreateProcess.
- * @param inherit_handles Same as CreateProcess.
+ * @param n_inherit_handles Number of handles the child process will inherit.
+ * @param inherit_handles Handles the child process will inherit.
  * @param creation_flags Will be ORed with CREATE_SUSPENDED|CREATE_BREAKAWAY_FROM_JOB.
  * @param environment Same as CreateProcess.
  * @param current_directory Current directory. Will be converted to its UTF-16 equivalent or NULL.
@@ -82,14 +94,13 @@ const char * win32strexception(DWORD exception);
 WS_DLL_PUBLIC
 BOOL win32_create_process(const char *application_name, const char *command_line,
     LPSECURITY_ATTRIBUTES process_attributes, LPSECURITY_ATTRIBUTES thread_attributes,
-    BOOL inherit_handles, DWORD creation_flags, LPVOID environment,
+    size_t n_inherit_handles, HANDLE *inherit_handles,
+    DWORD creation_flags, LPVOID environment,
     const char *current_directory, LPSTARTUPINFO startup_info, LPPROCESS_INFORMATION process_information
 );
 
 #ifdef	__cplusplus
 }
 #endif
-
-#endif /* _WIN32 */
 
 #endif /* __WIN32UTIL_H__ */

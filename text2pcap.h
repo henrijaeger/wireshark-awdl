@@ -1,6 +1,4 @@
-/**-*-C-*-**********************************************************************
- *
- * text2pcap.h
+/** @file
  *
  * Utility to convert an ASCII hexdump into a libpcap-format capture file
  *
@@ -32,7 +30,7 @@ int text2pcap_scan(void);
 #endif
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

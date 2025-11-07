@@ -1,17 +1,16 @@
-/* sctp_all_assocs_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef SCTP_ALL_ASSOCS_DIALOG_H
 #define SCTP_ALL_ASSOCS_DIALOG_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include <file.h>
 
@@ -47,8 +46,7 @@ private slots:
 private:
     Ui::SCTPAllAssocsDialog *ui;
     capture_file *cap_file_;
-    sctp_allassocs_info_t *sctp_assocs;
-    guint16 selected_assoc_id;
+    uint16_t selected_assoc_id;
 
 
 signals:
@@ -56,16 +54,3 @@ signals:
 };
 
 #endif // SCTP_ALL_ASSOCS_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

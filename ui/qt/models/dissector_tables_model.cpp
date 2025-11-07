@@ -12,7 +12,7 @@
 #include <epan/packet.h>
 
 #include <ui/qt/utils/variant_pointer.h>
-#include "wireshark_application.h"
+#include "main_application.h"
 
 static const char* CUSTOM_TABLE_NAME = "Custom Tables";
 static const char* INTEGER_TABLE_NAME = "Integer Tables";
@@ -22,7 +22,7 @@ static const char* HEURISTIC_TABLE_NAME = "Heuristic Tables";
 class IntegerTablesItem : public DissectorTablesItem
 {
 public:
-    IntegerTablesItem(unsigned int value, QString shortName, DissectorTablesItem* parent);
+    IntegerTablesItem(unsigned int value, QString dissectorDescription, DissectorTablesItem* parent);
     virtual ~IntegerTablesItem();
 
     virtual bool lessThan(DissectorTablesItem &right) const;
@@ -32,10 +32,10 @@ protected:
 };
 
 
-DissectorTablesItem::DissectorTablesItem(QString tableName, QString shortName, DissectorTablesItem* parent) :
+DissectorTablesItem::DissectorTablesItem(QString tableName, QString dissectorDescription, DissectorTablesItem* parent) :
     ModelHelperTreeItem<DissectorTablesItem>(parent),
     tableName_(tableName),
-    shortName_(shortName)
+    dissectorDescription_(dissectorDescription)
 {
 }
 
@@ -52,8 +52,8 @@ bool DissectorTablesItem::lessThan(DissectorTablesItem &right) const
 }
 
 
-IntegerTablesItem::IntegerTablesItem(unsigned int value, QString shortName, DissectorTablesItem* parent)
-    : DissectorTablesItem(QString("%1").arg(value), shortName, parent)
+IntegerTablesItem::IntegerTablesItem(unsigned int value, QString dissectorDescription, DissectorTablesItem* parent)
+    : DissectorTablesItem(QStringLiteral("%1").arg(value), dissectorDescription, parent)
     , value_(value)
 {
 }
@@ -75,16 +75,9 @@ bool IntegerTablesItem::lessThan(DissectorTablesItem &right) const
     return false;
 }
 
-
-
-
-
-
-
-
 DissectorTablesModel::DissectorTablesModel(QObject *parent) :
     QAbstractItemModel(parent),
-    root_(new DissectorTablesItem(QString("ROOT"), QString("ROOT"), NULL))
+    root_(new DissectorTablesItem(QStringLiteral("ROOT"), QStringLiteral("ROOT"), NULL))
 {
     populate();
 }
@@ -170,8 +163,8 @@ QVariant DissectorTablesModel::data(const QModelIndex &index, int role) const
     {
     case colTableName:
         return item->tableName();
-    case colShortName:
-        return item->shortName();
+    case colDissectorDescription:
+        return item->dissectorDescription();
     default:
         break;
     }
@@ -179,7 +172,7 @@ QVariant DissectorTablesModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
-static void gatherProtocolDecodes(const char *, ftenum_t selector_type, gpointer key, gpointer value, gpointer item_ptr)
+static void gatherProtocolDecodes(const char *, ftenum_t selector_type, void *key, void *value, void *item_ptr)
 {
     DissectorTablesItem* pdl_ptr = (DissectorTablesItem*)item_ptr;
     if (pdl_ptr == NULL)
@@ -187,7 +180,7 @@ static void gatherProtocolDecodes(const char *, ftenum_t selector_type, gpointer
 
     dtbl_entry_t       *dtbl_entry = (dtbl_entry_t*)value;
     dissector_handle_t  handle = dtbl_entry_get_handle(dtbl_entry);
-    const QString proto_name = dissector_handle_get_short_name(handle);
+    const QString dissector_description = dissector_handle_get_description(handle);
     DissectorTablesItem *ti = NULL;
 
     switch (selector_type) {
@@ -195,7 +188,7 @@ static void gatherProtocolDecodes(const char *, ftenum_t selector_type, gpointer
     case FT_UINT16:
     case FT_UINT24:
     case FT_UINT32:
-        ti = new IntegerTablesItem(GPOINTER_TO_UINT(key), proto_name, pdl_ptr);
+        ti = new IntegerTablesItem(GPOINTER_TO_UINT(key), dissector_description, pdl_ptr);
         pdl_ptr->prependChild(ti);
         break;
 
@@ -203,12 +196,13 @@ static void gatherProtocolDecodes(const char *, ftenum_t selector_type, gpointer
     case FT_STRINGZ:
     case FT_UINT_STRING:
     case FT_STRINGZPAD:
-        ti = new DissectorTablesItem((const char *)key, proto_name, pdl_ptr);
+    case FT_STRINGZTRUNC:
+        ti = new DissectorTablesItem((const char *)key, dissector_description, pdl_ptr);
         pdl_ptr->prependChild(ti);
         break;
 
     case FT_BYTES:
-        ti = new DissectorTablesItem(dissector_handle_get_dissector_name(handle), proto_name, pdl_ptr);
+        ti = new DissectorTablesItem(dissector_handle_get_description(handle), dissector_description, pdl_ptr);
         pdl_ptr->prependChild(ti);
         break;
 
@@ -224,7 +218,7 @@ struct tables_root
     DissectorTablesItem* string_table;
 };
 
-static void gatherTableNames(const char *short_name, const char *table_name, gpointer model_ptr)
+static void gatherTableNames(const char *short_name, const char *table_name, void *model_ptr)
 {
     struct tables_root* tables = (struct tables_root*)model_ptr;
     if (model_ptr == NULL)
@@ -245,6 +239,7 @@ static void gatherTableNames(const char *short_name, const char *table_name, gpo
     case FT_STRINGZ:
     case FT_UINT_STRING:
     case FT_STRINGZPAD:
+    case FT_STRINGZTRUNC:
         dt_ti = new DissectorTablesItem(table_name, short_name, tables->string_table);
         tables->string_table->prependChild(dt_ti);
         break;
@@ -260,25 +255,35 @@ static void gatherTableNames(const char *short_name, const char *table_name, gpo
     dissector_table_foreach(short_name, gatherProtocolDecodes, dt_ti);
 }
 
-static void gatherHeurProtocolDecodes(const char *, struct heur_dtbl_entry *dtbl_entry, gpointer list_ptr)
+static void gatherHeurProtocolDecodes(const char *, struct heur_dtbl_entry *dtbl_entry, void *list_ptr)
 {
     DissectorTablesItem* hdl_ptr = (DissectorTablesItem*)list_ptr;
     if (hdl_ptr == NULL)
         return;
 
     if (dtbl_entry->protocol) {
-        DissectorTablesItem *heur = new DissectorTablesItem(proto_get_protocol_long_name(dtbl_entry->protocol), proto_get_protocol_short_name(dtbl_entry->protocol), hdl_ptr);
+        QString longName = proto_get_protocol_long_name(dtbl_entry->protocol);
+        QString heurDisplayName = dtbl_entry->display_name;
+        if (! heurDisplayName.isEmpty())
+            longName.append(QStringLiteral(" (%1)").arg(heurDisplayName));
+
+        DissectorTablesItem *heur = new DissectorTablesItem(longName, proto_get_protocol_short_name(dtbl_entry->protocol), hdl_ptr);
         hdl_ptr->prependChild(heur);
     }
 }
 
-static void gatherHeurTableNames(const char *table_name, heur_dissector_list *list, gpointer heur_tables)
+static void gatherHeurTableNames(const char *table_name, heur_dissector_list *list, void *heur_tables)
 {
     DissectorTablesItem* table = (DissectorTablesItem*)heur_tables;
     if (table == NULL)
         return;
 
-    DissectorTablesItem *heur = new DissectorTablesItem(table_name, QString(""), table);
+    QString desc_name = table_name;
+    if (list) {
+        const char *desc = heur_dissector_list_get_description(list);
+        if (desc) desc_name = desc;
+    }
+    DissectorTablesItem *heur = new DissectorTablesItem(desc_name, table_name, table);
     table->prependChild(heur);
 
     if (list) {
@@ -288,7 +293,7 @@ static void gatherHeurTableNames(const char *table_name, heur_dissector_list *li
 
 void DissectorTablesModel::populate()
 {
-    emit beginResetModel();
+    beginResetModel();
 
     struct tables_root tables;
 
@@ -306,7 +311,7 @@ void DissectorTablesModel::populate()
 
     dissector_all_heur_tables_foreach_table(gatherHeurTableNames, heuristic_table, NULL);
 
-    emit endResetModel();
+    endResetModel();
 }
 
 
@@ -316,7 +321,7 @@ void DissectorTablesModel::populate()
 DissectorTablesProxyModel::DissectorTablesProxyModel(QObject * parent)
 : QSortFilterProxyModel(parent),
 tableName_(tr("Table Type")),
-shortName_(),
+dissectorDescription_(),
 filter_()
 {
 }
@@ -328,8 +333,8 @@ QVariant DissectorTablesProxyModel::headerData(int section, Qt::Orientation orie
         switch ((enum DissectorTablesModel::DissectorTablesColumn)section) {
         case DissectorTablesModel::colTableName:
             return tableName_;
-        case DissectorTablesModel::colShortName:
-            return shortName_;
+        case DissectorTablesModel::colDissectorDescription:
+            return dissectorDescription_;
         default:
             break;
         }
@@ -350,18 +355,20 @@ bool DissectorTablesProxyModel::lessThan(const QModelIndex &left, const QModelIn
     return false;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 bool DissectorTablesProxyModel::filterAcceptItem(DissectorTablesItem& item) const
 {
-    if ( filter_.isEmpty() )
+    if (filter_.isEmpty())
         return true;
 
-    if (item.tableName().contains(filter_, Qt::CaseInsensitive) || item.shortName().contains(filter_, Qt::CaseInsensitive))
+    if (item.tableName().contains(filter_, Qt::CaseInsensitive) || item.dissectorDescription().contains(filter_, Qt::CaseInsensitive))
         return true;
 
     DissectorTablesItem *child_item;
     for (int child_row = 0; child_row < item.childCount(); child_row++)
     {
         child_item = item.child(child_row);
+        // We recurse here, but the tree is only three levels deep
         if ((child_item != NULL) && (filterAcceptItem(*child_item)))
             return true;
     }
@@ -391,7 +398,7 @@ void DissectorTablesProxyModel::setFilter(const QString& filter)
 void DissectorTablesProxyModel::adjustHeader(const QModelIndex &currentIndex)
 {
     tableName_ = tr("Table Type");
-    shortName_ = QString();
+    dissectorDescription_ = QString();
     if (currentIndex.isValid() && currentIndex.parent().isValid()) {
         QString table;
 
@@ -400,13 +407,13 @@ void DissectorTablesProxyModel::adjustHeader(const QModelIndex &currentIndex)
             if ((table.compare(CUSTOM_TABLE_NAME) == 0) ||
                 (table.compare(STRING_TABLE_NAME) == 0)) {
                 tableName_ = tr("String");
-                shortName_ = tr("Dissector");
+                dissectorDescription_ = tr("Dissector Description");
             } else if (table.compare(INTEGER_TABLE_NAME) == 0) {
                 tableName_ = tr("Integer");
-                shortName_ = tr("Dissector");
+                dissectorDescription_ = tr("Dissector Description");
             } else if (table.compare(HEURISTIC_TABLE_NAME) == 0) {
                 tableName_ = tr("Protocol");
-                shortName_ = tr("Short Name");
+                dissectorDescription_ = tr("Short Name");
             }
         } else {
             table = data(index(currentIndex.parent().row(), DissectorTablesModel::colTableName), Qt::DisplayRole).toString();
@@ -414,10 +421,10 @@ void DissectorTablesProxyModel::adjustHeader(const QModelIndex &currentIndex)
                 (table.compare(INTEGER_TABLE_NAME) == 0) ||
                 (table.compare(STRING_TABLE_NAME) == 0)) {
                 tableName_ = tr("Table Name");
-                shortName_ = tr("Selector Name");
+                dissectorDescription_ = tr("Selector Name");
             } else if (table.compare(HEURISTIC_TABLE_NAME) == 0) {
                 tableName_ = tr("Protocol");
-                shortName_ = tr("Short Name");
+                dissectorDescription_ = tr("Short Name");
             }
         }
     }
@@ -425,16 +432,3 @@ void DissectorTablesProxyModel::adjustHeader(const QModelIndex &currentIndex)
 
     emit headerDataChanged(Qt::Vertical, 0, 1);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

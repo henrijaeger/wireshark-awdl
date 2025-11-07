@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>740</width>
-    <height>610</height>
+    <height>650</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -35,14 +35,14 @@
       <attribute name="title">
        <string>Wireshark</string>
       </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout" stretch="0,1,0,1">
+      <layout class="QVBoxLayout" name="verticalLayout">
        <item>
         <widget class="QLabel" name="label_logo">
          <property name="text">
           <string/>
          </property>
          <property name="pixmap">
-          <pixmap resource="../../image/about.qrc">:/about/wssplash.png</pixmap>
+          <pixmap resource="../../resources/about.qrc">:/about/wssplash.png</pixmap>
          </property>
          <property name="scaledContents">
           <bool>false</bool>
@@ -54,6 +54,12 @@
        </item>
        <item>
         <widget class="QLabel" name="label_title">
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>20</height>
+          </size>
+         </property>
          <property name="text">
           <string>&lt;span size=\&quot;x-large\&quot; weight=\&quot;bold\&quot;&gt;Network Protocol Analyzer&lt;/span&gt;</string>
          </property>
@@ -63,7 +69,36 @@
         </widget>
        </item>
        <item>
+        <widget class="QTextBrowser" name="pte_wireshark">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextBrowserInteraction</set>
+         </property>
+         <property name="openExternalLinks">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <layout class="QHBoxLayout" name="horizontalLayout">
+         <item>
+          <widget class="QPushButton" name="copyToClipboard">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="toolTip">
+            <string>Copy the version information to the clipboard</string>
+           </property>
+           <property name="text">
+            <string>Copy to Clipboard</string>
+           </property>
+          </widget>
+         </item>
          <item>
           <spacer name="horizontalSpacer">
            <property name="orientation">
@@ -77,40 +112,7 @@
            </property>
           </spacer>
          </item>
-         <item>
-          <widget class="QLabel" name="label_wireshark">
-           <property name="text">
-            <string/>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="horizontalSpacer_2">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
         </layout>
-       </item>
-       <item>
-        <spacer name="verticalSpacer">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>40</height>
-          </size>
-         </property>
-        </spacer>
        </item>
       </layout>
      </widget>
@@ -155,7 +157,7 @@
        <item>
         <widget class="QLineEdit" name="searchFolders">
          <property name="placeholderText">
-          <string>Filter by path</string>
+          <string>Search Folders</string>
          </property>
         </widget>
        </item>
@@ -259,15 +261,7 @@
       <attribute name="title">
        <string>Acknowledgments</string>
       </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout_8">
-       <item>
-        <widget class="QPlainTextEdit" name="pte_Authors">
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-      </layout>
+      <layout class="QVBoxLayout" name="ackVerticalLayout"/>
      </widget>
      <widget class="QWidget" name="tab_license">
       <attribute name="title">
@@ -275,8 +269,11 @@
       </attribute>
       <layout class="QVBoxLayout" name="verticalLayout_5">
        <item>
-        <widget class="QPlainTextEdit" name="pte_License">
+        <widget class="QTextBrowser" name="textBrowserLicense">
          <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="openExternalLinks">
           <bool>true</bool>
          </property>
         </widget>
@@ -298,7 +295,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../../image/about.qrc"/>
+  <include location="../../resources/about.qrc"/>
  </resources>
  <connections>
   <connection>

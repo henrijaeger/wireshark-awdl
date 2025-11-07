@@ -1,4 +1,4 @@
-/* fileset_entry_model.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -11,8 +11,6 @@
 #define FILESET_ENTRY_MODEL_H
 
 #include <config.h>
-
-#include <glib.h>
 
 #include <fileset.h>
 
@@ -37,7 +35,7 @@ public:
 
     virtual void appendEntry(const fileset_entry *entry);
     const fileset_entry *getRowEntry(int row) const { return entries_.value(row, NULL); }
-    int entryCount() const { return entries_.count(); }
+    int entryCount() const { return static_cast<int>(entries_.count()); }
     // Calls fileset_delete and clears our model data.
     void clear();
 
@@ -50,16 +48,3 @@ private:
 };
 
 #endif // FILESET_ENTRY_MODEL_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

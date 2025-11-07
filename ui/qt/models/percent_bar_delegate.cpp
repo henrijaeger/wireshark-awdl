@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include <ui/qt/models/percent_bar_delegate.h>
 
@@ -88,16 +89,3 @@ QSize PercentBarDelegate::sizeHint(const QStyleOptionViewItem &option,
     return QSize(option.fontMetrics.height() * bar_em_width_,
                  QStyledItemDelegate::sizeHint(option, index).height());
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

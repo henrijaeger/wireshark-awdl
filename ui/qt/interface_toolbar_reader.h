@@ -1,10 +1,11 @@
-/* interface_toolbar_reader.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef INTERFACE_TOOLBAR_READER_H
 #define INTERFACE_TOOLBAR_READER_H
@@ -26,14 +27,15 @@ class InterfaceToolbarReader : public QObject
 
 public:
     InterfaceToolbarReader(QString ifname, void *control_in, QObject *parent = 0) :
-    QObject(parent), ifname_(ifname)
-    {
+        QObject(parent),
+        ifname_(ifname),
 #ifdef _WIN32
-        control_in_ = (HANDLE)control_in;
+        control_in_((HANDLE)control_in)
 #else
-        control_in_ = (char *)control_in;
-        fd_in_ = -1;
+        control_in_((char *)control_in),
+        fd_in_(-1)
 #endif
+    {
     }
 
 public slots:
@@ -59,16 +61,3 @@ private:
 };
 
 #endif // INTERFACE_TOOLBAR_READER_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

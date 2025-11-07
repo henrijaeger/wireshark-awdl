@@ -1,4 +1,4 @@
-/* idata_printable.h
+/** @file
  *
  * Interface class for classes, which provide an interface to
  * print objects
@@ -32,16 +32,3 @@ public:
 Q_DECLARE_INTERFACE(IDataPrintable, IDataPrintable_iid)
 
 #endif // IDATA_PRINTABLE_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

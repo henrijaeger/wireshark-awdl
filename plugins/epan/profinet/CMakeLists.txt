@@ -22,6 +22,7 @@ set(DISSECTOR_SRC
 	packet-pn-ptcp.c
 	packet-pn-rt.c
 	packet-pn-rtc-one.c
+	packet-pn-rsi.c
 )
 
 set(DISSECTOR_SUPPORT_SRC
@@ -40,17 +41,30 @@ set_source_files_properties(
 	COMPILE_FLAGS "${WERROR_COMMON_FLAGS}"
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
 register_plugin_files(plugin.c
 	plugin
 	${DISSECTOR_SRC}
 	${DISSECTOR_SUPPORT_SRC}
 )
 
-add_plugin_library(profinet epan)
+add_wireshark_plugin_library(profinet epan)
 
-target_link_libraries(profinet epan)
+target_link_libraries(profinet
+	PUBLIC
+		epan
+	PRIVATE
+		${LIBXML2_LIBRARIES}
+)
+
+target_include_directories(profinet
+	SYSTEM PRIVATE
+		${LIBXML2_INCLUDE_DIRS}
+)
+
+target_compile_definitions(profinet
+	PRIVATE
+		${LIBXML2_DEFINITIONS}
+)
 
 install_plugin(profinet epan)
 
@@ -59,7 +73,8 @@ CHECKAPI(
 	NAME
 	  profinet
 	SWITCHES
-	  -g abort -g termoutput -build
+	  --group dissectors-prohibited
+	  --group dissectors-restricted
 	SOURCES
 	  ${DISSECTOR_SRC}
 	  ${DISSECTOR_SUPPORT_SRC}
@@ -67,7 +82,7 @@ CHECKAPI(
 )
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

@@ -23,6 +23,9 @@ TBCD-STRING
 # Get rid of unused code warnings
 ProtocolIE-ContainerList
 Presence
+Unknown-Tracking-Area-List
+NgENB-ID
+List-of-5GS-Cells-for-Failure
 
 #.TYPE_RENAME
 
@@ -39,6 +42,8 @@ SuccessfulOutcome/value successfulOutcome_value
 ProtocolExtensionField/id ext_id
 
 ProtocolIE-Field/value ie_field_value
+
+Global-GNB-ID/gNB-ID gnb-id-choice
 
 #.FN_PARS ProtocolIE-ID  VAL_PTR=&ProtocolIE_ID
 #.FN_FTR ProtocolIE-ID
@@ -58,10 +63,6 @@ ProtocolIE-Field/value ie_field_value
 #.FN_PARS ProtocolExtensionField/extensionValue  FN_VARIANT=_pdu_new  TYPE_REF_FN=dissect_ProtocolExtensionFieldExtensionValue
 
 #.FN_PARS  ProcedureCode  VAL_PTR = &ProcedureCode
-#.FN_FTR ProcedureCode
-   col_add_fstr(actx->pinfo->cinfo, COL_INFO, "%s ",
-                   val_to_str(ProcedureCode, sbc_ap_ProcedureCode_vals,
-                              "unknown message"));
 #.END
 
 #.FN_PARS InitiatingMessage/value  FN_VARIANT=_pdu_new  TYPE_REF_FN=dissect_InitiatingMessageValue
@@ -97,19 +98,61 @@ ProtocolIE-Field/value ie_field_value
 
 #.FN_BODY PLMNidentity  VAL_PTR = parameter_tvb
   tvbuff_t *parameter_tvb=NULL;
+  struct sbc_ap_private_data *sbc_ap_data = sbc_ap_get_private_data(actx->pinfo);
+  e212_number_type_t number_type = sbc_ap_data->number_type;
+  sbc_ap_data->number_type = E212_NONE;
 
   offset = dissect_per_octet_string(tvb, offset, actx, tree, hf_index,
-                                       3, 3, FALSE, &parameter_tvb);
+                                       3, 3, false, &parameter_tvb);
     if(tvb_reported_length(tvb)==0)
         return offset;
 
     if (!parameter_tvb)
         return offset;
-    dissect_e212_mcc_mnc(parameter_tvb, actx->pinfo, tree, 0, E212_NONE, FALSE);
+    dissect_e212_mcc_mnc(parameter_tvb, actx->pinfo, tree, 0, number_type, false);
 #.END
 
 #.TYPE_ATTR
 ProtocolExtensionID TYPE = FT_UINT8  DISPLAY = BASE_DEC STRINGS = VALS(sbc_ap_ProtocolIE_ID_vals)
+
+#.FN_BODY EUTRAN-CGI
+  struct sbc_ap_private_data *sbc_ap_data = sbc_ap_get_private_data(actx->pinfo);
+  sbc_ap_data->number_type = E212_ECGI;
+%(DEFAULT_BODY)s
+
+#.FN_BODY NR-CGI
+  struct sbc_ap_private_data *sbc_ap_data = sbc_ap_get_private_data(actx->pinfo);
+  sbc_ap_data->number_type = E212_NRCGI;
+%(DEFAULT_BODY)s
+
+#.FN_BODY TAI
+  struct sbc_ap_private_data *sbc_ap_data = sbc_ap_get_private_data(actx->pinfo);
+  sbc_ap_data->number_type = E212_TAI;
+%(DEFAULT_BODY)s
+
+#.TYPE_ATTR
+TAC TYPE = FT_UINT16 DISPLAY = BASE_DEC_HEX
+#.FN_BODY TAC VAL_PTR = &parameter_tvb HF_INDEX = -1
+  tvbuff_t *parameter_tvb = NULL;
+%(DEFAULT_BODY)s
+  if (parameter_tvb) {
+    actx->created_item = proto_tree_add_item(tree, hf_index, parameter_tvb, 0, 2, ENC_BIG_ENDIAN);
+  }
+
+#.FN_BODY TAI-5GS
+  struct sbc_ap_private_data *sbc_ap_data = sbc_ap_get_private_data(actx->pinfo);
+  sbc_ap_data->number_type = E212_5GSTAI;
+%(DEFAULT_BODY)s
+
+#.TYPE_ATTR
+TAC-5GS TYPE = FT_UINT24 DISPLAY = BASE_DEC_HEX
+#.FN_BODY TAC-5GS VAL_PTR = &parameter_tvb HF_INDEX = -1
+  tvbuff_t *parameter_tvb = NULL;
+%(DEFAULT_BODY)s
+  if (parameter_tvb) {
+    actx->created_item = proto_tree_add_item(tree, hf_index, parameter_tvb, 0, 3, ENC_BIG_ENDIAN);
+  }
+
 
 #.ASSIGN_VALUE_TO_TYPE  # SBC-AP does not have constants assigned to types, they are pure INTEGER
 # ProcedureCode
@@ -158,6 +201,20 @@ id-List-of-TAIs-Restart						ProtocolIE-ID
 id-List-of-EAIs-Restart						ProtocolIE-ID
 id-Failed-Cell-List							ProtocolIE-ID
 
+id-List-of-5GS-TAIs					ProtocolIE-ID
+id-Warning-Area-List-5GS				ProtocolIE-ID
+id-Global-RAN-Node-ID					ProtocolIE-ID
+id-Global-GNB-ID					ProtocolIE-ID
+id-RAT-Selector-5GS					ProtocolIE-ID
+id-Unknown-5GS-Tracking-Area-List			ProtocolIE-ID
+id-Broadcast-Scheduled-Area-List-5GS			ProtocolIE-ID
+id-Broadcast-Cancelled-Area-List-5GS			ProtocolIE-ID
+id-Broadcast-Empty-Area-List-5GS			ProtocolIE-ID
+id-Restarted-Cell-List-NR				ProtocolIE-ID
+id-Failed-Cell-List-NR					ProtocolIE-ID
+id-List-of-5GS-TAI-for-Restart				ProtocolIE-ID
+id-Warning-Area-Coordinates				ProtocolIE-ID
+
 #.REGISTER
 
 #SBC-AP-PROTOCOL-IES
@@ -197,6 +254,19 @@ List-of-TAIs-Restart                    N sbc_ap.ies id-List-of-TAIs-Restart
 List-of-EAIs-Restart                    N sbc_ap.ies id-List-of-EAIs-Restart
 Failed-Cell-List                        N sbc_ap.ies id-Failed-Cell-List
 
+List-of-5GS-TAIs                        N sbc_ap.extension id-List-of-5GS-TAIs
+Warning-Area-List-5GS                   N sbc_ap.extension id-Warning-Area-List-5GS
+Global-RAN-Node-ID                      N sbc_ap.extension id-Global-RAN-Node-ID
+Global-GNB-ID                           N sbc_ap.extension id-Global-GNB-ID
+RAT-Selector-5GS                        N sbc_ap.extension id-RAT-Selector-5GS
+Unknown-5GS-Tracking-Area-List          N sbc_ap.extension id-Unknown-5GS-Tracking-Area-List
+Broadcast-Scheduled-Area-List-5GS       N sbc_ap.extension id-Broadcast-Scheduled-Area-List-5GS
+Broadcast-Cancelled-Area-List-5GS       N sbc_ap.extension id-Broadcast-Cancelled-Area-List-5GS
+Broadcast-Empty-Area-List-5GS           N sbc_ap.extension id-Broadcast-Empty-Area-List-5GS
+Restarted-Cell-List-NR                  N sbc_ap.extension id-Restarted-Cell-List-NR
+Failed-Cell-List-NR                     N sbc_ap.extension id-Failed-Cell-List-NR
+List-of-5GS-TAI-for-Restart             N sbc_ap.extension id-List-of-5GS-TAI-for-Restart
+Warning-Area-Coordinates                N sbc_ap.ies id-Warning-Area-Coordinates
 
 
 #SBC-AP-ELEMENTARY-PROCEDURE
@@ -221,6 +291,16 @@ PWS-Failure-Indication                  N sbc_ap.proc.imsg id-PWS-Failure-Indica
 #.TYPE_ATTR
 Message-Identifier TYPE = FT_UINT16 DISPLAY = BASE_DEC|BASE_EXT_STRING STRINGS = &lte_rrc_messageIdentifier_vals_ext
 
+#.FN_HDR Write-Replace-Warning-Request
+  col_append_sep_str(actx->pinfo->cinfo, COL_INFO, NULL, "Write-Replace-Warning-Request");
+#.FN_HDR Write-Replace-Warning-Response
+  col_append_sep_str(actx->pinfo->cinfo, COL_INFO, NULL, "Write-Replace-Warning-Response");
+#.FN_HDR Stop-Warning-Request
+  col_append_sep_str(actx->pinfo->cinfo, COL_INFO, NULL, "Stop-Warning-Request");
+#.FN_HDR Stop-Warning-Response
+  col_append_sep_str(actx->pinfo->cinfo, COL_INFO, NULL, "Stop-Warning-Response");
+#.FN_HDR Error-Indication
+  col_append_sep_str(actx->pinfo->cinfo, COL_INFO, NULL, "Error-Indication");
 #.FN_HDR Write-Replace-Warning-Indication
   col_append_sep_str(actx->pinfo->cinfo, COL_INFO, NULL, "Write-Replace-Warning-Indication");
 #.FN_HDR Stop-Warning-Indication
@@ -248,10 +328,10 @@ Message-Identifier TYPE = FT_UINT16 DISPLAY = BASE_DEC|BASE_EXT_STRING STRINGS =
   }
 
 #.TYPE_ATTR
-Repetition-Period DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=&units_seconds
+Repetition-Period DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=UNS(&units_seconds)
 
 #.TYPE_ATTR
-Extended-Repetition-Period DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=&units_seconds
+Extended-Repetition-Period DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=UNS(&units_seconds)
 
 #.FN_BODY Warning-Type VAL_PTR = &parameter_tvb
   tvbuff_t *parameter_tvb = NULL;
@@ -286,7 +366,7 @@ Extended-Repetition-Period DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=&units_seco
 
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 2

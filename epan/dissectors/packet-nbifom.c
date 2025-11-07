@@ -1,7 +1,7 @@
 /* packet-nbifom.c
  * Routines for Network-Based IP Flow Mobility (NBIFOM) dissection
  * 3GPP TS 24.161 V13.3.0 (2016-12) Release 13
- * Copyright 2016, Pascal Quantin <pascal.quantin@gmail.com>
+ * Copyright 2016, Pascal Quantin <pascal@wireshark.org>
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -13,64 +13,66 @@
 #include "config.h"
 
 #include <epan/packet.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 
 void proto_register_nbifom(void);
 
-static int proto_nbifom = -1;
-static int hf_nbifom_param_id_ul = -1;
-static int hf_nbifom_param_id_dl = -1;
-static int hf_nbifom_param_contents_len = -1;
-static int hf_nbifom_param_contents_dflt_access = -1;
-static int hf_nbifom_param_contents_status = -1;
-static int hf_nbifom_param_contents_ran_rules_handling = -1;
-static int hf_nbifom_param_contents_ran_rules_status = -1;
-static int hf_nbifom_param_contents_access_use_ind_spare = -1;
-static int hf_nbifom_param_contents_access_use_ind_wlan_access_usable_val = -1;
-static int hf_nbifom_param_contents_access_use_ind_3gpp_access_usable_val = -1;
-static int hf_nbifom_param_contents_mode = -1;
-static int hf_nbifom_param_contents_rem_bytes = -1;
-static int hf_nbifom_routing_rule_len = -1;
-static int hf_nbifom_routing_rule_id = -1;
-static int hf_nbifom_routing_rule_routing_access = -1;
-static int hf_nbifom_routing_rule_spare = -1;
-static int hf_nbifom_routing_rule_op_code = -1;
-static int hf_nbifom_routing_rule_prio = -1;
-static int hf_nbifom_routing_rule_flags = -1;
-static int hf_nbifom_routing_rule_flags_prot_type_nxt_hdr = -1;
-static int hf_nbifom_routing_rule_flags_ipsec_spi = -1;
-static int hf_nbifom_routing_rule_flags_dst_addr_prefix_len = -1;
-static int hf_nbifom_routing_rule_flags_src_addr_prefix_len = -1;
-static int hf_nbifom_routing_rule_flags_dst_ipv6_addr = -1;
-static int hf_nbifom_routing_rule_flags_src_ipv6_addr = -1;
-static int hf_nbifom_routing_rule_flags_dst_ipv4_addr = -1;
-static int hf_nbifom_routing_rule_flags_src_ipv4_addr = -1;
-static int hf_nbifom_routing_rule_flags_spare_bits0xc0 = -1;
-static int hf_nbifom_routing_rule_flags_flow_label = -1;
-static int hf_nbifom_routing_rule_flags_tos = -1;
-static int hf_nbifom_routing_rule_flags_end_dst_port_range = -1;
-static int hf_nbifom_routing_rule_flags_start_dst_port_range = -1;
-static int hf_nbifom_routing_rule_flags_end_src_port_range = -1;
-static int hf_nbifom_routing_rule_flags_start_src_port_range = -1;
-static int hf_nbifom_routing_rule_flags_spare_bits0xffff = -1;
-static int hf_nbifom_routing_rule_src_ipv4_addr = -1;
-static int hf_nbifom_routing_rule_dst_ipv4_addr = -1;
-static int hf_nbifom_routing_rule_src_ipv6_addr = -1;
-static int hf_nbifom_routing_rule_dst_ipv6_addr = -1;
-static int hf_nbifom_routing_rule_src_addr_prefix_len = -1;
-static int hf_nbifom_routing_rule_dst_addr_prefix_len = -1;
-static int hf_nbifom_routing_rule_ipsec_spi = -1;
-static int hf_nbifom_routing_rule_prot_type_nxt_hdr = -1;
-static int hf_nbifom_routing_rule_start_src_port_range = -1;
-static int hf_nbifom_routing_rule_end_src_port_range = -1;
-static int hf_nbifom_routing_rule_start_dst_port_range = -1;
-static int hf_nbifom_routing_rule_end_dst_port_range = -1;
-static int hf_nbifom_routing_rule_tos = -1;
-static int hf_nbifom_routing_rule_flow_label = -1;
+static int proto_nbifom;
+static int hf_nbifom_param_id_ul;
+static int hf_nbifom_param_id_dl;
+static int hf_nbifom_param_contents_len;
+static int hf_nbifom_param_contents_dflt_access;
+static int hf_nbifom_param_contents_status;
+static int hf_nbifom_param_contents_ran_rules_handling;
+static int hf_nbifom_param_contents_ran_rules_status;
+static int hf_nbifom_param_contents_access_use_ind_spare;
+static int hf_nbifom_param_contents_access_use_ind_wlan_access_usable_val;
+static int hf_nbifom_param_contents_access_use_ind_3gpp_access_usable_val;
+static int hf_nbifom_param_contents_mode;
+static int hf_nbifom_param_contents_rem_bytes;
+static int hf_nbifom_routing_rule_len;
+static int hf_nbifom_routing_rule_id;
+static int hf_nbifom_routing_rule_routing_access;
+static int hf_nbifom_routing_rule_spare;
+static int hf_nbifom_routing_rule_op_code;
+static int hf_nbifom_routing_rule_prio;
+static int hf_nbifom_routing_rule_flags;
+static int hf_nbifom_routing_rule_flags_prot_type_nxt_hdr;
+static int hf_nbifom_routing_rule_flags_ipsec_spi;
+static int hf_nbifom_routing_rule_flags_dst_addr_prefix_len;
+static int hf_nbifom_routing_rule_flags_src_addr_prefix_len;
+static int hf_nbifom_routing_rule_flags_dst_ipv6_addr;
+static int hf_nbifom_routing_rule_flags_src_ipv6_addr;
+static int hf_nbifom_routing_rule_flags_dst_ipv4_addr;
+static int hf_nbifom_routing_rule_flags_src_ipv4_addr;
+static int hf_nbifom_routing_rule_flags_spare_bits0xc0;
+static int hf_nbifom_routing_rule_flags_flow_label;
+static int hf_nbifom_routing_rule_flags_tos;
+static int hf_nbifom_routing_rule_flags_end_dst_port_range;
+static int hf_nbifom_routing_rule_flags_start_dst_port_range;
+static int hf_nbifom_routing_rule_flags_end_src_port_range;
+static int hf_nbifom_routing_rule_flags_start_src_port_range;
+static int hf_nbifom_routing_rule_flags_spare_bits0xffff;
+static int hf_nbifom_routing_rule_src_ipv4_addr;
+static int hf_nbifom_routing_rule_dst_ipv4_addr;
+static int hf_nbifom_routing_rule_src_ipv6_addr;
+static int hf_nbifom_routing_rule_dst_ipv6_addr;
+static int hf_nbifom_routing_rule_src_addr_prefix_len;
+static int hf_nbifom_routing_rule_dst_addr_prefix_len;
+static int hf_nbifom_routing_rule_ipsec_spi;
+static int hf_nbifom_routing_rule_prot_type_nxt_hdr;
+static int hf_nbifom_routing_rule_start_src_port_range;
+static int hf_nbifom_routing_rule_end_src_port_range;
+static int hf_nbifom_routing_rule_start_dst_port_range;
+static int hf_nbifom_routing_rule_end_dst_port_range;
+static int hf_nbifom_routing_rule_tos;
+static int hf_nbifom_routing_rule_flow_label;
 
-static gint ett_nbifom = -1;
-static gint ett_nbifom_param_contents = -1;
-static gint ett_nbifom_routing_rule = -1;
-static gint ett_nbifom_routing_rule_flags = -1;
+static int ett_nbifom;
+static int ett_nbifom_param_contents;
+static int ett_nbifom_routing_rule;
+static int ett_nbifom_routing_rule_flags;
 
 static const value_string nbifom_param_id_ue_to_nw_vals[] = {
     { 0x00, "Not assigned" },
@@ -168,22 +170,22 @@ static const value_string nbifom_op_code_vals[] = {
 };
 
 static void
-dissect_nbifom_routing_rules(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, gint offset, guint32 params_content_len)
+dissect_nbifom_routing_rules(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, int offset, uint32_t params_content_len)
 {
-    gint curr_offset = offset;
-    guint32 i = 0, routing_rule_len;
+    int curr_offset = offset;
+    uint32_t i = 0, routing_rule_len;
     proto_item *item;
     proto_tree *subtree;
-    guint64 flags;
+    uint64_t flags;
 
-    while ((curr_offset - offset) < (gint)params_content_len) {
-        static const int *flags1[] = {
+    while ((curr_offset - offset) < (int)params_content_len) {
+        static int * const flags1[] = {
             &hf_nbifom_routing_rule_routing_access,
             &hf_nbifom_routing_rule_spare,
             &hf_nbifom_routing_rule_op_code,
             NULL
         };
-        static const int *flags2[] = {
+        static int * const flags2[] = {
             &hf_nbifom_routing_rule_flags_prot_type_nxt_hdr,
             &hf_nbifom_routing_rule_flags_ipsec_spi,
             &hf_nbifom_routing_rule_flags_dst_addr_prefix_len,
@@ -280,9 +282,9 @@ dissect_nbifom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _
 {
     proto_item *item;
     proto_tree *nbifom_tree, *subtree;
-    gint reported_len = tvb_reported_length(tvb);
-    gint offset = 0, saved_offset;
-    guint32 param_id, param_contents_len;
+    int reported_len = tvb_reported_length(tvb);
+    int offset = 0, saved_offset;
+    uint32_t param_id, param_contents_len;
     int hf_nbifom_param_id = pinfo->link_dir == P2P_DIR_UL ? hf_nbifom_param_id_ul : hf_nbifom_param_id_dl;
 
     col_append_sep_str(pinfo->cinfo, COL_PROTOCOL, "/", "NBIFOM");
@@ -333,7 +335,7 @@ dissect_nbifom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _
             break;
         case 8:
             if (pinfo->link_dir == P2P_DIR_UL) {
-                static const int * flags[] = {
+                static int * const flags[] = {
                     &hf_nbifom_param_contents_access_use_ind_spare,
                     &hf_nbifom_param_contents_access_use_ind_wlan_access_usable_val,
                     &hf_nbifom_param_contents_access_use_ind_3gpp_access_usable_val,
@@ -347,7 +349,7 @@ dissect_nbifom(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _
         default:
             break;
         }
-        if ((offset - saved_offset) < (gint)param_contents_len) {
+        if ((offset - saved_offset) < (int)param_contents_len) {
             proto_tree_add_item(subtree, hf_nbifom_param_contents_rem_bytes, tvb, offset, param_contents_len - (offset - saved_offset), ENC_NA);
         }
         offset = saved_offset + param_contents_len;
@@ -509,7 +511,7 @@ proto_register_nbifom(void)
               NULL, 0x0fffff, NULL, HFILL }}
     };
 
-    static gint *nbifom_subtrees[] = {
+    static int *nbifom_ett[] = {
         &ett_nbifom,
         &ett_nbifom_param_contents,
         &ett_nbifom_routing_rule,
@@ -518,13 +520,13 @@ proto_register_nbifom(void)
 
     proto_nbifom = proto_register_protocol("Network-Based IP Flow Mobility", "NBIFOM", "nbifom");
     proto_register_field_array(proto_nbifom, hf, array_length(hf));
-    proto_register_subtree_array(nbifom_subtrees, array_length(nbifom_subtrees));
+    proto_register_subtree_array(nbifom_ett, array_length(nbifom_ett));
 
     register_dissector("nbifom", dissect_nbifom, proto_nbifom);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

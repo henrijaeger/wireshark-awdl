@@ -7,8 +7,8 @@
  */
 
 #include "config.h"
-#include "wtap-int.h"
 #include "atm.h"
+#include "wtap-int.h"
 
 /*
  * Routines to use with ATM capture file types that don't include information
@@ -20,7 +20,7 @@
  */
 
 void
-atm_guess_traffic_type(wtap_rec *rec, const guint8 *pd)
+atm_guess_traffic_type(wtap_rec *rec)
 {
 	/*
 	 * Start out assuming nothing other than that it's AAL5.
@@ -59,6 +59,8 @@ atm_guess_traffic_type(wtap_rec *rec, const guint8 *pd)
 	 */
 
 	if (rec->rec_header.packet_header.caplen >= 3) {
+		const uint8_t *pd = ws_buffer_start_ptr(&rec->data);
+
 		if (pd[0] == 0xaa && pd[1] == 0xaa && pd[2] == 0x03) {
 			/*
 			 * Looks like a SNAP header; assume it's LLC
@@ -86,7 +88,7 @@ atm_guess_traffic_type(wtap_rec *rec, const guint8 *pd)
 			 * Assume it's LANE.
 			 */
 			rec->rec_header.packet_header.pseudo_header.atm.type = TRAF_LANE;
-			atm_guess_lane_type(rec, pd);
+			atm_guess_lane_type(rec);
 		}
 	} else {
 	       /*
@@ -98,8 +100,10 @@ atm_guess_traffic_type(wtap_rec *rec, const guint8 *pd)
 }
 
 void
-atm_guess_lane_type(wtap_rec *rec, const guint8 *pd)
+atm_guess_lane_type(wtap_rec *rec)
 {
+	const uint8_t *pd = ws_buffer_start_ptr(&rec->data);
+
 	if (rec->rec_header.packet_header.caplen >= 2) {
 		if (pd[0] == 0xff && pd[1] == 0x00) {
 			/*
@@ -121,7 +125,7 @@ atm_guess_lane_type(wtap_rec *rec, const guint8 *pd)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

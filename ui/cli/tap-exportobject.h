@@ -1,10 +1,11 @@
-/* tap-exportobject.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __TAP_EXPORT_OBJECT_H__
 #define __TAP_EXPORT_OBJECT_H__
@@ -13,12 +14,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#define LONGOPT_EXPORT_OBJECTS  5001
-
 void eo_list_object_types(void);
 
 /* will be called by main each time a --export-objects option is found */
-gboolean eo_tap_opt_add(const char *optarg);
+bool eo_tap_opt_add(const char *ws_optarg);
 
 void start_exportobjects(void);
 
@@ -29,7 +28,7 @@ void start_exportobjects(void);
 #endif /* __TAP_EXPORT_OBJECT_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

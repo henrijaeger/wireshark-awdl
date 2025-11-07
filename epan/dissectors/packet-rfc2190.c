@@ -17,7 +17,7 @@
 
 /*
  * This dissector tries to dissect the H.263 protocol according to
- * RFC 2190, http://www.ietf.org/rfc/rfc2190.txt
+ * RFC 2190, https://www.ietf.org/rfc/rfc2190
  */
 
 #include "config.h"
@@ -33,38 +33,38 @@ void proto_register_rfc2190(void);
 void proto_reg_handoff_rfc2190(void);
 
 /* H.263 header fields             */
-static int proto_rfc2190        = -1;
+static int proto_rfc2190;
 
 /* Mode A header */
-static int hf_rfc2190_ftype = -1;
-static int hf_rfc2190_pbframes = -1;
-static int hf_rfc2190_sbit = -1;
-static int hf_rfc2190_ebit = -1;
-static int hf_rfc2190_srcformat = -1;
-static int hf_rfc2190_picture_coding_type_modeA = -1;
-static int hf_rfc2190_unrestricted_motion_vector_modeA = -1;
-static int hf_rfc2190_syntax_based_arithmetic_modeA = -1;
-static int hf_rfc2190_advanced_prediction_modeA = -1;
-static int hf_rfc2190_r_modeA = -1;
-static int hf_rfc2190_rr = -1;
-static int hf_rfc2190_dbq = -1;
-static int hf_rfc2190_trb = -1;
-static int hf_rfc2190_tr = -1;
+static int hf_rfc2190_ftype;
+static int hf_rfc2190_pbframes;
+static int hf_rfc2190_sbit;
+static int hf_rfc2190_ebit;
+static int hf_rfc2190_srcformat;
+static int hf_rfc2190_picture_coding_type_modeA;
+static int hf_rfc2190_unrestricted_motion_vector_modeA;
+static int hf_rfc2190_syntax_based_arithmetic_modeA;
+static int hf_rfc2190_advanced_prediction_modeA;
+static int hf_rfc2190_r_modeA;
+static int hf_rfc2190_rr;
+static int hf_rfc2190_dbq;
+static int hf_rfc2190_trb;
+static int hf_rfc2190_tr;
 /* Additional fields for Mode B or C header */
-static int hf_rfc2190_picture_coding_type_modeB = -1;
-static int hf_rfc2190_unrestricted_motion_vector_modeB = -1;
-static int hf_rfc2190_syntax_based_arithmetic_modeB = -1;
-static int hf_rfc2190_advanced_prediction_modeB = -1;
-static int hf_rfc2190_r_modeB = -1;
-static int hf_rfc2190_quant = -1;
-static int hf_rfc2190_gobn = -1;
-static int hf_rfc2190_mba = -1;
-static int hf_rfc2190_hmv1 = -1;
-static int hf_rfc2190_vmv1 = -1;
-static int hf_rfc2190_hmv2 = -1;
-static int hf_rfc2190_vmv2 = -1;
+static int hf_rfc2190_picture_coding_type_modeB;
+static int hf_rfc2190_unrestricted_motion_vector_modeB;
+static int hf_rfc2190_syntax_based_arithmetic_modeB;
+static int hf_rfc2190_advanced_prediction_modeB;
+static int hf_rfc2190_r_modeB;
+static int hf_rfc2190_quant;
+static int hf_rfc2190_gobn;
+static int hf_rfc2190_mba;
+static int hf_rfc2190_hmv1;
+static int hf_rfc2190_vmv1;
+static int hf_rfc2190_hmv2;
+static int hf_rfc2190_vmv2;
 
-static gint ett_rfc2190         = -1;
+static int ett_rfc2190;
 static dissector_handle_t h263_handle;
 static dissector_handle_t rfc2190_handle;
 
@@ -79,7 +79,7 @@ dissect_rfc2190( tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
     tvbuff_t     *next_tvb;
     int           hdr_len         = 0;
 
-    rfc2190_version = (tvb_get_guint8( tvb, offset ) & 0xc0 ) >> 6;
+    rfc2190_version = (tvb_get_uint8( tvb, offset ) & 0xc0 ) >> 6;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "H.263 ");
 
@@ -317,7 +317,7 @@ proto_register_rfc2190(void)
                 FT_BOOLEAN,
                 8,
                 NULL,
-                0x08,
+                0x10,
                 "Picture coding type, intra-coded (false) or inter-coded (true)", HFILL
             }
         },
@@ -329,7 +329,7 @@ proto_register_rfc2190(void)
                 FT_BOOLEAN,
                 8,
                 NULL,
-                0x10,
+                0x08,
                 "Unrestricted Motion Vector option for current picture", HFILL
             }
         },
@@ -341,7 +341,7 @@ proto_register_rfc2190(void)
                 FT_BOOLEAN,
                 8,
                 NULL,
-                0x20,
+                0x04,
                 "Syntax-based Arithmetic Coding option for current picture", HFILL
             }
         },
@@ -353,7 +353,7 @@ proto_register_rfc2190(void)
                 FT_BOOLEAN,
                 8,
                 NULL,
-                0x40,
+                0x02,
                 "Advanced Prediction option for current picture", HFILL
             }
         },
@@ -485,7 +485,7 @@ proto_register_rfc2190(void)
                 FT_UINT16,
                 BASE_DEC,
                 NULL,
-                0x07F0,
+                0x0FE0,
                 "Horizontal motion vector predictor for the first MB in this packet", HFILL
             }
         },
@@ -494,10 +494,10 @@ proto_register_rfc2190(void)
             {
                 "Vertical motion vector 1",
                 "rfc2190.vmv1",
-                FT_UINT8,
+                FT_UINT16,
                 BASE_DEC,
                 NULL,
-                0x03F8,
+                0x01FC,
                 "Vertical motion vector predictor for the first MB in this packet", HFILL
             }
         },
@@ -506,10 +506,10 @@ proto_register_rfc2190(void)
             {
                 "Horizontal motion vector 2",
                 "rfc2190.hmv2",
-                FT_UINT8,
+                FT_UINT16,
                 BASE_DEC,
                 NULL,
-                0x01FC,
+                0x03F8,
                 "Horizontal motion vector predictor for block number 3 in the first MB in this packet when four motion vectors are used with the advanced prediction option.", HFILL
             }
         },
@@ -533,7 +533,7 @@ proto_register_rfc2190(void)
                 FT_UINT16,
                 BASE_DEC,
                 NULL,
-                0x0380,
+                0x01E0,
                 "Reserved field that should contain zeroes", HFILL
             }
         },
@@ -563,21 +563,21 @@ proto_register_rfc2190(void)
         },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_rfc2190,
     };
 
     proto_register_subtree_array(ett, array_length(ett));
 
     proto_rfc2190 = proto_register_protocol("H.263 RTP Payload header (RFC2190)",
-        "RFC2190", "rfc2190");
+        "H.263 (RFC2190)", "rfc2190");
 
     proto_register_field_array(proto_rfc2190, hf, array_length(hf));
     rfc2190_handle = register_dissector("rfc2190", dissect_rfc2190, proto_rfc2190);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

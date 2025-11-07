@@ -9,10 +9,15 @@
 
 ADD_CUSTOM_CMAKE_INCLUDE()
 
+project(Asn1 NONE)
+
 set(ASN1_SRC_DIRS
+	lix2
 	HI2Operations
 	acp133
 	acse
+	ain
+	akp
 	ansi_map
 	ansi_tcap
 	atn-cm
@@ -20,20 +25,26 @@ set(ASN1_SRC_DIRS
 	atn-ulcs
 	c1222
 	camel
+	cbrs-oids
 	cdt
 	charging_ase
 	cmip
 	cmp
 	cms
+	cosem
 	credssp
 	crmf
 	dap
 	disp
 	dop
 	dsp
+	e1ap
+	e2ap
 	ess
 	f1ap
 	ftam
+	gdt
+	glow
 	goose
 	gprscdr
 	gsm_map
@@ -50,12 +61,17 @@ set(ASN1_SRC_DIRS
 	h501
 	hnbap
 	idmp
+	ieee1609dot2
 	ilp
 	inap
 	isdn-sup
+	its
 	kerberos
+	kpm-v2
 	lcsap
 	ldap
+	llc-v1
+	lnpdqp
 	logotypecertextn
 	lpp
 	lppa
@@ -68,7 +84,10 @@ set(ASN1_SRC_DIRS
 	mpeg-pes
 	mudurl
 	nbap
+	ngap
+	nist-csor
 	nr-rrc
+	nrppa
 	ns_cert_exts
 	novell_pkis
 	ocsp
@@ -78,6 +97,7 @@ set(ASN1_SRC_DIRS
 	p772
 	pcap
 	pkcs1
+	pkcs10
 	pkcs12
 	pkinit
 	pkix1explicit
@@ -91,6 +111,7 @@ set(ASN1_SRC_DIRS
 	q932-ros
 	qsig
 	ranap
+	rc-v3
 	rnsap
 	ros
 	rrc
@@ -108,6 +129,7 @@ set(ASN1_SRC_DIRS
 	t125
 	t38
 	tcap
+	tcg-cp-oids
 	tetra
 	ulp
 	wlancertextn
@@ -116,6 +138,8 @@ set(ASN1_SRC_DIRS
 	x509ce
 	x509if
 	x509sat
+	xnap
+	z3950
 	${CUSTOM_ASN1_SRC_DIR}
 )
 

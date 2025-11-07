@@ -1,13 +1,13 @@
--- 3GPP TS 36.443 V14.0.0 (2017-03)
+-- 3GPP TS 36.443 V17.0.1 (2022-04)
 -- **************************************************************
 --
 -- Information Element Definitions
 --
 -- **************************************************************
 
-M2AP-IEs {
+M2AP-Ies {
 itu-t (0) identified-organization (4) etsi (0) mobileDomain (0)
-eps-Access (21) modules (3) m2ap (4) version1 (1) m2ap-IEs (2) }
+eps-Access (21) modules (3) m2ap (4) version1 (1) m2ap-Ies (2) }
 
 DEFINITIONS AUTOMATIC TAGS ::=
 
@@ -19,6 +19,10 @@ IMPORTS
 	id-Modification-PeriodExtended,
 	id-Modulation-Coding-Scheme2,
 	id-Repetition-PeriodExtended,
+	id-Subcarrier-SpacingMBMS,
+	id-SubframeAllocationExtended,
+	id-SubframeAllocationFurtherExtension,
+	id-AdditionalConfigParameters,
 	maxnoofMBSFNareas,
 	maxnoofPMCHsperMBSFNarea,
 	maxnoofCells,
@@ -42,6 +46,16 @@ FROM M2AP-CommonDataTypes
 FROM M2AP-Containers;
 
 -- A
+
+AdditionalConfigParameters ::= SEQUENCE {
+	pmch-Bandwidth	PMCH-Bandwidth,
+	iE-Extensions				ProtocolExtensionContainer { {AdditionalConfigParameters-ExtIEs} } OPTIONAL
+}
+
+AdditionalConfigParameters-ExtIEs M2AP-PROTOCOL-EXTENSION ::= {
+	...
+}
+
 
 AllocatedSubframesEnd ::= INTEGER (0..1535)
 
@@ -321,6 +335,8 @@ MBSFN-Subframe-Configuration ::= SEQUENCE {
 }
 
 MBSFN-Subframe-Configuration-ExtIEs M2AP-PROTOCOL-EXTENSION ::= {
+	{ID id-SubframeAllocationExtended			CRITICALITY reject	EXTENSION SubframeAllocationExtended			PRESENCE optional}|
+	{ID id-SubframeAllocationFurtherExtension	CRITICALITY reject	EXTENSION SubframeAllocationFurtherExtension		PRESENCE optional},
 	...
 }
 
@@ -343,7 +359,28 @@ MCCHrelatedBCCH-ConfigPerMBSFNArea-Item-ExtIEs M2AP-PROTOCOL-EXTENSION ::= {
 -- Extension for Rel-14 to support MCCH repetition period values –-
 	{ID id-Repetition-PeriodExtended			CRITICALITY reject	EXTENSION Repetition-PeriodExtended	PRESENCE optional}|
 -- Extension for Rel-14 to support MCCH modification period values –-
-	{ID id-Modification-PeriodExtended			CRITICALITY reject	EXTENSION Modification-PeriodExtended	PRESENCE optional},
+	{ID id-Modification-PeriodExtended			CRITICALITY reject	EXTENSION Modification-PeriodExtended	PRESENCE optional}|
+	{ID id-Subcarrier-SpacingMBMS				CRITICALITY reject	EXTENSION Subcarrier-SpacingMBMS		PRESENCE optional},
+	...
+}
+
+MCCHrelatedBCCH-ExtConfigPerMBSFNArea-Item ::= SEQUENCE {
+	mbsfnArea						MBSFN-Area-ID,
+	repetitionPeriodExpanded		ENUMERATED {rf1, rf2, rf4, rf8, rf16, rf32, rf64, rf128, rf256, ...},
+	offset							INTEGER (0..10),
+	modificationPeriodExpanded		ENUMERATED {rf1, rf2, rf4, rf8, rf16, rf32, rf64, rf128, rf256, rf512, rf1024, ...},
+	subframeAllocationInfoExpanded	BIT STRING (SIZE(10)),
+	modulationAndCodingScheme		ENUMERATED {n2, n7, n13, n19},
+	subcarrier-SpacingMBMSExpanded	ENUMERATED {khz-7dot5, khz-2dot5, khz-1dot25, khz-0dot37, ..., kHz-15},
+	timeSeparation					ENUMERATED {sl2, sl4, ...}		OPTIONAL,
+	cellInformationList				Cell-Information-List			OPTIONAL,
+	iE-Extensions					ProtocolExtensionContainer { { MCCHrelatedBCCH-ExtConfigPerMBSFNArea-Item-ExtIEs} } OPTIONAL,
+	...
+}
+
+MCCHrelatedBCCH-ExtConfigPerMBSFNArea-Item-ExtIEs M2AP-PROTOCOL-EXTENSION ::= {
+	-- Extension for Rel-17 to support PMCH Bandwidth values –-
+	{ID id-AdditionalConfigParameters	CRITICALITY reject	EXTENSION AdditionalConfigParameters	PRESENCE optional},
 	...
 }
 
@@ -371,6 +408,8 @@ Modification-PeriodExtended ::= ENUMERATED {rf1, rf2, rf4, rf8, rf16, rf32, rf64
 
 PLMN-Identity ::= OCTET STRING (SIZE(3))
 
+PMCH-Bandwidth ::= ENUMERATED {n40, n35, n30, ...}
+
 PMCH-Configuration ::= SEQUENCE {
 	allocatedSubframesEnd			AllocatedSubframesEnd,
 	dataMCS							INTEGER (0..28),
@@ -380,9 +419,9 @@ PMCH-Configuration ::= SEQUENCE {
 }
 
 PMCH-Configuration-ExtIEs M2AP-PROTOCOL-EXTENSION ::= {
--- Extension for Rel-12 to support 256QAM for MTCH --
+-- Extension for Rel-12 to support 256QAM for MTCH –
 	{ID id-Modulation-Coding-Scheme2			CRITICALITY reject	EXTENSION Modulation-Coding-Scheme2		PRESENCE optional}|
--- Extension for Rel-12 to support shorter MCH scheduling period --
+-- Extension for Rel-12 to support shorter MCH scheduling period –
 	{ID id-MCH-Scheduling-PeriodExtended		CRITICALITY reject	EXTENSION MCH-Scheduling-PeriodExtended	PRESENCE optional}|
 -- Extension for Rel-14 to support shorter MCH scheduling period values –
 	{ID id-MCH-Scheduling-PeriodExtended2		CRITICALITY	reject	EXTENSION MCH-Scheduling-PeriodExtended2	PRESENCE optional},
@@ -425,6 +464,33 @@ SC-PTM-Information-ExtIEs M2AP-PROTOCOL-EXTENSION ::= {
 }
 
 SFN ::= INTEGER (0..1023)
+
+Subcarrier-SpacingMBMS ::= ENUMERATED {khz-7dot5, khz-1dot25, ...}
+
+SubframeAllocationExtended	::=	CHOICE {
+		oneFrameExtension				BIT STRING (SIZE(2)),
+		fourFrameExtension				BIT STRING (SIZE(8)),
+		choice-extension				ProtocolIE-Single-Container { { SubframeAllocationExtended-ExtIEs} },
+
+		...
+}
+
+
+SubframeAllocationExtended-ExtIEs M2AP-PROTOCOL-IES ::= {	...
+}
+
+SubframeAllocationFurtherExtension	::=	CHOICE {
+		oneFrameFurtherExtension				BIT STRING (SIZE(2)),
+		fourFrameFurtherExtension				BIT STRING (SIZE(8)),
+		choice-extension				ProtocolIE-Single-Container { { SubframeAllocationFurtherExtension-ExtIEs} },
+
+		...
+}
+
+
+SubframeAllocationFurtherExtension-ExtIEs M2AP-PROTOCOL-IES ::= {	...
+}
+
 
 -- T
 

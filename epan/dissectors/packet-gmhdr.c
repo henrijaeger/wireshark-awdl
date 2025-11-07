@@ -27,6 +27,8 @@
 void proto_register_gmhdr(void);
 void proto_reg_handoff_gmhdr(void);
 
+static dissector_handle_t gmhdr_handle;
+
 #define GMHDR_FTYPE_PKTSIZE             1
 #define GMHDR_FTYPE_SRCPORT_G           2
 #define GMHDR_FTYPE_TIMESTAMP_LOCAL     3
@@ -44,10 +46,10 @@ static const value_string gmhdr_ftype_timestamp[] = {
   { 0,                           NULL }
 };
 
-#define GMHDR_SRCPORT_G_PLFM_MASK   0x00f80000
-#define GMHDR_SRCPORT_G_GID_MASK    0x00078000
-#define GMHDR_SRCPORT_G_BID_MASK    0x00007c00
-#define GMHDR_SRCPORT_G_PID_MASK    0x000003ff
+#define GMHDR_SRCPORT_G_PLFM_MASK   0xf80000
+#define GMHDR_SRCPORT_G_GID_MASK    0x078000
+#define GMHDR_SRCPORT_G_BID_MASK    0x007c00
+#define GMHDR_SRCPORT_G_PID_MASK    0x0003ff
 #define GMHDR_SRCPORT_G_PLFM_SHFT   19
 #define GMHDR_SRCPORT_G_GID_SHFT    15
 #define GMHDR_SRCPORT_G_BID_SHFT    10
@@ -87,59 +89,59 @@ static const value_string gmhdr_plfm_str[] = {
 
 static dissector_handle_t ethertype_handle;
 
-static gboolean gmhdr_summary_in_tree = TRUE;
-static gboolean gmtrailer_summary_in_tree = TRUE;
-static gboolean gmhdr_decode_timestamp_trailer = TRUE;
+static bool gmhdr_summary_in_tree = true;
+static bool gmtrailer_summary_in_tree = true;
+static bool gmhdr_decode_timestamp_trailer = true;
 
-static int proto_gmhdr = -1;
-static int proto_gmtrailer = -1;
-static int hf_gmhdr_srcport_g = -1;
-static int hf_gmhdr_srcport_g_plfm = -1;
-static int hf_gmhdr_srcport_g_gid = -1;
-static int hf_gmhdr_srcport_g_bid = -1;
-static int hf_gmhdr_srcport_g_pid = -1;
-static int hf_gmhdr_pktsize = -1;
-static int hf_gmhdr_timestamp = -1;
-static int hf_gmhdr_generic = -1;
-static int hf_gmhdr_etype = -1;
-static int hf_gmhdr_len = -1;
-static int hf_gmhdr_trailer = -1;
-static int hf_gmhdr_origcrc = -1;
-static int hf_gmhdr_srcport_h = -1;
-static int hf_gmhdr_srcport_h_plfm = -1;
-static int hf_gmhdr_srcport_h_gid = -1;
-static int hf_gmhdr_srcport_h_bid = -1;
-static int hf_gmhdr_srcport_h_sid = -1;
-static int hf_gmhdr_srcport_h_pid = -1;
+static int proto_gmhdr;
+static int proto_gmtrailer;
+static int hf_gmhdr_srcport_g;
+static int hf_gmhdr_srcport_g_plfm;
+static int hf_gmhdr_srcport_g_gid;
+static int hf_gmhdr_srcport_g_bid;
+static int hf_gmhdr_srcport_g_pid;
+static int hf_gmhdr_pktsize;
+static int hf_gmhdr_timestamp;
+static int hf_gmhdr_generic;
+static int hf_gmhdr_etype;
+static int hf_gmhdr_len;
+static int hf_gmhdr_trailer;
+static int hf_gmhdr_origcrc;
+static int hf_gmhdr_srcport_h;
+static int hf_gmhdr_srcport_h_plfm;
+static int hf_gmhdr_srcport_h_gid;
+static int hf_gmhdr_srcport_h_bid;
+static int hf_gmhdr_srcport_h_sid;
+static int hf_gmhdr_srcport_h_pid;
 
-static int hf_gmtrailer_origcrc = -1;
-static int hf_gmtrailer_portid = -1;
-static int hf_gmtrailer_timestamp = -1;
+static int hf_gmtrailer_origcrc;
+static int hf_gmtrailer_portid;
+static int hf_gmtrailer_timestamp;
 
-static gint ett_gmhdr = -1;
-static gint ett_srcport = -1;
-static gint ett_gmtrailer = -1;
+static int ett_gmhdr;
+static int ett_srcport;
+static int ett_gmtrailer;
 
-static expert_field ei_gmhdr_field_length_invalid = EI_INIT;
-static expert_field ei_gmhdr_len = EI_INIT;
+static expert_field ei_gmhdr_field_length_invalid;
+static expert_field ei_gmhdr_len;
 
 static void
-dissect_gmtlv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *gmhdr_tree, guint offset, guint16 length)
+dissect_gmtlv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *gmhdr_tree, unsigned offset, uint16_t length)
 {
   proto_tree *ti;
   proto_tree *srcport_tree;
-  guint16     fl;
+  uint16_t    fl;
 
   while (length > 1) {
-    guint16 tl = tvb_get_ntohs(tvb, offset);
+    uint16_t tl = tvb_get_ntohs(tvb, offset);
     offset += 2; /* type + len */
     length -= 2;
 
     fl = tl & 0xff;
     switch (tl >> 8) {
       case GMHDR_FTYPE_SRCPORT_G: {
-        guint16 pid;
-        guint32 tv = tvb_get_ntohl(tvb, offset) >> 8; /* Only 24-bit field */
+        uint16_t pid;
+        uint32_t tv = tvb_get_ntohl(tvb, offset) >> 8; /* Only 24-bit field */
 
         if (fl != 3) {
           expert_add_info_format(pinfo, gmhdr_tree, &ei_gmhdr_field_length_invalid, "Field length %u invalid", fl);
@@ -173,7 +175,7 @@ dissect_gmtlv(tvbuff_t *tvb, packet_info *pinfo, proto_tree *gmhdr_tree, guint o
           expert_add_info_format(pinfo, gmhdr_tree, &ei_gmhdr_field_length_invalid, "Field length %u invalid", fl);
           break;
         }
-        ti = proto_tree_add_item(gmhdr_tree, hf_gmhdr_timestamp, tvb, offset, fl, ENC_TIME_TIMESPEC|ENC_BIG_ENDIAN);
+        ti = proto_tree_add_item(gmhdr_tree, hf_gmhdr_timestamp, tvb, offset, fl, ENC_TIME_SECS_NSECS|ENC_BIG_ENDIAN);
         proto_item_append_text(ti, "; Source: %s", val_to_str_const(tl>>8, gmhdr_ftype_timestamp, "Unknown"));
         break;
       case GMHDR_FTYPE_FCS: {
@@ -216,13 +218,13 @@ static int
 dissect_gmhdr(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
   proto_tree *ti;
-  gint16      length;
-  guint16     encap_proto;
-  gboolean    is_802_2;
+  int16_t     length;
+  uint16_t    encap_proto;
+  bool        is_802_2;
   proto_tree *gmhdr_tree = NULL;
-  guint       offset = 0;
+  unsigned    offset = 0;
 
-  length = tvb_get_guint8(tvb, offset); /* Length of the Gigamon header */
+  length = tvb_get_uint8(tvb, offset); /* Length of the Gigamon header */
 
   if (tree) {
     ti = proto_tree_add_item(tree, proto_gmhdr, tvb, offset, length, ENC_NA);
@@ -247,12 +249,12 @@ dissect_gmhdr(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U
        straight 802.3 packet, so presumably the same applies for
        Ethernet GMHDR packets). A non-0xffff value means that there's an
        802.2 layer inside the GMHDR layer */
-    is_802_2 = TRUE;
+    is_802_2 = true;
 
     /* Don't throw an exception for this check (even a BoundsError) */
     if (tvb_captured_length_remaining(tvb, offset) >= 2) {
       if (tvb_get_ntohs(tvb, offset) == 0xffff) {
-        is_802_2 = FALSE;
+        is_802_2 = false;
       }
     }
 
@@ -261,10 +263,12 @@ dissect_gmhdr(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U
   } else {
     ethertype_data_t ethertype_data;
 
+    proto_tree_add_uint(gmhdr_tree, hf_gmhdr_etype, tvb, offset - 2, 2,
+                        encap_proto);
+
     ethertype_data.etype = encap_proto;
-    ethertype_data.offset_after_ethertype = offset;
+    ethertype_data.payload_offset = offset;
     ethertype_data.fh_tree = gmhdr_tree;
-    ethertype_data.etype_id = hf_gmhdr_etype;
     ethertype_data.trailer_id = hf_gmhdr_trailer;
     ethertype_data.fcs_len = 0;
 
@@ -277,11 +281,11 @@ static int
 dissect_gmtimestamp_trailer(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
   proto_tree *ti;
-  guint tvblen, trailer_len = 18;
+  unsigned tvblen, trailer_len = 18;
   proto_tree *gmtrailer_tree = NULL;
-  guint offset = 0;
-  guint32 orig_crc, new_crc, comp_crc;
-  guint16 port_num;
+  unsigned offset = 0;
+  uint32_t orig_crc, new_crc, comp_crc;
+  uint16_t port_num;
   nstime_t gmtimev;
 
   struct tm *tm = NULL;
@@ -328,20 +332,26 @@ dissect_gmtimestamp_trailer(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *t
     gmtrailer_tree = proto_item_add_subtree(ti, ett_gmtrailer);
     proto_tree_add_item(gmtrailer_tree, hf_gmtrailer_origcrc, tvb, offset, 4, ENC_BIG_ENDIAN);
     proto_tree_add_item(gmtrailer_tree, hf_gmtrailer_portid, tvb, offset+4, 2, ENC_BIG_ENDIAN);
-    proto_tree_add_item(gmtrailer_tree, hf_gmtrailer_timestamp, tvb, offset+6, 8, ENC_TIME_TIMESPEC|ENC_BIG_ENDIAN);
+    proto_tree_add_item(gmtrailer_tree, hf_gmtrailer_timestamp, tvb, offset+6, 8, ENC_TIME_SECS_NSECS|ENC_BIG_ENDIAN);
   }
 
   return 14;
+}
+
+static bool
+dissect_gmtimestamp_trailer_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    return dissect_gmtimestamp_trailer(tvb, pinfo, tree, data) > 0;
 }
 
 static int
 dissect_gmtrailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 {
   proto_tree *ti;
-  guint tvblen, length;
+  unsigned tvblen, length;
   proto_tree *gmhdr_tree = NULL;
-  guint offset;
-  guint16 cksum, comp_cksum, extra_trailer;
+  unsigned offset;
+  uint16_t cksum, comp_cksum, extra_trailer;
 
   /* See if this packet has a Gigamon trailer, if yes, then decode it */
   /* (Don't throw any exceptions while checking for the trailer).     */
@@ -359,7 +369,7 @@ dissect_gmtrailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
           return 0;
       }
   }
-  length  = tvb_get_guint8(tvb, tvblen-extra_trailer-5); /* length of Gigamon header */
+  length  = tvb_get_uint8(tvb, tvblen-extra_trailer-5); /* length of Gigamon header */
   if ((tvblen-extra_trailer-5) != length)
     return 0;
 
@@ -395,6 +405,12 @@ dissect_gmtrailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     }
   }
   return tvblen;
+}
+
+static bool
+dissect_gmtrailer_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
+{
+    return dissect_gmtrailer(tvb, pinfo, tree, data) > 0;
 }
 
 void
@@ -467,11 +483,11 @@ proto_register_gmhdr(void)
         "Time Stamp", "gmtrailer.timestamp", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_LOCAL,
         NULL, 0x0, NULL, HFILL }},
   };
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_gmhdr,
     &ett_srcport
   };
-  static gint *gmtrailer_ett[] = {
+  static int *gmtrailer_ett[] = {
     &ett_gmtrailer,
   };
   static ei_register_info ei[] = {
@@ -488,6 +504,7 @@ proto_register_gmhdr(void)
   proto_register_subtree_array(ett, array_length(ett));
   expert_gmhdr = expert_register_protocol(proto_gmhdr);
   expert_register_field_array(expert_gmhdr, ei, array_length(ei));
+  gmhdr_handle = register_dissector("gmhdr", dissect_gmhdr, proto_gmhdr);
 
   proto_gmtrailer = proto_register_protocol("Gigamon Trailer", "GMTRAILER", "gmtrailer");
   proto_register_field_array(proto_gmtrailer, gmtrailer_hf, array_length(gmtrailer_hf));
@@ -513,19 +530,16 @@ proto_register_gmhdr(void)
 void
 proto_reg_handoff_gmhdr(void)
 {
-  dissector_handle_t gmhdr_handle;
-
   ethertype_handle = find_dissector_add_dependency("ethertype", proto_gmhdr);
 
-  gmhdr_handle = create_dissector_handle(dissect_gmhdr, proto_gmhdr);
   dissector_add_uint("ethertype", ETHERTYPE_GIGAMON, gmhdr_handle);
-  heur_dissector_add("eth.trailer", dissect_gmtrailer, "Gigamon Ethernet header", "gmhdr_eth", proto_gmhdr, HEURISTIC_ENABLE);
+  heur_dissector_add("eth.trailer", dissect_gmtrailer_heur, "Gigamon Ethernet header", "gmhdr_eth", proto_gmhdr, HEURISTIC_ENABLE);
 
-  heur_dissector_add("eth.trailer", dissect_gmtimestamp_trailer, "Gigamon Ethernet trailer", "gmtrailer_eth", proto_gmtrailer, HEURISTIC_ENABLE);
+  heur_dissector_add("eth.trailer", dissect_gmtimestamp_trailer_heur, "Gigamon Ethernet trailer", "gmtrailer_eth", proto_gmtrailer, HEURISTIC_ENABLE);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

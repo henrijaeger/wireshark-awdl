@@ -165,11 +165,11 @@ static const value_string ipproto_val[] = {
     { IP_PROTO_SHIM6,   "Shim6 header" },           /* 140 Shim6 Shim6 Protocol [RFC5533] */
     { IP_PROTO_WESP,    "WESP" },                   /* 141 WESP Wrapped Encapsulating Security Payload [RFC5840] */
     { IP_PROTO_ROHC,    "ROHC" },                   /* 142 ROHC Robust Header Compression [RFC5858] */
-    { 143, "Unassigned" },                          /* 143 Unassigned */
-    { 144, "Unassigned" },                          /* 144 Unassigned */
-    { 145, "Unassigned" },                          /* 145 Unassigned */
-    { 146, "Unassigned" },                          /* 146 Unassigned */
-    { 147, "Unassigned" },                          /* 147 Unassigned */
+    { IP_PROTO_ETHERNET,"Ethernet" },               /* 143 Ethernet [RFC8986] */
+    { IP_PROTO_AGGFRAG, "AGGFRAG" },                /* 144 AGGFRAG encapsulation for ESP */
+    { IP_PROTO_NSH,     "NSH" },                    /* 145 Network Service Header */
+    { IP_PROTO_HOMA,    "Homa" },                   /* 146 Homa */
+    { IP_PROTO_BIT_EMU, "Bit-stream Emulation" },   /* 147 Bit-stream Emulation */
     { 148, "Unassigned" },                          /* 148 Unassigned */
     { 149, "Unassigned" },                          /* 149 Unassigned */
     { 150, "Unassigned" },                          /* 150 Unassigned */
@@ -258,7 +258,7 @@ const char *ipprotostr(const int proto) {
 
 /* https://www.iana.org/assignments/ipv6-parameters/ipv6-parameters.xhtml#extension-header */
 
-static gboolean ipv6_exthdr_check(int proto)
+static bool ipv6_exthdr_check(int proto)
 {
     switch (proto) {
     /* fall through all cases */
@@ -271,12 +271,11 @@ static gboolean ipv6_exthdr_check(int proto)
     case IP_PROTO_MIPV6:        /* Mobility Header */
     case IP_PROTO_HIP:          /* Host Identity Protocol */
     case IP_PROTO_SHIM6:        /* Shim6 Protocol */
-        return TRUE;
-        break;
+        return true;
     default:
         break;
     }
-    return FALSE;
+    return false;
 }
 
 const char *ipv6extprotostr(int proto)

@@ -4,22 +4,26 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "rtp_analysis_dialog.h"
 #include <ui_rtp_analysis_dialog.h>
 
 #include "file.h"
-#include "frame_tvbuff.h"
 
 #include "epan/epan_dissect.h"
+#include <epan/addr_resolv.h>
 #include "epan/rtp_pt.h"
 
 #include "epan/dfilter/dfilter.h"
 
 #include "epan/dissectors/packet-rtp.h"
 
+#include <ui/rtp_media.h>
+
 #include "ui/help_url.h"
+#include "ui/simple_dialog.h"
 #include <wsutil/utf8_entities.h>
 
 #include <wsutil/g711.h>
@@ -27,14 +31,21 @@
 
 #include <QMessageBox>
 #include <QPushButton>
-#include <QTemporaryFile>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QToolButton>
+#include <QWidget>
+#include <QCheckBox>
 
 #include <ui/qt/utils/color_utils.h>
 #include <ui/qt/utils/qt_ui_utils.h>
-#include "rtp_player_dialog.h"
+#include <ui/qt/rtp_player_dialog.h>
 #include <ui/qt/utils/stock_icon.h>
-#include "wireshark_application.h"
-#include "ui/qt/widgets/wireshark_file_dialog.h"
+#include <ui/qt/main_application.h>
+#include <ui/qt/packet_list.h>
+#include <ui/qt/wireshark_main_window.h>
+#include <ui/qt/widgets/wireshark_file_dialog.h>
 
 /*
  * @file RTP stream analysis dialog
@@ -103,7 +114,7 @@ public:
             status = "Suspected duplicate (MAC address) only delta time calculated";
             bg_color = color_rtp_warn_;
         } else if (statinfo->flags & STAT_FLAG_REG_PT_CHANGE) {
-            status = QString("Payload changed to PT=%1").arg(statinfo->pt);
+            status = QStringLiteral("Payload changed to PT=%1").arg(statinfo->pt);
             if (statinfo->flags & STAT_FLAG_PT_T_EVENT) {
                 status.append(" telephone/event");
             }
@@ -120,7 +131,7 @@ public:
             status = "Marker missing?";
             bg_color = color_rtp_warn_;
         } else if (statinfo->flags & STAT_FLAG_PT_T_EVENT) {
-            status = QString("PT=%1 telephone/event").arg(statinfo->pt);
+            status = QStringLiteral("PT=%1 telephone/event").arg(statinfo->pt);
             /* XXX add color? */
             bg_color = color_pt_event_;
         } else {
@@ -136,10 +147,10 @@ public:
 
         setText(packet_col_, QString::number(frame_num_));
         setText(sequence_col_, QString::number(sequence_num_));
-        setText(delta_col_, QString::number(delta_, 'f', 2));
-        setText(jitter_col_, QString::number(jitter_, 'f', 2));
-        setText(skew_col_, QString::number(skew_, 'f', 2));
-        setText(bandwidth_col_, QString::number(bandwidth_, 'f', 2));
+        setText(delta_col_, QString::number(delta_, 'f', prefs.gui_decimal_places3));
+        setText(jitter_col_, QString::number(jitter_, 'f', prefs.gui_decimal_places3));
+        setText(skew_col_, QString::number(skew_, 'f', prefs.gui_decimal_places3));
+        setText(bandwidth_col_, QString::number(bandwidth_, 'f', prefs.gui_decimal_places1));
         if (marker_) {
             setText(marker_col_, UTF8_BULLET);
         }
@@ -161,7 +172,7 @@ public:
         }
     }
 
-    guint32 frameNum() { return frame_num_; }
+    uint32_t frameNum() { return frame_num_; }
     bool frameStatus() { return ok_; }
 
     QList<QVariant> rowData() {
@@ -183,22 +194,16 @@ public:
         switch (treeWidget()->sortColumn()) {
         case (packet_col_):
             return frame_num_ < other_row->frame_num_;
-            break;
         case (sequence_col_):
             return sequence_num_ < other_row->sequence_num_;
-            break;
         case (delta_col_):
             return delta_ < other_row->delta_;
-            break;
         case (jitter_col_):
             return jitter_ < other_row->jitter_;
-            break;
         case (skew_col_):
             return skew_ < other_row->skew_;
-            break;
         case (bandwidth_col_):
             return bandwidth_ < other_row->bandwidth_;
-            break;
         default:
             break;
         }
@@ -207,10 +212,10 @@ public:
         return QTreeWidgetItem::operator <(other);
     }
 private:
-    guint32 frame_num_;
-    guint32 sequence_num_;
-    guint32 pkt_len_;
-    guint32 flags_;
+    uint32_t frame_num_;
+    uint32_t sequence_num_;
+    uint32_t pkt_len_;
+    uint32_t flags_;
     double delta_;
     double jitter_;
     double skew_;
@@ -229,176 +234,74 @@ enum {
     num_graphs_
 };
 
-RtpAnalysisDialog::RtpAnalysisDialog(QWidget &parent, CaptureFile &cf, struct _rtp_stream_info *stream_fwd, struct _rtp_stream_info *stream_rev) :
+RtpAnalysisDialog *RtpAnalysisDialog::pinstance_{nullptr};
+std::mutex RtpAnalysisDialog::init_mutex_;
+std::mutex RtpAnalysisDialog::run_mutex_;
+
+RtpAnalysisDialog *RtpAnalysisDialog::openRtpAnalysisDialog(QWidget &parent, CaptureFile &cf, PacketList *packet_list)
+{
+    std::lock_guard<std::mutex> lock(init_mutex_);
+    if (pinstance_ == nullptr)
+    {
+        pinstance_ = new RtpAnalysisDialog(parent, cf);
+        connect(pinstance_, &RtpAnalysisDialog::goToPacket, packet_list, [=](int packet) { packet_list->goToPacket(packet); });
+    }
+    return pinstance_;
+}
+
+RtpAnalysisDialog::RtpAnalysisDialog(QWidget &parent, CaptureFile &cf) :
     WiresharkDialog(parent, cf),
     ui(new Ui::RtpAnalysisDialog),
-    port_src_fwd_(0),
-    port_dst_fwd_(0),
-    ssrc_fwd_(0),
-    packet_count_fwd_(0),
-    setup_frame_number_fwd_(0),
-    port_src_rev_(0),
-    port_dst_rev_(0),
-    ssrc_rev_(0),
-    packet_count_rev_(0),
-    setup_frame_number_rev_(0),
-    num_streams_(0),
-    save_payload_error_(TAP_RTP_NO_ERROR)
+    tab_seq(0)
 {
     ui->setupUi(this);
     loadGeometry(parent.width() * 4 / 5, parent.height() * 4 / 5);
     setWindowSubtitle(tr("RTP Stream Analysis"));
+    // Used when tab contains IPs
+    //ui->tabWidget->setStyleSheet("QTabBar::tab { height: 7ex; }");
+    ui->tabWidget->tabBar()->setTabsClosable(true);
 
     ui->progressFrame->hide();
 
-    player_button_ = RtpPlayerDialog::addPlayerButton(ui->buttonBox);
-
     stream_ctx_menu_.addAction(ui->actionGoToPacket);
     stream_ctx_menu_.addAction(ui->actionNextProblem);
-    stream_ctx_menu_.addSeparator();
-    stream_ctx_menu_.addAction(ui->actionSaveAudioUnsync);
-    stream_ctx_menu_.addAction(ui->actionSaveForwardAudioUnsync);
-    stream_ctx_menu_.addAction(ui->actionSaveReverseAudioUnsync);
-    stream_ctx_menu_.addSeparator();
-    stream_ctx_menu_.addAction(ui->actionSaveAudioSyncStream);
-    stream_ctx_menu_.addAction(ui->actionSaveForwardAudioSyncStream);
-    stream_ctx_menu_.addAction(ui->actionSaveReverseAudioSyncStream);
-    stream_ctx_menu_.addSeparator();
-    stream_ctx_menu_.addAction(ui->actionSaveAudioSyncFile);
-    stream_ctx_menu_.addAction(ui->actionSaveForwardAudioSyncFile);
-    stream_ctx_menu_.addAction(ui->actionSaveReverseAudioSyncFile);
-    stream_ctx_menu_.addSeparator();
-    stream_ctx_menu_.addAction(ui->actionSaveCsv);
-    stream_ctx_menu_.addAction(ui->actionSaveForwardCsv);
-    stream_ctx_menu_.addAction(ui->actionSaveReverseCsv);
-    stream_ctx_menu_.addSeparator();
-    stream_ctx_menu_.addAction(ui->actionSaveGraph);
-    ui->forwardTreeWidget->installEventFilter(this);
-    ui->forwardTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    ui->forwardTreeWidget->header()->setSortIndicator(0, Qt::AscendingOrder);
-    connect(ui->forwardTreeWidget, SIGNAL(customContextMenuRequested(QPoint)),
-                SLOT(showStreamMenu(QPoint)));
-    ui->reverseTreeWidget->installEventFilter(this);
-    ui->reverseTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-    ui->reverseTreeWidget->header()->setSortIndicator(0, Qt::AscendingOrder);
-    connect(ui->reverseTreeWidget, SIGNAL(customContextMenuRequested(QPoint)),
-                SLOT(showStreamMenu(QPoint)));
-    connect(ui->streamGraph, SIGNAL(mousePress(QMouseEvent*)),
-            this, SLOT(graphClicked(QMouseEvent*)));
+    set_action_shortcuts_visible_in_context_menu(stream_ctx_menu_.actions());
+
+    connect(ui->streamGraph, &QCustomPlot::mousePress, this, &RtpAnalysisDialog::graphClicked);
 
     graph_ctx_menu_.addAction(ui->actionSaveGraph);
 
-    QStringList header_labels;
-    for (int i = 0; i < ui->forwardTreeWidget->columnCount(); i++) {
-        header_labels << ui->forwardTreeWidget->headerItem()->text(i);
-    }
-    ui->reverseTreeWidget->setHeaderLabels(header_labels);
+    ui->streamGraph->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui->streamGraph, &QCustomPlot::customContextMenuRequested, this,
+            &RtpAnalysisDialog::showGraphMenu);
 
-    memset(&src_fwd_, 0, sizeof(address));
-    memset(&dst_fwd_, 0, sizeof(address));
-    memset(&src_rev_, 0, sizeof(address));
-    memset(&dst_rev_, 0, sizeof(address));
-    nstime_set_zero(&start_rel_time_fwd_);
-    nstime_set_zero(&start_rel_time_rev_);
-
-    QList<QCheckBox *> graph_cbs = QList<QCheckBox *>()
-            << ui->fJitterCheckBox << ui->fDiffCheckBox << ui->fDeltaCheckBox
-            << ui->rJitterCheckBox << ui->rDiffCheckBox << ui->rDeltaCheckBox;
-
-    for (int i = 0; i < num_graphs_; i++) {
-        QCPGraph *graph = ui->streamGraph->addGraph();
-        graph->setPen(QPen(ColorUtils::graphColor(i)));
-        graph->setName(graph_cbs[i]->text());
-        graphs_ << graph;
-        graph_cbs[i]->setChecked(true);
-        graph_cbs[i]->setIcon(StockIcon::colorIcon(ColorUtils::graphColor(i), QPalette::Text));
-    }
     ui->streamGraph->xAxis->setLabel("Arrival Time");
     ui->streamGraph->yAxis->setLabel("Value (ms)");
 
-    // We keep our temp files open for the lifetime of the dialog. The GTK+
-    // UI opens and closes at various points.
-    QString tempname = QString("%1/wireshark_rtp_f").arg(QDir::tempPath());
-    fwd_tempfile_ = new QTemporaryFile(tempname, this);
-    fwd_tempfile_->open();
-    tempname = QString("%1/wireshark_rtp_r").arg(QDir::tempPath());
-    rev_tempfile_ = new QTemporaryFile(tempname, this);
-    rev_tempfile_->open();
+    QPushButton *prepare_button = ui->buttonBox->addButton(ui->actionPrepareButton->text(), QDialogButtonBox::ActionRole);
+    prepare_button->setToolTip(ui->actionPrepareButton->toolTip());
+    prepare_button->setMenu(ui->menuPrepareFilter);
 
-    if (fwd_tempfile_->error() != QFile::NoError || rev_tempfile_->error() != QFile::NoError) {
-        err_str_ = tr("Unable to save RTP data.");
-        ui->actionSaveAudioUnsync->setEnabled(false);
-        ui->actionSaveForwardAudioUnsync->setEnabled(false);
-        ui->actionSaveReverseAudioUnsync->setEnabled(false);
-        ui->actionSaveAudioSyncStream->setEnabled(false);
-        ui->actionSaveForwardAudioSyncStream->setEnabled(false);
-        ui->actionSaveReverseAudioSyncStream->setEnabled(false);
-        ui->actionSaveAudioSyncFile->setEnabled(false);
-        ui->actionSaveForwardAudioSyncFile->setEnabled(false);
-        ui->actionSaveReverseAudioSyncFile->setEnabled(false);
-    }
+    player_button_ = RtpPlayerDialog::addPlayerButton(ui->buttonBox, this);
 
-    QMenu *save_menu = new QMenu();
-    save_menu->addAction(ui->actionSaveAudioUnsync);
-    save_menu->addAction(ui->actionSaveForwardAudioUnsync);
-    save_menu->addAction(ui->actionSaveReverseAudioUnsync);
-    save_menu->addSeparator();
-    save_menu->addAction(ui->actionSaveAudioSyncStream);
-    save_menu->addAction(ui->actionSaveForwardAudioSyncStream);
-    save_menu->addAction(ui->actionSaveReverseAudioSyncStream);
-    save_menu->addSeparator();
-    save_menu->addAction(ui->actionSaveAudioSyncFile);
-    save_menu->addAction(ui->actionSaveForwardAudioSyncFile);
-    save_menu->addAction(ui->actionSaveReverseAudioSyncFile);
-    save_menu->addSeparator();
-    save_menu->addAction(ui->actionSaveCsv);
-    save_menu->addAction(ui->actionSaveForwardCsv);
-    save_menu->addAction(ui->actionSaveReverseCsv);
+    QPushButton *export_btn = ui->buttonBox->addButton(ui->actionExportButton->text(), QDialogButtonBox::ActionRole);
+    export_btn->setToolTip(ui->actionExportButton->toolTip());
+
+    QMenu *save_menu = new QMenu(export_btn);
+    save_menu->addAction(ui->actionSaveOneCsv);
+    save_menu->addAction(ui->actionSaveAllCsv);
     save_menu->addSeparator();
     save_menu->addAction(ui->actionSaveGraph);
-    ui->buttonBox->button(QDialogButtonBox::Save)->setMenu(save_menu);
+    export_btn->setMenu(save_menu);
 
-    if (stream_fwd) { // XXX What if stream_fwd == 0 && stream_rev != 0?
-        copy_address(&src_fwd_, &(stream_fwd->src_addr));
-        port_src_fwd_ = stream_fwd->src_port;
-        copy_address(&dst_fwd_, &(stream_fwd->dest_addr));
-        port_dst_fwd_ = stream_fwd->dest_port;
-        ssrc_fwd_ = stream_fwd->ssrc;
-        packet_count_fwd_ = stream_fwd->packet_count;
-        setup_frame_number_fwd_ = stream_fwd->setup_frame_number;
-        nstime_copy(&start_rel_time_fwd_, &stream_fwd->start_rel_time);
-        num_streams_++;
-        if (stream_rev) {
-            copy_address(&src_rev_, &(stream_rev->src_addr));
-            port_src_rev_ = stream_rev->src_port;
-            copy_address(&dst_rev_, &(stream_rev->dest_addr));
-            port_dst_rev_ = stream_rev->dest_port;
-            ssrc_rev_ = stream_rev->ssrc;
-            packet_count_rev_ = stream_rev->packet_count;
-            setup_frame_number_rev_ = stream_rev->setup_frame_number;
-            nstime_copy(&start_rel_time_rev_, &stream_rev->start_rel_time);
-            num_streams_++;
-        }
-    } else {
-        findStreams();
-    }
+    WiresharkMainWindow* ws_main_window = qobject_cast<WiresharkMainWindow*>(&parent);
+    connect(ui->tabWidget, &QTabWidget::currentChanged, this, &RtpAnalysisDialog::updateWidgets);
+    connect(ui->tabWidget->tabBar(), &QTabBar::tabCloseRequested, this, &RtpAnalysisDialog::closeTab);
+    connect(this, &RtpAnalysisDialog::updateFilter, ws_main_window, &WiresharkMainWindow::filterPackets);
+    connect(this, &RtpAnalysisDialog::rtpPlayerDialogReplaceRtpStreams, ws_main_window, &WiresharkMainWindow::rtpPlayerDialogReplaceRtpStreams);
+    connect(this, &RtpAnalysisDialog::rtpPlayerDialogAddRtpStreams, ws_main_window, &WiresharkMainWindow::rtpPlayerDialogAddRtpStreams);
+    connect(this, &RtpAnalysisDialog::rtpPlayerDialogRemoveRtpStreams, ws_main_window, &WiresharkMainWindow::rtpPlayerDialogRemoveRtpStreams);
 
-    if (err_str_.isEmpty() && num_streams_ < 1) {
-        err_str_ = tr("No streams found.");
-    }
-
-    registerTapListener("rtp", this, NULL, 0, tapReset, tapPacket, tapDraw);
-    cap_file_.retapPackets();
-    removeTapListeners();
-
-    connect(ui->tabWidget, SIGNAL(currentChanged(int)),
-            this, SLOT(updateWidgets()));
-    connect(ui->forwardTreeWidget, SIGNAL(itemSelectionChanged()),
-            this, SLOT(updateWidgets()));
-    connect(ui->reverseTreeWidget, SIGNAL(itemSelectionChanged()),
-            this, SLOT(updateWidgets()));
-    connect(&cap_file_, SIGNAL(captureFileClosing()),
-            this, SLOT(updateWidgets()));
     updateWidgets();
 
     updateStatistics();
@@ -406,70 +309,252 @@ RtpAnalysisDialog::RtpAnalysisDialog(QWidget &parent, CaptureFile &cf, struct _r
 
 RtpAnalysisDialog::~RtpAnalysisDialog()
 {
-    delete ui;
-//    remove_tap_listener_rtp_stream(&tapinfo_);
-    delete fwd_tempfile_;
-    delete rev_tempfile_;
+    std::lock_guard<std::mutex> lock(init_mutex_);
+    if (pinstance_ != nullptr) {
+        delete ui;
+        for(int i=0; i<tabs_.count(); i++) {
+            deleteTabInfo(tabs_[i]);
+            g_free(tabs_[i]);
+        }
+        pinstance_ = nullptr;
+    }
 }
 
-void RtpAnalysisDialog::captureFileClosing()
+void RtpAnalysisDialog::deleteTabInfo(tab_info_t *tab_info)
 {
-    updateWidgets();
-    WiresharkDialog::captureFileClosing();
+    delete tab_info->time_vals;
+    delete tab_info->jitter_vals;
+    delete tab_info->diff_vals;
+    delete tab_info->delta_vals;
+    delete tab_info->tab_name;
+    // tab_info->tree_widget was deleted by ui
+    // tab_info->statistics_label was deleted by ui
+    rtpstream_info_free_data(&tab_info->stream);
+}
+
+int RtpAnalysisDialog::addTabUI(tab_info_t *new_tab)
+{
+    int new_tab_no;
+    rtpstream_info_calc_t s_calc;
+    rtpstream_info_calculate(&new_tab->stream, &s_calc);
+    new_tab->tab_name = new QString(QStringLiteral("%1:%2 %3\n%4:%5\n(%6)")
+            .arg(s_calc.src_addr_str)
+            .arg(s_calc.src_port)
+            .arg(UTF8_RIGHTWARDS_ARROW)
+            .arg(s_calc.dst_addr_str)
+            .arg(s_calc.dst_port)
+            .arg(int_to_qstring(s_calc.ssrc, 8, 16)));
+    rtpstream_info_calc_free(&s_calc);
+
+    QWidget *tab = new QWidget();
+    tab->setProperty("tab_data", QVariant::fromValue((void *)new_tab));
+    QHBoxLayout *horizontalLayout = new QHBoxLayout(tab);
+    QVBoxLayout *verticalLayout = new QVBoxLayout();
+    new_tab->statistics_label = new QLabel();
+    //new_tab->statistics_label->setStyleSheet("QLabel { color : blue; }");
+    new_tab->statistics_label->setTextFormat(Qt::RichText);
+    new_tab->statistics_label->setTextInteractionFlags(Qt::LinksAccessibleByMouse|Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse);
+
+    verticalLayout->addWidget(new_tab->statistics_label);
+
+    QSpacerItem *verticalSpacer = new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding);
+
+    verticalLayout->addItem(verticalSpacer);
+
+    horizontalLayout->addLayout(verticalLayout);
+
+    new_tab->tree_widget = new QTreeWidget();
+    new_tab->tree_widget->setRootIsDecorated(false);
+    new_tab->tree_widget->setUniformRowHeights(true);
+    new_tab->tree_widget->setItemsExpandable(false);
+    new_tab->tree_widget->setSortingEnabled(true);
+    new_tab->tree_widget->setExpandsOnDoubleClick(false);
+
+    new_tab->tree_widget->installEventFilter(this);
+    new_tab->tree_widget->setContextMenuPolicy(Qt::CustomContextMenu);
+    new_tab->tree_widget->header()->setSortIndicator(0, Qt::AscendingOrder);
+    connect(new_tab->tree_widget, &QTreeWidget::customContextMenuRequested, this, &RtpAnalysisDialog::showStreamMenu);
+    connect(new_tab->tree_widget, &QTreeWidget::itemSelectionChanged, this, &RtpAnalysisDialog::updateWidgets);
+
+    QTreeWidgetItem *ti = new_tab->tree_widget->headerItem();
+    ti->setText(packet_col_, tr("Packet"));
+    ti->setText(sequence_col_, tr("Sequence"));
+    ti->setText(delta_col_, tr("Delta (ms)"));
+    ti->setText(jitter_col_, tr("Jitter (ms)"));
+    ti->setText(skew_col_, tr("Skew"));
+    ti->setText(bandwidth_col_, tr("Bandwidth"));
+    ti->setText(marker_col_, tr("Marker"));
+    ti->setText(status_col_, tr("Status"));
+
+    QColor color = ColorUtils::graphColor(tab_seq++);
+    ui->tabWidget->setUpdatesEnabled(false);
+    horizontalLayout->addWidget(new_tab->tree_widget);
+    new_tab_no = ui->tabWidget->count() - 1;
+    // Used when tab contains IPs
+    //ui->tabWidget->insertTab(new_tab_no, tab, *new_tab->tab_name);
+    ui->tabWidget->insertTab(new_tab_no, tab, tr("Stream %1").arg(tab_seq - 1));
+    ui->tabWidget->tabBar()->setTabTextColor(new_tab_no, color);
+    ui->tabWidget->tabBar()->setTabToolTip(new_tab_no, *new_tab->tab_name);
+    ui->tabWidget->setUpdatesEnabled(true);
+
+    QPen pen = QPen(color);
+    QCPScatterStyle jitter_shape;
+    QCPScatterStyle diff_shape;
+    QCPScatterStyle delta_shape;
+    jitter_shape.setShape(QCPScatterStyle::ssCircle);
+    //jitter_shape.setSize(5);
+    diff_shape.setShape(QCPScatterStyle::ssCross);
+    //diff_shape.setSize(5);
+    delta_shape.setShape(QCPScatterStyle::ssTriangle);
+    //delta_shape.setSize(5);
+
+    new_tab->jitter_graph = ui->streamGraph->addGraph();
+    new_tab->diff_graph = ui->streamGraph->addGraph();
+    new_tab->delta_graph = ui->streamGraph->addGraph();
+    new_tab->jitter_graph->setPen(pen);
+    new_tab->diff_graph->setPen(pen);
+    new_tab->delta_graph->setPen(pen);
+    new_tab->jitter_graph->setScatterStyle(jitter_shape);
+    new_tab->diff_graph->setScatterStyle(diff_shape);
+    new_tab->delta_graph->setScatterStyle(delta_shape);
+
+    new_tab->graphHorizontalLayout = new QHBoxLayout();
+
+    new_tab->stream_checkbox = new QCheckBox(tr("Stream %1").arg(tab_seq - 1), ui->graphTab);
+    new_tab->stream_checkbox->setChecked(true);
+    new_tab->stream_checkbox->setIcon(StockIcon::colorIcon(color.rgb(), QPalette::Text));
+    new_tab->graphHorizontalLayout->addWidget(new_tab->stream_checkbox);
+    new_tab->graphHorizontalLayout->addItem(new QSpacerItem(10, 5, QSizePolicy::Expanding, QSizePolicy::Minimum));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    connect(new_tab->stream_checkbox, &QCheckBox::checkStateChanged, this, &RtpAnalysisDialog::rowCheckboxChanged);
+#else
+    connect(new_tab->stream_checkbox, &QCheckBox::stateChanged, this, &RtpAnalysisDialog::rowCheckboxChanged);
+#endif
+
+    new_tab->jitter_checkbox = new QCheckBox(tr("Stream %1 Jitter").arg(tab_seq - 1), ui->graphTab);
+    new_tab->jitter_checkbox->setChecked(true);
+    new_tab->jitter_checkbox->setIcon(StockIcon::colorIconCircle(color.rgb(), QPalette::Text));
+    new_tab->graphHorizontalLayout->addWidget(new_tab->jitter_checkbox);
+    new_tab->graphHorizontalLayout->addItem(new QSpacerItem(10, 5, QSizePolicy::Expanding, QSizePolicy::Minimum));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    connect(new_tab->jitter_checkbox, &QCheckBox::checkStateChanged, this, &RtpAnalysisDialog::singleCheckboxChanged);
+#else
+    connect(new_tab->jitter_checkbox, &QCheckBox::stateChanged, this, &RtpAnalysisDialog::singleCheckboxChanged);
+#endif
+
+    new_tab->diff_checkbox = new QCheckBox(tr("Stream %1 Difference").arg(tab_seq - 1), ui->graphTab);
+    new_tab->diff_checkbox->setChecked(true);
+    new_tab->diff_checkbox->setIcon(StockIcon::colorIconCross(color.rgb(), QPalette::Text));
+    new_tab->graphHorizontalLayout->addWidget(new_tab->diff_checkbox);
+    new_tab->graphHorizontalLayout->addItem(new QSpacerItem(10, 5, QSizePolicy::Expanding, QSizePolicy::Minimum));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    connect(new_tab->diff_checkbox, &QCheckBox::checkStateChanged, this, &RtpAnalysisDialog::singleCheckboxChanged);
+#else
+    connect(new_tab->diff_checkbox, &QCheckBox::stateChanged, this, &RtpAnalysisDialog::singleCheckboxChanged);
+#endif
+
+    new_tab->delta_checkbox = new QCheckBox(tr("Stream %1 Delta").arg(tab_seq - 1), ui->graphTab);
+    new_tab->delta_checkbox->setChecked(true);
+    new_tab->delta_checkbox->setIcon(StockIcon::colorIconTriangle(color.rgb(), QPalette::Text));
+    new_tab->graphHorizontalLayout->addWidget(new_tab->delta_checkbox);
+    new_tab->graphHorizontalLayout->addItem(new QSpacerItem(10, 5, QSizePolicy::Expanding, QSizePolicy::Minimum));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    connect(new_tab->delta_checkbox, &QCheckBox::checkStateChanged, this, &RtpAnalysisDialog::singleCheckboxChanged);
+#else
+    connect(new_tab->diff_checkbox, &QCheckBox::stateChanged, this, &RtpAnalysisDialog::singleCheckboxChanged);
+#endif
+
+    new_tab->graphHorizontalLayout->setStretch(6, 1);
+
+    ui->layout->addLayout(new_tab->graphHorizontalLayout);
+
+    return new_tab_no;
+}
+
+// Handles all row checkBoxes
+void RtpAnalysisDialog::rowCheckboxChanged(int checked)
+{
+    QObject *obj = sender();
+
+    // Find correct tab data
+    for(int i=0; i<tabs_.count(); i++) {
+        tab_info_t *tab = tabs_[i];
+        if (obj == tab->stream_checkbox) {
+            // Set new state for all checkboxes on row
+            Qt::CheckState new_state;
+
+            if (checked) {
+                new_state = Qt::Checked;
+            } else {
+                new_state = Qt::Unchecked;
+            }
+            tab->jitter_checkbox->setCheckState(new_state);
+            tab->diff_checkbox->setCheckState(new_state);
+            tab->delta_checkbox->setCheckState(new_state);
+            break;
+        }
+    }
+}
+
+// Handles all single CheckBoxes
+void RtpAnalysisDialog::singleCheckboxChanged(int checked)
+{
+    QObject *obj = sender();
+
+    // Find correct tab data
+    for(int i=0; i<tabs_.count(); i++) {
+        tab_info_t *tab = tabs_[i];
+        if (obj == tab->jitter_checkbox) {
+            tab->jitter_graph->setVisible(checked);
+            updateGraph();
+            break;
+        } else if (obj == tab->diff_checkbox) {
+            tab->diff_graph->setVisible(checked);
+            updateGraph();
+            break;
+        } else if (obj == tab->delta_checkbox) {
+            tab->delta_graph->setVisible(checked);
+            updateGraph();
+            break;
+        }
+    }
 }
 
 void RtpAnalysisDialog::updateWidgets()
 {
     bool enable_tab = false;
+    bool enable_nav = false;
     QString hint = err_str_;
 
-    if (hint.isEmpty()) {
-        enable_tab = true;
-        hint = tr("%1 streams found.").arg(num_streams_);
-    } else if (save_payload_error_ != TAP_RTP_NO_ERROR) {
-        /* We cannot save the payload but can still display the widget
-           or save CSV data */
+    if ((!file_closed_) &&
+        (tabs_.count() > 0)) {
         enable_tab = true;
     }
 
-    bool enable_nav = false;
-    if (!file_closed_
-            && ((ui->tabWidget->currentWidget() == ui->forwardTreeWidget
-                 && ui->forwardTreeWidget->selectedItems().length() > 0)
-                || (ui->tabWidget->currentWidget() == ui->reverseTreeWidget
-                    && ui->reverseTreeWidget->selectedItems().length() > 0))) {
+    if ((!file_closed_) &&
+        (tabs_.count() > 0) &&
+        (ui->tabWidget->currentIndex() < (ui->tabWidget->count()-1))) {
         enable_nav = true;
     }
+
     ui->actionGoToPacket->setEnabled(enable_nav);
     ui->actionNextProblem->setEnabled(enable_nav);
 
     if (enable_nav) {
+        hint.append(tr(" %1 streams, ").arg(tabs_.count() - 1));
         hint.append(tr(" G: Go to packet, N: Next problem packet"));
     }
 
-    bool enable_save_fwd_audio = fwd_statinfo_.total_nr && (save_payload_error_ == TAP_RTP_NO_ERROR);
-    bool enable_save_rev_audio = rev_statinfo_.total_nr && (save_payload_error_ == TAP_RTP_NO_ERROR);
-    ui->actionSaveAudioUnsync->setEnabled(enable_save_fwd_audio && enable_save_rev_audio);
-    ui->actionSaveForwardAudioUnsync->setEnabled(enable_save_fwd_audio);
-    ui->actionSaveReverseAudioUnsync->setEnabled(enable_save_rev_audio);
-    ui->actionSaveAudioSyncStream->setEnabled(enable_save_fwd_audio && enable_save_rev_audio);
-    ui->actionSaveForwardAudioSyncStream->setEnabled(enable_save_fwd_audio && enable_save_rev_audio);
-    ui->actionSaveReverseAudioSyncStream->setEnabled(enable_save_fwd_audio && enable_save_rev_audio);
-    ui->actionSaveAudioSyncFile->setEnabled(enable_save_fwd_audio && enable_save_rev_audio);
-    ui->actionSaveForwardAudioSyncFile->setEnabled(enable_save_fwd_audio);
-    ui->actionSaveReverseAudioSyncFile->setEnabled(enable_save_rev_audio);
+    ui->actionExportButton->setEnabled(enable_tab);
+    ui->actionSaveOneCsv->setEnabled(enable_nav);
+    ui->actionSaveAllCsv->setEnabled(enable_tab);
+    ui->actionSaveGraph->setEnabled(enable_tab);
 
-    bool enable_save_fwd_csv = ui->forwardTreeWidget->topLevelItemCount() > 0;
-    bool enable_save_rev_csv = ui->reverseTreeWidget->topLevelItemCount() > 0;
-    ui->actionSaveCsv->setEnabled(enable_save_fwd_csv && enable_save_rev_csv);
-    ui->actionSaveForwardCsv->setEnabled(enable_save_fwd_csv);
-    ui->actionSaveReverseCsv->setEnabled(enable_save_rev_csv);
+    ui->actionPrepareFilterOne->setEnabled(enable_nav);
+    ui->actionPrepareFilterAll->setEnabled(enable_tab);
 
 #if defined(QT_MULTIMEDIA_LIB)
-    player_button_->setEnabled(num_streams_ > 0);
-#else
-    player_button_->setEnabled(false);
-    player_button_->setText(tr("No Audio"));
+    player_button_->setEnabled(enable_tab);
 #endif
 
     ui->tabWidget->setEnabled(enable_tab);
@@ -482,8 +567,10 @@ void RtpAnalysisDialog::updateWidgets()
 
 void RtpAnalysisDialog::on_actionGoToPacket_triggered()
 {
-    if (file_closed_) return;
-    QTreeWidget *cur_tree = qobject_cast<QTreeWidget *>(ui->tabWidget->currentWidget());
+    tab_info_t *tab_data = getTabInfoForCurrentTab();
+    if (!tab_data) return;
+
+    QTreeWidget *cur_tree = tab_data->tree_widget;
     if (!cur_tree || cur_tree->selectedItems().length() < 1) return;
 
     QTreeWidgetItem *ti = cur_tree->selectedItems()[0];
@@ -495,7 +582,10 @@ void RtpAnalysisDialog::on_actionGoToPacket_triggered()
 
 void RtpAnalysisDialog::on_actionNextProblem_triggered()
 {
-    QTreeWidget *cur_tree = qobject_cast<QTreeWidget *>(ui->tabWidget->currentWidget());
+    tab_info_t *tab_data = getTabInfoForCurrentTab();
+    if (!tab_data) return;
+
+    QTreeWidget *cur_tree = tab_data->tree_widget;
     if (!cur_tree || cur_tree->topLevelItemCount() < 2) return;
 
     // Choose convenience over correctness.
@@ -519,100 +609,14 @@ void RtpAnalysisDialog::on_actionNextProblem_triggered()
     }
 }
 
-void RtpAnalysisDialog::on_fJitterCheckBox_toggled(bool checked)
+void RtpAnalysisDialog::on_actionSaveOneCsv_triggered()
 {
-    ui->streamGraph->graph(fwd_jitter_graph_)->setVisible(checked);
-    updateGraph();
+    saveCsv(dir_one_);
 }
 
-void RtpAnalysisDialog::on_fDiffCheckBox_toggled(bool checked)
+void RtpAnalysisDialog::on_actionSaveAllCsv_triggered()
 {
-    ui->streamGraph->graph(fwd_diff_graph_)->setVisible(checked);
-    updateGraph();
-}
-
-void RtpAnalysisDialog::on_fDeltaCheckBox_toggled(bool checked)
-{
-    ui->streamGraph->graph(fwd_delta_graph_)->setVisible(checked);
-    updateGraph();
-}
-
-void RtpAnalysisDialog::on_rJitterCheckBox_toggled(bool checked)
-{
-    ui->streamGraph->graph(rev_jitter_graph_)->setVisible(checked);
-    updateGraph();
-}
-
-void RtpAnalysisDialog::on_rDiffCheckBox_toggled(bool checked)
-{
-    ui->streamGraph->graph(rev_diff_graph_)->setVisible(checked);
-    updateGraph();
-}
-
-void RtpAnalysisDialog::on_rDeltaCheckBox_toggled(bool checked)
-{
-    ui->streamGraph->graph(rev_delta_graph_)->setVisible(checked);
-    updateGraph();
-}
-
-void RtpAnalysisDialog::on_actionSaveAudioUnsync_triggered()
-{
-    saveAudio(dir_both_, sync_unsync_);
-}
-
-void RtpAnalysisDialog::on_actionSaveForwardAudioUnsync_triggered()
-{
-    saveAudio(dir_forward_, sync_unsync_);
-}
-
-void RtpAnalysisDialog::on_actionSaveReverseAudioUnsync_triggered()
-{
-    saveAudio(dir_reverse_, sync_unsync_);
-}
-
-void RtpAnalysisDialog::on_actionSaveAudioSyncStream_triggered()
-{
-    saveAudio(dir_both_, sync_sync_stream_);
-}
-
-void RtpAnalysisDialog::on_actionSaveForwardAudioSyncStream_triggered()
-{
-    saveAudio(dir_forward_, sync_sync_stream_);
-}
-
-void RtpAnalysisDialog::on_actionSaveReverseAudioSyncStream_triggered()
-{
-    saveAudio(dir_reverse_, sync_sync_stream_);
-}
-
-void RtpAnalysisDialog::on_actionSaveAudioSyncFile_triggered()
-{
-    saveAudio(dir_both_, sync_sync_file_);
-}
-
-void RtpAnalysisDialog::on_actionSaveForwardAudioSyncFile_triggered()
-{
-    saveAudio(dir_forward_, sync_sync_file_);
-}
-
-void RtpAnalysisDialog::on_actionSaveReverseAudioSyncFile_triggered()
-{
-    saveAudio(dir_reverse_, sync_sync_file_);
-}
-
-void RtpAnalysisDialog::on_actionSaveCsv_triggered()
-{
-    saveCsv(dir_both_);
-}
-
-void RtpAnalysisDialog::on_actionSaveForwardCsv_triggered()
-{
-    saveCsv(dir_forward_);
-}
-
-void RtpAnalysisDialog::on_actionSaveReverseCsv_triggered()
-{
-    saveCsv(dir_reverse_);
+    saveCsv(dir_all_);
 }
 
 void RtpAnalysisDialog::on_actionSaveGraph_triggered()
@@ -620,13 +624,13 @@ void RtpAnalysisDialog::on_actionSaveGraph_triggered()
     ui->tabWidget->setCurrentWidget(ui->graphTab);
 
     QString file_name, extension;
-    QDir path(wsApp->lastOpenDir());
+    QDir path(mainApp->openDialogInitialDir());
     QString pdf_filter = tr("Portable Document Format (*.pdf)");
     QString png_filter = tr("Portable Network Graphics (*.png)");
     QString bmp_filter = tr("Windows Bitmap (*.bmp)");
     // Gaze upon my beautiful graph with lossy artifacts!
     QString jpeg_filter = tr("JPEG File Interchange Format (*.jpeg *.jpg)");
-    QString filter = QString("%1;;%2;;%3;;%4")
+    QString filter = QStringLiteral("%1;;%2;;%3;;%4")
             .arg(pdf_filter)
             .arg(png_filter)
             .arg(bmp_filter)
@@ -634,14 +638,14 @@ void RtpAnalysisDialog::on_actionSaveGraph_triggered()
 
     QString save_file = path.canonicalPath();
     if (!file_closed_) {
-        save_file += QString("/%1").arg(cap_file_.fileBaseName());
+        save_file += QStringLiteral("/%1").arg(cap_file_.fileBaseName());
     }
-    file_name = WiresharkFileDialog::getSaveFileName(this, wsApp->windowTitleString(tr("Save Graph As" UTF8_HORIZONTAL_ELLIPSIS)),
+    file_name = WiresharkFileDialog::getSaveFileName(this, mainApp->windowTitleString(tr("Save Graph As…")),
                                              save_file, filter, &extension);
 
     if (!file_name.isEmpty()) {
         bool save_ok = false;
-        // http://www.qcustomplot.com/index.php/support/forum/63
+        // https://www.qcustomplot.com/index.php/support/forum/63
 //        ui->streamGraph->legend->setVisible(true);
         if (extension.compare(pdf_filter) == 0) {
             save_ok = ui->streamGraph->savePdf(file_name);
@@ -655,22 +659,14 @@ void RtpAnalysisDialog::on_actionSaveGraph_triggered()
 //        ui->streamGraph->legend->setVisible(false);
         // else error dialog?
         if (save_ok) {
-            path = QDir(file_name);
-            wsApp->setLastOpenDir(path.canonicalPath().toUtf8().constData());
+            mainApp->setLastOpenDirFromFilename(file_name);
         }
-    }
-}
-
-void RtpAnalysisDialog::on_buttonBox_clicked(QAbstractButton *button)
-{
-    if (button == player_button_) {
-        showPlayer();
     }
 }
 
 void RtpAnalysisDialog::on_buttonBox_helpRequested()
 {
-    wsApp->helpTopicAction(HELP_RTP_ANALYSIS_DIALOG);
+    mainApp->helpTopicAction(HELP_TELEPHONY_RTP_ANALYSIS_DIALOG);
 }
 
 void RtpAnalysisDialog::tapReset(void *tapinfo_ptr)
@@ -681,339 +677,132 @@ void RtpAnalysisDialog::tapReset(void *tapinfo_ptr)
     rtp_analysis_dialog->resetStatistics();
 }
 
-gboolean RtpAnalysisDialog::tapPacket(void *tapinfo_ptr, packet_info *pinfo, epan_dissect_t *, const void *rtpinfo_ptr)
+tap_packet_status RtpAnalysisDialog::tapPacket(void *tapinfo_ptr, packet_info *pinfo, epan_dissect_t *, const void *rtpinfo_ptr, tap_flags_t)
 {
     RtpAnalysisDialog *rtp_analysis_dialog = dynamic_cast<RtpAnalysisDialog *>((RtpAnalysisDialog*)tapinfo_ptr);
-    if (!rtp_analysis_dialog) return FALSE;
+    if (!rtp_analysis_dialog) return TAP_PACKET_DONT_REDRAW;
 
     const struct _rtp_info *rtpinfo = (const struct _rtp_info *)rtpinfo_ptr;
-    if (!rtpinfo) return FALSE;
+    if (!rtpinfo) return TAP_PACKET_DONT_REDRAW;
 
     /* we ignore packets that are not displayed */
-    if (pinfo->fd->flags.passed_dfilter == 0)
-        return FALSE;
+    if (pinfo->fd->passed_dfilter == 0)
+        return TAP_PACKET_DONT_REDRAW;
     /* also ignore RTP Version != 2 */
     else if (rtpinfo->info_version != 2)
-        return FALSE;
+        return TAP_PACKET_DONT_REDRAW;
     /* is it the forward direction?  */
-    else if (rtp_analysis_dialog->ssrc_fwd_ == rtpinfo->info_sync_src
-         && (cmp_address(&(rtp_analysis_dialog->src_fwd_), &(pinfo->src)) == 0)
-         && (rtp_analysis_dialog->port_src_fwd_ == pinfo->srcport)
-         && (cmp_address(&(rtp_analysis_dialog->dst_fwd_), &(pinfo->dst)) == 0)
-         && (rtp_analysis_dialog->port_dst_fwd_ == pinfo->destport))  {
-
-        rtp_analysis_dialog->addPacket(true, pinfo, rtpinfo);
+    else {
+        // Search tab in hash key, if there are multiple tabs with same hash
+        QList<tab_info_t *> tabs = rtp_analysis_dialog->tab_hash_.values(pinfo_rtp_info_to_hash(pinfo, rtpinfo));
+        for (int i = 0; i < tabs.size(); i++) {
+            tab_info_t *tab = tabs.at(i);
+            if (rtpstream_id_equal_pinfo_rtp_info(&tab->stream.id, pinfo, rtpinfo))  {
+                rtp_analysis_dialog->addPacket(tab, pinfo, rtpinfo);
+                break;
+            }
+        }
     }
-    /* is it the reversed direction? */
-    else if (rtp_analysis_dialog->ssrc_rev_ == rtpinfo->info_sync_src
-         && (cmp_address(&(rtp_analysis_dialog->src_rev_), &(pinfo->src)) == 0)
-         && (rtp_analysis_dialog->port_src_rev_ == pinfo->srcport)
-         && (cmp_address(&(rtp_analysis_dialog->dst_rev_), &(pinfo->dst)) == 0)
-         && (rtp_analysis_dialog->port_dst_rev_ == pinfo->destport))  {
 
-        rtp_analysis_dialog->addPacket(false, pinfo, rtpinfo);
-    }
-    return FALSE;
+    return TAP_PACKET_DONT_REDRAW;
 }
 
 void RtpAnalysisDialog::tapDraw(void *tapinfo_ptr)
 {
     RtpAnalysisDialog *rtp_analysis_dialog = dynamic_cast<RtpAnalysisDialog *>((RtpAnalysisDialog*)tapinfo_ptr);
     if (!rtp_analysis_dialog) return;
+
     rtp_analysis_dialog->updateStatistics();
 }
 
 void RtpAnalysisDialog::resetStatistics()
 {
-    memset(&fwd_statinfo_, 0, sizeof(tap_rtp_stat_t));
-    memset(&rev_statinfo_, 0, sizeof(tap_rtp_stat_t));
+    for(int i=0; i<tabs_.count(); i++) {
+        tab_info_t *tab = tabs_[i];
+        memset(&tab->stream.rtp_stats, 0, sizeof(tab->stream.rtp_stats));
 
-    fwd_statinfo_.first_packet = TRUE;
-    rev_statinfo_.first_packet = TRUE;
-    fwd_statinfo_.reg_pt = PT_UNDEFINED;
-    rev_statinfo_.reg_pt = PT_UNDEFINED;
-
-    ui->forwardTreeWidget->clear();
-    ui->reverseTreeWidget->clear();
+        tab->stream.rtp_stats.first_packet = true;
+        tab->stream.rtp_stats.reg_pt = PT_UNDEFINED;
+        tab->time_vals->clear();
+        tab->jitter_vals->clear();
+        tab->diff_vals->clear();
+        tab->delta_vals->clear();
+        tab->tree_widget->clear();
+    }
 
     for (int i = 0; i < ui->streamGraph->graphCount(); i++) {
-        ui->streamGraph->graph(i)->clearData();
+        ui->streamGraph->graph(i)->data()->clear();
     }
-
-    fwd_time_vals_.clear();
-    fwd_jitter_vals_.clear();
-    fwd_diff_vals_.clear();
-    fwd_delta_vals_.clear();
-    rev_time_vals_.clear();
-    rev_jitter_vals_.clear();
-    rev_diff_vals_.clear();
-    rev_delta_vals_.clear();
-
-    fwd_tempfile_->resize(0);
-    rev_tempfile_->resize(0);
 }
 
-void RtpAnalysisDialog::addPacket(bool forward, packet_info *pinfo, const _rtp_info *rtpinfo)
+void RtpAnalysisDialog::addPacket(tab_info_t *tab, packet_info *pinfo, const _rtp_info *rtpinfo)
 {
-    /* add this RTP for future listening using the RTP Player*/
-//    add_rtp_packet(rtpinfo, pinfo);
-
-    if (forward) {
-        rtp_packet_analyse(&fwd_statinfo_, pinfo, rtpinfo);
-        new RtpAnalysisTreeWidgetItem(ui->forwardTreeWidget, &fwd_statinfo_, pinfo, rtpinfo);
-
-        fwd_time_vals_.append(fwd_statinfo_.time / 1000);
-        fwd_jitter_vals_.append(fwd_statinfo_.jitter);
-        fwd_diff_vals_.append(fwd_statinfo_.diff);
-        fwd_delta_vals_.append(fwd_statinfo_.delta);
-
-        savePayload(fwd_tempfile_, &fwd_statinfo_, pinfo, rtpinfo);
-    } else {
-        rtp_packet_analyse(&rev_statinfo_, pinfo, rtpinfo);
-        new RtpAnalysisTreeWidgetItem(ui->reverseTreeWidget, &rev_statinfo_, pinfo, rtpinfo);
-
-        rev_time_vals_.append(rev_statinfo_.time / 1000);
-        rev_jitter_vals_.append(rev_statinfo_.jitter);
-        rev_diff_vals_.append(rev_statinfo_.diff);
-        rev_delta_vals_.append(rev_statinfo_.delta);
-
-        savePayload(rev_tempfile_, &rev_statinfo_, pinfo, rtpinfo);
-    }
-
-}
-
-void RtpAnalysisDialog::savePayload(QTemporaryFile *tmpfile, tap_rtp_stat_t *statinfo, packet_info *pinfo, const _rtp_info *rtpinfo)
-{
-    /* Is this the first packet we got in this direction? */
-//    if (statinfo->flags & STAT_FLAG_FIRST) {
-//        if (saveinfo->fp == NULL) {
-//            saveinfo->saved = FALSE;
-//            saveinfo->error_type = TAP_RTP_FILE_OPEN_ERROR;
-//        } else {
-//            saveinfo->saved = TRUE;
-//        }
-//    }
-
-    /* Save the voice information */
-
-    /* If there was already an error, we quit */
-    if (!tmpfile->isOpen() || tmpfile->error() != QFile::NoError)
-        return;
-
-    /* Quit if the captured length and packet length aren't equal or
-     * if the RTP dissector thinks there is some information missing
-     */
-    if ((pinfo->fd->pkt_len != pinfo->fd->cap_len) &&
-        (!rtpinfo->info_all_data_present))
-    {
-        tmpfile->close();
-        err_str_ = tr("Can't save in a file: Wrong length of captured packets.");
-        save_payload_error_ = TAP_RTP_WRONG_LENGTH;
-        return;
-    }
-
-    /* If padding bit is set but the padding count is bigger
-     * then the whole RTP data - error with padding count
-     */
-    if ((rtpinfo->info_padding_set != FALSE) &&
-        (rtpinfo->info_padding_count > rtpinfo->info_payload_len))
-    {
-        tmpfile->close();
-        err_str_ = tr("Can't save in a file: RTP data with padding.");
-        save_payload_error_ = TAP_RTP_PADDING_ERROR;
-        return;
-    }
-
-    if ((rtpinfo->info_payload_type == PT_CN) ||
-        (rtpinfo->info_payload_type == PT_CN_OLD)) {
-    } else { /* All other payloads */
-        const char *data;
-        size_t nchars;
-        tap_rtp_save_data_t save_data;
-
-        if (!rtpinfo->info_all_data_present) {
-            /* Not all the data was captured. */
-            tmpfile->close();
-            err_str_ = tr("Can't save in a file: Not all data in all packets was captured.");
-            save_payload_error_ = TAP_RTP_WRONG_LENGTH;
-            return;
-        }
-
-        /* We put the pointer at the beginning of the RTP
-         * payload, that is, at the beginning of the RTP data
-         * plus the offset of the payload from the beginning
-         * of the RTP data */
-        data = (const char *) rtpinfo->info_data + rtpinfo->info_payload_offset;
-
-        /* Store information about timestamp, payload_type and payload in file */
-        save_data.timestamp = statinfo->timestamp;
-        save_data.payload_type = rtpinfo->info_payload_type;
-        save_data.payload_len = rtpinfo->info_payload_len - rtpinfo->info_padding_count;
-        nchars = tmpfile->write((char *)&save_data, sizeof(save_data));
-        if (nchars != sizeof(save_data)) {
-                /* Write error or short write */
-                err_str_ = tr("Can't save in a file: File I/O problem.");
-                save_payload_error_ = TAP_RTP_FILE_IO_ERROR;
-                tmpfile->close();
-                return;
-        }
-        if (save_data.payload_len > 0) {
-            nchars = tmpfile->write(data, save_data.payload_len);
-            if (nchars != save_data.payload_len) {
-                /* Write error or short write */
-                err_str_ = tr("Can't save in a file: File I/O problem.");
-                save_payload_error_ = TAP_RTP_FILE_IO_ERROR;
-                tmpfile->close();
-                return;
-            }
-        }
-        return;
-    }
-    return;
+    rtpstream_info_analyse_process(&tab->stream, pinfo, rtpinfo);
+    new RtpAnalysisTreeWidgetItem(tab->tree_widget, &tab->stream.rtp_stats, pinfo, rtpinfo);
+    tab->time_vals->append(tab->stream.rtp_stats.time / 1000);
+    tab->jitter_vals->append(tab->stream.rtp_stats.jitter);
+    tab->diff_vals->append(tab->stream.rtp_stats.diff);
+    tab->delta_vals->append(tab->stream.rtp_stats.delta);
 }
 
 void RtpAnalysisDialog::updateStatistics()
 {
-    unsigned int f_clock_rate = fwd_statinfo_.clock_rate;
-    unsigned int r_clock_rate = rev_statinfo_.clock_rate;
-    unsigned int f_expected = (fwd_statinfo_.stop_seq_nr + fwd_statinfo_.cycles*65536)
-            - fwd_statinfo_.start_seq_nr + 1;
-    unsigned int r_expected = (rev_statinfo_.stop_seq_nr + rev_statinfo_.cycles*65536)
-            - rev_statinfo_.start_seq_nr + 1;
-    unsigned int f_total_nr = fwd_statinfo_.total_nr;
-    unsigned int r_total_nr = rev_statinfo_.total_nr;
-    int f_lost = f_expected - f_total_nr;
-    int r_lost = r_expected - r_total_nr;
-    double f_sumt = fwd_statinfo_.sumt;
-    double f_sumTS = fwd_statinfo_.sumTS;
-    double f_sumt2 = fwd_statinfo_.sumt2;
-    double f_sumtTS = fwd_statinfo_.sumtTS;
-    double r_sumt = rev_statinfo_.sumt;
-    double r_sumTS = rev_statinfo_.sumTS;
-    double r_sumt2 = rev_statinfo_.sumt2;
-    double r_sumtTS = rev_statinfo_.sumtTS;
-    double f_perc, r_perc;
-    double f_clock_drift = 1.0;
-    double r_clock_drift = 1.0;
-    double f_duration = fwd_statinfo_.time - fwd_statinfo_.start_time;
-    double r_duration = rev_statinfo_.time - rev_statinfo_.start_time;
+    for(int i=0; i<tabs_.count(); i++) {
+        rtpstream_info_t *stream = &tabs_[i]->stream;
+        rtpstream_info_calc_t s_calc;
+        rtpstream_info_calculate(stream, &s_calc);
 
-    if (f_clock_rate == 0) {
-        f_clock_rate = 1;
+        QString stats_tables = "<html><head><style>td{vertical-align:bottom;}</style></head><body>\n";
+        stats_tables += "<h4>Stream</h4>\n";
+        stats_tables += QStringLiteral("<p>%1:%2 %3")
+                .arg(s_calc.src_addr_str)
+                .arg(s_calc.src_port)
+                .arg(UTF8_RIGHTWARDS_ARROW);
+        stats_tables += QStringLiteral("<br>%1:%2</p>\n")
+                .arg(s_calc.dst_addr_str)
+                .arg(s_calc.dst_port);
+        stats_tables += "<p><table>\n";
+        stats_tables += QStringLiteral("<tr><th align=\"left\">SSRC</th><td>%1</td></tr>")
+                .arg(int_to_qstring(s_calc.ssrc, 8, 16));
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Max Delta</th><td>%1 ms @ %2</td></tr>")
+                .arg(s_calc.max_delta, 0, 'f', prefs.gui_decimal_places3)
+                .arg(s_calc.last_packet_num);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Max Jitter</th><td>%1 ms</td></tr>")
+                .arg(s_calc.max_jitter, 0, 'f', prefs.gui_decimal_places3);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Mean Jitter</th><td>%1 ms</td></tr>")
+                .arg(s_calc.mean_jitter, 0, 'f', prefs.gui_decimal_places3);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Max Skew</th><td>%1 ms</td></tr>")
+                .arg(s_calc.max_skew, 0, 'f', prefs.gui_decimal_places3);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">RTP Packets</th><td>%1</td></tr>")
+                .arg(s_calc.total_nr);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Expected</th><td>%1</td></tr>")
+                .arg(s_calc.packet_expected);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Lost</th><td>%1 (%2 %)</td></tr>")
+                .arg(s_calc.lost_num).arg(s_calc.lost_perc, 0, 'f', prefs.gui_decimal_places1);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Seq Errs</th><td>%1</td></tr>")
+                .arg(s_calc.sequence_err);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Start at</th><td>%1 s @ %2</td></tr>")
+                .arg(s_calc.start_time_ms, 0, 'f', 6)
+                .arg(s_calc.first_packet_num);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Duration</th><td>%1 s</td></tr>")
+                .arg(s_calc.duration_ms, 0, 'f', prefs.gui_decimal_places1);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Clock Drift</th><td>%1 ms</td></tr>")
+                .arg(s_calc.clock_drift_ms, 0, 'f', 0);
+        stats_tables += QStringLiteral("<tr><th align=\"left\">Freq Drift</th><td>%1 Hz (%2 %)</td></tr>") // XXX Terminology?
+                .arg(s_calc.freq_drift_hz, 0, 'f', 0).arg(s_calc.freq_drift_perc, 0, 'f', 2);
+        rtpstream_info_calc_free(&s_calc);
+        stats_tables += "</table></p>\n";
+
+        tabs_[i]->statistics_label->setText(stats_tables);
+
+        for (int col = 0; col < tabs_[i]->tree_widget->columnCount() - 1; col++) {
+            tabs_[i]->tree_widget->resizeColumnToContents(col);
+        }
+
+        tabs_[i]->jitter_graph->setData(*tabs_[i]->time_vals, *tabs_[i]->jitter_vals);
+        tabs_[i]->diff_graph->setData(*tabs_[i]->time_vals, *tabs_[i]->diff_vals);
+        tabs_[i]->delta_graph->setData(*tabs_[i]->time_vals, *tabs_[i]->delta_vals);
     }
-
-    if (r_clock_rate == 0) {
-        r_clock_rate = 1;
-    }
-
-    if (f_expected) {
-        f_perc = (double)(f_lost*100)/(double)f_expected;
-    } else {
-        f_perc = 0;
-    }
-    if (r_expected) {
-        r_perc = (double)(r_lost*100)/(double)r_expected;
-    } else {
-        r_perc = 0;
-    }
-
-    if ((f_total_nr >0) && (f_sumt2 > 0)) {
-        f_clock_drift = (f_total_nr * f_sumtTS - f_sumt * f_sumTS) / (f_total_nr * f_sumt2 - f_sumt * f_sumt);
-    }
-    if ((r_total_nr >0) && (r_sumt2 > 0)) {
-        r_clock_drift = (r_total_nr * r_sumtTS - r_sumt * r_sumTS) / (r_total_nr * r_sumt2 - r_sumt * r_sumt);
-    }
-
-    QString stats_tables = "<html><head><style>td{vertical-align:bottom;}</style></head><body>\n";
-    stats_tables += QString("<p>%1:%2 " UTF8_LEFT_RIGHT_ARROW)
-            .arg(address_to_qstring(&src_fwd_, true))
-            .arg(port_src_fwd_);
-    stats_tables += QString("<br>%1:%2</p>\n")
-            .arg(address_to_qstring(&dst_fwd_, true))
-            .arg(port_dst_fwd_);
-    stats_tables += "<h4>Forward</h4>\n";
-    stats_tables += "<p><table>\n";
-    stats_tables += QString("<tr><th align=\"left\">SSRC</th><td>%1</td></tr>")
-            .arg(int_to_qstring(ssrc_fwd_, 8, 16));
-    stats_tables += QString("<tr><th align=\"left\">Max Delta</th><td>%1 ms @ %2</td></tr>")
-            .arg(fwd_statinfo_.max_delta, 0, 'f', 2)
-            .arg(fwd_statinfo_.max_nr);
-    stats_tables += QString("<tr><th align=\"left\">Max Jitter</th><td>%1 ms</td></tr>")
-            .arg(fwd_statinfo_.max_jitter, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Mean Jitter</th><td>%1 ms</td></tr>")
-            .arg(fwd_statinfo_.mean_jitter, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Max Skew</th><td>%1 ms</td></tr>")
-            .arg(fwd_statinfo_.max_skew, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">RTP Packets</th><td>%1</td></tr>")
-            .arg(f_total_nr);
-    stats_tables += QString("<tr><th align=\"left\">Expected</th><td>%1</td></tr>")
-            .arg(f_expected);
-    stats_tables += QString("<tr><th align=\"left\">Lost</th><td>%1 (%2 %)</td></tr>")
-            .arg(f_lost).arg(f_perc, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Seq Errs</th><td>%1</td></tr>")
-            .arg(fwd_statinfo_.sequence);
-    stats_tables += QString("<tr><th align=\"left\">Start at</th><td>%1 s @ %2</td></tr>")
-            .arg(fwd_statinfo_.start_time / 1000.0, 0, 'f', 6)
-            .arg(fwd_statinfo_.first_packet_num);
-    stats_tables += QString("<tr><th align=\"left\">Duration</th><td>%1 s</td></tr>")
-            .arg(f_duration / 1000.0, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Clock Drift</th><td>%1 ms</td></tr>")
-            .arg(f_duration * (f_clock_drift - 1.0), 0, 'f', 0);
-    stats_tables += QString("<tr><th align=\"left\">Freq Drift</th><td>%1 Hz (%2 %)</td></tr>") // XXX Terminology?
-            .arg(f_clock_drift * f_clock_rate, 0, 'f', 0).arg(100.0 * (f_clock_drift - 1.0), 0, 'f', 2);
-    stats_tables += "</table></p>\n";
-
-    stats_tables += "<h4>Reverse</h4>\n";
-    stats_tables += "<p><table>\n";
-    stats_tables += QString("<tr><th align=\"left\">SSRC</th><td>%1</td></tr>")
-            .arg(int_to_qstring(ssrc_rev_, 8, 16));
-    stats_tables += QString("<tr><th align=\"left\">Max Delta</th><td>%1 ms @ %2</td></tr>")
-            .arg(rev_statinfo_.max_delta, 0, 'f', 2)
-            .arg(rev_statinfo_.max_nr);
-    stats_tables += QString("<tr><th align=\"left\">Max Jitter</th><td>%1 ms</td></tr>")
-            .arg(rev_statinfo_.max_jitter, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Mean Jitter</th><td>%1 ms</td></tr>")
-            .arg(rev_statinfo_.mean_jitter, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Max Skew</th><td>%1 ms</td></tr>")
-            .arg(rev_statinfo_.max_skew, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">RTP Packets</th><td>%1</td></tr>")
-            .arg(r_total_nr);
-    stats_tables += QString("<tr><th align=\"left\">Expected</th><td>%1</td></tr>")
-            .arg(r_expected);
-    stats_tables += QString("<tr><th align=\"left\">Lost</th><td>%1 (%2 %)</td></tr>")
-            .arg(r_lost).arg(r_perc, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Seq Errs</th><td>%1</td></tr>")
-            .arg(rev_statinfo_.sequence);
-    stats_tables += QString("<tr><th align=\"left\">Start at</th><td>%1 s @ %2</td></tr>")
-            .arg(rev_statinfo_.start_time / 1000.0, 0, 'f', 6)
-            .arg(rev_statinfo_.first_packet_num);
-    stats_tables += QString("<tr><th align=\"left\">Duration</th><td>%1 s</td></tr>")
-            .arg(r_duration / 1000.0, 0, 'f', 2);
-    stats_tables += QString("<tr><th align=\"left\">Clock Drift</th><td>%1 ms</td></tr>")
-            .arg(r_duration * (r_clock_drift - 1.0), 0, 'f', 0);
-    stats_tables += QString("<tr><th align=\"left\">Freq Drift</th><td>%1 Hz (%2 %)</td></tr>") // XXX Terminology?
-            .arg(r_clock_drift * r_clock_rate, 0, 'f', 0).arg(100.0 * (r_clock_drift - 1.0), 0, 'f', 2);
-    stats_tables += "</table></p>";
-    if (rev_statinfo_.total_nr) {
-        stats_tables += QString("<h4>Forward to reverse<br/>start diff %1 s @ %2</h4>")
-            .arg((rev_statinfo_.start_time - fwd_statinfo_.start_time) / 1000.0, 0, 'f', 6)
-            .arg((gint64)rev_statinfo_.first_packet_num - (gint64)fwd_statinfo_.first_packet_num);
-    }
-    stats_tables += "</body></html>\n";
-
-    ui->statisticsLabel->setText(stats_tables);
-
-    for (int col = 0; col < ui->forwardTreeWidget->columnCount() - 1; col++) {
-        ui->forwardTreeWidget->resizeColumnToContents(col);
-        ui->reverseTreeWidget->resizeColumnToContents(col);
-    }
-
-    graphs_[fwd_jitter_graph_]->setData(fwd_time_vals_, fwd_jitter_vals_);
-    graphs_[fwd_diff_graph_]->setData(fwd_time_vals_, fwd_diff_vals_);
-    graphs_[fwd_delta_graph_]->setData(fwd_time_vals_, fwd_delta_vals_);
-    graphs_[rev_jitter_graph_]->setData(rev_time_vals_, rev_jitter_vals_);
-    graphs_[rev_diff_graph_]->setData(rev_time_vals_, rev_diff_vals_);
-    graphs_[rev_delta_graph_]->setData(rev_time_vals_, rev_delta_vals_);
 
     updateGraph();
 
@@ -1030,439 +819,77 @@ void RtpAnalysisDialog::updateGraph()
     ui->streamGraph->replot();
 }
 
-void RtpAnalysisDialog::showPlayer()
+QVector<rtpstream_id_t *>RtpAnalysisDialog::getSelectedRtpIds()
 {
-#ifdef QT_MULTIMEDIA_LIB
-    if (num_streams_ < 1) return;
-
-    RtpPlayerDialog rtp_player_dialog(*this, cap_file_);
-    rtp_stream_info_t stream_info;
-
-    // XXX We might want to create an "rtp_stream_id_t" struct with only
-    // addresses, ports & SSRC.
-    memset(&stream_info, 0, sizeof(stream_info));
-    copy_address(&(stream_info.src_addr), &src_fwd_);
-    stream_info.src_port = port_src_fwd_;
-    copy_address(&(stream_info.dest_addr), &dst_fwd_);
-    stream_info.dest_port = port_dst_fwd_;
-    stream_info.ssrc = ssrc_fwd_;
-    stream_info.packet_count = packet_count_fwd_;
-    stream_info.setup_frame_number = setup_frame_number_fwd_;
-    nstime_copy(&stream_info.start_rel_time, &start_rel_time_fwd_);
-
-    rtp_player_dialog.addRtpStream(&stream_info);
-    if (num_streams_ > 1) {
-        copy_address(&(stream_info.src_addr), &src_rev_);
-        stream_info.src_port = port_src_rev_;
-        copy_address(&(stream_info.dest_addr), &dst_rev_);
-        stream_info.dest_port = port_dst_rev_;
-        stream_info.ssrc = ssrc_rev_;
-        stream_info.packet_count = packet_count_rev_;
-        stream_info.setup_frame_number = setup_frame_number_rev_;
-        rtp_player_dialog.addRtpStream(&stream_info);
-        nstime_copy(&stream_info.start_rel_time, &start_rel_time_rev_);
+    QVector<rtpstream_id_t *> stream_ids;
+    for(int i=0; i < tabs_.count(); i++) {
+        stream_ids << &(tabs_[i]->stream.id);
     }
 
-    connect(&rtp_player_dialog, SIGNAL(goToPacket(int)), this, SIGNAL(goToPacket(int)));
-
-    rtp_player_dialog.exec();
-#endif // QT_MULTIMEDIA_LIB
+    return stream_ids;
 }
 
-/* Convert one packet payload to samples in row */
-/* It supports G.711 now, but can be extended to any other codecs */
-size_t RtpAnalysisDialog::convert_payload_to_samples(unsigned int payload_type, QTemporaryFile *tempfile, gchar *pd_out, size_t payload_len)
+void RtpAnalysisDialog::rtpPlayerReplace()
 {
-    size_t sample_count;
-    char f_rawvalue;
-    gint16 sample;
-    gchar pd[4];
+    if (tabs_.count() < 1) return;
 
-    if (payload_type == PT_PCMU) {
-        /* Output sample count is same as input sample count for G.711 */
-        sample_count = payload_len;
-        for(size_t i = 0; i < payload_len; i++) {
-            tempfile->read((char *)&f_rawvalue, sizeof(f_rawvalue));
-            sample = ulaw2linear((unsigned char)f_rawvalue);
-            phton16(pd, sample);
-            pd_out[2*i] = pd[0];
-            pd_out[2*i+1] = pd[1];
-        }
-    } else if (payload_type == PT_PCMA) {
-        /* Output sample count is same as input sample count for G.711 */
-        sample_count = payload_len;
-        for(size_t i = 0; i < payload_len; i++) {
-            tempfile->read((char *)&f_rawvalue, sizeof(f_rawvalue));
-            sample = alaw2linear((unsigned char)f_rawvalue);
-            phton16(pd, sample);
-            pd_out[2*i] = pd[0];
-            pd_out[2*i+1] = pd[1];
-        }
-    } else {
-        /* Read payload, but ignore it */
-        sample_count = 0;
-        for(size_t i = 0; i < payload_len; i++) {
-            tempfile->read((char *)&f_rawvalue, sizeof(f_rawvalue));
-        }
-    }
-
-    return sample_count;
+    emit rtpPlayerDialogReplaceRtpStreams(getSelectedRtpIds());
 }
 
-gboolean RtpAnalysisDialog::saveAudioAUSilence(size_t total_len, QFile *save_file, gboolean *stop_flag)
+void RtpAnalysisDialog::rtpPlayerAdd()
 {
-    size_t nchars;
-    gchar pd_out[2*4000];
-    gint16 silence;
-    gchar pd[4];
+    if (tabs_.count() < 1) return;
 
-    silence = 0x0000;
-    phton16(pd, silence);
-    pd_out[0] = pd[0];
-    pd_out[1] = pd[1];
-    /* Fill whole file with silence */
-    for(size_t i=0; i<total_len; i++) {
-        if (*stop_flag) {
-            return FALSE;
-        }
-        nchars = save_file->write((const char *)pd_out, 2);
-        if (nchars < 2) {
-            return FALSE;
-        }
-    }
-
-    return TRUE;
+    emit rtpPlayerDialogAddRtpStreams(getSelectedRtpIds());
 }
 
-gboolean RtpAnalysisDialog::saveAudioAUUnidir(tap_rtp_stat_t &statinfo, QTemporaryFile *tempfile, QFile *save_file, size_t header_end, gboolean *stop_flag, gboolean interleave, size_t prefix_silence)
+void RtpAnalysisDialog::rtpPlayerRemove()
 {
-    size_t nchars;
-    gchar pd_out[2*4000];
-    gchar pd[4];
-    tap_rtp_save_data_t save_data;
+    if (tabs_.count() < 1) return;
 
-    while (sizeof(save_data) == tempfile->read((char *)&save_data,sizeof(save_data))) {
-        size_t sample_count;
-
-        if (*stop_flag) {
-            return FALSE;
-        }
-        ui->progressFrame->setValue(int(tempfile->pos() * 100 / tempfile->size()));
-
-        sample_count=convert_payload_to_samples(save_data.payload_type, tempfile ,pd_out, save_data.payload_len);
-
-        if (sample_count > 0 ) {
-            nchars = 0;
-            /* Save payload samples with optional interleaving */
-            for (size_t i = 0; i < sample_count; i++) {
-                pd[0] = pd_out[ 2 * i ];
-                pd[1] = pd_out[ 2 * i + 1 ];
-                if (interleave) {
-                    save_file->seek(header_end+(prefix_silence + (guint32_wraparound_diff(save_data.timestamp, statinfo.first_timestamp) + i)) * 4);
-                } else {
-                    save_file->seek(header_end+(prefix_silence + (guint32_wraparound_diff(save_data.timestamp, statinfo.first_timestamp) + i)) * 2);
-                }
-                nchars += save_file->write((const char *)pd, 2);
-            }
-            if (nchars < sample_count*2) {
-                return FALSE;
-            }
-        }
-    }
-
-    return TRUE;
+    emit rtpPlayerDialogRemoveRtpStreams(getSelectedRtpIds());
 }
 
-gboolean RtpAnalysisDialog::saveAudioAUBidir(tap_rtp_stat_t &fwd_statinfo, tap_rtp_stat_t &rev_statinfo, QTemporaryFile *fwd_tempfile, QTemporaryFile *rev_tempfile, QFile *save_file, size_t header_end, gboolean *stop_flag, size_t prefix_silence_fwd, size_t prefix_silence_rev)
+void RtpAnalysisDialog::saveCsvHeader(QFile *save_file, QTreeWidget *tree)
 {
-    if (! saveAudioAUUnidir(fwd_statinfo, fwd_tempfile, save_file, header_end, stop_flag, TRUE, prefix_silence_fwd))
-    {
-        return FALSE;
+    QList<QVariant> row_data;
+    QStringList values;
+
+    for (int col = 0; col < tree->columnCount(); col++) {
+            row_data << tree->headerItem()->text(col);
     }
-    if (! saveAudioAUUnidir(rev_statinfo, rev_tempfile, save_file, header_end+2, stop_flag, TRUE, prefix_silence_rev))
-    {
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
-gboolean RtpAnalysisDialog::saveAudioAU(StreamDirection direction, QFile *save_file, gboolean *stop_flag, RtpAnalysisDialog::SyncType sync)
-{
-    gchar pd[4];
-    size_t nchars;
-    size_t header_end;
-    size_t fwd_total_len;
-    size_t rev_total_len;
-    size_t total_len;
-
-    /* First we write the .au header. XXX Hope this is endian independent */
-    /* the magic word 0x2e736e64 == .snd */
-    phton32(pd, 0x2e736e64);
-    nchars = save_file->write((const char *)pd, 4);
-    if (nchars != 4)
-        return FALSE;
-    /* header offset == 24 bytes */
-    phton32(pd, 24);
-    nchars = save_file->write((const char *)pd, 4);
-    if (nchars != 4)
-        return FALSE;
-    /* total length; it is permitted to set this to 0xffffffff */
-    phton32(pd, 0xffffffff);
-    nchars = save_file->write((const char *)pd, 4);
-    if (nchars != 4)
-        return FALSE;
-    /* encoding format == 16-bit linear PCM */
-    phton32(pd, 3);
-    nchars = save_file->write((const char *)pd, 4);
-    if (nchars != 4)
-        return FALSE;
-    /* sample rate == 8000 Hz */
-    phton32(pd, 8000);
-    nchars = save_file->write((const char *)pd, 4);
-    if (nchars != 4)
-        return FALSE;
-    /* channels == 1 or == 2 */
-    switch (direction) {
-        case dir_forward_: {
-            phton32(pd, 1);
-            break;
-        }
-        case dir_reverse_: {
-            phton32(pd, 1);
-            break;
-        }
-        case dir_both_: {
-            phton32(pd, 2);
-            break;
-        }
-    }
-    nchars = save_file->write((const char *)pd, 4);
-    if (nchars != 4)
-        return FALSE;
-
-    header_end=save_file->pos();
-
-    bool two_channels = rev_statinfo_.total_nr && (save_payload_error_ == TAP_RTP_NO_ERROR);
-    double t_min = MIN(fwd_statinfo_.start_time, rev_statinfo_.start_time);
-    double t_fwd_diff = fwd_statinfo_.start_time - t_min;
-    double t_rev_diff = rev_statinfo_.start_time - t_min;
-    size_t fwd_samples_diff = 0;
-    size_t rev_samples_diff = 0;
-    size_t bidir_samples_diff = 0;
-
-    switch (sync) {
-        case sync_unsync_: {
-            fwd_samples_diff = 0;
-            rev_samples_diff = 0;
-            bidir_samples_diff = 0;
-            break;
-        }
-        case sync_sync_stream_: {
-            if (! two_channels) {
-                /* Only forward channel */
-                /* This branch should not be reached ever */
-                QMessageBox::warning(this, tr("Warning"), tr("Can't synchronize when only one channel is selected"));
-                return FALSE;
-            } else {
-                /* Two channels */
-                fwd_samples_diff = t_fwd_diff*8000/1000;
-                rev_samples_diff = t_rev_diff*8000/1000;
-                bidir_samples_diff = 0;
-            }
-            break;
-        }
-        case sync_sync_file_: {
-            if (! two_channels) {
-                /* Only forward channel */
-                fwd_samples_diff = t_fwd_diff*8000/1000;
-                rev_samples_diff = 0;
-                bidir_samples_diff = fwd_samples_diff;
-            } else {
-                /* Two channels */
-                fwd_samples_diff = t_fwd_diff*8000/1000;
-                rev_samples_diff = t_rev_diff*8000/1000;
-                bidir_samples_diff = t_min*8000/1000;
-            }
-            break;
-        }
-    }
-
-    switch (direction) {
-        /* Only forward direction */
-        case dir_forward_: {
-            fwd_total_len = guint32_wraparound_diff(fwd_statinfo_.timestamp, fwd_statinfo_.first_timestamp) + fwd_statinfo_.last_payload_len;
-            if (! saveAudioAUSilence(fwd_total_len + fwd_samples_diff + bidir_samples_diff, save_file, stop_flag))
-            {
-                return FALSE;
-            }
-            if (! saveAudioAUUnidir(fwd_statinfo_, fwd_tempfile_, save_file, header_end, stop_flag, FALSE, fwd_samples_diff + bidir_samples_diff))
-            {
-                return FALSE;
-            }
-            break;
-        }
-        /* Only reverse direction */
-        case dir_reverse_: {
-            rev_total_len = guint32_wraparound_diff(rev_statinfo_.timestamp, rev_statinfo_.first_timestamp) + rev_statinfo_.last_payload_len;
-            if (! saveAudioAUSilence(rev_total_len + rev_samples_diff + bidir_samples_diff, save_file, stop_flag))
-            {
-                return FALSE;
-            }
-            if (! saveAudioAUUnidir(rev_statinfo_, rev_tempfile_, save_file, header_end, stop_flag, FALSE, rev_samples_diff + bidir_samples_diff))
-            {
-                return FALSE;
-            }
-            break;
-        }
-        /* Both directions */
-        case dir_both_: {
-            fwd_total_len = guint32_wraparound_diff(fwd_statinfo_.timestamp, fwd_statinfo_.first_timestamp) + fwd_statinfo_.last_payload_len;
-            rev_total_len = guint32_wraparound_diff(rev_statinfo_.timestamp, rev_statinfo_.first_timestamp) + rev_statinfo_.last_payload_len;
-            total_len = MAX(fwd_total_len + fwd_samples_diff, rev_total_len + rev_samples_diff);
-            if (! saveAudioAUSilence((total_len + bidir_samples_diff) * 2, save_file, stop_flag))
-            {
-                return FALSE;
-            }
-            if (! saveAudioAUBidir(fwd_statinfo_, rev_statinfo_, fwd_tempfile_, rev_tempfile_, save_file, header_end, stop_flag, fwd_samples_diff + bidir_samples_diff, rev_samples_diff + bidir_samples_diff))
-            {
-                return FALSE;
-            }
-        }
-    }
-
-    return TRUE;
-}
-
-gboolean RtpAnalysisDialog::saveAudioRAW(StreamDirection direction, QFile *save_file, gboolean *stop_flag)
-{
-    QFile *tempfile;
-    tap_rtp_save_data_t save_data;
-
-    switch (direction) {
-        /* Only forward direction */
-        case dir_forward_: {
-            tempfile = fwd_tempfile_;
-            break;
-        }
-        /* Only reversed direction */
-        case dir_reverse_: {
-            tempfile = rev_tempfile_;
-            break;
-        }
-        default: {
-            return FALSE;
-        }
-    }
-
-    /* Copy just payload */
-    while (sizeof(save_data) == tempfile->read((char *)&save_data,sizeof(save_data))) {
-        char f_rawvalue;
-
-        if (*stop_flag) {
-            return FALSE;
-        }
-
-        ui->progressFrame->setValue(int(tempfile->pos() * 100 / fwd_tempfile_->size()));
-
-        if (save_data.payload_len > 0) {
-            for(size_t i = 0; i < save_data.payload_len; i++) {
-                if (sizeof(f_rawvalue) != tempfile->read((char *)&f_rawvalue, sizeof(f_rawvalue))) {
-                    return FALSE;
-                }
-                if (sizeof(f_rawvalue) != save_file->write((char *)&f_rawvalue, sizeof(f_rawvalue))) {
-                    return FALSE;
-                }
-            }
-        }
-    }
-
-    return TRUE;
-}
-
-// rtp_analysis.c:copy_file
-enum { save_audio_none_, save_audio_au_, save_audio_raw_ };
-void RtpAnalysisDialog::saveAudio(RtpAnalysisDialog::StreamDirection direction, RtpAnalysisDialog::SyncType sync)
-{
-    if (!fwd_tempfile_->isOpen() || !rev_tempfile_->isOpen()) return;
-
-    QString caption;
-
-    switch (direction) {
-    case dir_forward_:
-        caption = tr("Save forward stream audio");
-        break;
-    case dir_reverse_:
-        caption = tr("Save reverse stream audio");
-        break;
-    case dir_both_:
-    default:
-        caption = tr("Save forward and reverse stream audio");
-        break;
-    }
-
-    QString ext_filter = "";
-    QString ext_filter_au = tr("Sun Audio (*.au)");
-    QString ext_filter_raw = tr("Raw (*.raw)");
-    ext_filter.append(ext_filter_au);
-    if (direction != dir_both_) {
-        ext_filter.append(";;");
-        ext_filter.append(ext_filter_raw);
-    }
-    QString sel_filter;
-    QString file_path = WiresharkFileDialog::getSaveFileName(
-                this, caption, wsApp->lastOpenDir().absoluteFilePath("Saved RTP Audio.au"),
-                ext_filter, &sel_filter);
-
-    if (file_path.isEmpty()) return;
-
-    int save_format = save_audio_none_;
-    if (0 == QString::compare(sel_filter, ext_filter_au)) {
-        save_format = save_audio_au_;
-    } else if (0 == QString::compare(sel_filter, ext_filter_raw)) {
-        save_format = save_audio_raw_;
-    }
-
-    if (save_format == save_audio_none_) {
-        QMessageBox::warning(this, tr("Warning"), tr("Unable to save in that format"));
-        return;
-    }
-
-    QFile      save_file(file_path);
-    gboolean   stop_flag = FALSE;
-
-    save_file.open(QIODevice::WriteOnly);
-    fwd_tempfile_->seek(0);
-    rev_tempfile_->seek(0);
-
-    if (save_file.error() != QFile::NoError) {
-        QMessageBox::warning(this, tr("Warning"), tr("Unable to save %1").arg(save_file.fileName()));
-        return;
-    }
-
-    ui->hintLabel->setText(tr("Saving %1" UTF8_HORIZONTAL_ELLIPSIS).arg(save_file.fileName()));
-    ui->progressFrame->showProgress(true, true, &stop_flag);
-
-    if (save_format == save_audio_au_) { /* au format */
-        if ((fwd_statinfo_.clock_rate != 8000) ||
-            ((rev_statinfo_.clock_rate != 0) && (rev_statinfo_.clock_rate != 8000))
-           ) {
-            QMessageBox::warning(this, tr("Warning"), tr("Can save audio with 8000 Hz clock rate only"));
+    foreach (QVariant v, row_data) {
+        if (!v.isValid()) {
+            values << "\"\"";
+        } else if (v.userType() == QMetaType::QString) {
+            values << QStringLiteral("\"%1\"").arg(v.toString());
         } else {
-            if (! saveAudioAU(direction, &save_file, &stop_flag, sync)) {
-                goto copy_file_err;
-            }
-        }
-    } else if (save_format == save_audio_raw_) { /* raw format */
-        if (! saveAudioRAW(direction, &save_file, &stop_flag)) {
-            goto copy_file_err;
+            values << v.toString();
         }
     }
+    save_file->write(values.join(",").toUtf8());
+    save_file->write("\n");
+}
 
-copy_file_err:
-    ui->progressFrame->hide();
-    updateWidgets();
-    return;
+void RtpAnalysisDialog::saveCsvData(QFile *save_file, QTreeWidget *tree)
+{
+    for (int row = 0; row < tree->topLevelItemCount(); row++) {
+        QTreeWidgetItem *ti = tree->topLevelItem(row);
+        if (ti->type() != rtp_analysis_type_) continue;
+        RtpAnalysisTreeWidgetItem *ra_ti = dynamic_cast<RtpAnalysisTreeWidgetItem *>((RtpAnalysisTreeWidgetItem *)ti);
+        QStringList values;
+        foreach (QVariant v, ra_ti->rowData()) {
+            if (!v.isValid()) {
+                values << "\"\"";
+            } else if (v.userType() == QMetaType::QString) {
+                values << QStringLiteral("\"%1\"").arg(v.toString());
+            } else {
+                values << v.toString();
+            }
+        }
+        save_file->write(values.join(",").toUtf8());
+        save_file->write("\n");
+    }
 }
 
 // XXX The GTK+ UI saves the length and timestamp.
@@ -1471,20 +898,17 @@ void RtpAnalysisDialog::saveCsv(RtpAnalysisDialog::StreamDirection direction)
     QString caption;
 
     switch (direction) {
-    case dir_forward_:
-        caption = tr("Save forward stream CSV");
+    case dir_one_:
+        caption = tr("Save one stream CSV");
         break;
-    case dir_reverse_:
-        caption = tr("Save reverse stream CSV");
-        break;
-    case dir_both_:
+    case dir_all_:
     default:
-        caption = tr("Save CSV");
+        caption = tr("Save all stream's CSV");
         break;
     }
 
     QString file_path = WiresharkFileDialog::getSaveFileName(
-                this, caption, wsApp->lastOpenDir().absoluteFilePath("RTP Packet Data.csv"),
+                this, caption, mainApp->openDialogInitialDir().absoluteFilePath("RTP Packet Data.csv"),
                 tr("Comma-separated values (*.csv)"));
 
     if (file_path.isEmpty()) return;
@@ -1492,50 +916,39 @@ void RtpAnalysisDialog::saveCsv(RtpAnalysisDialog::StreamDirection direction)
     QFile save_file(file_path);
     save_file.open(QFile::WriteOnly);
 
-    if (direction == dir_forward_ || direction == dir_both_) {
-        save_file.write("Forward\n");
+    switch (direction) {
+    case dir_one_:
+        {
+            tab_info_t *tab_data = getTabInfoForCurrentTab();
+            if (tab_data) {
 
-        for (int row = 0; row < ui->forwardTreeWidget->topLevelItemCount(); row++) {
-            QTreeWidgetItem *ti = ui->forwardTreeWidget->topLevelItem(row);
-            if (ti->type() != rtp_analysis_type_) continue;
-            RtpAnalysisTreeWidgetItem *ra_ti = dynamic_cast<RtpAnalysisTreeWidgetItem *>((RtpAnalysisTreeWidgetItem *)ti);
-            QStringList values;
-            foreach (QVariant v, ra_ti->rowData()) {
-                if (!v.isValid()) {
-                    values << "\"\"";
-                } else if ((int) v.type() == (int) QMetaType::QString) {
-                    values << QString("\"%1\"").arg(v.toString());
-                } else {
-                    values << v.toString();
-                }
+                saveCsvHeader(&save_file, tab_data->tree_widget);
+
+                QString n = QString(*tab_data->tab_name);
+                n.replace("\n"," ");
+                save_file.write("\"");
+                save_file.write(n.toUtf8());
+                save_file.write("\"\n");
+                saveCsvData(&save_file, tab_data->tree_widget);
             }
-            save_file.write(values.join(",").toUtf8());
+        }
+        break;
+    case dir_all_:
+    default:
+        if (tabs_.count() > 0) {
+            saveCsvHeader(&save_file, tabs_[0]->tree_widget);
+        }
+
+        for(int i=0; i<tabs_.count(); i++) {
+            QString n = QString(*tabs_[i]->tab_name);
+            n.replace("\n"," ");
+            save_file.write("\"");
+            save_file.write(n.toUtf8());
+            save_file.write("\"\n");
+            saveCsvData(&save_file, tabs_[i]->tree_widget);
             save_file.write("\n");
         }
-    }
-    if (direction == dir_both_) {
-        save_file.write("\n");
-    }
-    if (direction == dir_reverse_ || direction == dir_both_) {
-        save_file.write("Reverse\n");
-
-        for (int row = 0; row < ui->reverseTreeWidget->topLevelItemCount(); row++) {
-            QTreeWidgetItem *ti = ui->reverseTreeWidget->topLevelItem(row);
-            if (ti->type() != rtp_analysis_type_) continue;
-            RtpAnalysisTreeWidgetItem *ra_ti = dynamic_cast<RtpAnalysisTreeWidgetItem *>((RtpAnalysisTreeWidgetItem *)ti);
-            QStringList values;
-            foreach (QVariant v, ra_ti->rowData()) {
-                if (!v.isValid()) {
-                    values << "\"\"";
-                } else if (v.type() == QVariant::String) {
-                    values << QString("\"%1\"").arg(v.toString());
-                } else {
-                    values << v.toString();
-                }
-            }
-            save_file.write(values.join(",").toUtf8());
-            save_file.write("\n");
-        }
+        break;
     }
 }
 
@@ -1558,144 +971,234 @@ bool RtpAnalysisDialog::eventFilter(QObject *, QEvent *event)
     return false;
 }
 
-void RtpAnalysisDialog::graphClicked(QMouseEvent *event)
+void RtpAnalysisDialog::showGraphMenu(const QPoint &pos)
+{
+    graph_ctx_menu_.popup(ui->streamGraph->mapToGlobal(pos));
+}
+
+void RtpAnalysisDialog::graphClicked(QMouseEvent*)
 {
     updateWidgets();
-    if (event->button() == Qt::RightButton) {
-        graph_ctx_menu_.exec(event->globalPos());
+}
+
+void RtpAnalysisDialog::clearLayout(QLayout *layout)
+{
+    if (layout) {
+        QLayoutItem *item;
+
+        //the key point here is that the layout items are stored inside the layout in a stack
+        while((item = layout->takeAt(0)) != 0) {
+            if (item->widget()) {
+                layout->removeWidget(item->widget());
+                delete item->widget();
+            }
+
+            delete item;
+        }
     }
 }
 
-void RtpAnalysisDialog::findStreams()
+void RtpAnalysisDialog::closeTab(int index)
 {
-    const gchar filter_text[] = "rtp && rtp.version == 2 && rtp.ssrc && (ip || ipv6)";
-    dfilter_t *sfcode;
-    gchar *err_msg;
+    // Do not close last tab with graph
+    if (index != tabs_.count()) {
+        QWidget *remove_tab = qobject_cast<QWidget *>(ui->tabWidget->widget(index));
+        tab_info_t *tab = tabs_[index];
+        tab_hash_.remove(rtpstream_to_hash(&tab->stream), tab);
+        tabs_.remove(index);
+        ui->tabWidget->removeTab(index);
+        ui->streamGraph->removeGraph(tab->jitter_graph);
+        ui->streamGraph->removeGraph(tab->diff_graph);
+        ui->streamGraph->removeGraph(tab->delta_graph);
+        clearLayout(tab->graphHorizontalLayout);
+        delete remove_tab;
+        deleteTabInfo(tab);
+        g_free(tab);
 
-    /* Try to get the hfid for "rtp.ssrc". */
-    int hfid_rtp_ssrc = proto_registrar_get_id_byname("rtp.ssrc");
-    if (hfid_rtp_ssrc == -1) {
-        err_str_ = tr("There is no \"rtp.ssrc\" field in this version of Wireshark.");
-        updateWidgets();
-        return;
-    }
-
-    /* Try to compile the filter. */
-    if (!dfilter_compile(filter_text, &sfcode, &err_msg)) {
-        err_str_ = QString(err_msg);
-        g_free(err_msg);
-        updateWidgets();
-        return;
-    }
-
-    if (!cap_file_.capFile() || !cap_file_.capFile()->current_frame) close();
-
-    frame_data *fdata = cap_file_.capFile()->current_frame;
-
-    if (!cf_read_record(cap_file_.capFile(), fdata)) close();
-
-    epan_dissect_t edt;
-
-    epan_dissect_init(&edt, cap_file_.capFile()->epan, TRUE, FALSE);
-    epan_dissect_prime_with_dfilter(&edt, sfcode);
-    epan_dissect_prime_with_hfid(&edt, hfid_rtp_ssrc);
-    epan_dissect_run(&edt, cap_file_.capFile()->cd_t, &cap_file_.capFile()->rec,
-                     frame_tvbuff_new_buffer(&cap_file_.capFile()->provider, fdata, &cap_file_.capFile()->buf),
-                     fdata, NULL);
-
-    /*
-     * Packet must be an RTPv2 packet with an SSRC; we use the filter to
-     * check.
-     */
-    if (!dfilter_apply_edt(sfcode, &edt)) {
-        epan_dissect_cleanup(&edt);
-        dfilter_free(sfcode);
-        err_str_ = tr("Please select an RTPv2 packet with an SSRC value");
-        updateWidgets();
-        return;
-    }
-
-    dfilter_free(sfcode);
-
-    /* OK, it is an RTP frame. Let's get the IP and port values */
-    copy_address(&(src_fwd_), &(edt.pi.src));
-    copy_address(&(dst_fwd_), &(edt.pi.dst));
-    port_src_fwd_ = edt.pi.srcport;
-    port_dst_fwd_ = edt.pi.destport;
-
-    /* assume the inverse ip/port combination for the reverse direction */
-    copy_address(&(src_rev_), &(edt.pi.dst));
-    copy_address(&(dst_rev_), &(edt.pi.src));
-    port_src_rev_ = edt.pi.destport;
-    port_dst_rev_ = edt.pi.srcport;
-
-    /* now we need the SSRC value of the current frame */
-    GPtrArray *gp = proto_get_finfo_ptr_array(edt.tree, hfid_rtp_ssrc);
-    if (gp == NULL || gp->len == 0) {
-        /* XXX - should not happen, as the filter includes rtp.ssrc */
-        epan_dissect_cleanup(&edt);
-        err_str_ = tr("SSRC value not found.");
-        updateWidgets();
-        return;
-    }
-    ssrc_fwd_ = fvalue_get_uinteger(&((field_info *)gp->pdata[0])->value);
-
-    /* Register the tap listener */
-    memset(&tapinfo_, 0, sizeof(rtpstream_tapinfo_t));
-    tapinfo_.tap_data = this;
-    tapinfo_.mode = TAP_ANALYSE;
-
-//    register_tap_listener_rtp_stream(&tapinfo_, NULL);
-    /* Scan for RTP streams (redissect all packets) */
-    rtpstream_scan(&tapinfo_, cap_file_.capFile(), NULL);
-
-    for (GList *strinfo_list = g_list_first(tapinfo_.strinfo_list); strinfo_list; strinfo_list = g_list_next(strinfo_list)) {
-        rtp_stream_info_t * strinfo = (rtp_stream_info_t*)(strinfo_list->data);
-        if (addresses_equal(&(strinfo->src_addr), &(src_fwd_))
-            && (strinfo->src_port == port_src_fwd_)
-            && (addresses_equal(&(strinfo->dest_addr), &(dst_fwd_)))
-            && (strinfo->dest_port == port_dst_fwd_))
-        {
-            packet_count_fwd_ = strinfo->packet_count;
-            setup_frame_number_fwd_ = strinfo->setup_frame_number;
-            nstime_copy(&start_rel_time_fwd_, &strinfo->start_rel_time);
-            num_streams_++;
-        }
-
-        if (addresses_equal(&(strinfo->src_addr), &(src_rev_))
-            && (strinfo->src_port == port_src_rev_)
-            && (addresses_equal(&(strinfo->dest_addr), &(dst_rev_)))
-            && (strinfo->dest_port == port_dst_rev_))
-        {
-            packet_count_rev_ = strinfo->packet_count;
-            setup_frame_number_rev_ = strinfo->setup_frame_number;
-            nstime_copy(&start_rel_time_rev_, &strinfo->start_rel_time);
-            num_streams_++;
-            if (ssrc_rev_ == 0) {
-                ssrc_rev_ = strinfo->ssrc;
-            }
-        }
+        updateGraph();
     }
 }
 
 void RtpAnalysisDialog::showStreamMenu(QPoint pos)
 {
-    QTreeWidget *cur_tree = qobject_cast<QTreeWidget *>(ui->tabWidget->currentWidget());
+    tab_info_t *tab_data = getTabInfoForCurrentTab();
+    if (!tab_data) return;
+
+    QTreeWidget *cur_tree = tab_data->tree_widget;
     if (!cur_tree) return;
 
     updateWidgets();
     stream_ctx_menu_.popup(cur_tree->viewport()->mapToGlobal(pos));
 }
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+void RtpAnalysisDialog::replaceRtpStreams(QVector<rtpstream_id_t *> stream_ids)
+{
+    std::unique_lock<std::mutex> lock(run_mutex_, std::try_to_lock);
+    if (lock.owns_lock()) {
+        // Delete existing tabs (from last to first)
+        if (tabs_.count() > 0) {
+            for(int i = static_cast<int>(tabs_.count()); i>0; i--) {
+                closeTab(i-1);
+            }
+        }
+        addRtpStreamsPrivate(stream_ids);
+    } else {
+        ws_warning("replaceRtpStreams was called while other thread locked it. Current call is ignored, try it later.");
+    }
+}
+
+void RtpAnalysisDialog::addRtpStreams(QVector<rtpstream_id_t *> stream_ids)
+{
+    std::unique_lock<std::mutex> lock(run_mutex_, std::try_to_lock);
+    if (lock.owns_lock()) {
+        addRtpStreamsPrivate(stream_ids);
+    } else {
+        ws_warning("addRtpStreams was called while other thread locked it. Current call is ignored, try it later.");
+    }
+}
+
+void RtpAnalysisDialog::addRtpStreamsPrivate(QVector<rtpstream_id_t *> stream_ids)
+{
+    int first_tab_no = -1;
+
+    setUpdatesEnabled(false);
+    foreach(rtpstream_id_t *id, stream_ids) {
+        bool found = false;
+
+        QList<tab_info_t *> tabs = tab_hash_.values(rtpstream_id_to_hash(id));
+        for (int i = 0; i < tabs.size(); i++) {
+            tab_info_t *tab = tabs.at(i);
+            if (rtpstream_id_equal(&tab->stream.id, id, RTPSTREAM_ID_EQUAL_SSRC))  {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            int cur_tab_no;
+
+            tab_info_t *new_tab = g_new0(tab_info_t, 1);
+            rtpstream_id_copy(id, &(new_tab->stream.id));
+            new_tab->time_vals = new QVector<double>();
+            new_tab->jitter_vals = new QVector<double>();
+            new_tab->diff_vals = new QVector<double>();
+            new_tab->delta_vals = new QVector<double>();
+            tabs_ << new_tab;
+            cur_tab_no = addTabUI(new_tab);
+            tab_hash_.insert(rtpstream_id_to_hash(id), new_tab);
+            if (first_tab_no == -1) {
+                first_tab_no = cur_tab_no;
+            }
+        }
+    }
+    if (first_tab_no != -1) {
+         ui->tabWidget->setCurrentIndex(first_tab_no);
+    }
+    setUpdatesEnabled(true);
+    registerTapListener("rtp", this, NULL, 0, tapReset, tapPacket, tapDraw);
+    cap_file_.retapPackets();
+    updateStatistics();
+    removeTapListeners();
+
+    updateGraph();
+}
+
+void RtpAnalysisDialog::removeRtpStreams(QVector<rtpstream_id_t *> stream_ids)
+{
+    std::unique_lock<std::mutex> lock(run_mutex_, std::try_to_lock);
+    if (lock.owns_lock()) {
+        setUpdatesEnabled(false);
+        foreach(rtpstream_id_t *id, stream_ids) {
+            QList<tab_info_t *> tabs = tab_hash_.values(rtpstream_id_to_hash(id));
+            for (int i = 0; i < tabs.size(); i++) {
+                tab_info_t *tab = tabs.at(i);
+                if (rtpstream_id_equal(&tab->stream.id, id, RTPSTREAM_ID_EQUAL_SSRC))  {
+                    closeTab(static_cast<int>(tabs_.indexOf(tab)));
+                }
+            }
+        }
+        setUpdatesEnabled(true);
+
+        updateGraph();
+    } else {
+        ws_warning("removeRtpStreams was called while other thread locked it. Current call is ignored, try it later.");
+    }
+}
+
+tab_info_t *RtpAnalysisDialog::getTabInfoForCurrentTab()
+{
+    tab_info_t *tab_data;
+
+    if (file_closed_) return NULL;
+    QWidget *cur_tab = qobject_cast<QWidget *>(ui->tabWidget->currentWidget());
+    if (!cur_tab) return NULL;
+    tab_data = static_cast<tab_info_t *>(cur_tab->property("tab_data").value<void*>());
+
+    return tab_data;
+}
+
+
+QToolButton *RtpAnalysisDialog::addAnalyzeButton(QDialogButtonBox *button_box,
+#ifdef QT_MULTIMEDIA_LIB
+    RtpBaseDialog *dialog
+#else
+    RtpBaseDialog *dialog _U_
+#endif // QT_MULTIMEDIA_LIB
+)
+{
+    if (!button_box) return nullptr;
+
+    QToolButton *analysis_button = nullptr;
+
+#ifdef QT_MULTIMEDIA_LIB
+    QAction *ca;
+    analysis_button = new QToolButton();
+    button_box->addButton(analysis_button, QDialogButtonBox::ActionRole);
+    analysis_button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    analysis_button->setPopupMode(QToolButton::MenuButtonPopup);
+
+    ca = new QAction(tr("&Analyze"), analysis_button);
+    ca->setToolTip(tr("Open the analysis window for the selected stream(s)"));
+    connect(ca, &QAction::triggered, dialog, &RtpBaseDialog::rtpAnalysisReplace);
+    analysis_button->setDefaultAction(ca);
+    // Overrides text striping of shortcut undercode in QAction
+    analysis_button->setText(ca->text());
+
+    QMenu *button_menu = new QMenu(analysis_button);
+    button_menu->setToolTipsVisible(true);
+    ca = button_menu->addAction(tr("&Set List"));
+    ca->setToolTip(tr("Replace existing list in RTP Analysis Dialog with new one"));
+    connect(ca, &QAction::triggered, dialog, &RtpBaseDialog::rtpAnalysisReplace);
+    ca = button_menu->addAction(tr("&Add to List"));
+    ca->setToolTip(tr("Add new set to existing list in RTP Analysis Dialog"));
+    connect(ca, &QAction::triggered, dialog, &RtpBaseDialog::rtpAnalysisAdd);
+    ca = button_menu->addAction(tr("&Remove from List"));
+    ca->setToolTip(tr("Remove selected streams from list in RTP Analysis Dialog"));
+    connect(ca, &QAction::triggered, dialog, &RtpBaseDialog::rtpAnalysisRemove);
+    analysis_button->setMenu(button_menu);
+#endif
+
+    return analysis_button;
+}
+
+void RtpAnalysisDialog::on_actionPrepareFilterOne_triggered()
+{
+    if ((ui->tabWidget->currentIndex() < (ui->tabWidget->count()-1))) {
+        QVector<rtpstream_id_t *> ids;
+        ids << &(tabs_[ui->tabWidget->currentIndex()]->stream.id);
+        QString filter = make_filter_based_on_rtpstream_id(ids);
+        if (filter.length() > 0) {
+            emit updateFilter(filter);
+        }
+    }
+}
+
+void RtpAnalysisDialog::on_actionPrepareFilterAll_triggered()
+{
+    QVector<rtpstream_id_t *>ids = getSelectedRtpIds();
+    QString filter = make_filter_based_on_rtpstream_id(ids);
+    if (filter.length() > 0) {
+        emit updateFilter(filter);
+    }
+}
+

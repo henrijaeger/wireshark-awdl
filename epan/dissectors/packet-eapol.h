@@ -23,10 +23,19 @@
 #define EAPOL_ANNOUNCEMENT_SPECIFIC  7
 #define EAPOL_ANNOUNCEMENT_REQUEST   8
 
+extern int proto_eapol;
+
+#define EAPOL_KEY_FRAME_KEY 0
+typedef struct {
+  unsigned len;
+  uint8_t type; /* eapol.keydes.type */
+  uint8_t *data;
+} proto_eapol_key_frame_t;
+
 #endif /* __PACKET_EAPOL_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

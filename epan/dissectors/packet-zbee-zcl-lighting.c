@@ -90,6 +90,7 @@
 #define ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_COLOR_CAPABILITIES                           0x400a  /* Color Capabilities */
 #define ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_COLOR_TEMPERATURE_PHYS_MIN                   0x400b  /* Color Temperature Physical Min */
 #define ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_COLOR_TEMPERATURE_PHYS_MAX                   0x400c  /* Color Temperature Physical Max */
+#define ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_STARTUP_COLOR_TEMPERATURE                    0x4010  /* Startup Color Temperature */
 
 /* Server Commands Received */
 #define ZBEE_ZCL_CMD_ID_COLOR_CONTROL_MOVE_TO_HUE                                   0x00  /* Move to Hue */
@@ -112,8 +113,8 @@
 #define ZBEE_ZCL_CMD_ID_COLOR_CONTROL_MOVE_COLOR_TEMP                               0x4b  /* Move Color Temperature */
 #define ZBEE_ZCL_CMD_ID_COLOR_CONTROL_STEP_COLOR_TEMP                               0x4c  /* Step Color Temperature */
 
-#define ZBEE_ZCL_NORMAL_HUE                                                         FALSE
-#define ZBEE_ZCL_ENHANCED_HUE                                                       TRUE
+#define ZBEE_ZCL_NORMAL_HUE                                                         false
+#define ZBEE_ZCL_ENHANCED_HUE                                                       true
 
 /* Server Commands Generated - None */
 
@@ -125,20 +126,20 @@ void proto_register_zbee_zcl_color_control(void);
 void proto_reg_handoff_zbee_zcl_color_control(void);
 
 /* Command Dissector Helpers */
-static void dissect_zcl_color_control_move_to_hue                               (tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced);
-static void dissect_zcl_color_control_move_hue_saturation                       (tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced);
-static void dissect_zcl_color_control_step_hue_saturation                       (tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced);
-static void dissect_zcl_color_control_move_to_saturation                        (tvbuff_t *tvb, proto_tree *tree, guint *offset);
-static void dissect_zcl_color_control_move_to_hue_and_saturation                (tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced);
-static void dissect_zcl_color_control_move_to_color                             (tvbuff_t *tvb, proto_tree *tree, guint *offset);
-static void dissect_zcl_color_control_move_color                                (tvbuff_t *tvb, proto_tree *tree, guint *offset);
-static void dissect_zcl_color_control_step_color                                (tvbuff_t *tvb, proto_tree *tree, guint *offset);
-static void dissect_zcl_color_control_move_to_color_temp                        (tvbuff_t *tvb, proto_tree *tree, guint *offset);
-static void dissect_zcl_color_control_color_loop_set                            (tvbuff_t *tvb, proto_tree *tree, guint *offset);
-static void dissect_zcl_color_control_move_color_temp                           (tvbuff_t *tvb, proto_tree *tree, guint *offset);
-static void dissect_zcl_color_control_step_color_temp                           (tvbuff_t *tvb, proto_tree *tree, guint *offset);
+static void dissect_zcl_color_control_move_to_hue                               (tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced);
+static void dissect_zcl_color_control_move_hue_saturation                       (tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced);
+static void dissect_zcl_color_control_step_hue_saturation                       (tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced);
+static void dissect_zcl_color_control_move_to_saturation                        (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_color_control_move_to_hue_and_saturation                (tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced);
+static void dissect_zcl_color_control_move_to_color                             (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_color_control_move_color                                (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_color_control_step_color                                (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_color_control_move_to_color_temp                        (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_color_control_color_loop_set                            (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_color_control_move_color_temp                           (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
+static void dissect_zcl_color_control_step_color_temp                           (tvbuff_t *tvb, proto_tree *tree, unsigned *offset);
 
-static void dissect_zcl_color_control_attr_data                                 (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type);
+static void dissect_zcl_color_control_attr_data                                 (proto_tree *tree, tvbuff_t *tvb, unsigned *offset, uint16_t attr_id, unsigned data_type, bool client_attr);
 
 /* Private functions prototype */
 
@@ -146,98 +147,99 @@ static void dissect_zcl_color_control_attr_data                                 
 /* Global Variables      */
 /*************************/
 /* Initialize the protocol and registered fields */
-static int proto_zbee_zcl_color_control = -1;
+static int proto_zbee_zcl_color_control;
 
-static int hf_zbee_zcl_color_control_attr_id = -1;
-static int hf_zbee_zcl_color_control_attr_current_hue = -1;
-static int hf_zbee_zcl_color_control_attr_current_saturation = -1;
-static int hf_zbee_zcl_color_control_attr_remaining_time = -1;
-static int hf_zbee_zcl_color_control_attr_color_x = -1;
-static int hf_zbee_zcl_color_control_attr_color_y = -1;
-static int hf_zbee_zcl_color_control_attr_drift_compensation = -1;
-static int hf_zbee_zcl_color_control_attr_color_temperature = -1;
-static int hf_zbee_zcl_color_control_attr_color_mode = -1;
-static int hf_zbee_zcl_color_control_attr_nr_of_primaries = -1;
-static int hf_zbee_zcl_color_control_attr_primary_1_x = -1;
-static int hf_zbee_zcl_color_control_attr_primary_1_y = -1;
-static int hf_zbee_zcl_color_control_attr_primary_1_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_primary_2_x = -1;
-static int hf_zbee_zcl_color_control_attr_primary_2_y = -1;
-static int hf_zbee_zcl_color_control_attr_primary_2_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_primary_3_x = -1;
-static int hf_zbee_zcl_color_control_attr_primary_3_y = -1;
-static int hf_zbee_zcl_color_control_attr_primary_3_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_primary_4_x = -1;
-static int hf_zbee_zcl_color_control_attr_primary_4_y = -1;
-static int hf_zbee_zcl_color_control_attr_primary_4_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_primary_5_x = -1;
-static int hf_zbee_zcl_color_control_attr_primary_5_y = -1;
-static int hf_zbee_zcl_color_control_attr_primary_5_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_primary_6_x = -1;
-static int hf_zbee_zcl_color_control_attr_primary_6_y = -1;
-static int hf_zbee_zcl_color_control_attr_primary_6_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_white_point_x = -1;
-static int hf_zbee_zcl_color_control_attr_white_point_y = -1;
-static int hf_zbee_zcl_color_control_attr_red_x = -1;
-static int hf_zbee_zcl_color_control_attr_red_y = -1;
-static int hf_zbee_zcl_color_control_attr_red_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_green_x = -1;
-static int hf_zbee_zcl_color_control_attr_green_y = -1;
-static int hf_zbee_zcl_color_control_attr_green_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_blue_x = -1;
-static int hf_zbee_zcl_color_control_attr_blue_y = -1;
-static int hf_zbee_zcl_color_control_attr_blue_intensity = -1;
-static int hf_zbee_zcl_color_control_attr_enhanced_current_hue = -1;
-static int hf_zbee_zcl_color_control_attr_enhanced_color_mode = -1;
-static int hf_zbee_zcl_color_control_attr_color_loop_active = -1;
-static int hf_zbee_zcl_color_control_attr_color_loop_direction = -1;
-static int hf_zbee_zcl_color_control_attr_color_loop_time = -1;
-static int hf_zbee_zcl_color_control_attr_color_loop_start_enhanced_hue = -1;
-static int hf_zbee_zcl_color_control_attr_color_loop_stored_enhanced_hue = -1;
-static int hf_zbee_zcl_color_control_attr_color_capabilities = -1;
-static int hf_zbee_zcl_color_control_attr_color_capabilities_hs = -1;
-static int hf_zbee_zcl_color_control_attr_color_capabilities_ehs = -1;
-static int hf_zbee_zcl_color_control_attr_color_capabilities_loop = -1;
-static int hf_zbee_zcl_color_control_attr_color_capabilities_xy = -1;
-static int hf_zbee_zcl_color_control_attr_color_capabilities_ct = -1;
-static int hf_zbee_zcl_color_control_attr_color_temperature_phys_min = -1;
-static int hf_zbee_zcl_color_control_attr_color_temperature_phys_max = -1;
-static int hf_zbee_zcl_color_control_hue = -1;
-static int hf_zbee_zcl_color_control_direction = -1;
-static int hf_zbee_zcl_color_control_transit_time = -1;
-static int hf_zbee_zcl_color_control_move_mode = -1;
-static int hf_zbee_zcl_color_control_rate = -1;
-static int hf_zbee_zcl_color_control_step_mode = -1;
-static int hf_zbee_zcl_color_control_step_size = -1;
-static int hf_zbee_zcl_color_control_transit_time_8bit = -1;
-static int hf_zbee_zcl_color_control_saturation = -1;
-static int hf_zbee_zcl_color_control_color_X = -1;
-static int hf_zbee_zcl_color_control_color_Y = -1;
-static int hf_zbee_zcl_color_control_rate_X = -1;
-static int hf_zbee_zcl_color_control_rate_Y = -1;
-static int hf_zbee_zcl_color_control_step_X = -1;
-static int hf_zbee_zcl_color_control_step_Y = -1;
-static int hf_zbee_zcl_color_control_color_temp = -1;
-static int hf_zbee_zcl_color_control_enhanced_hue = -1;
-static int hf_zbee_zcl_color_control_enhanced_rate = -1;
-static int hf_zbee_zcl_color_control_enhanced_step_size = -1;
-static int hf_zbee_zcl_color_control_color_loop_update_flags = -1;
-static int hf_zbee_zcl_color_control_color_loop_update_action = -1;
-static int hf_zbee_zcl_color_control_color_loop_update_direction = -1;
-static int hf_zbee_zcl_color_control_color_loop_update_time = -1;
-static int hf_zbee_zcl_color_control_color_loop_update_start_hue = -1;
-static int hf_zbee_zcl_color_control_color_loop_action = -1;
-static int hf_zbee_zcl_color_control_color_loop_direction = -1;
-static int hf_zbee_zcl_color_control_color_loop_time = -1;
-static int hf_zbee_zcl_color_control_color_loop_start_hue = -1;
-static int hf_zbee_zcl_color_control_color_temp_min = -1;
-static int hf_zbee_zcl_color_control_color_temp_max = -1;
-static int hf_zbee_zcl_color_control_srv_rx_cmd_id = -1;
+static int hf_zbee_zcl_color_control_attr_id;
+static int hf_zbee_zcl_color_control_attr_current_hue;
+static int hf_zbee_zcl_color_control_attr_current_saturation;
+static int hf_zbee_zcl_color_control_attr_remaining_time;
+static int hf_zbee_zcl_color_control_attr_color_x;
+static int hf_zbee_zcl_color_control_attr_color_y;
+static int hf_zbee_zcl_color_control_attr_drift_compensation;
+static int hf_zbee_zcl_color_control_attr_color_temperature;
+static int hf_zbee_zcl_color_control_attr_color_mode;
+static int hf_zbee_zcl_color_control_attr_nr_of_primaries;
+static int hf_zbee_zcl_color_control_attr_primary_1_x;
+static int hf_zbee_zcl_color_control_attr_primary_1_y;
+static int hf_zbee_zcl_color_control_attr_primary_1_intensity;
+static int hf_zbee_zcl_color_control_attr_primary_2_x;
+static int hf_zbee_zcl_color_control_attr_primary_2_y;
+static int hf_zbee_zcl_color_control_attr_primary_2_intensity;
+static int hf_zbee_zcl_color_control_attr_primary_3_x;
+static int hf_zbee_zcl_color_control_attr_primary_3_y;
+static int hf_zbee_zcl_color_control_attr_primary_3_intensity;
+static int hf_zbee_zcl_color_control_attr_primary_4_x;
+static int hf_zbee_zcl_color_control_attr_primary_4_y;
+static int hf_zbee_zcl_color_control_attr_primary_4_intensity;
+static int hf_zbee_zcl_color_control_attr_primary_5_x;
+static int hf_zbee_zcl_color_control_attr_primary_5_y;
+static int hf_zbee_zcl_color_control_attr_primary_5_intensity;
+static int hf_zbee_zcl_color_control_attr_primary_6_x;
+static int hf_zbee_zcl_color_control_attr_primary_6_y;
+static int hf_zbee_zcl_color_control_attr_primary_6_intensity;
+static int hf_zbee_zcl_color_control_attr_white_point_x;
+static int hf_zbee_zcl_color_control_attr_white_point_y;
+static int hf_zbee_zcl_color_control_attr_red_x;
+static int hf_zbee_zcl_color_control_attr_red_y;
+static int hf_zbee_zcl_color_control_attr_red_intensity;
+static int hf_zbee_zcl_color_control_attr_green_x;
+static int hf_zbee_zcl_color_control_attr_green_y;
+static int hf_zbee_zcl_color_control_attr_green_intensity;
+static int hf_zbee_zcl_color_control_attr_blue_x;
+static int hf_zbee_zcl_color_control_attr_blue_y;
+static int hf_zbee_zcl_color_control_attr_blue_intensity;
+static int hf_zbee_zcl_color_control_attr_enhanced_current_hue;
+static int hf_zbee_zcl_color_control_attr_enhanced_color_mode;
+static int hf_zbee_zcl_color_control_attr_color_loop_active;
+static int hf_zbee_zcl_color_control_attr_color_loop_direction;
+static int hf_zbee_zcl_color_control_attr_color_loop_time;
+static int hf_zbee_zcl_color_control_attr_color_loop_start_enhanced_hue;
+static int hf_zbee_zcl_color_control_attr_color_loop_stored_enhanced_hue;
+static int hf_zbee_zcl_color_control_attr_color_capabilities;
+static int hf_zbee_zcl_color_control_attr_color_capabilities_hs;
+static int hf_zbee_zcl_color_control_attr_color_capabilities_ehs;
+static int hf_zbee_zcl_color_control_attr_color_capabilities_loop;
+static int hf_zbee_zcl_color_control_attr_color_capabilities_xy;
+static int hf_zbee_zcl_color_control_attr_color_capabilities_ct;
+static int hf_zbee_zcl_color_control_attr_color_temperature_phys_min;
+static int hf_zbee_zcl_color_control_attr_color_temperature_phys_max;
+static int hf_zbee_zcl_color_control_attr_startup_color_temperature;
+static int hf_zbee_zcl_color_control_hue;
+static int hf_zbee_zcl_color_control_direction;
+static int hf_zbee_zcl_color_control_transit_time;
+static int hf_zbee_zcl_color_control_move_mode;
+static int hf_zbee_zcl_color_control_rate;
+static int hf_zbee_zcl_color_control_step_mode;
+static int hf_zbee_zcl_color_control_step_size;
+static int hf_zbee_zcl_color_control_transit_time_8bit;
+static int hf_zbee_zcl_color_control_saturation;
+static int hf_zbee_zcl_color_control_color_X;
+static int hf_zbee_zcl_color_control_color_Y;
+static int hf_zbee_zcl_color_control_rate_X;
+static int hf_zbee_zcl_color_control_rate_Y;
+static int hf_zbee_zcl_color_control_step_X;
+static int hf_zbee_zcl_color_control_step_Y;
+static int hf_zbee_zcl_color_control_color_temp;
+static int hf_zbee_zcl_color_control_enhanced_hue;
+static int hf_zbee_zcl_color_control_enhanced_rate;
+static int hf_zbee_zcl_color_control_enhanced_step_size;
+static int hf_zbee_zcl_color_control_color_loop_update_flags;
+static int hf_zbee_zcl_color_control_color_loop_update_action;
+static int hf_zbee_zcl_color_control_color_loop_update_direction;
+static int hf_zbee_zcl_color_control_color_loop_update_time;
+static int hf_zbee_zcl_color_control_color_loop_update_start_hue;
+static int hf_zbee_zcl_color_control_color_loop_action;
+static int hf_zbee_zcl_color_control_color_loop_direction;
+static int hf_zbee_zcl_color_control_color_loop_time;
+static int hf_zbee_zcl_color_control_color_loop_start_hue;
+static int hf_zbee_zcl_color_control_color_temp_min;
+static int hf_zbee_zcl_color_control_color_temp_max;
+static int hf_zbee_zcl_color_control_srv_rx_cmd_id;
 
 /* Initialize the subtree pointers */
-static gint ett_zbee_zcl_color_control = -1;
-static gint ett_zbee_zcl_color_control_color_capabilities = -1;
-static gint ett_zbee_zcl_color_control_color_loop_settings = -1;
+static int ett_zbee_zcl_color_control;
+static int ett_zbee_zcl_color_control_color_capabilities;
+static int ett_zbee_zcl_color_control_color_loop_settings;
 
 /* Attributes */
 static const value_string zbee_zcl_color_control_attr_names[] = {
@@ -290,6 +292,7 @@ static const value_string zbee_zcl_color_control_attr_names[] = {
     { ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_COLOR_CAPABILITIES,            "Color Capabilities" },
     { ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_COLOR_TEMPERATURE_PHYS_MIN,    "Color Temperature Physical Min" },
     { ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_COLOR_TEMPERATURE_PHYS_MAX,    "Color Temperature Physical Max" },
+    { ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_STARTUP_COLOR_TEMPERATURE,     "Startup Color Temperature" },
     { 0, NULL }
 };
 
@@ -394,9 +397,9 @@ dissect_zbee_zcl_color_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
 {
     proto_tree        *payload_tree;
     zbee_zcl_packet   *zcl;
-    guint             offset = 0;
-    guint8            cmd_id;
-    gint              rem_len;
+    unsigned          offset = 0;
+    uint8_t           cmd_id;
+    int               rem_len;
 
     /* Reject the packet if data is NULL */
     if (data == NULL)
@@ -412,7 +415,7 @@ dissect_zbee_zcl_color_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
             zcl->tran_seqno);
 
         /* Add the command ID. */
-        proto_tree_add_item(tree, hf_zbee_zcl_color_control_srv_rx_cmd_id, tvb, offset, 1, cmd_id);
+        proto_tree_add_item(tree, hf_zbee_zcl_color_control_srv_rx_cmd_id, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 
         /* Check if this command has a payload, then add the payload tree */
         rem_len = tvb_reported_length_remaining(tvb, ++offset);
@@ -512,7 +515,7 @@ dissect_zbee_zcl_color_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_move_to_hue(tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced)
+dissect_zcl_color_control_move_to_hue(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced)
 {
     /* Retrieve "Hue" field */
     if (enhanced)
@@ -545,7 +548,7 @@ dissect_zcl_color_control_move_to_hue(tvbuff_t *tvb, proto_tree *tree, guint *of
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_move_hue_saturation(tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced)
+dissect_zcl_color_control_move_hue_saturation(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced)
 {
     /* Retrieve "Move Mode" field */
     proto_tree_add_item(tree, hf_zbee_zcl_color_control_move_mode, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
@@ -574,7 +577,7 @@ dissect_zcl_color_control_move_hue_saturation(tvbuff_t *tvb, proto_tree *tree, g
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_step_hue_saturation(tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced)
+dissect_zcl_color_control_step_hue_saturation(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced)
 {
     /* Retrieve "Step Mode" field */
     proto_tree_add_item(tree, hf_zbee_zcl_color_control_step_mode, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
@@ -607,7 +610,7 @@ dissect_zcl_color_control_step_hue_saturation(tvbuff_t *tvb, proto_tree *tree, g
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_move_to_saturation(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_move_to_saturation(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
     /* Retrieve "Saturation" field */
     proto_tree_add_item(tree, hf_zbee_zcl_color_control_saturation, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
@@ -628,7 +631,7 @@ dissect_zcl_color_control_move_to_saturation(tvbuff_t *tvb, proto_tree *tree, gu
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_move_to_hue_and_saturation(tvbuff_t *tvb, proto_tree *tree, guint *offset, gboolean enhanced)
+dissect_zcl_color_control_move_to_hue_and_saturation(tvbuff_t *tvb, proto_tree *tree, unsigned *offset, bool enhanced)
 {
     /* Retrieve "Hue" field */
     if (enhanced)
@@ -661,7 +664,7 @@ dissect_zcl_color_control_move_to_hue_and_saturation(tvbuff_t *tvb, proto_tree *
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_move_to_color(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_move_to_color(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
    /* Retrieve "Color X" field */
    proto_tree_add_item(tree, hf_zbee_zcl_color_control_color_X, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -685,7 +688,7 @@ dissect_zcl_color_control_move_to_color(tvbuff_t *tvb, proto_tree *tree, guint *
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_move_color(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_move_color(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
    /* Retrieve "Rate X" field */
    proto_tree_add_item(tree, hf_zbee_zcl_color_control_rate_X, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -706,7 +709,7 @@ dissect_zcl_color_control_move_color(tvbuff_t *tvb, proto_tree *tree, guint *off
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_step_color(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_step_color(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
    /* Retrieve "Step X" field */
    proto_tree_add_item(tree, hf_zbee_zcl_color_control_step_X, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -730,7 +733,7 @@ dissect_zcl_color_control_step_color(tvbuff_t *tvb, proto_tree *tree, guint *off
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_move_to_color_temp(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_move_to_color_temp(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
    /* Retrieve "Color Temperature" field */
    proto_tree_add_item(tree, hf_zbee_zcl_color_control_color_temp, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
@@ -750,9 +753,9 @@ dissect_zcl_color_control_move_to_color_temp(tvbuff_t *tvb, proto_tree *tree, gu
  *@param  offset offset of data in tvb
 */
 static void
-dissect_zcl_color_control_color_loop_set(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_color_loop_set(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
-    static const int *color_loop_update_fields[] = {
+    static int * const color_loop_update_fields[] = {
         &hf_zbee_zcl_color_control_color_loop_update_action,
         &hf_zbee_zcl_color_control_color_loop_update_direction,
         &hf_zbee_zcl_color_control_color_loop_update_time,
@@ -790,7 +793,7 @@ dissect_zcl_color_control_color_loop_set(tvbuff_t *tvb, proto_tree *tree, guint 
   *@param  offset offset of data in tvb
   */
 static void
-dissect_zcl_color_control_move_color_temp(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_move_color_temp(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
     /* Retrieve "Move Mode" field */
     proto_tree_add_item(tree, hf_zbee_zcl_color_control_move_mode, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
@@ -818,7 +821,7 @@ dissect_zcl_color_control_move_color_temp(tvbuff_t *tvb, proto_tree *tree, guint
   *@param  offset offset of data in tvb
   */
 static void
-dissect_zcl_color_control_step_color_temp(tvbuff_t *tvb, proto_tree *tree, guint *offset)
+dissect_zcl_color_control_step_color_temp(tvbuff_t *tvb, proto_tree *tree, unsigned *offset)
 {
     /* Retrieve "Step Mode" field */
     proto_tree_add_item(tree, hf_zbee_zcl_color_control_step_mode, tvb, *offset, 1, ENC_LITTLE_ENDIAN);
@@ -848,16 +851,16 @@ dissect_zcl_color_control_step_color_temp(tvbuff_t *tvb, proto_tree *tree, guint
  *  DESCRIPTION
  *    this function decodes color xy values
  *  PARAMETERS
- *      guint *s        - string to display
- *      guint16 value   - value to decode
+ *      unsigned *s        - string to display
+ *      uint16_t value   - value to decode
  *  RETURNS
  *    none
  *---------------------------------------------------------------
  */
 static void
-decode_color_xy(gchar *s, guint16 value)
+decode_color_xy(char *s, uint16_t value)
 {
-    g_snprintf(s, ITEM_LABEL_LENGTH, "%.4lf", value/65535.0);
+    snprintf(s, ITEM_LABEL_LENGTH, "%.4lf", value/65535.0);
     return;
 } /*decode_power_conf_voltage*/
 
@@ -867,18 +870,48 @@ decode_color_xy(gchar *s, guint16 value)
   *  DESCRIPTION
   *    this function decodes color temperature values
   *  PARAMETERS
-  *      guint *s        - string to display
-  *      guint16 value   - value to decode
+  *      unsigned *s        - string to display
+  *      uint16_t value   - value to decode
   *  RETURNS
   *    none
   *---------------------------------------------------------------
   */
 static void
-decode_color_temperature(gchar *s, guint16 value)
+decode_color_temperature(char *s, uint16_t value)
 {
-    g_snprintf(s, ITEM_LABEL_LENGTH, "%d [Mired] (%d [K])", value, 1000000/value);
+    if (value == 0) {
+        snprintf(s, ITEM_LABEL_LENGTH, "%u [Mired]", value);
+    } else {
+        snprintf(s, ITEM_LABEL_LENGTH, "%u [Mired] (%u [K])", value, 1000000/value);
+    }
     return;
-} /*decode_power_conf_voltage*/
+} /*decode_color_temperature*/
+
+  /*FUNCTION:------------------------------------------------------
+  *  NAME
+  *    decode_startup_color_temperature
+  *  DESCRIPTION
+  *    this function decodes color temperature values
+  *  PARAMETERS
+  *      unsigned *s        - string to display
+  *      uint16_t value   - value to decode
+  *  RETURNS
+  *    none
+  *---------------------------------------------------------------
+  */
+static void
+decode_startup_color_temperature(char *s, uint16_t value)
+{
+    if (value == 0xffff)
+    {
+        snprintf(s, ITEM_LABEL_LENGTH, "Set the Color Temperature attribute to its previous value");
+    }
+    else
+    {
+        decode_color_temperature(s, value);
+    }
+    return;
+} /*decode_startup_color_temperature*/
 
   /**
  *This function is called by ZCL foundation dissector in order to decode
@@ -888,11 +921,12 @@ decode_color_temperature(gchar *s, guint16 value)
  *@param offset pointer to buffer offset
  *@param attr_id attribute identifier
  *@param data_type attribute data type
+ *@param client_attr ZCL client
 */
 void
-dissect_zcl_color_control_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type)
+dissect_zcl_color_control_attr_data(proto_tree *tree, tvbuff_t *tvb, unsigned *offset, uint16_t attr_id, unsigned data_type, bool client_attr)
 {
-    static const int *capabilities_fields[] = {
+    static int * const capabilities_fields[] = {
         &hf_zbee_zcl_color_control_attr_color_capabilities_hs,
         &hf_zbee_zcl_color_control_attr_color_capabilities_ehs,
         &hf_zbee_zcl_color_control_attr_color_capabilities_loop,
@@ -1144,9 +1178,14 @@ dissect_zcl_color_control_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offs
             *offset += 2;
             break;
 
+        case ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_STARTUP_COLOR_TEMPERATURE:
+            proto_tree_add_item(tree, hf_zbee_zcl_color_control_attr_startup_color_temperature, tvb, *offset, 2, ENC_LITTLE_ENDIAN);
+            *offset += 2;
+            break;
+
         case ZBEE_ZCL_ATTR_ID_COLOR_CONTROL_COMPENSATION_TEXT:
         default:
-            dissect_zcl_attr_data(tvb, tree, offset, data_type);
+            dissect_zcl_attr_data(tvb, tree, offset, data_type, client_attr);
             break;
     }
 
@@ -1165,191 +1204,191 @@ proto_register_zbee_zcl_color_control(void)
 
         { &hf_zbee_zcl_color_control_attr_id,
             { "Attribute", "zbee_zcl_lighting.color_control.attr_id", FT_UINT16, BASE_HEX, VALS(zbee_zcl_color_control_attr_names),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_current_hue,
             { "Hue", "zbee_zcl_lighting.color_control.attr.current_hue", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_current_saturation,
-            { "Saturation", "zbee_zcl_lighting.color_control.attr.current_satuaration", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            { "Saturation", "zbee_zcl_lighting.color_control.attr.current_saturation", FT_UINT8, BASE_DEC, NULL,
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_remaining_time,
             { "Time", "zbee_zcl_lighting.color_control.attr.remaining_time", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_zcl_time_in_100ms),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_x,
             { "X", "zbee_zcl_lighting.color_control.attr.color_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.color_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_drift_compensation,
             { "Drift Compensation", "zbee_zcl_lighting.color_control.attr.drift_compensation", FT_UINT8, BASE_HEX, VALS(zbee_zcl_color_control_drift_compensation_values),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_temperature,
             { "Color Temperature", "zbee_zcl_lighting.color_control.attr.color_temperature", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_temperature),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_mode,
             { "Color Mode", "zbee_zcl_lighting.color_control.attr.color_mode", FT_UINT8, BASE_HEX, VALS(zbee_zcl_color_control_color_mode_values),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_nr_of_primaries,
             { "Number", "zbee_zcl_lighting.color_control.attr.nr_of_primaries", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_1_x,
             { "X", "zbee_zcl_lighting.color_control.attr.primary_1_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_1_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.primary_1_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_1_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.primary_1_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_2_x,
             { "X", "zbee_zcl_lighting.color_control.attr.primary_2_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_2_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.primary_2_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_2_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.primary_2_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_3_x,
             { "X", "zbee_zcl_lighting.color_control.attr.primary_3_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_3_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.primary_3_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_3_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.primary_3_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_4_x,
             { "X", "zbee_zcl_lighting.color_control.attr.primary_4_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_4_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.primary_4_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_4_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.primary_4_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_5_x,
             { "X", "zbee_zcl_lighting.color_control.attr.primary_5_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_5_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.primary_5_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_5_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.primary_5_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_6_x,
             { "X", "zbee_zcl_lighting.color_control.attr.primary_6_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_6_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.primary_6_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_primary_6_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.primary_6_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_white_point_x,
             { "X", "zbee_zcl_lighting.color_control.attr.white_point_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_white_point_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.white_point_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_red_x,
             { "X", "zbee_zcl_lighting.color_control.attr.red_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_red_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.red_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_red_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.red_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_green_x,
             { "X", "zbee_zcl_lighting.color_control.attr.green_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_green_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.green_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_green_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.green_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_blue_x,
             { "X", "zbee_zcl_lighting.color_control.attr.blue_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_blue_y,
             { "Y", "zbee_zcl_lighting.color_control.attr.blue_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_blue_intensity,
             { "Intensity", "zbee_zcl_lighting.color_control.attr.blue_intensity", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_enhanced_current_hue,
             { "Enhanced Hue", "zbee_zcl_lighting.color_control.attr.enhanced_current_hue", FT_UINT16, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_enhanced_color_mode,
             { "Enhanced Color Mode", "zbee_zcl_lighting.color_control.attr.enhanced_color_mode", FT_UINT8, BASE_DEC, VALS(zbee_zcl_color_control_color_mode_values),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_loop_active,
-            { "Active", "zbee_zcl_lighting.color_control.attr.color_loop_active", FT_BOOLEAN, 8, TFS(&tfs_true_false),
-                0x00, NULL, HFILL } },
+            { "Active", "zbee_zcl_lighting.color_control.attr.color_loop_active", FT_BOOLEAN, BASE_NONE, NULL,
+                0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_loop_direction,
             { "Direction", "zbee_zcl_lighting.color_control.attr.color_loop_direction", FT_UINT8, BASE_DEC, VALS(zbee_zcl_color_control_color_loop_direction_values),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_loop_time,
             { "Time", "zbee_zcl_lighting.color_control.attr.color_loop_time", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_zcl_time_in_seconds),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_loop_start_enhanced_hue,
             { "Enhanced Hue", "zbee_zcl_lighting.color_control.attr.color_loop_start_enhanced_hue", FT_UINT16, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_loop_stored_enhanced_hue,
             { "Enhanced Hue", "zbee_zcl_lighting.color_control.attr.color_loop_stored_enhanced_hue", FT_UINT16, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_capabilities,
             { "Capabilities", "zbee_zcl_lighting.color_control.attr.color_capabilities", FT_UINT16, BASE_HEX, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_capabilities_hs,
             { "Support Hue and Saturation", "zbee_zcl_lighting.color_control.attr.color_capabilities.hue_saturation", FT_UINT16, BASE_DEC, NULL,
@@ -1373,91 +1412,95 @@ proto_register_zbee_zcl_color_control(void)
 
         { &hf_zbee_zcl_color_control_attr_color_temperature_phys_min,
             { "Color Temperature", "zbee_zcl_lighting.color_control.attr.color_temperature_physical_min", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_temperature),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_attr_color_temperature_phys_max,
             { "Color Temperature", "zbee_zcl_lighting.color_control.attr.color_temperature_physical_max", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_temperature),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
+
+        { &hf_zbee_zcl_color_control_attr_startup_color_temperature,
+            { "Startup Color Temperature", "zbee_zcl_lighting.color_control.attr.startup_color_temperature", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_startup_color_temperature),
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_hue,
             { "Hue", "zbee_zcl_lighting.color_control.hue", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_direction,
             { "Direction", "zbee_zcl_lighting.color_control.direction", FT_UINT8, BASE_DEC, VALS(zbee_zcl_color_control_direction_values),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_transit_time,
             { "Transition Time", "zbee_zcl_lighting.color_control.transit_time", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_zcl_time_in_100ms),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_move_mode,
             { "Move Mode", "zbee_zcl_lighting.color_control.move_mode", FT_UINT8, BASE_DEC, VALS(zbee_zcl_color_control_move_mode),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_rate,
             { "Rate", "zbee_zcl_lighting.color_control.rate", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_step_mode,
             { "Step Mode", "zbee_zcl_lighting.color_control.step_mode", FT_UINT8, BASE_DEC, VALS(zbee_zcl_color_control_step_mode),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_step_size,
             { "Step Size", "zbee_zcl_lighting.color_control.step_size", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_transit_time_8bit,
             { "Transition Time", "zbee_zcl_lighting.color_control.transition_time_8bit", FT_UINT8, BASE_CUSTOM, CF_FUNC(decode_zcl_time_in_100ms),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_saturation,
             { "Saturation", "zbee_zcl_lighting.color_control.saturation", FT_UINT8, BASE_DEC, NULL,
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_color_X,
             { "Color X", "zbee_zcl_lighting.color_control.color_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_color_Y,
             { "Color Y", "zbee_zcl_lighting.color_control.color_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_rate_X,
             { "Rate X", "zbee_zcl_lighting.color_control.rate_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_rate_Y,
             { "Rate Y", "zbee_zcl_lighting.color_control.rate_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_step_X,
             { "Step X", "zbee_zcl_lighting.color_control.step_x", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_step_Y,
             { "Step Y", "zbee_zcl_lighting.color_control.step_y", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_xy),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_color_temp,
             { "Color temperature", "zbee_zcl_lighting.color_control.color_temp", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_temperature),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_enhanced_hue,
             { "Enhanced Hue", "zbee_zcl_lighting.color_control.enhanced_hue", FT_UINT16, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_enhanced_rate,
             { "Enhanced Rate", "zbee_zcl_lighting.color_control.enhanced_rate", FT_UINT16, BASE_DEC, NULL,
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_enhanced_step_size,
             { "Enhanced Step Size", "zbee_zcl_lighting.color_control.enhanced_step_size", FT_UINT16, BASE_DEC, NULL,
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_color_loop_update_flags,
             { "Update Flags", "zbee_zcl_lighting.color_control.color_loop_update", FT_UINT8, BASE_HEX, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_color_loop_update_action,
             { "Update Action", "zbee_zcl_lighting.color_control.color_loop_update.action", FT_UINT8, BASE_DEC, NULL,
@@ -1477,35 +1520,35 @@ proto_register_zbee_zcl_color_control(void)
 
         { &hf_zbee_zcl_color_control_color_loop_action,
             { "Action", "zbee_zcl_lighting.color_control.color_loop_action", FT_UINT8, BASE_DEC, VALS(zbee_zcl_color_control_action),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_color_loop_direction,
             { "Direction", "zbee_zcl_lighting.color_control.color_loop_direction", FT_UINT8, BASE_DEC, VALS(zbee_zcl_color_control_color_loop_direction_values),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_color_loop_time,
             { "Time", "zbee_zcl_lighting.color_control.color_loop_time", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_zcl_time_in_seconds),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_color_loop_start_hue,
             { "Enhanced Hue", "zbee_zcl_lighting.color_control.color_loop_start_hue", FT_UINT16, BASE_DEC, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_color_control_color_temp_min,
             { "Color Temperature Minimum Mired", "zbee_zcl_lighting.color_control.color_temp_min", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_temperature),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_color_temp_max,
             { "Color Temperature Maximum Mired", "zbee_zcl_lighting.color_control.color_temp_max", FT_UINT16, BASE_CUSTOM, CF_FUNC(decode_color_temperature),
-            0x00, NULL, HFILL }},
+            0x0, NULL, HFILL }},
 
         { &hf_zbee_zcl_color_control_srv_rx_cmd_id,
           { "Command", "zbee_zcl_lighting.color_control.cmd.srv_rx.id", FT_UINT8, BASE_HEX, VALS(zbee_zcl_color_control_srv_rx_cmd_names),
-            0x00, NULL, HFILL } }
+            0x0, NULL, HFILL } }
     };
 
     /* ZCL Color Control subtrees */
-    static gint *ett[ZBEE_ZCL_COLOR_CONTROL_NUM_ETT];
+    static int *ett[ZBEE_ZCL_COLOR_CONTROL_NUM_ETT];
     ett[0] = &ett_zbee_zcl_color_control;
     ett[1] = &ett_zbee_zcl_color_control_color_capabilities;
     ett[2] = &ett_zbee_zcl_color_control_color_loop_settings;
@@ -1533,6 +1576,7 @@ proto_reg_handoff_zbee_zcl_color_control(void)
                             ett_zbee_zcl_color_control,
                             ZBEE_ZCL_CID_COLOR_CONTROL,
                             ZBEE_MFG_CODE_NONE,
+                            hf_zbee_zcl_color_control_attr_id,
                             hf_zbee_zcl_color_control_attr_id,
                             hf_zbee_zcl_color_control_srv_rx_cmd_id,
                             -1,
@@ -1588,7 +1632,7 @@ void proto_register_zbee_zcl_ballast_configuration(void);
 void proto_reg_handoff_zbee_zcl_ballast_configuration(void);
 
 /* Command Dissector Helpers */
-static void dissect_zcl_ballast_configuration_attr_data      (proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type);
+static void dissect_zcl_ballast_configuration_attr_data      (proto_tree *tree, tvbuff_t *tvb, unsigned *offset, uint16_t attr_id, unsigned data_type, bool client_attr);
 
 /* Private functions prototype */
 
@@ -1596,19 +1640,19 @@ static void dissect_zcl_ballast_configuration_attr_data      (proto_tree *tree, 
 /* Global Variables      */
 /*************************/
 /* Initialize the protocol and registered fields */
-static int proto_zbee_zcl_ballast_configuration = -1;
+static int proto_zbee_zcl_ballast_configuration;
 
-static int hf_zbee_zcl_ballast_configuration_attr_id = -1;
-static int hf_zbee_zcl_ballast_configuration_status = -1;
-static int hf_zbee_zcl_ballast_configuration_status_non_operational = -1;
-static int hf_zbee_zcl_ballast_configuration_status_lamp_not_in_socket = -1;
-static int hf_zbee_zcl_ballast_configuration_lamp_alarm_mode = -1;
-static int hf_zbee_zcl_ballast_configuration_lamp_alarm_mode_lamp_burn_hours = -1;
+static int hf_zbee_zcl_ballast_configuration_attr_id;
+static int hf_zbee_zcl_ballast_configuration_status;
+static int hf_zbee_zcl_ballast_configuration_status_non_operational;
+static int hf_zbee_zcl_ballast_configuration_status_lamp_not_in_socket;
+static int hf_zbee_zcl_ballast_configuration_lamp_alarm_mode;
+static int hf_zbee_zcl_ballast_configuration_lamp_alarm_mode_lamp_burn_hours;
 
 /* Initialize the subtree pointers */
-static gint ett_zbee_zcl_ballast_configuration = -1;
-static gint ett_zbee_zcl_ballast_configuration_status = -1;
-static gint ett_zbee_zcl_ballast_configuration_lamp_alarm_mode = -1;
+static int ett_zbee_zcl_ballast_configuration;
+static int ett_zbee_zcl_ballast_configuration_status;
+static int ett_zbee_zcl_ballast_configuration_lamp_alarm_mode;
 
 /* Attributes */
 static const value_string zbee_zcl_ballast_configuration_attr_names[] = {
@@ -1641,7 +1685,7 @@ static const value_string zbee_zcl_ballast_configuration_status_non_operational_
 /*Not in Socket Values*/
 static const value_string zbee_zcl_ballast_configuration_status_lamp_not_in_socket_names[] = {
     {0, "All lamps in Socket"},
-    {1, "Atleast one lamp not in Socket"},
+    {1, "At least one lamp not in Socket"},
     {0, NULL}
 };
 
@@ -1673,17 +1717,18 @@ dissect_zbee_zcl_ballast_configuration(tvbuff_t *tvb _U_, packet_info *pinfo _U_
  *@param offset pointer to buffer offset
  *@param attr_id attribute identifier
  *@param data_type attribute data type
+ *@param client_attr ZCL client
 */
 void
-dissect_zcl_ballast_configuration_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, guint16 attr_id, guint data_type)
+dissect_zcl_ballast_configuration_attr_data(proto_tree *tree, tvbuff_t *tvb, unsigned *offset, uint16_t attr_id, unsigned data_type, bool client_attr)
 {
-    static const int * ballast_status[] = {
+    static int * const ballast_status[] = {
         &hf_zbee_zcl_ballast_configuration_status_non_operational,
         &hf_zbee_zcl_ballast_configuration_status_lamp_not_in_socket,
         NULL
     };
 
-    static const int * lamp_alarm_mode[] = {
+    static int * const lamp_alarm_mode[] = {
         &hf_zbee_zcl_ballast_configuration_lamp_alarm_mode_lamp_burn_hours,
         NULL
     };
@@ -1716,7 +1761,7 @@ dissect_zcl_ballast_configuration_attr_data(proto_tree *tree, tvbuff_t *tvb, gui
         case ZBEE_ZCL_ATTR_ID_BALLAST_CONFIGURATION_LAMP_BURN_HOURS:
         case ZBEE_ZCL_ATTR_ID_BALLAST_CONFIGURATION_LAMP_BURN_HOURS_TRIP_POINT:
         default:
-            dissect_zcl_attr_data(tvb, tree, offset, data_type);
+            dissect_zcl_attr_data(tvb, tree, offset, data_type, client_attr);
             break;
     }
 
@@ -1735,12 +1780,12 @@ proto_register_zbee_zcl_ballast_configuration(void)
 
         { &hf_zbee_zcl_ballast_configuration_attr_id,
             { "Attribute", "zbee_zcl_lighting.ballast_configuration.attr_id", FT_UINT16, BASE_HEX, VALS(zbee_zcl_ballast_configuration_attr_names),
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         /* start Ballast Status fields */
         { &hf_zbee_zcl_ballast_configuration_status,
             { "Status", "zbee_zcl_lighting.ballast_configuration.attr.status", FT_UINT8, BASE_HEX, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_ballast_configuration_status_non_operational,
             { "Non-operational", "zbee_zcl_lighting.ballast_configuration.attr.status.non_operational", FT_UINT8, BASE_HEX, VALS(zbee_zcl_ballast_configuration_status_non_operational_names),
@@ -1754,7 +1799,7 @@ proto_register_zbee_zcl_ballast_configuration(void)
         /*stat Lamp Alarm Mode fields*/
         { &hf_zbee_zcl_ballast_configuration_lamp_alarm_mode,
             { "Lamp Alarm Mode", "zbee_zcl_lighting.ballast_configuration.attr.lamp_alarm_mode", FT_UINT8, BASE_HEX, NULL,
-            0x00, NULL, HFILL } },
+            0x0, NULL, HFILL } },
 
         { &hf_zbee_zcl_ballast_configuration_lamp_alarm_mode_lamp_burn_hours,
             { "Lamp Burn Hours", "zbee_zcl_lighting.ballast_configuration.attr.lamp_alarm_mode.lamp_burn_hours", FT_BOOLEAN, 8, NULL,
@@ -1763,7 +1808,7 @@ proto_register_zbee_zcl_ballast_configuration(void)
     };
 
     /* ZCL Ballast Configuration subtrees */
-    static gint *ett[ZBEE_ZCL_BALLAST_CONFIGURATION_NUM_ETT];
+    static int *ett[ZBEE_ZCL_BALLAST_CONFIGURATION_NUM_ETT];
 
     ett[0] = &ett_zbee_zcl_ballast_configuration;
     ett[1] = &ett_zbee_zcl_ballast_configuration_status;
@@ -1791,13 +1836,14 @@ proto_reg_handoff_zbee_zcl_ballast_configuration(void)
                             ZBEE_ZCL_CID_BALLAST_CONFIG,
                             ZBEE_MFG_CODE_NONE,
                             hf_zbee_zcl_ballast_configuration_attr_id,
+                            hf_zbee_zcl_ballast_configuration_attr_id,
                             -1, -1,
                             (zbee_zcl_fn_attr_data)dissect_zcl_ballast_configuration_attr_data
                          );
 } /*proto_reg_handoff_zbee_zcl_ballast_configuration*/
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

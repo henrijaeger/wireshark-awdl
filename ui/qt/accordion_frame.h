@@ -1,10 +1,11 @@
-/* accordion_frame.cpp
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef ACCORDION_FRAME_H
 #define ACCORDION_FRAME_H
@@ -20,6 +21,7 @@ public:
     explicit AccordionFrame(QWidget *parent = 0);
     void animatedShow();
     void animatedHide();
+    void updateStyleSheet();
 
 signals:
     void visibilityChanged(bool visible);
@@ -38,16 +40,3 @@ private slots:
 };
 
 #endif // ACCORDION_FRAME_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

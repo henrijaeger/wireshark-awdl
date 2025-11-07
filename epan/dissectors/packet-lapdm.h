@@ -7,8 +7,10 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#ifndef __PACKET_BTL2CAP_H__
-#define __PACKET_BTL2CAP_H__
+#ifndef __PACKET_LAPDM_H__
+#define __PACKET_LAPDM_H__
+
+#include <stdbool.h>
 
 /* See GSM TS 04.06 */
 enum lapdm_hdr_type {
@@ -20,7 +22,7 @@ enum lapdm_hdr_type {
 };
 
 typedef struct _lapdm_data_t {
-    enum lapdm_hdr_type hdr_type;
+    bool is_acch;
 } lapdm_data_t;
 
 #endif

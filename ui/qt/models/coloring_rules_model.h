@@ -1,4 +1,5 @@
-/* coloring_rules_model.h
+/** @file
+ *
  * Data model for coloring rules.
  *
  * Wireshark - Network traffic analyzer
@@ -13,7 +14,6 @@
 
 #include <config.h>
 
-#include <glib.h>
 #include <epan/color_filters.h>
 
 #include <ui/qt/models/tree_model_helpers.h>
@@ -37,6 +37,9 @@ public:
     QString filter_;
     QColor foreground_;
     QColor background_;
+
+    ColoringRuleItem& operator=(ColoringRuleItem& rhs);
+
 };
 
 class ColoringRulesModel : public QAbstractItemModel

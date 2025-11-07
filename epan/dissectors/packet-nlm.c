@@ -22,6 +22,8 @@
 #include "packet-nfs.h"
 #include "packet-nlm.h"
 #include <epan/prefs.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 
 void proto_register_nlm(void);
 void proto_reg_handoff_nlm(void);
@@ -39,39 +41,39 @@ void proto_reg_handoff_nlm(void);
  * and follow the links to the HTML version of the document.
  */
 
-static int proto_nlm = -1;
-static int hf_nlm_procedure_v1 = -1;
-static int hf_nlm_procedure_v2 = -1;
-static int hf_nlm_procedure_v3 = -1;
-static int hf_nlm_procedure_v4 = -1;
-static int hf_nlm_cookie = -1;
-static int hf_nlm_block = -1;
-static int hf_nlm_exclusive = -1;
-static int hf_nlm_lock = -1;
-static int hf_nlm_lock_caller_name = -1;
-static int hf_nlm_lock_owner = -1;
-static int hf_nlm_lock_svid = -1;
-static int hf_nlm_lock_l_offset = -1;
-static int hf_nlm_lock_l_offset64 = -1;
-static int hf_nlm_lock_l_len = -1;
-static int hf_nlm_lock_l_len64 = -1;
-static int hf_nlm_reclaim = -1;
-static int hf_nlm_stat = -1;
-static int hf_nlm_state = -1;
-static int hf_nlm_test_stat = -1;
-static int hf_nlm_test_stat_stat = -1;
-static int hf_nlm_holder = -1;
-static int hf_nlm_share = -1;
-static int hf_nlm_share_mode = -1;
-static int hf_nlm_share_access = -1;
-static int hf_nlm_share_name = -1;
-static int hf_nlm_sequence = -1;
-static int hf_nlm_request_in = -1;
-static int hf_nlm_reply_in = -1;
-static int hf_nlm_time = -1;
+static int proto_nlm;
+static int hf_nlm_procedure_v1;
+static int hf_nlm_procedure_v2;
+static int hf_nlm_procedure_v3;
+static int hf_nlm_procedure_v4;
+static int hf_nlm_cookie;
+static int hf_nlm_block;
+static int hf_nlm_exclusive;
+static int hf_nlm_lock;
+static int hf_nlm_lock_caller_name;
+static int hf_nlm_lock_owner;
+static int hf_nlm_lock_svid;
+static int hf_nlm_lock_l_offset;
+static int hf_nlm_lock_l_offset64;
+static int hf_nlm_lock_l_len;
+static int hf_nlm_lock_l_len64;
+static int hf_nlm_reclaim;
+static int hf_nlm_stat;
+static int hf_nlm_state;
+static int hf_nlm_test_stat;
+static int hf_nlm_test_stat_stat;
+static int hf_nlm_holder;
+static int hf_nlm_share;
+static int hf_nlm_share_mode;
+static int hf_nlm_share_access;
+static int hf_nlm_share_name;
+static int hf_nlm_sequence;
+static int hf_nlm_request_in;
+static int hf_nlm_reply_in;
+static int hf_nlm_time;
 
-static gint ett_nlm = -1;
-static gint ett_nlm_lock = -1;
+static int ett_nlm;
+static int ett_nlm_lock;
 
 
 
@@ -79,9 +81,9 @@ static gint ett_nlm_lock = -1;
  * stuff to match MSG and RES packets for async NLM
  */
 
-static gboolean nlm_match_msgres = FALSE;
-static wmem_map_t *nlm_msg_res_unmatched = NULL;
-static wmem_map_t *nlm_msg_res_matched = NULL;
+static bool nlm_match_msgres;
+static wmem_map_t *nlm_msg_res_unmatched;
+static wmem_map_t *nlm_msg_res_matched;
 
 /* XXX 	when matching the packets we should really check the conversation (only address
 	NOT ports) and command type as well. I am lazy and thinks the cookie itself is
@@ -91,7 +93,7 @@ typedef struct _nlm_msg_res_unmatched_data {
 	int req_frame;
 	nstime_t ns;
 	int cookie_len;
-	const guint8 *cookie;
+	const uint8_t *cookie;
 } nlm_msg_res_unmatched_data;
 
 typedef struct _nlm_msg_res_matched_data {
@@ -100,11 +102,11 @@ typedef struct _nlm_msg_res_matched_data {
 	nstime_t ns;
 } nlm_msg_res_matched_data;
 
-static guint
-nlm_msg_res_unmatched_hash(gconstpointer k)
+static unsigned
+nlm_msg_res_unmatched_hash(const void *k)
 {
 	const nlm_msg_res_unmatched_data *umd = (const nlm_msg_res_unmatched_data *)k;
-	guint8 hash=0;
+	uint8_t hash=0;
 	int i;
 
 	for(i=0;i<umd->cookie_len;i++){
@@ -113,16 +115,16 @@ nlm_msg_res_unmatched_hash(gconstpointer k)
 
 	return hash;
 }
-static guint
-nlm_msg_res_matched_hash(gconstpointer k)
+static unsigned
+nlm_msg_res_matched_hash(const void *k)
 {
-	guint hash = GPOINTER_TO_UINT(k);
+	unsigned hash = GPOINTER_TO_UINT(k);
 
 	return hash;
 }
 
-static gint
-nlm_msg_res_unmatched_equal(gconstpointer k1, gconstpointer k2)
+static int
+nlm_msg_res_unmatched_equal(const void *k1, const void *k2)
 {
 	const nlm_msg_res_unmatched_data *umd1 = (const nlm_msg_res_unmatched_data *)k1;
 	const nlm_msg_res_unmatched_data *umd2 = (const nlm_msg_res_unmatched_data *)k2;
@@ -131,15 +133,15 @@ nlm_msg_res_unmatched_equal(gconstpointer k1, gconstpointer k2)
 		return 0;
 	}
 
-	return( memcmp(umd1->cookie, umd2->cookie, umd1->cookie_len) == 0);
+	return (memcmp(umd1->cookie, umd2->cookie, umd1->cookie_len) == 0);
 }
-static gint
-nlm_msg_res_matched_equal(gconstpointer k1, gconstpointer k2)
+static int
+nlm_msg_res_matched_equal(const void *k1, const void *k2)
 {
-	guint mk1 = GPOINTER_TO_UINT(k1);
-	guint mk2 = GPOINTER_TO_UINT(k2);
+	unsigned mk1 = GPOINTER_TO_UINT(k1);
+	unsigned mk2 = GPOINTER_TO_UINT(k2);
 
-	return( mk1==mk2 );
+	return mk1==mk2;
 }
 
 static void
@@ -199,7 +201,7 @@ nlm_register_unmatched_res(packet_info *pinfo, tvbuff_t *tvb, int offset)
 	umd.cookie=tvb_get_ptr(tvb, offset+4, -1);
 
 	/* have we seen this cookie before? */
-	old_umd=(nlm_msg_res_unmatched_data *)wmem_map_lookup(nlm_msg_res_unmatched, (gconstpointer)&umd);
+	old_umd=(nlm_msg_res_unmatched_data *)wmem_map_lookup(nlm_msg_res_unmatched, (const void *)&umd);
 	if(old_umd){
 		nlm_msg_res_matched_data *md_req, *md_rep;
 
@@ -226,12 +228,12 @@ nlm_register_unmatched_msg(packet_info *pinfo, tvbuff_t *tvb, int offset)
 	umd->req_frame = pinfo->num;
 	umd->ns = pinfo->abs_ts;
 	umd->cookie_len = tvb_get_ntohl(tvb, offset);
-	umd->cookie = (const guint8 *)tvb_memdup(wmem_file_scope(), tvb, offset+4, umd->cookie_len);
+	umd->cookie = (const uint8_t *)tvb_memdup(wmem_file_scope(), tvb, offset+4, umd->cookie_len);
 
 	/* remove any old duplicates */
 	old_umd=(nlm_msg_res_unmatched_data *)wmem_map_lookup(nlm_msg_res_unmatched, umd);
 	if(old_umd){
-		wmem_map_remove(nlm_msg_res_unmatched, (gconstpointer)old_umd);
+		wmem_map_remove(nlm_msg_res_unmatched, (const void *)old_umd);
 	}
 
 	/* add new one */
@@ -311,7 +313,10 @@ dissect_lock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int version, i
 {
 	proto_item* lock_item = NULL;
 	proto_tree* lock_tree = NULL;
-	guint32 fh_hash, svid, start_offset=0, end_offset=0;
+	uint32_t fh_hash, svid;
+	uint64_t start_offset=0, end_offset=0;
+	uint32_t start_offset32=0, end_offset32=0;
+	const char *hostname;
 
 	if (tree) {
 		lock_item = proto_tree_add_item(tree, hf_nlm_lock, tvb,
@@ -321,30 +326,35 @@ dissect_lock(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int version, i
 	}
 
 	offset = dissect_rpc_string(tvb,lock_tree,
-			hf_nlm_lock_caller_name, offset, NULL);
+			hf_nlm_lock_caller_name, offset, &hostname);
+	col_append_fstr(pinfo->cinfo, COL_INFO, ", %s", hostname);
+
 	offset = dissect_nfs3_fh(tvb, offset, pinfo, lock_tree, "fh", &fh_hash, civ);
-	col_append_fstr(pinfo->cinfo, COL_INFO, " FH:0x%08x", fh_hash);
+	col_append_fstr(pinfo->cinfo, COL_INFO, ", FH:0x%08x", fh_hash);
 
 	offset = dissect_rpc_data(tvb, lock_tree, hf_nlm_lock_owner, offset);
 
 	svid = tvb_get_ntohl(tvb, offset);
 	offset = dissect_rpc_uint32(tvb, lock_tree, hf_nlm_lock_svid, offset);
-	col_append_fstr(pinfo->cinfo, COL_INFO, " svid:%d", svid);
 
 	if (version == 4) {
-		start_offset = tvb_get_ntohl(tvb, offset);
+		start_offset = tvb_get_ntoh64(tvb, offset);
 		offset = dissect_rpc_uint64(tvb, lock_tree, hf_nlm_lock_l_offset64, offset);
-		end_offset = tvb_get_ntohl(tvb, offset);
+		end_offset = tvb_get_ntoh64(tvb, offset);
 		offset = dissect_rpc_uint64(tvb, lock_tree, hf_nlm_lock_l_len64, offset);
+		col_append_fstr(pinfo->cinfo, COL_INFO,
+			", Pos:%" PRIu64 ", Len: %" PRIu64, start_offset, end_offset);
 	}
 	else {
 		start_offset = tvb_get_ntohl(tvb, offset);
 		offset = dissect_rpc_uint32(tvb, lock_tree, hf_nlm_lock_l_offset, offset);
 		end_offset = tvb_get_ntohl(tvb, offset);
 		offset = dissect_rpc_uint32(tvb, lock_tree, hf_nlm_lock_l_len, offset);
+		col_append_fstr(pinfo->cinfo, COL_INFO,
+			", Pos: %u"  ", Len: %u", start_offset32, end_offset32);
 	}
+	col_append_fstr(pinfo->cinfo, COL_INFO, ", svid:%d", svid);
 
-	col_append_fstr(pinfo->cinfo, COL_INFO, " pos:%d-%d", start_offset, end_offset);
 
 	return offset;
 }
@@ -356,7 +366,7 @@ dissect_nlm_test(tvbuff_t *tvb, int offset, packet_info *pinfo,
 {
 	if(nlm_match_msgres){
 		if(rpc_call->proc==6){	/* NLM_TEST_MSG */
-			if( (!pinfo->fd->flags.visited) ){
+			if( (!pinfo->fd->visited) ){
 				nlm_register_unmatched_msg(pinfo, tvb, offset);
 			} else {
 				nlm_print_msgres_request(pinfo, tree, tvb);
@@ -382,7 +392,7 @@ dissect_nlm_lock(tvbuff_t *tvb, int offset, packet_info *pinfo,
 {
 	if(nlm_match_msgres){
 		if(rpc_call->proc==7){	/* NLM_LOCK_MSG */
-			if( (!pinfo->fd->flags.visited) ){
+			if( (!pinfo->fd->visited) ){
 				nlm_register_unmatched_msg(pinfo, tvb, offset);
 			} else {
 				nlm_print_msgres_request(pinfo, tree, tvb);
@@ -410,7 +420,7 @@ dissect_nlm_cancel(tvbuff_t *tvb, int offset, packet_info *pinfo,
 {
 	if(nlm_match_msgres){
 		if(rpc_call->proc==8){	/* NLM_CANCEL_MSG */
-			if( (!pinfo->fd->flags.visited) ){
+			if( (!pinfo->fd->visited) ){
 				nlm_register_unmatched_msg(pinfo, tvb, offset);
 			} else {
 				nlm_print_msgres_request(pinfo, tree, tvb);
@@ -436,7 +446,7 @@ dissect_nlm_unlock(tvbuff_t *tvb, int offset, packet_info *pinfo,
 {
 	if(nlm_match_msgres){
 		if(rpc_call->proc==9){	/* NLM_UNLOCK_MSG */
-			if( (!pinfo->fd->flags.visited) ){
+			if( (!pinfo->fd->visited) ){
 				nlm_register_unmatched_msg(pinfo, tvb, offset);
 			} else {
 				nlm_print_msgres_request(pinfo, tree, tvb);
@@ -460,7 +470,7 @@ dissect_nlm_granted(tvbuff_t *tvb, int offset, packet_info *pinfo,
 {
 	if(nlm_match_msgres){
 		if(rpc_call->proc==10){	/* NLM_GRANTED_MSG */
-			if( (!pinfo->fd->flags.visited) ){
+			if( (!pinfo->fd->visited) ){
 				nlm_register_unmatched_msg(pinfo, tvb, offset);
 			} else {
 				nlm_print_msgres_request(pinfo, tree, tvb);
@@ -489,7 +499,7 @@ dissect_nlm_test_res(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
 
 	if(nlm_match_msgres){
 		if(rpc_call->proc==11){	/* NLM_TEST_RES */
-			if( (!pinfo->fd->flags.visited) ){
+			if( (!pinfo->fd->visited) ){
 				nlm_register_unmatched_res(pinfo, tvb, offset);
 			} else {
 				nlm_print_msgres_reply(pinfo, tree, tvb);
@@ -556,7 +566,7 @@ dissect_nlm_share(tvbuff_t *tvb, int offset, packet_info *pinfo,
 {
 	proto_item* lock_item = NULL;
 	proto_tree* lock_tree = NULL;
-	guint32 fh_hash;
+	uint32_t fh_hash;
 
 	offset = dissect_rpc_data(tvb, tree, hf_nlm_cookie, offset);
 
@@ -588,7 +598,7 @@ static int
 dissect_nlm_shareres(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
 		     proto_tree *tree, int version _U_)
 {
-	guint32 nlm_stat;
+	uint32_t nlm_stat;
 
 	offset = dissect_rpc_data(tvb, tree, hf_nlm_cookie, offset);
 	nlm_stat = tvb_get_ntohl(tvb, offset);
@@ -622,7 +632,7 @@ static int
 dissect_nlm_gen_reply(tvbuff_t *tvb, packet_info *pinfo _U_,
 		      proto_tree *tree, void* data)
 {
-	guint32 nlm_stat;
+	uint32_t nlm_stat;
 	int offset = 0;
 
 	if(nlm_match_msgres){
@@ -630,8 +640,8 @@ dissect_nlm_gen_reply(tvbuff_t *tvb, packet_info *pinfo _U_,
 		if((rpc_call->proc==12)  /* NLM_LOCK_RES */
 		|| (rpc_call->proc==13)  /* NLM_CANCEL_RES */
 		|| (rpc_call->proc==14)  /* NLM_UNLOCK_RES */
-		|| (rpc_call->proc==15) ){	/* NLM_GRENTED_RES */
-			if( (!pinfo->fd->flags.visited) ){
+		|| (rpc_call->proc==15) ){ /* NLM_GRANTED_RES */
+			if( (!pinfo->fd->visited) ){
 				nlm_register_unmatched_res(pinfo, tvb, offset);
 			} else {
 				nlm_print_msgres_reply(pinfo, tree, tvb);
@@ -1089,7 +1099,7 @@ proto_register_nlm(void)
 			NULL, 0, NULL, HFILL }},
 		{ &hf_nlm_lock_svid, {
 			"svid", "nlm.lock.svid", FT_UINT32, BASE_DEC,
-			NULL, 0, NULL, HFILL }},
+			NULL, 0, "zero-based", HFILL }},
 		{ &hf_nlm_lock_l_offset64, {
 			"l_offset", "nlm.lock.l_offset64", FT_UINT64, BASE_DEC,
 			NULL, 0, NULL, HFILL }},
@@ -1147,7 +1157,7 @@ proto_register_nlm(void)
 
 		};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_nlm,
 		&ett_nlm_lock,
 	};
@@ -1179,7 +1189,7 @@ proto_reg_handoff_nlm(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

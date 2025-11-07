@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "decode_as_dialog.h"
 #include <ui_decode_as_dialog.h>
@@ -14,10 +15,12 @@
 
 #include "ui/decode_as_utils.h"
 #include "ui/simple_dialog.h"
+#include "wsutil/filesystem.h"
 #include <wsutil/utf8_entities.h>
 
+#include <ui/qt/widgets/copy_from_profile_button.h>
 #include <ui/qt/utils/qt_ui_utils.h>
-#include "wireshark_application.h"
+#include "main_application.h"
 
 #include <ui/qt/utils/variant_pointer.h>
 
@@ -25,6 +28,8 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QLineEdit>
+#include <QUrl>
+
 #include <QDebug>
 
 // To do:
@@ -45,9 +50,37 @@ DecodeAsDialog::DecodeAsDialog(QWidget *parent, capture_file *cf, bool create_ne
     ui->decodeAsTreeView->setModel(model_);
     ui->decodeAsTreeView->setItemDelegate(delegate_);
 
-    setWindowTitle(wsApp->windowTitleString(tr("Decode As" UTF8_HORIZONTAL_ELLIPSIS)));
+    ui->newToolButton->setStockIcon("list-add");
+    ui->deleteToolButton->setStockIcon("list-remove");
+    ui->copyToolButton->setStockIcon("list-copy");
+    ui->clearToolButton->setStockIcon("list-clear");
+
+#ifdef Q_OS_MAC
+    ui->newToolButton->setAttribute(Qt::WA_MacSmallSize, true);
+    ui->deleteToolButton->setAttribute(Qt::WA_MacSmallSize, true);
+    ui->copyToolButton->setAttribute(Qt::WA_MacSmallSize, true);
+    ui->clearToolButton->setAttribute(Qt::WA_MacSmallSize, true);
+    ui->pathLabel->setAttribute(Qt::WA_MacSmallSize, true);
+#endif
+
+    setWindowTitle(mainApp->windowTitleString(tr("Decode As…")));
+
+    QString abs_path = gchar_free_to_qstring(get_persconffile_path(DECODE_AS_ENTRIES_FILE_NAME, true));
+    if (file_exists(abs_path.toUtf8().constData())) {
+        ui->pathLabel->setText(abs_path);
+        ui->pathLabel->setUrl(QUrl::fromLocalFile(abs_path).toString());
+        ui->pathLabel->setToolTip(tr("Open ") + DECODE_AS_ENTRIES_FILE_NAME);
+        ui->pathLabel->setEnabled(true);
+    }
+
+    CopyFromProfileButton *copy_button = new CopyFromProfileButton(this, DECODE_AS_ENTRIES_FILE_NAME);
+    ui->buttonBox->addButton(copy_button, QDialogButtonBox::ActionRole);
+    connect(copy_button, &CopyFromProfileButton::copyProfile, this, &DecodeAsDialog::copyFromProfile);
 
     fillTable();
+
+    connect(model_, &DecodeAsModel::modelReset, this, &DecodeAsDialog::modelRowsReset);
+    ui->clearToolButton->setEnabled(model_->rowCount() > 0);
 
     if (create_new)
         on_newToolButton_clicked();
@@ -82,15 +115,37 @@ void DecodeAsDialog::resizeColumns()
     }
 }
 
+void DecodeAsDialog::modelRowsReset()
+{
+    ui->deleteToolButton->setEnabled(false);
+    ui->copyToolButton->setEnabled(false);
+    ui->clearToolButton->setEnabled(false);
+}
+
 void DecodeAsDialog::on_decodeAsTreeView_currentItemChanged(const QModelIndex &current, const QModelIndex&)
 {
     if (current.isValid()) {
         ui->deleteToolButton->setEnabled(true);
         ui->copyToolButton->setEnabled(true);
+        ui->clearToolButton->setEnabled(true);
     } else {
         ui->deleteToolButton->setEnabled(false);
         ui->copyToolButton->setEnabled(false);
+        ui->clearToolButton->setEnabled(false);
     }
+}
+
+void DecodeAsDialog::copyFromProfile(QString filename)
+{
+    const char *err = NULL;
+
+    if (!model_->copyFromProfile(filename, &err)) {
+        simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "Error while loading %s: %s", filename.toUtf8().constData(), err);
+    }
+
+    resizeColumns();
+
+    ui->clearToolButton->setEnabled(model_->rowCount() > 0);
 }
 
 void DecodeAsDialog::addRecord(bool copy_from_current)
@@ -137,21 +192,28 @@ void DecodeAsDialog::on_copyToolButton_clicked()
     addRecord(true);
 }
 
+void DecodeAsDialog::on_clearToolButton_clicked()
+{
+    model_->clearAll();
+}
+
 void DecodeAsDialog::applyChanges()
 {
     model_->applyChanges();
-    wsApp->queueAppSignal(WiresharkApplication::PacketDissectionChanged);
+    mainApp->queueAppSignal(MainApplication::PacketDissectionChanged);
 }
 
 void DecodeAsDialog::on_buttonBox_clicked(QAbstractButton *button)
 {
+    ui->buttonBox->setFocus();
+
     switch (ui->buttonBox->standardButton(button)) {
     case QDialogButtonBox::Ok:
         applyChanges();
         break;
     case QDialogButtonBox::Save:
         {
-        gchar* err = NULL;
+        char* err = NULL;
 
         applyChanges();
         if (save_decode_as_entries(&err) < 0) {
@@ -161,22 +223,9 @@ void DecodeAsDialog::on_buttonBox_clicked(QAbstractButton *button)
         }
         break;
     case QDialogButtonBox::Help:
-        wsApp->helpTopicAction(HELP_DECODE_AS_SHOW_DIALOG);
+        mainApp->helpTopicAction(HELP_DECODE_AS_SHOW_DIALOG);
         break;
     default:
         break;
     }
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

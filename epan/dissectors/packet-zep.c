@@ -33,6 +33,9 @@
 
 
 #include <epan/packet.h>
+#include <epan/tfs.h>
+#include <epan/unit_strings.h>
+#include <wsutil/array.h>
 
 /*  Function declarations */
 void proto_reg_handoff_zep(void);
@@ -65,28 +68,28 @@ static const range_string type_rvals[] = {
 static const true_false_string tfs_crc_lqi = { "CRC", "LQI" };
 
 /*  Initialize protocol and registered fields. */
-static int proto_zep = -1;
-static int hf_zep_version = -1;
-static int hf_zep_type = -1;
-static int hf_zep_channel_id = -1;
-static int hf_zep_device_id = -1;
-static int hf_zep_lqi_mode = -1;
-static int hf_zep_lqi = -1;
-static int hf_zep_timestamp = -1;
-static int hf_zep_seqno = -1;
-static int hf_zep_ieee_length = -1;
-static int hf_zep_protocol_id = -1;
-static int hf_zep_reserved_field = -1;
+static int proto_zep;
+static int hf_zep_version;
+static int hf_zep_type;
+static int hf_zep_channel_id;
+static int hf_zep_device_id;
+static int hf_zep_lqi_mode;
+static int hf_zep_lqi;
+static int hf_zep_timestamp;
+static int hf_zep_seqno;
+static int hf_zep_ieee_length;
+static int hf_zep_protocol_id;
+static int hf_zep_reserved_field;
 
 /* Initialize protocol subtrees. */
-static gint ett_zep = -1;
+static int ett_zep;
 
 /*  Dissector handle */
 static dissector_handle_t zep_handle;
 
 /*  Subdissector handles */
 static dissector_handle_t ieee802154_handle;
-static dissector_handle_t ieee802154_ccfcs_handle;
+static dissector_handle_t ieee802154_cc24xx_handle;
 
 /*FUNCTION:------------------------------------------------------
  *  NAME
@@ -106,12 +109,12 @@ static int dissect_zep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
     tvbuff_t      *next_tvb;
     proto_item    *proto_root;
     proto_tree    *zep_tree;
-    guint8        ieee_packet_len;
-    guint8        zep_header_len;
-    guint8        version;
-    guint8        type;
-    guint32       channel_id, seqno;
-    gboolean      lqi_mode = FALSE;
+    uint8_t       ieee_packet_len;
+    uint8_t       zep_header_len;
+    uint8_t       version;
+    uint8_t       type;
+    uint32_t      channel_id, seqno;
+    bool          lqi_mode = false;
 
     dissector_handle_t  next_dissector;
 
@@ -119,13 +122,13 @@ static int dissect_zep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
         return 0;
 
     /*  Determine whether this is a Q51/IEEE 802.15.4 sniffer packet or not */
-    if(strcmp(tvb_get_string_enc(wmem_packet_scope(), tvb, 0, 2, ENC_ASCII), ZEP_PREAMBLE)){
+    if(strcmp(tvb_get_string_enc(pinfo->pool, tvb, 0, 2, ENC_ASCII), ZEP_PREAMBLE)){
         /*  This is not a Q51/ZigBee sniffer packet */
         return 0;
     }
 
     /*  Extract the protocol version from the ZEP header. */
-    version = tvb_get_guint8(tvb, 2);
+    version = tvb_get_uint8(tvb, 2);
     if (version == 1) {
         /* Type indicates a ZEP_v1 packet. */
 
@@ -134,13 +137,13 @@ static int dissect_zep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             return 0;
 
         type = 0;
-        ieee_packet_len = (tvb_get_guint8(tvb, ZEP_V1_HEADER_LEN - 1) & ZEP_LENGTH_MASK);
+        ieee_packet_len = (tvb_get_uint8(tvb, ZEP_V1_HEADER_LEN - 1) & ZEP_LENGTH_MASK);
     }
     else {
         /* At the time of writing, v2 is the latest version of ZEP, assuming
          * anything higher than v2 has identical format. */
 
-        type = tvb_get_guint8(tvb, 3);
+        type = tvb_get_uint8(tvb, 3);
         if (type == ZEP_V2_TYPE_ACK) {
             /* ZEP Ack has only the seqno. */
             zep_header_len = ZEP_V2_ACK_LEN;
@@ -152,7 +155,7 @@ static int dissect_zep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             if (tvb_reported_length(tvb) < ZEP_V2_HEADER_LEN)
                 return 0;
 
-            ieee_packet_len = (tvb_get_guint8(tvb, ZEP_V2_HEADER_LEN - 1) & ZEP_LENGTH_MASK);
+            ieee_packet_len = (tvb_get_uint8(tvb, ZEP_V2_HEADER_LEN - 1) & ZEP_LENGTH_MASK);
         }
     }
 
@@ -201,7 +204,7 @@ static int dissect_zep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             proto_item_append_text(proto_root, ", Channel: %u, Length: %u", channel_id, ieee_packet_len);
             proto_tree_add_item(zep_tree, hf_zep_device_id, tvb, 5, 2, ENC_BIG_ENDIAN);
             proto_tree_add_item_ret_boolean(zep_tree, hf_zep_lqi_mode, tvb, 7, 1, ENC_NA, &lqi_mode);
-            if (lqi_mode != 0) {
+            if (lqi_mode == 0) {
                 proto_tree_add_item(zep_tree, hf_zep_lqi, tvb, 8, 1, ENC_NA);
             }
             proto_tree_add_item(zep_tree, hf_zep_timestamp, tvb, 9, 8, ENC_BIG_ENDIAN|ENC_TIME_NTP);
@@ -213,15 +216,17 @@ static int dissect_zep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
 
     /* Determine which dissector to call next. */
     if (lqi_mode) {
-        /* CRC present, use standard IEEE dissector. */
+        /* CRC present, use standard IEEE dissector.
+         * XXX - 2-octet or 4-octet CRC?
+         */
         next_dissector = ieee802154_handle;
     }
     else {
-        /* ChipCon compliant FCS present. */
-        next_dissector = ieee802154_ccfcs_handle;
+        /* ChipCon/TI CC24xx-compliant metadata present, CRC absent */
+        next_dissector = ieee802154_cc24xx_handle;
     }
 
-    /*  Call the IEEE 802.15.4 dissector */
+    /*  Call the appropriate IEEE 802.15.4 dissector */
     if (!((version>=2) && (type==ZEP_V2_TYPE_ACK))) {
         next_tvb = tvb_new_subset_length(tvb, zep_header_len, ieee_packet_len);
         if (next_dissector != NULL) {
@@ -277,11 +282,11 @@ void proto_register_zep(void)
             NULL, HFILL }},
 
         { &hf_zep_seqno,
-        { "Sequence Number",            "zep.seqno", FT_UINT8, BASE_DEC, NULL, 0x0,
+        { "Sequence Number",            "zep.seqno", FT_UINT32, BASE_DEC, NULL, 0x0,
             NULL, HFILL }},
 
         { &hf_zep_ieee_length,
-        { "Length",              "zep.length", FT_UINT8, BASE_DEC|BASE_UNIT_STRING, &units_byte_bytes, ZEP_LENGTH_MASK,
+        { "Length",              "zep.length", FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_byte_bytes), ZEP_LENGTH_MASK,
             "The length (in bytes) of the encapsulated IEEE 802.15.4 MAC frame.", HFILL }},
 
         { &hf_zep_protocol_id,
@@ -293,7 +298,7 @@ void proto_register_zep(void)
             NULL, HFILL }},
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_zep
     };
 
@@ -332,13 +337,13 @@ void proto_reg_handoff_zep(void)
     if ( !(h = find_dissector("wpan_cc24xx")) ) { /* Try use built-in 802.15.4 (Chipcon) dissector */
         h = find_dissector("ieee802154_ccfcs");   /* otherwise use older 802.15.4 (Chipcon) plugin dissector */
     }
-    ieee802154_ccfcs_handle = h;
+    ieee802154_cc24xx_handle = h;
 
     dissector_add_uint("udp.port", ZEP_DEFAULT_PORT, zep_handle);
 } /* proto_reg_handoff_zep */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

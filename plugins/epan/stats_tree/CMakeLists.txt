@@ -12,9 +12,13 @@ include(WiresharkPlugin)
 # Plugin name and version info (major minor micro extra)
 set_module_info(stats_tree 0 0 1 0)
 
-set(PLUGIN_FILES
-	stats_tree_plugin.c
+set(TAP_SRC
 	pinfo_stats_tree.c
+)
+
+set(PLUGIN_FILES
+	plugin.c
+	${TAP_SRC}
 )
 
 set_source_files_properties(
@@ -23,25 +27,29 @@ set_source_files_properties(
 	COMPILE_FLAGS "${WERROR_COMMON_FLAGS}"
 )
 
-add_plugin_library(stats_tree epan)
+register_plugin_files(plugin.c
+	plugin_tap
+	${TAP_SRC}
+)
+
+add_wireshark_plugin_library(stats_tree epan)
 
 target_link_libraries(stats_tree epan)
 
 install_plugin(stats_tree epan)
 
-file(GLOB PLUGIN_HEADERS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "*.h")
+file(GLOB TAP_HEADERS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "*.h")
 CHECKAPI(
 	NAME
 	  stats_tree
 	SWITCHES
-	  -g abort -g termoutput -build
 	SOURCES
-	  ${PLUGIN_FILES}
-	  ${PLUGIN_HEADERS}
+	  ${TAP_SRC}
+	  ${TAP_HEADERS}
 )
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

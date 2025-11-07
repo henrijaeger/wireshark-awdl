@@ -1,10 +1,11 @@
-/* iax2_analysis_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef IAX2_ANALYSIS_DIALOG_H
 #define IAX2_ANALYSIS_DIALOG_H
@@ -16,11 +17,10 @@
 
 #include <config.h>
 
-#include <glib.h>
-
 #include <epan/address.h>
 
 #include "ui/tap-iax2-analysis.h"
+#include "ui/rtp_stream_id.h"
 
 #include <QAbstractButton>
 #include <QMenu>
@@ -54,7 +54,6 @@ signals:
     void goToPacket(int packet_num);
 
 protected slots:
-    void captureEvent(CaptureEvent e);
     virtual void updateWidgets();
 
 private slots:
@@ -73,20 +72,15 @@ private slots:
     void on_actionSaveGraph_triggered();
     void on_buttonBox_helpRequested();
     void showStreamMenu(QPoint pos);
+    void showGraphMenu(const QPoint &pos);
     void graphClicked(QMouseEvent *event);
 
 private:
     Ui::Iax2AnalysisDialog *ui;
     enum StreamDirection { dir_both_, dir_forward_, dir_reverse_ };
 
-    address src_fwd_;
-    guint32 port_src_fwd_;
-    address dst_fwd_;
-    guint32 port_dst_fwd_;
-    address src_rev_;
-    guint32 port_src_rev_;
-    address dst_rev_;
-    guint32 port_dst_rev_;
+    rtpstream_id_t fwd_id_;
+    rtpstream_id_t rev_id_;
 
     tap_iax2_stat_t fwd_statinfo_;
     tap_iax2_stat_t rev_statinfo_;
@@ -112,7 +106,7 @@ private:
 
     // Tap callbacks
     static void tapReset(void *tapinfo_ptr);
-    static gboolean tapPacket(void *tapinfo_ptr, packet_info *pinfo, struct epan_dissect *, const void *iax2info_ptr);
+    static tap_packet_status tapPacket(void *tapinfo_ptr, packet_info *pinfo, struct epan_dissect *, const void *iax2info_ptr, tap_flags_t flags);
     static void tapDraw(void *tapinfo_ptr);
 
     void resetStatistics();
@@ -125,24 +119,11 @@ private:
     void saveCsv(StreamDirection direction);
 
 #if 0
-    guint32 processNode(proto_node *ptree_node, header_field_info *hfinformation, const gchar* proto_field, bool *ok);
-    guint32 getIntFromProtoTree(proto_tree *protocol_tree, const gchar *proto_name, const gchar *proto_field, bool *ok);
+    uint32_t processNode(proto_node *ptree_node, header_field_info *hfinformation, const char* proto_field, bool *ok);
+    uint32_t getIntFromProtoTree(proto_tree *protocol_tree, const char *proto_name, const char *proto_field, bool *ok);
 #endif
 
     bool eventFilter(QObject*, QEvent* event);
 };
 
 #endif // IAX2_ANALYSIS_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

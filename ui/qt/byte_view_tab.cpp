@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "byte_view_tab.h"
 
@@ -14,11 +15,10 @@
 #include <QTabBar>
 
 #include "cfile.h"
-#include "epan/epan_dissect.h"
-#include "epan/tvbuff-int.h"
 
-#include <wireshark_application.h>
+#include <main_application.h>
 
+#include <ui/qt/main_window.h>
 #include <ui/qt/utils/variant_pointer.h>
 #include <ui/qt/widgets/byte_view_text.h>
 
@@ -32,14 +32,19 @@ ByteViewTab::ByteViewTab(QWidget *parent, epan_dissect_t *edt_fixed) :
     QTabWidget(parent),
     cap_file_(0),
     is_fixed_packet_(edt_fixed != NULL),
-    edt_(edt_fixed)
+    edt_(edt_fixed),
+    disable_hover_(false)
 {
     setAccessibleName(tr("Packet bytes"));
     setTabPosition(QTabWidget::South);
     setDocumentMode(true);
 
+    // Shrink down to a small but nonzero size in the main splitter.
+    int one_em = fontMetrics().height();
+    setMinimumSize(one_em, one_em);
+
     if (!edt_fixed) {
-        connect(wsApp, SIGNAL(appInitialized()), this, SLOT(connectToMainWindow()));
+        connect(mainApp, &MainApplication::appInitialized, this, &ByteViewTab::connectToMainWindow);
     }
 }
 
@@ -48,31 +53,29 @@ ByteViewTab::ByteViewTab(QWidget *parent, epan_dissect_t *edt_fixed) :
 // independent of the selection in the packet list.
 void ByteViewTab::connectToMainWindow()
 {
-    connect(this, SIGNAL(fieldSelected(FieldInformation *)),
-            wsApp->mainWindow(), SIGNAL(fieldSelected(FieldInformation *)));
-    connect(this, SIGNAL(fieldHighlight(FieldInformation *)),
-            wsApp->mainWindow(), SIGNAL(fieldHighlight(FieldInformation *)));
+    connect(this, &ByteViewTab::fieldSelected, mainApp->mainWindow(), &MainWindow::fieldSelected);
+    connect(this, &ByteViewTab::fieldHighlight, mainApp->mainWindow(), &MainWindow::fieldHighlight);
 
     /* Connect change of packet selection */
-    connect(wsApp->mainWindow(), SIGNAL(frameSelected(int)), this, SLOT(selectedFrameChanged(int)));
-    connect(wsApp->mainWindow(), SIGNAL(setCaptureFile(capture_file*)), this, SLOT(setCaptureFile(capture_file*)));
-    connect(wsApp->mainWindow(), SIGNAL(fieldSelected(FieldInformation *)), this, SLOT(selectedFieldChanged(FieldInformation *)));
+    connect(mainApp->mainWindow(), &MainWindow::framesSelected, this, &ByteViewTab::ByteViewTab::selectedFrameChanged);
+    connect(mainApp->mainWindow(), &MainWindow::setCaptureFile, this, &ByteViewTab::setCaptureFile);
+    connect(mainApp->mainWindow(), &MainWindow::fieldSelected, this, &ByteViewTab::selectedFieldChanged);
 
-    connect(wsApp->mainWindow(), SIGNAL(captureActive(int)), this, SLOT(captureActive(int)));
+    connect(mainApp->mainWindow(), &MainWindow::captureActive, this, &ByteViewTab::captureActive);
 }
 
 void ByteViewTab::captureActive(int cap)
 {
-    if ( cap == 0 )
+    if (cap == 0)
     {
         QList<ByteViewText *> allBVTs = findChildren<ByteViewText *>();
-        if ( allBVTs.count() > 0 )
+        if (allBVTs.count() > 0)
         {
             ByteViewText * bvt = allBVTs.at(0);
             tvbuff_t * stored = VariantPointer<tvbuff_t>::asPtr(bvt->property(tvb_data_property));
 
-            if ( ! stored )
-                selectedFrameChanged(-1);
+            if (! stored)
+                selectedFrameChanged(QList<int>());
         }
     }
 }
@@ -84,29 +87,59 @@ void ByteViewTab::addTab(const char *name, tvbuff_t *tvb) {
     }
 
     packet_char_enc encoding = PACKET_CHAR_ENC_CHAR_ASCII;
-    if ( cap_file_ && cap_file_->current_frame )
-        encoding = (packet_char_enc)cap_file_->current_frame->flags.encoding;
+    if (cap_file_ && cap_file_->current_frame)
+        encoding = (packet_char_enc)cap_file_->current_frame->encoding;
 
     QByteArray data;
-    if ( tvb ) {
+    if (tvb) {
         int data_len = (int) tvb_captured_length(tvb);
         if (data_len > 0) {
+            // Note: this does not copy the data and will be invalidated
+            // when the tvbuff's real data becomes invalid (which is not
+            // necessarily when the tvb itself becomes invalid.)
             data = QByteArray::fromRawData((const char *) tvb_get_ptr(tvb, 0, data_len), data_len);
         }
     }
 
     ByteViewText * byte_view_text = new ByteViewText(data, encoding, this);
     byte_view_text->setAccessibleName(name);
-    byte_view_text->setMonospaceFont(wsApp->monospaceFont(true));
+    byte_view_text->setMonospaceFont(mainApp->monospaceFont(true));
 
-    if ( tvb )
+    if (tvb)
     {
+        // There are some secondary data source tvbuffs whose data is not freed
+        // when the epan_dissect_t is freed, but at some other point expected
+        // to outlive the packet, generally when the capture file is closed.
+        // If this is a PacketDialog, it can break that assumption.
+        // To get around this, we deep copy their data when the file is closed.
+        //
+        // XXX: We could add a function to the tvbuff API and only do this if
+        // there is no free_cb (a free_cb implies the data is freed at the
+        // same time as the tvb, i.e. when leaving the packet.)
+        if (is_fixed_packet_ && count() > 0) {
+            connect(this, &ByteViewTab::detachData, byte_view_text, &ByteViewText::detachData);
+        }
+        // See above - this tvb is (expected to be) scoped to the packet, but
+        // the real data is not necessarily so. If this is a PacketDialog
+        // and such a secondary data source, then we MUST NOT use any tvb
+        // function that accesses the real data after the capture file closes.
+        // That includes via the ds_tvb item of a field_info in the tree.
+        // proto_find_field_from_offset() is OK. See #14363.
+        //
+        // XXX: It sounds appealing to clone the secondary data source tvbs
+        // and set them to be freed when the byte_view_text is freed, perhaps
+        // even doing so only when the capture file is closing. However, while
+        // relatively simple for the few number of secondary data sources, it
+        // would be a pain to change the pointers for every field_info.
         byte_view_text->setProperty(tvb_data_property, VariantPointer<tvbuff_t>::asQVariant(tvb));
 
-        connect(wsApp, SIGNAL(zoomMonospaceFont(QFont)), byte_view_text, SLOT(setMonospaceFont(QFont)));
+        connect(mainApp, &MainApplication::zoomMonospaceFont, byte_view_text, &ByteViewText::setMonospaceFont);
 
-        connect(byte_view_text, SIGNAL(byteHovered(int)), this, SLOT(byteViewTextHovered(int)));
-        connect(byte_view_text, SIGNAL(byteSelected(int)), this, SLOT(byteViewTextMarked(int)));
+        connect(byte_view_text, &ByteViewText::byteHovered, this, &ByteViewTab::byteViewTextHovered);
+        connect(byte_view_text, &ByteViewText::byteSelected, this, &ByteViewTab::byteViewTextMarked);
+        connect(byte_view_text, &ByteViewText::byteViewSettingsChanged, this, &ByteViewTab::byteViewSettingsChanged);
+        connect(this, &ByteViewTab::byteViewSettingsChanged, byte_view_text, &ByteViewText::updateByteViewSettings);
+        connect(this, &ByteViewTab::byteViewUnmarkField, byte_view_text, &ByteViewText::unmarkField);
     }
 
     int idx = QTabWidget::addTab(byte_view_text, name);
@@ -117,15 +150,15 @@ void ByteViewTab::addTab(const char *name, tvbuff_t *tvb) {
 
 void ByteViewTab::byteViewTextHovered(int idx)
 {
-    if ( idx >= 0 && edt_ )
+    if (idx >= 0 && edt_)
     {
         tvbuff_t * tvb = VariantPointer<tvbuff_t>::asPtr(sender()->property(tvb_data_property));
         proto_tree * tree = edt_->tree;
 
-        if ( tvb && tree )
+        if (tvb && tree)
         {
             field_info * fi = proto_find_field_from_offset(tree, idx, tvb);
-            if ( fi )
+            if (fi)
             {
                 FieldInformation finfo(fi, this);
                 highlightedFieldChanged(&finfo);
@@ -140,15 +173,15 @@ void ByteViewTab::byteViewTextHovered(int idx)
 
 void ByteViewTab::byteViewTextMarked(int idx)
 {
-    if ( idx >= 0 && edt_ )
+    if (idx >= 0 && edt_)
     {
         tvbuff_t * tvb = VariantPointer<tvbuff_t>::asPtr(sender()->property(tvb_data_property));
         proto_tree * tree = edt_->tree;
 
-        if ( tvb && tree )
+        if (tvb && tree)
         {
             field_info * fi = proto_find_field_from_offset(tree, idx, tvb);
-            if ( fi )
+            if (fi)
             {
                 FieldInformation finfo(fi, this);
                 emit fieldSelected(&finfo);
@@ -164,35 +197,21 @@ ByteViewText * ByteViewTab::findByteViewTextForTvb(tvbuff_t * search_tvb, int * 
 {
 
     ByteViewText * item = 0;
-    if ( ! search_tvb )
+    if (! search_tvb)
         return item;
 
     bool found = false;
 
     QList<ByteViewText *> allBVTs = findChildren<ByteViewText *>();
-    unsigned int length = search_tvb->length;
     for (int i = 0; i < allBVTs.size() && ! found; ++i)
     {
         ByteViewText * bvt = allBVTs.at(i);
         tvbuff_t * stored = VariantPointer<tvbuff_t>::asPtr(bvt->property(tvb_data_property));
-        if ( stored == search_tvb )
+        if (stored == search_tvb)
         {
             found = true;
-        }
-        else if ( stored )
-        {
-            if ( stored->length >= length && tvb_memeql(search_tvb, 0, tvb_get_ptr(stored, 0, length), length ) == 0 )
-            {
-                /* In packetDialog we do not match, because we came from different data sources.
-                 * Assuming the capture files match, this should be a sufficient enough difference */
-                found = true;
-            }
-        }
-
-        if ( found )
-        {
             int wdgIdx = bvt->property("tab_index").toInt();
-            if ( idx )
+            if (idx)
             {
                 *idx = wdgIdx;
             }
@@ -220,7 +239,7 @@ void ByteViewTab::setTabsVisible() {
         tabBar()->hide();
 }
 
-void ByteViewTab::selectedFrameChanged(int frameNum)
+void ByteViewTab::selectedFrameChanged(QList<int> frames)
 {
     clear();
     qDeleteAll(findChildren<ByteViewText *>());
@@ -239,9 +258,10 @@ void ByteViewTab::selectedFrameChanged(int frameNum)
         }
     }
 
-    if ( frameNum >= 0 )
+    /* only show the bytes for single selections */
+    if (frames.count() == 1)
     {
-        if ( ! cap_file_ || ! cap_file_->edt )
+        if (! cap_file_ || ! cap_file_->edt)
             return;
 
         /* This code relies on a dissection, which had happened somewhere else. It also does not
@@ -279,13 +299,13 @@ void ByteViewTab::selectedFieldChanged(FieldInformation *selected)
         const field_info *fi = selected->fieldInfo();
 
         int idx = 0;
-        if ( fi )
+        if (fi)
             byte_view_text = findByteViewTextForTvb(fi->ds_tvb, &idx);
 
         if (cap_file_->search_in_progress && (cap_file_->hex || (cap_file_->string && cap_file_->packet_data))) {
             // In the hex view, only highlight the target bytes or string. The entire
             // field can then be displayed by clicking on any of the bytes in the field.
-            f_start = cap_file_->search_pos - cap_file_->search_len + 1;
+            f_start = (int)cap_file_->search_pos;
             f_length = (int) cap_file_->search_len;
         } else {
             f_start = selected->position().start;
@@ -294,10 +314,14 @@ void ByteViewTab::selectedFieldChanged(FieldInformation *selected)
 
         setCurrentIndex(idx);
 
-        p_start = selected->parentField()->position().start;
-        p_length = selected->parentField()->position().length;
+        FieldInformation *parentField = selected->parentField();
+
+        p_start = parentField->position().start;
+        p_length = parentField->position().length;
         fa_start = selected->appendix().start;
         fa_length = selected->appendix().length;
+
+        delete parentField;
     }
 
     if (byte_view_text)
@@ -305,6 +329,8 @@ void ByteViewTab::selectedFieldChanged(FieldInformation *selected)
         byte_view_text->markField(f_start, f_length);
         byte_view_text->markProtocol(p_start, p_length);
         byte_view_text->markAppendix(fa_start, fa_length);
+    } else {
+        emit byteViewUnmarkField();
     }
 }
 void ByteViewTab::highlightedFieldChanged(FieldInformation *highlighted)
@@ -333,20 +359,12 @@ void ByteViewTab::highlightedFieldChanged(FieldInformation *highlighted)
 
 void ByteViewTab::setCaptureFile(capture_file *cf)
 {
-    selectedFrameChanged(-1);
+    selectedFrameChanged(QList<int>());
 
     cap_file_ = cf;
 }
 
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+void ByteViewTab::captureFileClosing()
+{
+    emit detachData();
+}

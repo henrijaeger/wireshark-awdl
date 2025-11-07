@@ -1,15 +1,20 @@
-/* lte_rlc_statistics_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __LTE_RLC_STATISTICS_DIALOG_H__
 #define __LTE_RLC_STATISTICS_DIALOG_H__
 
 #include "tap_parameter_dialog.h"
+
+#include <epan/dissectors/packet-rlc-lte.h>
+#include <epan/dissectors/packet-rlc-3gpp-common.h>
+
 
 #include <QCheckBox>
 
@@ -25,12 +30,15 @@ public:
     void     incFrameCount() { ++packet_count_; }
 
 protected:
+    void captureFileClosing();
 
 signals:
     void launchRLCGraph(bool channelKnown,
-                        guint16 ueid, guint8 rlcMode,
-                        guint16 channelType, guint16 channelId,
-                        guint8 direction);
+                        uint8_t version,
+                        uint16_t ueid,
+                        uint8_t rlcMode,
+                        uint16_t channelType, uint16_t channelId,
+                        uint8_t direction);
 
 private:
     // Extra controls needed for this dialog.
@@ -46,7 +54,7 @@ private:
 
     // Callbacks for register_tap_listener
     static void tapReset(void *ws_dlg_ptr);
-    static gboolean tapPacket(void *ws_dlg_ptr, struct _packet_info *, struct epan_dissect *, const void *rlc_lte_tap_info_ptr);
+    static tap_packet_status tapPacket(void *ws_dlg_ptr, struct _packet_info *, struct epan_dissect *, const void *rlc_lte_tap_info_ptr, tap_flags_t flags);
     static void tapDraw(void *ws_dlg_ptr);
 
     void updateHeaderLabels();
@@ -59,8 +67,6 @@ private slots:
     virtual void fillTree();
     void updateItemSelectionChanged();
 
-    void captureFileClosing();
-
     void useRLCFramesFromMacCheckBoxToggled(bool state);
     void launchULGraphButtonClicked();
     void launchDLGraphButtonClicked();
@@ -68,16 +74,3 @@ private slots:
 };
 
 #endif // __LTE_RLC_STATISTICS_DIALOG_H__
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

@@ -4,11 +4,10 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
-
-#include <glib.h>
 
 #include <epan/prefs.h>
 #include <epan/prefs-int.h>
@@ -21,15 +20,14 @@
 #include <ui_preference_editor_frame.h>
 
 #include <ui/qt/utils/qt_ui_utils.h>
+#include <ui/qt/widgets/wireshark_file_dialog.h>
 #include <wsutil/utf8_entities.h>
 
-#include "wireshark_application.h"
+#include "main_application.h"
 
 #include <QPushButton>
 #include <QKeyEvent>
-
-// To do:
-// - Handle PREF_SAVE_FILENAME, PREF_OPEN_FILENAME and PREF_DIRNAME.
+#include <QRegularExpression>
 
 PreferenceEditorFrame::PreferenceEditorFrame(QWidget *parent) :
     AccordionFrame(parent),
@@ -47,6 +45,11 @@ PreferenceEditorFrame::PreferenceEditorFrame(QWidget *parent) :
         w->setAttribute(Qt::WA_MacSmallSize, true);
     }
 #endif
+
+    connect(ui->preferenceBrowseButton, &QPushButton::clicked, this, &PreferenceEditorFrame::browsePushButtonClicked);
+
+    // Disconnect textChanged signal for DissectorSyntaxLineEdit.
+    disconnect(ui->preferenceLineEdit, &DissectorSyntaxLineEdit::textChanged, NULL, NULL);
 }
 
 PreferenceEditorFrame::~PreferenceEditorFrame()
@@ -64,40 +67,49 @@ void PreferenceEditorFrame::editPreference(preference *pref, pref_module *module
         return;
     }
 
-    ui->modulePreferencesToolButton->setText(tr("Open %1 preferences" UTF8_HORIZONTAL_ELLIPSIS).arg(module_->title));
+    ui->modulePreferencesToolButton->setText(tr("Open %1 preferences…").arg(module_->title));
 
     pref_stash(pref_, NULL);
-    ui->preferenceTitleLabel->setText(QString("%1:").arg(prefs_get_title(pref)));
+    ui->preferenceTitleLabel->setText(QStringLiteral("%1:").arg(prefs_get_title(pref)));
 
     // Convert the pref description from plain text to rich text.
     QString description = html_escape(prefs_get_description(pref));
     description.replace('\n', "<br>");
-    QString tooltip = QString("<span>%1</span>").arg(description);
+    QString tooltip = QStringLiteral("<span>%1</span>").arg(description);
     ui->preferenceTitleLabel->setToolTip(tooltip);
     ui->preferenceLineEdit->setToolTip(tooltip);
 
     ui->preferenceLineEdit->clear();
     ui->preferenceLineEdit->setSyntaxState(SyntaxLineEdit::Empty);
-    disconnect(ui->preferenceLineEdit, 0, 0, 0);
+
+    // Disconnect previous textChanged signal.
+    disconnect(ui->preferenceLineEdit, &SyntaxLineEdit::textChanged, this, NULL);
 
     bool show = false;
+    bool browse_button = false;
 
     switch (prefs_get_type(pref_)) {
     case PREF_UINT:
-    case PREF_DECODE_AS_UINT:
-        connect(ui->preferenceLineEdit, SIGNAL(textChanged(QString)),
-                this, SLOT(uintLineEditTextEdited(QString)));
+        connect(ui->preferenceLineEdit, &SyntaxLineEdit::textChanged,
+                this, &PreferenceEditorFrame::uintLineEditTextEdited);
         show = true;
         break;
+    case PREF_SAVE_FILENAME:
+    case PREF_OPEN_FILENAME:
+    case PREF_DIRNAME:
+        browse_button = true;
+        // Fallthrough
     case PREF_STRING:
-        connect(ui->preferenceLineEdit, SIGNAL(textChanged(QString)),
-                this, SLOT(stringLineEditTextEdited(QString)));
+    case PREF_PASSWORD:
+    case PREF_DISSECTOR:
+        connect(ui->preferenceLineEdit, &SyntaxLineEdit::textChanged,
+                this, &PreferenceEditorFrame::stringLineEditTextEdited);
         show = true;
         break;
     case PREF_RANGE:
     case PREF_DECODE_AS_RANGE:
-        connect(ui->preferenceLineEdit, SIGNAL(textChanged(QString)),
-                this, SLOT(rangeLineEditTextEdited(QString)));
+        connect(ui->preferenceLineEdit, &SyntaxLineEdit::textChanged,
+                this, &PreferenceEditorFrame::rangeLineEditTextEdited);
         show = true;
         break;
     default:
@@ -105,7 +117,18 @@ void PreferenceEditorFrame::editPreference(preference *pref, pref_module *module
     }
 
     if (show) {
-        ui->preferenceLineEdit->setText(gchar_free_to_qstring(prefs_pref_to_str(pref_, pref_stashed)).remove(QRegExp("\n\t")));
+        // Enable completion only for display filter search.
+        if (prefs_get_type(pref_) == PREF_DISSECTOR) {
+            ui->preferenceLineEdit->allowCompletion(true);
+            ui->preferenceLineEdit->updateDissectorNames();
+            ui->preferenceLineEdit->setDefaultPlaceholderText();
+        } else {
+            ui->preferenceLineEdit->allowCompletion(false);
+            ui->preferenceLineEdit->setPlaceholderText("");
+        }
+
+        ui->preferenceLineEdit->setText(gchar_free_to_qstring(prefs_pref_to_str(pref_, pref_stashed)).remove(QRegularExpression("\n\t")));
+        ui->preferenceBrowseButton->setHidden(!browse_button);
         animatedShow();
     }
 }
@@ -113,7 +136,7 @@ void PreferenceEditorFrame::editPreference(preference *pref, pref_module *module
 void PreferenceEditorFrame::uintLineEditTextEdited(const QString &new_str)
 {
     if (new_str.isEmpty()) {
-        new_uint_ = prefs_get_uint_value_real(pref_, pref_stashed);
+        new_uint_ = prefs_get_uint_value(pref_, pref_stashed);
         ui->preferenceLineEdit->setSyntaxState(SyntaxLineEdit::Empty);
         ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(true);
         return;
@@ -125,7 +148,7 @@ void PreferenceEditorFrame::uintLineEditTextEdited(const QString &new_str)
         new_uint_ = new_uint;
         ui->preferenceLineEdit->setSyntaxState(SyntaxLineEdit::Valid);
     } else {
-        new_uint_ = prefs_get_uint_value_real(pref_, pref_stashed);
+        new_uint_ = prefs_get_uint_value(pref_, pref_stashed);
         ui->preferenceLineEdit->setSyntaxState(SyntaxLineEdit::Invalid);
     }
     ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(ok);
@@ -133,7 +156,38 @@ void PreferenceEditorFrame::uintLineEditTextEdited(const QString &new_str)
 
 void PreferenceEditorFrame::stringLineEditTextEdited(const QString &new_str)
 {
+    bool ok = true;
     new_str_ = new_str;
+
+    if (prefs_get_type(pref_) == PREF_DISSECTOR) {
+        ui->preferenceLineEdit->checkDissectorName(new_str_);
+        ok = (ui->preferenceLineEdit->syntaxState() != SyntaxLineEdit::Invalid);
+    }
+
+    ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(ok);
+}
+
+void PreferenceEditorFrame::browsePushButtonClicked()
+{
+    QString caption = mainApp->windowTitleString(prefs_get_title(pref_));
+    QString dir = prefs_get_string_value(pref_, pref_stashed);
+    QString filename;
+
+    switch (prefs_get_type(pref_)) {
+    case PREF_SAVE_FILENAME:
+        filename = WiresharkFileDialog::getSaveFileName(this, caption, dir);
+        break;
+    case PREF_OPEN_FILENAME:
+        filename = WiresharkFileDialog::getOpenFileName(this, caption, dir);
+        break;
+    case PREF_DIRNAME:
+        filename = WiresharkFileDialog::getExistingDirectory(this, caption, dir);
+        break;
+    }
+
+    if (!filename.isEmpty()) {
+        ui->preferenceLineEdit->setText(filename);
+    }
 }
 
 void PreferenceEditorFrame::rangeLineEditTextEdited(const QString &new_str)
@@ -153,6 +207,8 @@ void PreferenceEditorFrame::rangeLineEditTextEdited(const QString &new_str)
     } else {
         ui->preferenceLineEdit->setSyntaxState(SyntaxLineEdit::Invalid);
     }
+
+    ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(ret == CVT_NO_ERROR);
 }
 
 void PreferenceEditorFrame::showEvent(QShowEvent *event)
@@ -166,8 +222,7 @@ void PreferenceEditorFrame::showEvent(QShowEvent *event)
 void PreferenceEditorFrame::on_modulePreferencesToolButton_clicked()
 {
     if (module_) {
-        QString module_name = module_->name;
-        emit showProtocolPreferences(module_name);
+        emit showProtocolPreferences(module_->name);
     }
     on_buttonBox_rejected();
 }
@@ -181,14 +236,21 @@ void PreferenceEditorFrame::on_preferenceLineEdit_returnPressed()
 
 void PreferenceEditorFrame::on_buttonBox_accepted()
 {
+    unsigned int changed_flags = 0;
     unsigned int apply = 0;
     switch(prefs_get_type(pref_)) {
     case PREF_UINT:
-    case PREF_DECODE_AS_UINT:
         apply = prefs_set_uint_value(pref_, new_uint_, pref_stashed);
         break;
     case PREF_STRING:
+    case PREF_SAVE_FILENAME:
+    case PREF_OPEN_FILENAME:
+    case PREF_DIRNAME:
+    case PREF_DISSECTOR:
         apply = prefs_set_string_value(pref_, new_str_.toStdString().c_str(), pref_stashed);
+        break;
+    case PREF_PASSWORD:
+        apply = prefs_set_password_value(pref_, new_str_.toStdString().c_str(), pref_stashed);
         break;
     case PREF_RANGE:
     case PREF_DECODE_AS_RANGE:
@@ -199,30 +261,31 @@ void PreferenceEditorFrame::on_buttonBox_accepted()
     }
 
     if (apply && module_) {
+        changed_flags = module_->prefs_changed_flags;
         pref_unstash_data_t unstashed_data;
 
         unstashed_data.module = module_;
-        unstashed_data.handle_decode_as = TRUE;
+        unstashed_data.handle_decode_as = true;
 
         pref_unstash(pref_, &unstashed_data);
         prefs_apply(module_);
-        if (!prefs.gui_use_pref_save) {
-            gchar* err = NULL;
+        prefs_main_write();
 
-            prefs_main_write();
-
-            if (save_decode_as_entries(&err) < 0)
-            {
-                simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", err);
-                g_free(err);
-            }
+        char* err = NULL;
+        if (save_decode_as_entries(&err) < 0)
+        {
+            simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", err);
+            g_free(err);
         }
     }
     on_buttonBox_rejected();
     // Emit signals once UI is hidden
     if (apply) {
-        wsApp->emitAppSignal(WiresharkApplication::PacketDissectionChanged);
-        wsApp->emitAppSignal(WiresharkApplication::PreferencesChanged);
+        if (changed_flags & PREF_EFFECT_FIELDS) {
+            mainApp->emitAppSignal(MainApplication::FieldsChanged);
+        }
+        mainApp->emitAppSignal(MainApplication::PacketDissectionChanged);
+        mainApp->emitAppSignal(MainApplication::PreferencesChanged);
     }
 }
 
@@ -237,30 +300,17 @@ void PreferenceEditorFrame::on_buttonBox_rejected()
 
 void PreferenceEditorFrame::keyPressEvent(QKeyEvent *event)
 {
-    if (event->modifiers() == Qt::NoModifier) {
+    if (pref_ && module_ && (event->modifiers() == Qt::NoModifier)) {
         if (event->key() == Qt::Key_Escape) {
             on_buttonBox_rejected();
         } else if (event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return) {
             if (ui->buttonBox->button(QDialogButtonBox::Ok)->isEnabled()) {
                 on_buttonBox_accepted();
             } else if (ui->preferenceLineEdit->syntaxState() == SyntaxLineEdit::Invalid) {
-                emit pushFilterSyntaxStatus(tr("Invalid value."));
+                mainApp->pushStatus(MainApplication::FilterSyntax, tr("Invalid value."));
             }
         }
     }
 
     AccordionFrame::keyPressEvent(event);
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

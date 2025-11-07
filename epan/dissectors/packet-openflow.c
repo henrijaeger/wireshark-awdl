@@ -26,7 +26,7 @@ void proto_reg_handoff_openflow(void);
 #define OFP_LEGACY_PORT 6633
 #define OFP_LEGACY2_PORT 6634
 #define OFP_IANA_PORT 6653
-static int g_openflow_port = OFP_IANA_PORT;
+static range_t *g_openflow_ports;
 
 static dissector_handle_t openflow_handle;
 static dissector_handle_t openflow_v1_handle;
@@ -35,12 +35,12 @@ static dissector_handle_t openflow_v5_handle;
 static dissector_handle_t openflow_v6_handle;
 
 /* Initialize the protocol and registered fields */
-static int proto_openflow = -1;
-static int hf_openflow_version = -1;
+static int proto_openflow;
+static int hf_openflow_version;
 
-static expert_field ei_openflow_version = EI_INIT;
+static expert_field ei_openflow_version;
 
-static gboolean openflow_desegment = TRUE;
+static bool openflow_desegment = true;
 
 #define OFP_VERSION_1_0 1
 #define OFP_VERSION_1_1 2
@@ -59,7 +59,7 @@ static const value_string openflow_version_values[] = {
     { 0, NULL }
 };
 
-static guint
+static unsigned
 get_openflow_pdu_length(packet_info *pinfo _U_, tvbuff_t *tvb,
                         int offset, void *data _U_)
 {
@@ -69,11 +69,11 @@ get_openflow_pdu_length(packet_info *pinfo _U_, tvbuff_t *tvb,
 static int
 dissect_openflow_tcp_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
-    guint offset = 0;
-    guint8 version;
+    unsigned offset = 0;
+    uint8_t version;
     proto_item* ti;
 
-    version = tvb_get_guint8(tvb, 0);
+    version = tvb_get_uint8(tvb, 0);
     /* Set the Protocol column to the constant string of openflow */
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "OpenFlow");
     col_clear(pinfo->cinfo,COL_INFO);
@@ -108,7 +108,7 @@ dissect_openflow(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
     return tvb_captured_length(tvb);
 }
 
-static gboolean
+static bool
 dissect_openflow_heur(tvbuff_t *tvb, packet_info *pinfo,
                      proto_tree *tree, void *data)
 {
@@ -117,22 +117,22 @@ dissect_openflow_heur(tvbuff_t *tvb, packet_info *pinfo,
     if ((pinfo->destport != OFP_LEGACY_PORT) &&
         (pinfo->destport != OFP_LEGACY2_PORT) &&
         (pinfo->destport != OFP_IANA_PORT) &&
-        (pinfo->destport != (guint32)g_openflow_port)) {
-        return FALSE;
+        (!value_is_in_range(g_openflow_ports, pinfo->destport))) {
+        return false;
     }
 
     conversation = find_or_create_conversation(pinfo);
     conversation_set_dissector(conversation, openflow_handle);
 
     dissect_openflow(tvb, pinfo, tree, data);
-    return TRUE;
+    return true;
 }
 
 static void
 apply_openflow_prefs(void)
 {
     /* Openflow uses the port preference for heuristics */
-    g_openflow_port = prefs_get_uint_value("openflow", "tcp.port");
+    g_openflow_ports = prefs_get_range_value("openflow", "tcp.port");
 }
 
 /*
@@ -157,8 +157,7 @@ proto_register_openflow(void)
     expert_module_t* expert_openflow;
 
     /* Register the protocol name and description */
-    proto_openflow = proto_register_protocol("OpenFlow",
-            "OpenFlow", "openflow");
+    proto_openflow = proto_register_protocol("OpenFlow", "OpenFlow", "openflow");
 
     openflow_handle = register_dissector("openflow", dissect_openflow, proto_openflow);
 
@@ -191,10 +190,11 @@ proto_reg_handoff_openflow(void)
     openflow_v4_handle = find_dissector_add_dependency("openflow_v4", proto_openflow);
     openflow_v5_handle = find_dissector_add_dependency("openflow_v5", proto_openflow);
     openflow_v6_handle = find_dissector_add_dependency("openflow_v6", proto_openflow);
+    apply_openflow_prefs();
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

@@ -1,4 +1,4 @@
-/* plugins.h
+/** @file
  * definitions for plugins structures
  *
  * Wireshark - Network traffic analyzer
@@ -11,16 +11,14 @@
 #ifndef __PLUGINS_H__
 #define __PLUGINS_H__
 
+#include <wireshark.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-#include <glib.h>
-#include <gmodule.h>
-
-#include "ws_symbol_export.h"
-
 typedef void (*plugin_register_func)(void);
+typedef uint32_t (*plugin_describe_func)(void);
 
 typedef void plugins_t;
 
@@ -30,10 +28,17 @@ typedef enum {
     WS_PLUGIN_CODEC
 } plugin_type_e;
 
+#define WS_PLUGIN_DESC_DISSECTOR    (1UL << 0)
+#define WS_PLUGIN_DESC_FILE_TYPE    (1UL << 1)
+#define WS_PLUGIN_DESC_CODEC        (1UL << 2)
+#define WS_PLUGIN_DESC_EPAN         (1UL << 3)
+#define WS_PLUGIN_DESC_TAP_LISTENER (1UL << 4)
+#define WS_PLUGIN_DESC_DFILTER      (1UL << 5)
+
 WS_DLL_PUBLIC plugins_t *plugins_init(plugin_type_e type);
 
 typedef void (*plugin_description_callback)(const char *name, const char *version,
-                                            const char *types, const char *filename,
+                                            uint32_t flags, const char *filename,
                                             void *user_data);
 
 WS_DLL_PUBLIC void plugins_get_descriptions(plugin_description_callback callback, void *user_data);
@@ -43,6 +48,8 @@ WS_DLL_PUBLIC void plugins_dump_all(void);
 WS_DLL_PUBLIC int plugins_get_count(void);
 
 WS_DLL_PUBLIC void plugins_cleanup(plugins_t *plugins);
+
+WS_DLL_PUBLIC bool plugins_supported(void);
 
 #ifdef __cplusplus
 }

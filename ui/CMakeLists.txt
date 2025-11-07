@@ -10,17 +10,15 @@
 set(NONGENERATED_UI_SRC
 	alert_box.c
 	capture.c
+	capture_opts.c
 	capture_ui_utils.c
 	commandline.c
-	console.c
 	decode_as_utils.c
 	dissect_opts.c
-	export_object_ui.c
 	export_pdu_ui_utils.c
 	help_url.c
 	failure_message.c
 	file_dialog.c
-	filter_files.c
 	firewall_rules.c
 	iface_toolbar.c
 	iface_lists.c
@@ -36,19 +34,20 @@ set(NONGENERATED_UI_SRC
 	recent.c
 	rtp_media.c
 	rtp_stream.c
+	rtp_stream_id.c
 	service_response_time.c
 	software_update.c
 	ssl_key_export.c
-	summary.c
 	tap_export_pdu.c
 	tap-iax2-analysis.c
+	tap-rtp-analysis.c
 	tap-rtp-common.c
 	tap-sctp-analysis.c
 	tap-rlc-graph.c
 	tap-tcp-stream.c
 	text_import.c
+	text_import_regex.c
 	time_shift.c
-	traffic_table_ui.c
 	util.c
 	voip_calls.c
 )
@@ -57,6 +56,7 @@ set(NONGENERATED_UI_SRC
 file(GLOB EXTRA_UI_HEADERS
 	rtp_media.h
 	rtp_stream.h
+	rtp_stream_id.h
 	tap-iax2-analysis.h
 	tap-rtp-analysis.h
 )
@@ -68,31 +68,55 @@ add_lex_files(LEX_FILES UI_SRC
 )
 
 set_source_files_properties(
-	${UI_SRC}
+	${NONGENERATED_UI_SRC}
 	PROPERTIES
 	COMPILE_FLAGS "${WERROR_COMMON_FLAGS}"
 )
 
-
 add_library(ui STATIC ${UI_SRC})
 
-set_target_properties(ui PROPERTIES
+target_link_libraries(ui
+	PRIVATE
+		wsutil
+		wiretap
+		${M_LIBRARIES}
+)
+
+target_include_directories(ui
+	SYSTEM PRIVATE
+		${PCAP_INCLUDE_DIRS}
+		${WINSPARKLE_INCLUDE_DIRS}
+)
+
+add_library(summary STATIC summary.c)
+
+target_link_libraries(summary
+	PRIVATE
+		wiretap
+		epan
+		wsutil
+		${GCRYPT_LIBRARIES}
+	)
+
+target_include_directories(summary
+	SYSTEM PRIVATE
+		${GCRYPT_INCLUDE_DIRS}
+)
+
+set_target_properties(ui summary PROPERTIES
 	LINK_FLAGS "${WS_LINK_FLAGS}"
 	FOLDER "UI"
 )
-
-if (HTML_HELP_COMPILER)
-	add_definitions(-DHHC_DIR)
-	target_link_libraries(ui Htmlhelp.lib)
+if(MSVC)
+	set_target_properties(ui summary PROPERTIES
+		LINK_FLAGS_DEBUG "${WS_MSVC_DEBUG_LINK_FLAGS}"
+	)
 endif()
-
-add_definitions(-DDOC_DIR="${CMAKE_INSTALL_FULL_DOCDIR}")
 
 CHECKAPI(
 	NAME
 	  ui-base
 	SWITCHES
-	  -g deprecated-gtk
 	SOURCES
 	  ${NONGENERATED_UI_SRC}
 # Flex files not included due to use of malloc, free etc.
@@ -101,14 +125,14 @@ CHECKAPI(
 	NAME
 	  ui-todo
 	SWITCHES
-	  -M -g deprecated-gtk-todo
+	  -M
 	SOURCES
 	  ${NONGENERATED_UI_SRC}
 # Flex files not included due to use of malloc, free etc.
 )
 
 #
-# Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+# Editor modelines  -  https://www.wireshark.org/tools/modelines.html
 #
 # Local variables:
 # c-basic-offset: 8

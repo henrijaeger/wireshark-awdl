@@ -38,8 +38,11 @@
  * Data given to subdissectors
  */
 typedef struct isis_data {
-    guint8 header_length;
-    guint8 system_id_len;
+    uint8_t header_length;
+    uint8_t system_id_len;
+    uint16_t pdu_length;
+    proto_item *header_length_item;
+    expert_field *ei_bad_header_length;
 } isis_data_t;
 
 extern int hf_isis_clv_key_id;
@@ -47,7 +50,7 @@ extern int hf_isis_clv_key_id;
 #endif /* _PACKET_ISIS_H */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

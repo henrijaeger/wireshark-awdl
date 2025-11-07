@@ -1,4 +1,4 @@
-/* field_information.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -14,6 +14,7 @@
 
 #include <epan/proto.h>
 
+#include <ui/qt/utils/proto_node.h>
 #include "data_printer.h"
 
 #include <QObject>
@@ -43,7 +44,7 @@ public:
     };
 
     explicit FieldInformation(field_info * fi, QObject * parent = Q_NULLPTR);
-    explicit FieldInformation(proto_node * node, QObject * parent = Q_NULLPTR);
+    explicit FieldInformation(const ProtoNode * node, QObject * parent = Q_NULLPTR);
 
     bool isValid() const;
     bool isLink() const ;
@@ -60,6 +61,7 @@ public:
     bool tvbContains(FieldInformation *);
     unsigned flag(unsigned mask);
     const QString moduleName();
+    QString toString();
     QString url();
 
     const QByteArray printableData();
@@ -72,16 +74,3 @@ private:
 
 
 #endif // FIELD_INFORMATION_H_
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

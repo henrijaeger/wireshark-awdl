@@ -1,11 +1,13 @@
-/* interface_sort_filter_model.h
+/** @file
+ *
  * Proxy model for the display of interface data for the interface tree
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef INTERFACE_SORT_FILTER_MODEL_H
 #define INTERFACE_SORT_FILTER_MODEL_H
@@ -13,8 +15,6 @@
 #include <config.h>
 
 #include <ui/qt/models/interface_tree_model.h>
-
-#include <glib.h>
 
 #include <QSortFilterProxyModel>
 
@@ -31,6 +31,9 @@ public:
     bool filterHidden() const;
     int interfacesHidden();
     void toggleFilterHidden();
+
+    void setSortByActivity(bool sort);
+    bool sortByActivity() const;
 
 #ifdef HAVE_PCAP_REMOTE
     void setRemoteDisplay(bool remoteDisplay);
@@ -58,12 +61,14 @@ public:
 protected:
     bool filterAcceptsRow(int source_row, const QModelIndex & source_parent) const;
     bool filterAcceptsColumn(int source_column, const QModelIndex & source_parent) const;
+    bool lessThan(const QModelIndex &source_left, const QModelIndex &source_right) const;
 
 private:
     bool _filterHidden;
     bool _filterTypes;
     bool _invertTypeFilter;
     bool _storeOnChange;
+    bool _sortByActivity;
 
 #ifdef HAVE_PCAP_REMOTE
     bool _remoteDisplay;
@@ -78,16 +83,3 @@ private slots:
 };
 
 #endif // INTERFACE_SORT_FILTER_MODEL_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

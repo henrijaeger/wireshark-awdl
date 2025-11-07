@@ -10,6 +10,14 @@
  *   Allan M. Madsen 2007
  * Updated to HCI specification 3.0+HS & 4.0
  *   Allan M. Madsen 2012
+ * Updated to Core Specification 5.2
+ *   Thomas Sailer 2021
+ * Updated to HCI specification 5.3
+ *   Allan M. Madsen 2022
+ * Updated to HCI specification 5.4
+ *   Allan M. Madsen 2023
+ * Updated to HCI specification 6.0
+ *   Allan M. Madsen 2024
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -27,494 +35,918 @@
 #include <epan/decode_as.h>
 #include <epan/tap.h>
 #include <epan/proto_data.h>
+#include <epan/tfs.h>
+#include <epan/unit_strings.h>
 
 #include <wsutil/utf8_entities.h>
 
 #include "packet-bluetooth.h"
 #include "packet-bthci_cmd.h"
 #include "packet-bthci_evt.h"
-#include "packet-btsdp.h"
 #include "packet-btatt.h"
 
-static int proto_bthci_cmd = -1;
+static int proto_bthci_cmd;
 
-static int hf_bthci_cmd_opcode = -1;
-static int hf_bthci_cmd_ogf = -1;
-static int hf_bthci_cmd_ocf = -1;
-static int hf_bthci_cmd_ocf_link_control = -1;
-static int hf_bthci_cmd_ocf_link_policy = -1;
-static int hf_bthci_cmd_ocf_host_controller_and_baseband = -1;
-static int hf_bthci_cmd_ocf_informational = -1;
-static int hf_bthci_cmd_ocf_status = -1;
-static int hf_bthci_cmd_ocf_testing = -1;
-static int hf_bthci_cmd_ocf_logo_testing = -1;
-static int hf_bthci_cmd_ocf_low_energy = -1;
-static int hf_bthci_cmd_param_length = -1;
-static int hf_bthci_cmd_lap = -1;
-static int hf_bthci_cmd_inq_length = -1;
-static int hf_bthci_cmd_num_responses = -1;
-static int hf_bthci_cmd_encrypt_mode = -1;
-static int hf_bthci_cmd_bd_addr = -1;
-static int hf_bthci_cmd_packet_type = -1;
-static int hf_bthci_cmd_packet_type_dh5 = -1;
-static int hf_bthci_cmd_packet_type_dm5 = -1;
-static int hf_bthci_cmd_packet_type_3dh5 = -1;
-static int hf_bthci_cmd_packet_type_2dh5 = -1;
-static int hf_bthci_cmd_packet_type_dh3 = -1;
-static int hf_bthci_cmd_packet_type_dm3 = -1;
-static int hf_bthci_cmd_packet_type_3dh3 = -1;
-static int hf_bthci_cmd_packet_type_2dh3 = -1;
-static int hf_bthci_cmd_packet_type_reserved_5_7 = -1;
-static int hf_bthci_cmd_packet_type_dh1 = -1;
-static int hf_bthci_cmd_packet_type_dm1 = -1;
-static int hf_bthci_cmd_packet_type_3dh1 = -1;
-static int hf_bthci_cmd_packet_type_2dh1 = -1;
-static int hf_bthci_cmd_packet_type_reserved_0 = -1;
-static int hf_bthci_cmd_clock_offset = -1;
-static int hf_bthci_cmd_clock_offset_valid = -1;
-static int hf_bthci_cmd_allow_role_switch = -1;
-static int hf_bthci_cmd_page_scan_mode = -1;
-static int hf_bthci_cmd_page_scan_repetition_mode = -1;
-static int hf_bthci_cmd_page_scan_period_mode = -1;
-static int hf_bthci_cmd_max_period_length = -1;
-static int hf_bthci_cmd_min_period_length = -1;
-static int hf_bthci_cmd_connection_handle = -1;
-static int hf_bthci_cmd_reason = -1;
-static int hf_bthci_cmd_num_link_keys = -1;
-static int hf_bthci_cmd_link_key = -1;
-static int hf_bthci_cmd_packet_type_hv1 = -1;
-static int hf_bthci_cmd_packet_type_hv2 = -1;
-static int hf_bthci_cmd_packet_type_hv3 = -1;
-static int hf_bthci_cmd_role = -1;
-static int hf_bthci_cmd_acr_role = -1;
-static int hf_bthci_cmd_pin_code_length = -1;
-static int hf_bthci_cmd_pin_code = -1;
-static int hf_bthci_cmd_pin_type = -1;
-static int hf_bthci_cmd_encryption_enable = -1;
-static int hf_bthci_cmd_key_flag = -1;
-static int hf_bthci_cmd_max_interval_hold = -1;
-static int hf_bthci_cmd_min_interval_hold = -1;
-static int hf_bthci_cmd_max_interval_sniff = -1;
-static int hf_bthci_cmd_min_interval_sniff = -1;
-static int hf_bthci_cmd_sniff_attempt = -1;
-static int hf_bthci_cmd_timeout = -1;
-static int hf_bthci_cmd_max_interval_beacon = -1;
-static int hf_bthci_cmd_min_interval_beacon = -1;
-static int hf_bthci_cmd_flags = -1;
-static int hf_bthci_cmd_service_type = -1;
-static int hf_bthci_cmd_token_rate = -1;
-static int hf_bthci_cmd_token_bucket_size = -1;
-static int hf_bthci_cmd_peak_bandwidth = -1;
-static int hf_bthci_cmd_latency = -1;
-static int hf_bthci_cmd_delay_variation = -1;
-static int hf_bthci_cmd_link_policy_setting_switch = -1;
-static int hf_bthci_cmd_link_policy_setting_hold = -1;
-static int hf_bthci_cmd_link_policy_setting_sniff = -1;
-static int hf_bthci_cmd_link_policy_setting_park = -1;
-static int hf_bthci_cmd_filter_type = -1;
-static int hf_bthci_cmd_inquiry_result_filter_condition_type = -1;
-static int hf_bthci_cmd_connection_setup_filter_condition_type = -1;
-static int hf_bthci_cmd_cod_class_of_device_mask = -1;
-static int hf_bthci_cmd_cod_minor_device_class_mask= -1;
-static int hf_bthci_cmd_cod_format_type_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_information_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_telephony_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_audio_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_object_transfer_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_capturing_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_rendering_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_networking_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_positioning_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_reserved_mask = -1;
-static int hf_bthci_cmd_cod_major_service_class_limited_discoverable_mode_mask = -1;
-static int hf_bthci_cmd_cod_major_device_class_mask = -1;
-static int hf_bthci_cmd_auto_acc_flag = -1;
-static int hf_bthci_cmd_read_all_flag = -1;
-static int hf_bthci_cmd_delete_all_flag = -1;
-static int hf_bthci_cmd_authentication_enable = -1;
-static int hf_bthci_cmd_input_unused = -1;
-static int hf_bthci_cmd_input_coding = -1;
-static int hf_bthci_cmd_input_data_format = -1;
-static int hf_bthci_cmd_input_sample_size = -1;
-static int hf_bthci_cmd_linear_pcm_bit_pos = -1;
-static int hf_bthci_cmd_air_coding_format = -1;
-static int hf_bthci_cmd_num_broadcast_retransmissions = -1;
-static int hf_bthci_cmd_hold_mode_act_page = -1;
-static int hf_bthci_cmd_hold_mode_act_inquiry = -1;
-static int hf_bthci_cmd_hold_mode_act_periodic = -1;
-static int hf_bthci_cmd_scan_enable = -1;
-static int hf_bthci_cmd_interval = -1;
-static int hf_bthci_cmd_window = -1;
-static int hf_bthci_cmd_device_name = -1;
-static int hf_bthci_cmd_num_curr_iac = -1;
-static int hf_bthci_cmd_iac_lap = -1;
-static int hf_bthci_cmd_evt_mask_00 = -1;
-static int hf_bthci_cmd_evt_mask_01 = -1;
-static int hf_bthci_cmd_evt_mask_02 = -1;
-static int hf_bthci_cmd_evt_mask_03 = -1;
-static int hf_bthci_cmd_evt_mask_04 = -1;
-static int hf_bthci_cmd_evt_mask_05 = -1;
-static int hf_bthci_cmd_evt_mask_06 = -1;
-static int hf_bthci_cmd_evt_mask_07 = -1;
-static int hf_bthci_cmd_evt_mask_10 = -1;
-static int hf_bthci_cmd_evt_mask_11 = -1;
-static int hf_bthci_cmd_evt_mask_12 = -1;
-static int hf_bthci_cmd_evt_mask_13 = -1;
-static int hf_bthci_cmd_evt_mask_14 = -1;
-static int hf_bthci_cmd_evt_mask_17 = -1;
-static int hf_bthci_cmd_evt_mask_20 = -1;
-static int hf_bthci_cmd_evt_mask_21 = -1;
-static int hf_bthci_cmd_evt_mask_23 = -1;
-static int hf_bthci_cmd_evt_mask_24 = -1;
-static int hf_bthci_cmd_evt_mask_25 = -1;
-static int hf_bthci_cmd_evt_mask_26 = -1;
-static int hf_bthci_cmd_evt_mask_27 = -1;
-static int hf_bthci_cmd_evt_mask_30 = -1;
-static int hf_bthci_cmd_evt_mask_31 = -1;
-static int hf_bthci_cmd_evt_mask_32 = -1;
-static int hf_bthci_cmd_evt_mask_33 = -1;
-static int hf_bthci_cmd_evt_mask_34 = -1;
-static int hf_bthci_cmd_evt_mask_35 = -1;
-static int hf_bthci_cmd_evt_mask_36 = -1;
-static int hf_bthci_cmd_evt_mask_37 = -1;
-static int hf_bthci_cmd_evt_mask_40 = -1;
-static int hf_bthci_cmd_evt_mask_41 = -1;
-static int hf_bthci_cmd_evt_mask_42 = -1;
-static int hf_bthci_cmd_evt_mask_53 = -1;
-static int hf_bthci_cmd_evt_mask_54 = -1;
-static int hf_bthci_cmd_evt_mask_55 = -1;
-static int hf_bthci_cmd_evt_mask_56 = -1;
-static int hf_bthci_cmd_evt_mask_57 = -1;
-static int hf_bthci_cmd_evt_mask_60 = -1;
-static int hf_bthci_cmd_evt_mask_61 = -1;
-static int hf_bthci_cmd_evt_mask_62 = -1;
-static int hf_bthci_cmd_evt_mask_63 = -1;
-static int hf_bthci_cmd_evt_mask_64 = -1;
-static int hf_bthci_cmd_evt_mask_65 = -1;
-static int hf_bthci_cmd_evt_mask_67 = -1;
-static int hf_bthci_cmd_evt_mask_70 = -1;
-static int hf_bthci_cmd_evt_mask_72 = -1;
-static int hf_bthci_cmd_evt_mask_73 = -1;
-static int hf_bthci_cmd_sco_flow_control = -1;
-static int hf_bthci_cmd_num_handles = -1;
-static int hf_bthci_cmd_num_compl_packets = -1;
-static int hf_bthci_cmd_flow_contr_enable = -1;
-static int hf_bthci_cmd_host_data_packet_length_acl = -1;
-static int hf_bthci_cmd_host_data_packet_length_sco = -1;
-static int hf_bthci_cmd_host_total_num_acl_data_packets = -1;
-static int hf_bthci_cmd_host_total_num_sco_data_packets = -1;
-static int hf_bthci_cmd_loopback_mode = -1;
-static int hf_bthci_cmd_page_number = -1;
-static int hf_bthci_cmd_transmit_bandwidth = -1;
-static int hf_bthci_cmd_receive_bandwidth = -1;
-static int hf_bthci_cmd_max_latency_ms = -1;
-static int hf_bthci_cmd_max_latency = -1;
-static int hf_bthci_cmd_retransmission_effort = -1;
-static int hf_bthci_cmd_scan_type = -1;
-static int hf_bthci_cmd_inq_mode = -1;
-static int hf_bthci_cmd_fec_required = -1;
-static int hf_bthci_cmd_err_data_reporting = -1;
-static int hf_bthci_cmd_tx_power = -1;
-static int hf_bthci_cmd_sco_packet_type = -1;
-static int hf_bthci_cmd_sco_packet_type_hv1 = -1;
-static int hf_bthci_cmd_sco_packet_type_hv2 = -1;
-static int hf_bthci_cmd_sco_packet_type_hv3 = -1;
-static int hf_bthci_cmd_sco_packet_type_ev3 = -1;
-static int hf_bthci_cmd_sco_packet_type_ev4 = -1;
-static int hf_bthci_cmd_sco_packet_type_ev5 = -1;
-static int hf_bthci_cmd_sco_packet_type_2ev3 = -1;
-static int hf_bthci_cmd_sco_packet_type_3ev3 = -1;
-static int hf_bthci_cmd_sco_packet_type_2ev5 = -1;
-static int hf_bthci_cmd_sco_packet_type_3ev5 = -1;
-static int hf_bthci_cmd_sco_packet_type_reserved = -1;
-static int hf_bthci_cmd_min_remote_timeout = -1;
-static int hf_bthci_cmd_min_local_timeout = -1;
-static int hf_bthci_cmd_flush_packet_type = -1;
-static int hf_bthci_cmd_afh_ch_assessment_mode = -1;
-static int hf_bthci_cmd_afh_ch_classification = -1;
-static int hf_bthci_cmd_which_clock = -1;
-static int hf_bthci_cmd_io_capability = -1;
-static int hf_bthci_cmd_oob_data_present = -1;
-static int hf_bthci_cmd_auth_requirements = -1;
-static int hf_bthci_cmd_passkey = -1;
-static int hf_bthci_cmd_randomizer_r = -1;
-static int hf_bthci_cmd_hash_c = -1;
-static int hf_bthci_cmd_simple_pairing_mode = -1;
-static int hf_bthci_cmd_simple_pairing_debug_mode = -1;
-static int hf_bthci_cmd_notification_type = -1;
-static int hf_bthci_cmd_physical_link_handle = -1;
-static int hf_bthci_cmd_dedicated_amp_key_length = -1;
-static int hf_bthci_cmd_dedicated_amp_key_type = -1;
-static int hf_bthci_cmd_dedicated_amp_key = -1;
-static int hf_bthci_cmd_flow_spec = -1;
-static int hf_bthci_cmd_flow_spec_identifier = -1;
-static int hf_bthci_cmd_flow_spec_service_type = -1;
-static int hf_bthci_cmd_flow_spec_sdu_size = -1;
-static int hf_bthci_cmd_flow_spec_sdu_arrival_time = -1;
-static int hf_bthci_cmd_flow_spec_access_latency = -1;
-static int hf_bthci_cmd_flush_to_us = -1;
-static int hf_bthci_cmd_logical_link_handle = -1;
-static int hf_bthci_cmd_evt_mask2_00 = -1;
-static int hf_bthci_cmd_evt_mask2_01 = -1;
-static int hf_bthci_cmd_evt_mask2_02 = -1;
-static int hf_bthci_cmd_evt_mask2_03 = -1;
-static int hf_bthci_cmd_evt_mask2_04 = -1;
-static int hf_bthci_cmd_evt_mask2_05 = -1;
-static int hf_bthci_cmd_evt_mask2_06 = -1;
-static int hf_bthci_cmd_evt_mask2_07 = -1;
-static int hf_bthci_cmd_evt_mask2_10 = -1;
-static int hf_bthci_cmd_evt_mask2_11 = -1;
-static int hf_bthci_cmd_evt_mask2_12 = -1;
-static int hf_bthci_cmd_evt_mask2_13 = -1;
-static int hf_bthci_cmd_evt_mask2_14 = -1;
-static int hf_bthci_cmd_evt_mask2_15 = -1;
-static int hf_bthci_cmd_location_domain_aware = -1;
-static int hf_bthci_cmd_location_domain = -1;
-static int hf_bthci_cmd_location_domain_options = -1;
-static int hf_bthci_cmd_location_options = -1;
-static int hf_bthci_cmd_flow_control_mode = -1;
-static int hf_bthci_cmd_tx_power_level_type = -1;
-static int hf_bthci_cmd_short_range_mode = -1;
-static int hf_bthci_cmd_le_supported_host = -1;
-static int hf_bthci_cmd_le_simultaneous_host = -1;
-static int hf_bthci_cmd_enable_amp_recv_reports = -1;
-static int hf_bthci_cmd_amp_recv_report_interval = -1;
-static int hf_bthci_cmd_length_so_far = -1;
-static int hf_bthci_cmd_amp_assoc_length = -1;
-static int hf_bthci_cmd_amp_remaining_assoc_length = -1;
-static int hf_bthci_cmd_amp_assoc_fragment = -1;
-static int hf_bthci_cmd_le_event_mask = -1;
-static int hf_bthci_cmd_le_event_mask_le_reserved = -1;
-static int hf_bthci_cmd_le_event_mask_le_phy_update_complete = -1;
-static int hf_bthci_cmd_le_event_mask_le_direct_advertising_report  = -1;
-static int hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete = -1;
-static int hf_bthci_cmd_le_event_mask_le_generate_dhkey_complete = -1;
-static int hf_bthci_cmd_le_event_mask_le_read_local_p256_public_key_complete = -1;
-static int hf_bthci_cmd_le_event_mask_le_data_length_change = -1;
-static int hf_bthci_cmd_le_event_mask_le_remote_connection_parameter_request = -1;
-static int hf_bthci_cmd_le_event_mask_le_long_term_key_request = -1;
-static int hf_bthci_cmd_le_event_mask_le_read_remote_used_features_complete = -1;
-static int hf_bthci_cmd_le_event_mask_le_connection_update_complete = -1;
-static int hf_bthci_cmd_le_event_mask_le_advertising_report = -1;
-static int hf_bthci_cmd_le_event_mask_le_connection_complete = -1;
-static int hf_bthci_cmd_le_advts_interval_min = -1;
-static int hf_bthci_cmd_le_advts_interval_max = -1;
-static int hf_bthci_cmd_le_advts_type = -1;
-static int hf_bthci_cmd_le_own_address_type = -1;
-static int hf_bthci_cmd_le_direct_address_type = -1;
-static int hf_bthci_cmd_le_advts_channel_map_1 = -1;
-static int hf_bthci_cmd_le_advts_channel_map_2 = -1;
-static int hf_bthci_cmd_le_advts_channel_map_3 = -1;
-static int hf_bthci_cmd_le_advts_filter_policy = -1;
-static int hf_bthci_cmd_le_data_length = -1;
-static int hf_bthci_cmd_le_advts_enable = -1;
-static int hf_bthci_cmd_le_scan_enable = -1;
-static int hf_bthci_cmd_le_filter_duplicates = -1;
-static int hf_bthci_cmd_le_scan_type = -1;
-static int hf_bthci_cmd_le_scan_interval = -1;
-static int hf_bthci_cmd_le_scan_window = -1;
-static int hf_bthci_cmd_le_scan_filter_policy = -1;
-static int hf_bthci_cmd_le_initiator_filter_policy = -1;
-static int hf_bthci_cmd_le_peer_address_type = -1;
-static int hf_bthci_cmd_le_con_interval_min = -1;
-static int hf_bthci_cmd_le_con_interval_max = -1;
-static int hf_bthci_cmd_le_con_latency = -1;
-static int hf_bthci_cmd_le_supervision_timeout = -1;
-static int hf_bthci_cmd_le_min_ce_length = -1;
-static int hf_bthci_cmd_le_max_ce_length = -1;
-static int hf_bthci_cmd_le_address_type = -1;
-static int hf_bthci_cmd_le_channel_map = -1;
-static int hf_bthci_cmd_key = -1;
-static int hf_bthci_cmd_plaintext_data = -1;
-static int hf_bthci_cmd_random_number = -1;
-static int hf_bthci_cmd_encrypted_diversifier = -1;
-static int hf_bthci_cmd_le_long_term_key = -1;
-static int hf_bthci_cmd_rx_frequency = -1;
-static int hf_bthci_cmd_tx_frequency = -1;
-static int hf_bthci_cmd_test_data_length = -1;
-static int hf_bthci_cmd_test_packet_payload = -1;
-static int hf_bthci_cmd_parameter = -1;
-static int hf_response_in_frame = -1;
-static int hf_command_response_time_delta = -1;
-static int hf_pending_in_frame = -1;
-static int hf_command_pending_time_delta = -1;
-static int hf_bthci_cmd_le_tx_octets = -1;
-static int hf_bthci_cmd_le_tx_time = -1;
-static int hf_bthci_cmd_le_suggested_max_tx_octets = -1;
-static int hf_bthci_cmd_le_suggested_max_tx_time = -1;
-static int hf_bthci_cmd_le_remote_p_256_public_key = -1;
-static int hf_bthci_cmd_le_peer_irk = -1;
-static int hf_bthci_cmd_le_local_irk = -1;
-static int hf_bthci_cmd_le_address_resolution_enable = -1;
-static int hf_bthci_cmd_le_rpa_timeout = -1;
-static int hf_bthci_cmd_advertising_ext_interval_min = -1;
-static int hf_bthci_cmd_advertising_ext_interval_max = -1;
-static int hf_bthci_cmd_advertising_handle = -1;
-static int hf_bthci_cmd_advertising_properties = -1;
-static int hf_bthci_cmd_advertising_properties_reserved = -1;
-static int hf_bthci_cmd_advertising_properties_connectable = -1;
-static int hf_bthci_cmd_advertising_properties_scannable = -1;
-static int hf_bthci_cmd_advertising_properties_directed = -1;
-static int hf_bthci_cmd_advertising_properties_hdc_connectable_directed = -1;
-static int hf_bthci_cmd_advertising_properties_legacy_adv = -1;
-static int hf_bthci_cmd_advertising_properties_anonymous_adv = -1;
-static int hf_bthci_cmd_advertising_properties_incl_txpower = -1;
-static int hf_bthci_cmd_periodic_advertising_properties = -1;
-static int hf_bthci_cmd_periodic_advertising_properties_reserved = -1;
-static int hf_bthci_cmd_primary_advertising_phy = -1;
-static int hf_bthci_cmd_sec_adv_max_skip = -1;
-static int hf_bthci_cmd_secondary_advertising_phy = -1;
-static int hf_bthci_cmd_advertising_sid = -1;
-static int hf_bthci_cmd_scan_req_notif_en = -1;
-static int hf_bthci_cmd_le_adv_data_operation = -1;
-static int hf_bthci_cmd_le_adv_data_frag_pref = -1;
-static int hf_bthci_cmd_le_adv_set = -1;
-static int hf_bthci_cmd_le_adv_en_sets = -1;
-static int hf_bthci_cmd_le_adv_duration = -1;
-static int hf_bthci_cmd_le_adv_max_extended_events = -1;
-static int hf_bthci_cmd_all_phys = -1;
-static int hf_bthci_cmd_all_phys_tx_pref = -1;
-static int hf_bthci_cmd_all_phys_rx_pref = -1;
-static int hf_bthci_cmd_all_phys_reserved = -1;
-static int hf_bthci_cmd_tx_phys = -1;
-static int hf_bthci_cmd_rx_phys = -1;
-static int hf_bthci_cmd_phys_pref_le_1m = -1;
-static int hf_bthci_cmd_phys_pref_le_2m = -1;
-static int hf_bthci_cmd_phys_pref_le_coded = -1;
-static int hf_bthci_cmd_phys_pref_reserved = -1;
-static int hf_bthci_cmd_phy_options = -1;
-static int hf_bthci_cmd_phy_options_coding =-1;
-static int hf_bthci_cmd_phy_options_reserved =- 1;
-static int hf_bthci_cmd_phy = -1;
-static int hf_bthci_cmd_modulation_index = -1;
-static int hf_bthci_cmd_le_scan_phys = -1;
-static int hf_bthci_cmd_le_scan_phys_reserved = -1;
-static int hf_bthci_cmd_le_scan_phys_le_coded = -1;
-static int hf_bthci_cmd_le_scan_phys_le_1m = -1;
-static int hf_bthci_cmd_le_scan_phy_param = -1;
-static int hf_bthci_cmd_le_scan_duration = -1;
-static int hf_bthci_cmd_le_scan_period = -1;
-static int hf_bthci_cmd_le_init_phys = -1;
-static int hf_bthci_cmd_le_phys_reserved = -1;
-static int hf_bthci_cmd_le_phys_le_coded = -1;
-static int hf_bthci_cmd_le_phys_le_2m = -1;
-static int hf_bthci_cmd_le_phys_le_1m = -1;
-static int hf_bthci_cmd_le_init_phy_param = -1;
-static int hf_bthci_cmd_triggered_clock_capture = -1;
-static int hf_bthci_cmd_lpo_allowed = -1;
-static int hf_bthci_cmd_number_of_clock_captures_to_filter = -1;
-static int hf_bthci_cmd_amp_controller_type = -1;
-static int hf_bthci_cmd_esco_loopback_mode = -1;
-static int hf_bthci_cmd_dm1_acl_u_mode = -1;
-static int hf_bthci_cmd_codec_id = -1;
-static int hf_bthci_cmd_company_id = -1;
-static int hf_bthci_cmd_vendor_codec_id = -1;
-static int hf_bthci_cmd_transmit_coding_format = -1;
-static int hf_bthci_cmd_receive_coding_format = -1;
-static int hf_bthci_cmd_input_coding_format = -1;
-static int hf_bthci_cmd_output_coding_format = -1;
-static int hf_bthci_cmd_transmit_codec_frame_size = -1;
-static int hf_bthci_cmd_receive_codec_frame_size = -1;
-static int hf_bthci_cmd_input_bandwidth = -1;
-static int hf_bthci_cmd_output_bandwidth = -1;
-static int hf_bthci_cmd_input_coded_data_size = -1;
-static int hf_bthci_cmd_output_coded_data_size = -1;
-static int hf_bthci_cmd_input_pcm_data_format = -1;
-static int hf_bthci_cmd_output_pcm_data_format = -1;
-static int hf_bthci_cmd_input_pcm_sample_payload_msb_position = -1;
-static int hf_bthci_cmd_output_pcm_sample_payload_msb_position = -1;
-static int hf_bthci_cmd_input_data_path = -1;
-static int hf_bthci_cmd_output_data_path = -1;
-static int hf_bthci_cmd_input_transport_unit_size = -1;
-static int hf_bthci_cmd_output_transport_unit_size = -1;
-static int hf_bthci_cmd_connectionless_slave_broadcast = -1;
-static int hf_bthci_cmd_lt_addr = -1;
-static int hf_bthci_cmd_interval_min = -1;
-static int hf_bthci_cmd_interval_max = -1;
-static int hf_bthci_cmd_csb_supervision_to = -1;
-static int hf_bthci_cmd_connectionless_slave_broadcast_receive = -1;
-static int hf_bthci_cmd_clock_offset_32 = -1;
-static int hf_bthci_cmd_next_csb_clock = -1;
-static int hf_bthci_cmd_remote_timing_accuracy = -1;
-static int hf_bthci_cmd_csb_skip = -1;
-static int hf_bthci_cmd_afh_channel_map = -1;
-static int hf_bthci_cmd_synchronization_scan_to = -1;
-static int hf_bthci_cmd_c192 = -1;
-static int hf_bthci_cmd_r192 = -1;
-static int hf_bthci_cmd_c256 = -1;
-static int hf_bthci_cmd_r256 = -1;
-static int hf_bthci_mws_channel = -1;
-static int hf_bthci_mws_rx_center_frequency = -1;
-static int hf_bthci_mws_tx_center_frequency = -1;
-static int hf_bthci_mws_rx_channel_bandwidth = -1;
-static int hf_bthci_mws_tx_channel_bandwidth = -1;
-static int hf_bthci_mws_channel_type = -1;
-static int hf_bthci_external_frame_duration = -1;
-static int hf_bthci_external_frame_sync_assert_offset = -1;
-static int hf_bthci_external_frame_sync_assert_jitter = -1;
-static int hf_bthci_external_frame_number_of_periods = -1;
-static int hf_bthci_external_frame_periods = -1;
-static int hf_bthci_external_frame_period = -1;
-static int hf_bthci_external_frame_period_duration = -1;
-static int hf_bthci_external_frame_period_type = -1;
-static int hf_bthci_mws_rx_assert_offset = -1;
-static int hf_bthci_mws_rx_assert_jitter = -1;
-static int hf_bthci_mws_rx_deassert_offset = -1;
-static int hf_bthci_mws_rx_deassert_jitter = -1;
-static int hf_bthci_mws_tx_assert_offset = -1;
-static int hf_bthci_mws_tx_assert_jitter = -1;
-static int hf_bthci_mws_tx_deassert_offset = -1;
-static int hf_bthci_mws_tx_deassert_jitter = -1;
-static int hf_bthci_mws_pattern_assert_offset = -1;
-static int hf_bthci_mws_pattern_assert_jitter = -1;
-static int hf_bthci_mws_inactivity_duration_assert_offset = -1;
-static int hf_bthci_mws_inactivity_duration_assert_jitter = -1;
-static int hf_bthci_mws_scan_frequency_assert_offset = -1;
-static int hf_bthci_mws_scan_frequency_assert_jitter = -1;
-static int hf_bthci_mws_priority_assert_offset_request = -1;
-static int hf_bthci_mws_transport_layer = -1;
-static int hf_bthci_mws_to_baud_rate = -1;
-static int hf_bthci_mws_from_baud_rate = -1;
-static int hf_bthci_mws_number_of_frequencies = -1;
-static int hf_bthci_mws_scan_frequency_table = -1;
-static int hf_bthci_mws_scan_frequency_table_item = -1;
-static int hf_bthci_mws_scan_frequency_table_item_low = -1;
-static int hf_bthci_mws_scan_frequency_table_item_high = -1;
-static int hf_bthci_mws_pattern_index = -1;
-static int hf_bthci_mws_pattern_number_of_intervals = -1;
-static int hf_bthci_mws_patterns = -1;
-static int hf_bthci_mws_pattern = -1;
-static int hf_bthci_mws_pattern_duration = -1;
-static int hf_bthci_mws_pattern_type = -1;
-static int hf_bthci_cmd_sync_train_to = -1;
-static int hf_bthci_cmd_service_data = -1;
-static int hf_bthci_cmd_secure_connection_host_support = -1;
-static int hf_bthci_cmd_csb_fragment = -1;
-static int hf_bthci_cmd_csb_data_length = -1;
-static int hf_bthci_cmd_csb_data = -1;
-static int hf_bthci_cmd_authenticated_payload_timeout = -1;
-static int hf_bthci_cmd_extended_inquiry_length = -1;
+static int hf_bthci_cmd_opcode;
+static int hf_bthci_cmd_ogf;
+static int hf_bthci_cmd_ocf;
+static int hf_bthci_cmd_ocf_link_control;
+static int hf_bthci_cmd_ocf_link_policy;
+static int hf_bthci_cmd_ocf_host_controller_and_baseband;
+static int hf_bthci_cmd_ocf_informational;
+static int hf_bthci_cmd_ocf_status;
+static int hf_bthci_cmd_ocf_testing;
+static int hf_bthci_cmd_ocf_logo_testing;
+static int hf_bthci_cmd_ocf_low_energy;
+static int hf_bthci_cmd_param_length;
+static int hf_bthci_cmd_lap;
+static int hf_bthci_cmd_inq_length;
+static int hf_bthci_cmd_num_responses;
+static int hf_bthci_cmd_encrypt_mode;
+static int hf_bthci_cmd_bd_addr;
+static int hf_bthci_cmd_packet_type;
+static int hf_bthci_cmd_packet_type_dh5;
+static int hf_bthci_cmd_packet_type_dm5;
+static int hf_bthci_cmd_packet_type_3dh5;
+static int hf_bthci_cmd_packet_type_2dh5;
+static int hf_bthci_cmd_packet_type_dh3;
+static int hf_bthci_cmd_packet_type_dm3;
+static int hf_bthci_cmd_packet_type_3dh3;
+static int hf_bthci_cmd_packet_type_2dh3;
+static int hf_bthci_cmd_packet_type_reserved_5_7;
+static int hf_bthci_cmd_packet_type_dh1;
+static int hf_bthci_cmd_packet_type_dm1;
+static int hf_bthci_cmd_packet_type_3dh1;
+static int hf_bthci_cmd_packet_type_2dh1;
+static int hf_bthci_cmd_packet_type_reserved_0;
+static int hf_bthci_cmd_clock_offset;
+static int hf_bthci_cmd_clock_offset_valid;
+static int hf_bthci_cmd_allow_role_switch;
+static int hf_bthci_cmd_page_scan_mode;
+static int hf_bthci_cmd_page_scan_repetition_mode;
+static int hf_bthci_cmd_page_scan_period_mode;
+static int hf_bthci_cmd_max_period_length;
+static int hf_bthci_cmd_min_period_length;
+static int hf_bthci_cmd_connection_handle;
+static int hf_bthci_cmd_reason;
+static int hf_bthci_cmd_num_link_keys;
+static int hf_bthci_cmd_link_key;
+static int hf_bthci_cmd_packet_type_hv1;
+static int hf_bthci_cmd_packet_type_hv2;
+static int hf_bthci_cmd_packet_type_hv3;
+static int hf_bthci_cmd_role;
+static int hf_bthci_cmd_acr_role;
+static int hf_bthci_cmd_pin_code_length;
+static int hf_bthci_cmd_pin_code;
+static int hf_bthci_cmd_pin_type;
+static int hf_bthci_cmd_encryption_enable;
+static int hf_bthci_cmd_key_flag;
+static int hf_bthci_cmd_max_interval_hold;
+static int hf_bthci_cmd_min_interval_hold;
+static int hf_bthci_cmd_max_interval_sniff;
+static int hf_bthci_cmd_min_interval_sniff;
+static int hf_bthci_cmd_sniff_attempt;
+static int hf_bthci_cmd_sniff_timeout;
+static int hf_bthci_cmd_timeout;
+static int hf_bthci_cmd_max_interval_beacon;
+static int hf_bthci_cmd_min_interval_beacon;
+static int hf_bthci_cmd_flags;
+static int hf_bthci_cmd_flow_direction;
+static int hf_bthci_cmd_service_type;
+static int hf_bthci_cmd_token_rate;
+static int hf_bthci_cmd_token_bucket_size;
+static int hf_bthci_cmd_peak_bandwidth;
+static int hf_bthci_cmd_latency;
+static int hf_bthci_cmd_delay_variation;
+static int hf_bthci_cmd_link_policy_setting_switch;
+static int hf_bthci_cmd_link_policy_setting_hold;
+static int hf_bthci_cmd_link_policy_setting_sniff;
+static int hf_bthci_cmd_link_policy_setting_park;
+static int hf_bthci_cmd_filter_type;
+static int hf_bthci_cmd_inquiry_result_filter_condition_type;
+static int hf_bthci_cmd_connection_setup_filter_condition_type;
+static int hf_bthci_cmd_cod_class_of_device_mask;
+static int hf_bthci_cmd_cod_minor_device_class_mask;
+static int hf_bthci_cmd_cod_format_type_mask;
+static int hf_bthci_cmd_cod_major_service_class_information_mask;
+static int hf_bthci_cmd_cod_major_service_class_telephony_mask;
+static int hf_bthci_cmd_cod_major_service_class_audio_mask;
+static int hf_bthci_cmd_cod_major_service_class_object_transfer_mask;
+static int hf_bthci_cmd_cod_major_service_class_capturing_mask;
+static int hf_bthci_cmd_cod_major_service_class_rendering_mask;
+static int hf_bthci_cmd_cod_major_service_class_networking_mask;
+static int hf_bthci_cmd_cod_major_service_class_positioning_mask;
+static int hf_bthci_cmd_cod_major_service_class_reserved_mask;
+static int hf_bthci_cmd_cod_major_service_class_le_audio_mask;
+static int hf_bthci_cmd_cod_major_service_class_limited_discoverable_mode_mask;
+static int hf_bthci_cmd_cod_major_device_class_mask;
+static int hf_bthci_cmd_auto_acc_flag;
+static int hf_bthci_cmd_read_all_flag;
+static int hf_bthci_cmd_delete_all_flag;
+static int hf_bthci_cmd_authentication_enable;
+static int hf_bthci_cmd_input_unused;
+static int hf_bthci_cmd_input_coding;
+static int hf_bthci_cmd_input_data_format;
+static int hf_bthci_cmd_input_sample_size;
+static int hf_bthci_cmd_linear_pcm_bit_pos;
+static int hf_bthci_cmd_air_coding_format;
+static int hf_bthci_cmd_num_broadcast_retransmissions;
+static int hf_bthci_cmd_hold_mode_act_page;
+static int hf_bthci_cmd_hold_mode_act_inquiry;
+static int hf_bthci_cmd_hold_mode_act_periodic;
+static int hf_bthci_cmd_scan_enable;
+static int hf_bthci_cmd_interval;
+static int hf_bthci_cmd_window;
+static int hf_bthci_cmd_device_name;
+static int hf_bthci_cmd_num_curr_iac;
+static int hf_bthci_cmd_iac_lap;
+static int hf_bthci_cmd_evt_mask_00;
+static int hf_bthci_cmd_evt_mask_01;
+static int hf_bthci_cmd_evt_mask_02;
+static int hf_bthci_cmd_evt_mask_03;
+static int hf_bthci_cmd_evt_mask_04;
+static int hf_bthci_cmd_evt_mask_05;
+static int hf_bthci_cmd_evt_mask_06;
+static int hf_bthci_cmd_evt_mask_07;
+static int hf_bthci_cmd_evt_mask_10;
+static int hf_bthci_cmd_evt_mask_11;
+static int hf_bthci_cmd_evt_mask_12;
+static int hf_bthci_cmd_evt_mask_13;
+static int hf_bthci_cmd_evt_mask_14;
+static int hf_bthci_cmd_evt_mask_17;
+static int hf_bthci_cmd_evt_mask_20;
+static int hf_bthci_cmd_evt_mask_21;
+static int hf_bthci_cmd_evt_mask_23;
+static int hf_bthci_cmd_evt_mask_24;
+static int hf_bthci_cmd_evt_mask_25;
+static int hf_bthci_cmd_evt_mask_26;
+static int hf_bthci_cmd_evt_mask_27;
+static int hf_bthci_cmd_evt_mask_30;
+static int hf_bthci_cmd_evt_mask_31;
+static int hf_bthci_cmd_evt_mask_32;
+static int hf_bthci_cmd_evt_mask_33;
+static int hf_bthci_cmd_evt_mask_34;
+static int hf_bthci_cmd_evt_mask_35;
+static int hf_bthci_cmd_evt_mask_36;
+static int hf_bthci_cmd_evt_mask_37;
+static int hf_bthci_cmd_evt_mask_40;
+static int hf_bthci_cmd_evt_mask_41;
+static int hf_bthci_cmd_evt_mask_42;
+static int hf_bthci_cmd_evt_mask_53;
+static int hf_bthci_cmd_evt_mask_54;
+static int hf_bthci_cmd_evt_mask_55;
+static int hf_bthci_cmd_evt_mask_56;
+static int hf_bthci_cmd_evt_mask_57;
+static int hf_bthci_cmd_evt_mask_60;
+static int hf_bthci_cmd_evt_mask_61;
+static int hf_bthci_cmd_evt_mask_62;
+static int hf_bthci_cmd_evt_mask_63;
+static int hf_bthci_cmd_evt_mask_64;
+static int hf_bthci_cmd_evt_mask_65;
+static int hf_bthci_cmd_evt_mask_67;
+static int hf_bthci_cmd_evt_mask_70;
+static int hf_bthci_cmd_evt_mask_72;
+static int hf_bthci_cmd_evt_mask_73;
+static int hf_bthci_cmd_sco_flow_control;
+static int hf_bthci_cmd_num_handles;
+static int hf_bthci_cmd_num_compl_packets;
+static int hf_bthci_cmd_flow_contr_enable;
+static int hf_bthci_cmd_host_data_packet_length_acl;
+static int hf_bthci_cmd_host_data_packet_length_sco;
+static int hf_bthci_cmd_host_total_num_acl_data_packets;
+static int hf_bthci_cmd_host_total_num_sco_data_packets;
+static int hf_bthci_cmd_loopback_mode;
+static int hf_bthci_cmd_page_number;
+static int hf_bthci_cmd_transmit_bandwidth;
+static int hf_bthci_cmd_receive_bandwidth;
+static int hf_bthci_cmd_max_latency_ms;
+static int hf_bthci_cmd_max_latency;
+static int hf_bthci_cmd_retransmission_effort;
+static int hf_bthci_cmd_scan_type;
+static int hf_bthci_cmd_inq_mode;
+static int hf_bthci_cmd_fec_required;
+static int hf_bthci_cmd_err_data_reporting;
+static int hf_bthci_cmd_tx_power;
+static int hf_bthci_cmd_sco_packet_type;
+static int hf_bthci_cmd_sco_packet_type_hv1;
+static int hf_bthci_cmd_sco_packet_type_hv2;
+static int hf_bthci_cmd_sco_packet_type_hv3;
+static int hf_bthci_cmd_sco_packet_type_ev3;
+static int hf_bthci_cmd_sco_packet_type_ev4;
+static int hf_bthci_cmd_sco_packet_type_ev5;
+static int hf_bthci_cmd_sco_packet_type_2ev3;
+static int hf_bthci_cmd_sco_packet_type_3ev3;
+static int hf_bthci_cmd_sco_packet_type_2ev5;
+static int hf_bthci_cmd_sco_packet_type_3ev5;
+static int hf_bthci_cmd_sco_packet_type_reserved;
+static int hf_bthci_cmd_min_remote_timeout;
+static int hf_bthci_cmd_min_local_timeout;
+static int hf_bthci_cmd_flush_packet_type;
+static int hf_bthci_cmd_afh_ch_assessment_mode;
+static int hf_bthci_cmd_ch_classification;
+static int hf_bthci_cmd_which_clock;
+static int hf_bthci_cmd_io_capability;
+static int hf_bthci_cmd_oob_data_present;
+static int hf_bthci_cmd_auth_requirements;
+static int hf_bthci_cmd_passkey;
+static int hf_bthci_cmd_randomizer_r;
+static int hf_bthci_cmd_hash_c;
+static int hf_bthci_cmd_simple_pairing_mode;
+static int hf_bthci_cmd_simple_pairing_debug_mode;
+static int hf_bthci_cmd_notification_type;
+static int hf_bthci_cmd_physical_link_handle;
+static int hf_bthci_cmd_dedicated_amp_key_length;
+static int hf_bthci_cmd_dedicated_amp_key_type;
+static int hf_bthci_cmd_dedicated_amp_key;
+static int hf_bthci_cmd_flow_spec;
+static int hf_bthci_cmd_flow_spec_identifier;
+static int hf_bthci_cmd_flow_spec_service_type;
+static int hf_bthci_cmd_flow_spec_sdu_size;
+static int hf_bthci_cmd_flow_spec_sdu_arrival_time;
+static int hf_bthci_cmd_flow_spec_access_latency;
+static int hf_bthci_cmd_flush_to_us;
+static int hf_bthci_cmd_logical_link_handle;
+static int hf_bthci_cmd_evt_mask2;
+static int hf_bthci_cmd_evt_mask2_00;
+static int hf_bthci_cmd_evt_mask2_01;
+static int hf_bthci_cmd_evt_mask2_02;
+static int hf_bthci_cmd_evt_mask2_03;
+static int hf_bthci_cmd_evt_mask2_04;
+static int hf_bthci_cmd_evt_mask2_05;
+static int hf_bthci_cmd_evt_mask2_06;
+static int hf_bthci_cmd_evt_mask2_07;
+static int hf_bthci_cmd_evt_mask2_08;
+static int hf_bthci_cmd_evt_mask2_09;
+static int hf_bthci_cmd_evt_mask2_10;
+static int hf_bthci_cmd_evt_mask2_11;
+static int hf_bthci_cmd_evt_mask2_12;
+static int hf_bthci_cmd_evt_mask2_13;
+static int hf_bthci_cmd_evt_mask2_14;
+static int hf_bthci_cmd_evt_mask2_15;
+static int hf_bthci_cmd_evt_mask2_16;
+static int hf_bthci_cmd_evt_mask2_17;
+static int hf_bthci_cmd_evt_mask2_18;
+static int hf_bthci_cmd_evt_mask2_19;
+static int hf_bthci_cmd_evt_mask2_20;
+static int hf_bthci_cmd_evt_mask2_21;
+static int hf_bthci_cmd_evt_mask2_22;
+static int hf_bthci_cmd_evt_mask2_23;
+static int hf_bthci_cmd_evt_mask2_24;
+static int hf_bthci_cmd_evt_mask2_25;
+static int hf_bthci_cmd_evt_mask2_reserved;
+static int hf_bthci_cmd_location_domain_aware;
+static int hf_bthci_cmd_location_domain;
+static int hf_bthci_cmd_location_domain_options;
+static int hf_bthci_cmd_location_options;
+static int hf_bthci_cmd_flow_control_mode;
+static int hf_bthci_cmd_tx_power_level_type;
+static int hf_bthci_cmd_short_range_mode;
+static int hf_bthci_cmd_le_supported_host;
+static int hf_bthci_cmd_le_simultaneous_host;
+static int hf_bthci_cmd_enable_amp_recv_reports;
+static int hf_bthci_cmd_amp_recv_report_interval;
+static int hf_bthci_cmd_length_so_far;
+static int hf_bthci_cmd_amp_assoc_length;
+static int hf_bthci_cmd_amp_remaining_assoc_length;
+static int hf_bthci_cmd_amp_assoc_fragment;
+static int hf_bthci_cmd_le_event_mask;
+static int hf_bthci_cmd_le_event_mask_le_reserved;
+static int hf_bthci_cmd_le_event_mask_le_frame_space_update_complete;
+static int hf_bthci_cmd_le_event_mask_le_monitored_advertisers_report;
+static int hf_bthci_cmd_le_event_mask_le_cs_test_end_complete;
+static int hf_bthci_cmd_le_event_mask_le_cs_subevent_result_continue;
+static int hf_bthci_cmd_le_event_mask_le_cs_subevent_result;
+static int hf_bthci_cmd_le_event_mask_le_cs_procedure_enable_complete;
+static int hf_bthci_cmd_le_event_mask_le_cs_config_complete;
+static int hf_bthci_cmd_le_event_mask_le_cs_security_enable_complete;
+static int hf_bthci_cmd_le_event_mask_le_cs_read_remote_fae_table_complete;
+static int hf_bthci_cmd_le_event_mask_le_cs_read_remote_supported_capabilities_complete;
+static int hf_bthci_cmd_le_event_mask_le_read_all_remote_features_complete;
+static int hf_bthci_cmd_le_event_mask_le_cis_established_v2;
+static int hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete_v2;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_response_report;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_subevent_data_request;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_transfer_received_v2;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_report_v2;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_established_v2;
+static int hf_bthci_cmd_le_event_mask_le_subrate_changed;
+static int hf_bthci_cmd_le_event_mask_le_biginfo_advertising_report;
+static int hf_bthci_cmd_le_event_mask_le_transmit_power_reporting;
+static int hf_bthci_cmd_le_event_mask_le_path_loss_threshold;
+static int hf_bthci_cmd_le_event_mask_le_request_peer_sca_complete;
+static int hf_bthci_cmd_le_event_mask_le_big_sync_lost;
+static int hf_bthci_cmd_le_event_mask_le_big_sync_established;
+static int hf_bthci_cmd_le_event_mask_le_terminate_big_complete;
+static int hf_bthci_cmd_le_event_mask_le_create_big_complete;
+static int hf_bthci_cmd_le_event_mask_le_cis_request;
+static int hf_bthci_cmd_le_event_mask_le_cis_established_v1;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_transfer_received_v1;
+static int hf_bthci_cmd_le_event_mask_le_cte_request_failed;
+static int hf_bthci_cmd_le_event_mask_le_connection_iq_report;
+static int hf_bthci_cmd_le_event_mask_le_connectionless_iq_report;
+static int hf_bthci_cmd_le_event_mask_le_channel_selection_algorithm;
+static int hf_bthci_cmd_le_event_mask_le_scan_request_received;
+static int hf_bthci_cmd_le_event_mask_le_extended_advertising_set_terminated;
+static int hf_bthci_cmd_le_event_mask_le_extended_scan_timeout;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_lost;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_report_v1;
+static int hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_established_v1;
+static int hf_bthci_cmd_le_event_mask_le_extended_advertising_report;
+static int hf_bthci_cmd_le_event_mask_le_phy_update_complete;
+static int hf_bthci_cmd_le_event_mask_le_direct_advertising_report;
+static int hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete_v1;
+static int hf_bthci_cmd_le_event_mask_le_generate_dhkey_complete;
+static int hf_bthci_cmd_le_event_mask_le_read_local_p256_public_key_complete;
+static int hf_bthci_cmd_le_event_mask_le_data_length_change;
+static int hf_bthci_cmd_le_event_mask_le_remote_connection_parameter_request;
+static int hf_bthci_cmd_le_event_mask_le_long_term_key_request;
+static int hf_bthci_cmd_le_event_mask_le_read_remote_features_complete;
+static int hf_bthci_cmd_le_event_mask_le_connection_update_complete;
+static int hf_bthci_cmd_le_event_mask_le_advertising_report;
+static int hf_bthci_cmd_le_event_mask_le_connection_complete;
+static int hf_bthci_cmd_le_advts_interval_min;
+static int hf_bthci_cmd_le_advts_interval_max;
+static int hf_bthci_cmd_le_advts_type;
+static int hf_bthci_cmd_le_own_address_type;
+static int hf_bthci_cmd_le_direct_address_type;
+static int hf_bthci_cmd_le_advts_channel_map_1;
+static int hf_bthci_cmd_le_advts_channel_map_2;
+static int hf_bthci_cmd_le_advts_channel_map_3;
+static int hf_bthci_cmd_le_advts_filter_policy;
+static int hf_bthci_cmd_le_data_length;
+static int hf_bthci_cmd_le_advts_enable;
+static int hf_bthci_cmd_le_scan_enable;
+static int hf_bthci_cmd_le_filter_duplicates;
+static int hf_bthci_cmd_le_scan_type;
+static int hf_bthci_cmd_le_scan_interval;
+static int hf_bthci_cmd_le_scan_window;
+static int hf_bthci_cmd_le_scan_filter_policy;
+static int hf_bthci_cmd_scan_filter_policy_reserved;
+static int hf_bthci_cmd_scan_filter_policy_decision_mode;
+static int hf_bthci_cmd_scan_filter_policy_extended;
+static int hf_bthci_cmd_scan_filter_policy_filtered;
+static int hf_bthci_cmd_le_initiator_filter_policy;
+static int hf_bthci_cmd_le_peer_address_type;
+static int hf_bthci_cmd_le_peer_identity_address_type;
+static int hf_bthci_cmd_le_con_interval_min;
+static int hf_bthci_cmd_le_con_interval_max;
+static int hf_bthci_cmd_le_con_latency;
+static int hf_bthci_cmd_le_supervision_timeout;
+static int hf_bthci_cmd_le_min_ce_length;
+static int hf_bthci_cmd_le_max_ce_length;
+static int hf_bthci_cmd_le_address_type;
+static int hf_bthci_cmd_le_channel_map;
+static int hf_bthci_cmd_key;
+static int hf_bthci_cmd_plaintext_data;
+static int hf_bthci_cmd_random_number;
+static int hf_bthci_cmd_encrypted_diversifier;
+static int hf_bthci_cmd_le_long_term_key;
+static int hf_bthci_cmd_rx_frequency;
+static int hf_bthci_cmd_tx_frequency;
+static int hf_bthci_cmd_test_data_length;
+static int hf_bthci_cmd_test_packet_payload;
+static int hf_bthci_cmd_parameter;
+static int hf_response_in_frame;
+static int hf_command_response_time_delta;
+static int hf_pending_in_frame;
+static int hf_command_pending_time_delta;
+static int hf_bthci_cmd_le_tx_octets;
+static int hf_bthci_cmd_le_tx_time;
+static int hf_bthci_cmd_le_suggested_max_tx_octets;
+static int hf_bthci_cmd_le_suggested_max_tx_time;
+static int hf_bthci_cmd_le_remote_p_256_public_key;
+static int hf_bthci_cmd_le_peer_irk;
+static int hf_bthci_cmd_le_local_irk;
+static int hf_bthci_cmd_le_address_resolution_enable;
+static int hf_bthci_cmd_le_rpa_timeout;
+static int hf_bthci_cmd_advertising_ext_interval_min;
+static int hf_bthci_cmd_advertising_ext_interval_max;
+static int hf_bthci_cmd_advertising_handle;
+static int hf_bthci_cmd_advertising_properties;
+static int hf_bthci_cmd_advertising_properties_reserved;
+static int hf_bthci_cmd_advertising_properties_connectable;
+static int hf_bthci_cmd_advertising_properties_scannable;
+static int hf_bthci_cmd_advertising_properties_directed;
+static int hf_bthci_cmd_advertising_properties_hdc_connectable_directed;
+static int hf_bthci_cmd_advertising_properties_legacy_adv;
+static int hf_bthci_cmd_advertising_properties_anonymous_adv;
+static int hf_bthci_cmd_advertising_properties_incl_txpower;
+static int hf_bthci_cmd_advertising_properties_use_decision_pdus;
+static int hf_bthci_cmd_advertising_properties_decision_pdu_incl_adva;
+static int hf_bthci_cmd_advertising_properties_decision_pdu_incl_adi;
+static int hf_bthci_cmd_periodic_advertising_properties;
+static int hf_bthci_cmd_periodic_advertising_properties_reserved;
+static int hf_bthci_cmd_primary_advertising_phy;
+static int hf_bthci_cmd_sec_adv_max_skip;
+static int hf_bthci_cmd_secondary_advertising_phy;
+static int hf_bthci_cmd_advertising_sid;
+static int hf_bthci_cmd_scan_req_notif_en;
+static int hf_bthci_cmd_le_adv_data_operation;
+static int hf_bthci_cmd_le_adv_data_frag_pref;
+static int hf_bthci_cmd_le_adv_set;
+static int hf_bthci_cmd_le_adv_en_sets;
+static int hf_bthci_cmd_le_adv_duration;
+static int hf_bthci_cmd_le_adv_max_extended_events;
+static int hf_bthci_cmd_all_phys;
+static int hf_bthci_cmd_all_phys_tx_pref;
+static int hf_bthci_cmd_all_phys_rx_pref;
+static int hf_bthci_cmd_all_phys_reserved;
+static int hf_bthci_cmd_tx_phys;
+static int hf_bthci_cmd_rx_phys;
+static int hf_bthci_cmd_phys_pref_le_1m;
+static int hf_bthci_cmd_phys_pref_le_2m;
+static int hf_bthci_cmd_phys_pref_le_coded;
+static int hf_bthci_cmd_phys_pref_reserved;
+static int hf_bthci_cmd_phy_options;
+static int hf_bthci_cmd_phy_options_coding;
+static int hf_bthci_cmd_phy_options_reserved;
+static int hf_bthci_cmd_phy;
+static int hf_bthci_cmd_modulation_index;
+static int hf_bthci_cmd_le_scan_phys;
+static int hf_bthci_cmd_le_scan_phys_reserved;
+static int hf_bthci_cmd_le_scan_phys_le_coded;
+static int hf_bthci_cmd_le_scan_phys_le_1m;
+static int hf_bthci_cmd_le_scan_phy_param;
+static int hf_bthci_cmd_le_scan_duration;
+static int hf_bthci_cmd_le_scan_period;
+static int hf_bthci_cmd_le_phys;
+static int hf_bthci_cmd_le_phys_reserved;
+static int hf_bthci_cmd_le_phys_le_coded;
+static int hf_bthci_cmd_le_phys_le_2m;
+static int hf_bthci_cmd_le_phys_le_1m;
+static int hf_bthci_cmd_le_init_phy_param;
+static int hf_bthci_cmd_le_privacy_mode;
+static int hf_bthci_cmd_sync_filter_policy;
+static int hf_bthci_cmd_skip;
+static int hf_bthci_cmd_rf_tx_path_compensation_value;
+static int hf_bthci_cmd_rf_rx_path_compensation_value;
+static int hf_bthci_cmd_sync_handle;
+static int hf_bthci_cmd_cte_length;
+static int hf_bthci_cmd_cte_type;
+static int hf_bthci_cmd_slot_durations;
+static int hf_bthci_cmd_antenna_switching_pattern_length;
+static int hf_bthci_cmd_antenna_switching_pattern;
+static int hf_bthci_cmd_antenna_id;
+static int hf_bthci_cmd_cte_count;
+static int hf_bthci_cmd_cte_enable;
+static int hf_bthci_cmd_iq_sampling_enable;
+static int hf_bthci_cmd_max_sampled_ctes;
+static int hf_bthci_cmd_cte_request_interval;
+static int hf_bthci_cmd_reporting_enable;
+static int hf_bthci_cmd_service_data_past;
+static int hf_bthci_cmd_sync_mode;
+static int hf_bthci_cmd_key_type;
+static int hf_bthci_cmd_sca_action;
+static int hf_bthci_cmd_sync_cte_type;
+static int hf_bthci_cmd_sync_cte_type_no_sync_aoa;
+static int hf_bthci_cmd_sync_cte_type_no_sync_aod_1us;
+static int hf_bthci_cmd_sync_cte_type_no_sync_aod_2us;
+static int hf_bthci_cmd_sync_cte_type_sync_only_with_cte;
+static int hf_bthci_cmd_sync_cte_type_reserved;
+static int hf_bthci_cmd_cte_types;
+static int hf_bthci_cmd_cte_types_reserved;
+static int hf_bthci_cmd_cte_types_aod_2us;
+static int hf_bthci_cmd_cte_types_aod_1us;
+static int hf_bthci_cmd_cte_types_aoa;
+static int hf_bthci_cmd_cig_id;
+static int hf_bthci_cmd_sdu_interval_c_to_p;
+static int hf_bthci_cmd_sdu_interval_p_to_c;
+static int hf_bthci_cmd_sdu_interval;
+static int hf_bthci_cmd_peripherals_clock_accuracy;
+static int hf_bthci_cmd_packing;
+static int hf_bthci_cmd_framing;
+static int hf_bthci_cmd_ft_c_to_p;
+static int hf_bthci_cmd_ft_p_to_c;
+static int hf_bthci_cmd_iso_interval;
+static int hf_bthci_cmd_cis_count;
+static int hf_bthci_cmd_cis_params;
+static int hf_bthci_cmd_cis_id;
+static int hf_bthci_cmd_nse;
+static int hf_bthci_cmd_max_sdu_c_to_p;
+static int hf_bthci_cmd_max_sdu_p_to_c;
+static int hf_bthci_cmd_max_sdu;
+static int hf_bthci_cmd_max_pdu_c_to_p;
+static int hf_bthci_cmd_max_pdu_p_to_c;
+static int hf_bthci_cmd_max_pdu;
+static int hf_bthci_cmd_phy_c_to_p;
+static int hf_bthci_cmd_phy_p_to_c;
+static int hf_bthci_cmd_bn_c_to_p;
+static int hf_bthci_cmd_bn_p_to_c;
+static int hf_bthci_cmd_bn;
+static int hf_bthci_cmd_max_transport_latency_c_to_p;
+static int hf_bthci_cmd_max_transport_latency_p_to_c;
+static int hf_bthci_cmd_max_transport_latency;
+static int hf_bthci_cmd_rtn_c_to_p;
+static int hf_bthci_cmd_rtn_p_to_c;
+static int hf_bthci_cmd_rtn;
+static int hf_bthci_cmd_cis_handle;
+static int hf_bthci_cmd_big_handle;
+static int hf_bthci_cmd_cis_bis_handle;
+static int hf_bthci_cmd_num_bis;
+static int hf_bthci_cmd_irc;
+static int hf_bthci_cmd_pto;
+static int hf_bthci_cmd_encryption;
+static int hf_bthci_cmd_broadcast_code;
+static int hf_bthci_cmd_mse;
+static int hf_bthci_cmd_bis_index;
+static int hf_bthci_cmd_sync_timeout;
+static int hf_bthci_cmd_data_path_direction;
+static int hf_bthci_cmd_data_path_id;
+static int hf_bthci_cmd_coding_format;
+static int hf_bthci_cmd_controller_delay;
+static int hf_bthci_cmd_codec_config_length;
+static int hf_bthci_cmd_codec_config;
+static int hf_bthci_cmd_payload_type;
+static int hf_bthci_cmd_feature_bit_number;
+static int hf_bthci_cmd_feature_bit_number2;
+static int hf_bthci_cmd_feature_bit_value;
+static int hf_bthci_cmd_phy_and_coding;
+static int hf_bthci_cmd_high_threshold;
+static int hf_bthci_cmd_high_hysteresis;
+static int hf_bthci_cmd_low_threshold;
+static int hf_bthci_cmd_low_hysteresis;
+static int hf_bthci_cmd_min_time_spent;
+static int hf_bthci_cmd_local_reporting_enable;
+static int hf_bthci_cmd_remote_reporting_enable;
+static int hf_bthci_cmd_addr_change_reasons;
+static int hf_bthci_cmd_addr_change_reasons_adv_data;
+static int hf_bthci_cmd_addr_change_reasons_scan_rsp_data;
+static int hf_bthci_cmd_addr_change_reasons_reserved;
+static int hf_bthci_cmd_subrate_factor_min;
+static int hf_bthci_cmd_subrate_factor_max;
+static int hf_bthci_cmd_continuation_number;
+static int hf_bthci_cmd_primary_adv_phy_options;
+static int hf_bthci_cmd_secondary_adv_phy_options;
+static int hf_bthci_cmd_num_subevents;
+static int hf_bthci_cmd_subevent_interval;
+static int hf_bthci_cmd_response_slot_delay;
+static int hf_bthci_cmd_response_slot_spacing;
+static int hf_bthci_cmd_num_response_slots;
+static int hf_bthci_cmd_subevent;
+static int hf_bthci_cmd_subevents;
+static int hf_bthci_cmd_response_slot_start;
+static int hf_bthci_cmd_response_slot_count;
+static int hf_bthci_cmd_subevent_data_length;
+static int hf_bthci_cmd_request_event;
+static int hf_bthci_cmd_request_subevent;
+static int hf_bthci_cmd_response_subevent;
+static int hf_bthci_cmd_response_slot;
+static int hf_bthci_cmd_response_data_length;
+static int hf_bthci_cmd_triggered_clock_capture;
+static int hf_bthci_cmd_lpo_allowed;
+static int hf_bthci_cmd_number_of_clock_captures_to_filter;
+static int hf_bthci_cmd_amp_controller_type;
+static int hf_bthci_cmd_esco_loopback_mode;
+static int hf_bthci_cmd_dm1_acl_u_mode;
+static int hf_bthci_cmd_codec_id;
+static int hf_bthci_cmd_company_id;
+static int hf_bthci_cmd_vendor_codec_id;
+static int hf_bthci_cmd_transmit_coding_format;
+static int hf_bthci_cmd_receive_coding_format;
+static int hf_bthci_cmd_input_coding_format;
+static int hf_bthci_cmd_output_coding_format;
+static int hf_bthci_cmd_transmit_codec_frame_size;
+static int hf_bthci_cmd_receive_codec_frame_size;
+static int hf_bthci_cmd_input_bandwidth;
+static int hf_bthci_cmd_output_bandwidth;
+static int hf_bthci_cmd_input_coded_data_size;
+static int hf_bthci_cmd_output_coded_data_size;
+static int hf_bthci_cmd_input_pcm_data_format;
+static int hf_bthci_cmd_output_pcm_data_format;
+static int hf_bthci_cmd_input_pcm_sample_payload_msb_position;
+static int hf_bthci_cmd_output_pcm_sample_payload_msb_position;
+static int hf_bthci_cmd_input_data_path;
+static int hf_bthci_cmd_output_data_path;
+static int hf_bthci_cmd_input_transport_unit_size;
+static int hf_bthci_cmd_output_transport_unit_size;
+static int hf_bthci_cmd_connectionless_peripheral_broadcast;
+static int hf_bthci_cmd_lt_addr;
+static int hf_bthci_cmd_interval_min;
+static int hf_bthci_cmd_interval_max;
+static int hf_bthci_cmd_cpb_supervision_to;
+static int hf_bthci_cmd_connectionless_peripheral_broadcast_receive;
+static int hf_bthci_cmd_clock_offset_32;
+static int hf_bthci_cmd_next_cpb_clock;
+static int hf_bthci_cmd_remote_timing_accuracy;
+static int hf_bthci_cmd_cpb_skip;
+static int hf_bthci_cmd_channel_map;
+static int hf_bthci_cmd_synchronization_scan_to;
+static int hf_bthci_cmd_c192;
+static int hf_bthci_cmd_r192;
+static int hf_bthci_cmd_c256;
+static int hf_bthci_cmd_r256;
+static int hf_bthci_mws_channel;
+static int hf_bthci_mws_rx_center_frequency;
+static int hf_bthci_mws_tx_center_frequency;
+static int hf_bthci_mws_rx_channel_bandwidth;
+static int hf_bthci_mws_tx_channel_bandwidth;
+static int hf_bthci_mws_channel_type;
+static int hf_bthci_external_frame_duration;
+static int hf_bthci_external_frame_sync_assert_offset;
+static int hf_bthci_external_frame_sync_assert_jitter;
+static int hf_bthci_external_frame_number_of_periods;
+static int hf_bthci_external_frame_periods;
+static int hf_bthci_external_frame_period;
+static int hf_bthci_external_frame_period_duration;
+static int hf_bthci_external_frame_period_type;
+static int hf_bthci_mws_rx_assert_offset;
+static int hf_bthci_mws_rx_assert_jitter;
+static int hf_bthci_mws_rx_deassert_offset;
+static int hf_bthci_mws_rx_deassert_jitter;
+static int hf_bthci_mws_tx_assert_offset;
+static int hf_bthci_mws_tx_assert_jitter;
+static int hf_bthci_mws_tx_deassert_offset;
+static int hf_bthci_mws_tx_deassert_jitter;
+static int hf_bthci_mws_pattern_assert_offset;
+static int hf_bthci_mws_pattern_assert_jitter;
+static int hf_bthci_mws_inactivity_duration_assert_offset;
+static int hf_bthci_mws_inactivity_duration_assert_jitter;
+static int hf_bthci_mws_scan_frequency_assert_offset;
+static int hf_bthci_mws_scan_frequency_assert_jitter;
+static int hf_bthci_mws_priority_assert_offset_request;
+static int hf_bthci_mws_transport_layer;
+static int hf_bthci_mws_to_baud_rate;
+static int hf_bthci_mws_from_baud_rate;
+static int hf_bthci_mws_number_of_frequencies;
+static int hf_bthci_mws_scan_frequency_table;
+static int hf_bthci_mws_scan_frequency_table_item;
+static int hf_bthci_mws_scan_frequency_table_item_low;
+static int hf_bthci_mws_scan_frequency_table_item_high;
+static int hf_bthci_mws_pattern_index;
+static int hf_bthci_mws_pattern_number_of_intervals;
+static int hf_bthci_mws_patterns;
+static int hf_bthci_mws_pattern;
+static int hf_bthci_mws_pattern_duration;
+static int hf_bthci_mws_pattern_type;
+static int hf_bthci_cmd_sync_train_to;
+static int hf_bthci_cmd_service_data;
+static int hf_bthci_cmd_secure_connection_host_support;
+static int hf_bthci_cmd_cpb_fragment;
+static int hf_bthci_cmd_cpb_data_length;
+static int hf_bthci_cmd_cpb_data;
+static int hf_bthci_cmd_authenticated_payload_timeout;
+static int hf_bthci_cmd_extended_inquiry_length;
+static int hf_bthci_cmd_min_encryption_key_size;
+static int hf_bthci_cmd_pages_requested;
+static int hf_bthci_cmd_config_id;
+static int hf_bthci_cmd_cs_roles;
+static int hf_bthci_cmd_cs_roles_initiator;
+static int hf_bthci_cmd_cs_roles_reflector;
+static int hf_bthci_cmd_cs_roles_reserved;
+static int hf_bthci_cmd_cs_sync_antenna_selection;
+static int hf_bthci_cmd_num_config;
+static int hf_bthci_cmd_max_consecutive_procedures;
+static int hf_bthci_cmd_num_antennas_supported;
+static int hf_bthci_cmd_max_antenna_paths_supported;
+static int hf_bthci_cmd_cs_modes_supported;
+static int hf_bthci_cmd_cs_modes_supported_3;
+static int hf_bthci_cmd_cs_modes_supported_reserved;
+static int hf_bthci_cmd_rtt_capability;
+static int hf_bthci_cmd_rtt_capability_coarse_precision;
+static int hf_bthci_cmd_rtt_capability_sounding_precision;
+static int hf_bthci_cmd_rtt_capability_random_precision;
+static int hf_bthci_cmd_rtt_capability_reserved;
+static int hf_bthci_cmd_rtt_aa_only_n;
+static int hf_bthci_cmd_rtt_sounding_n;
+static int hf_bthci_cmd_rtt_random_n;
+static int hf_bthci_cmd_nadm_sounding_capability;
+static int hf_bthci_cmd_nadm_sounding_capability_supported;
+static int hf_bthci_cmd_nadm_sounding_capability_reserved;
+static int hf_bthci_cmd_nadm_random_capability;
+static int hf_bthci_cmd_nadm_random_capability_supported;
+static int hf_bthci_cmd_nadm_random_capability_reserved;
+static int hf_bthci_cmd_cs_sync_phys_supported;
+static int hf_bthci_cmd_cs_sync_phys_supported_2m;
+static int hf_bthci_cmd_cs_sync_phys_supported_2m2bt;
+static int hf_bthci_cmd_cs_sync_phys_supported_reserved;
+static int hf_bthci_cmd_cs_subfeatures_supported;
+static int hf_bthci_cmd_cs_subfeatures_companion_signal;
+static int hf_bthci_cmd_cs_subfeatures_freq_actuation_error;
+static int hf_bthci_cmd_cs_subfeatures_channel_selection_3c;
+static int hf_bthci_cmd_cs_subfeatures_pbr_from_rtt;
+static int hf_bthci_cmd_cs_subfeatures_reserved;
+static int hf_bthci_cmd_tip1_times_supported;
+static int hf_bthci_cmd_tip2_times_supported;
+static int hf_bthci_cmd_tip_times_supported_10us;
+static int hf_bthci_cmd_tip_times_supported_20us;
+static int hf_bthci_cmd_tip_times_supported_30us;
+static int hf_bthci_cmd_tip_times_supported_40us;
+static int hf_bthci_cmd_tip_times_supported_50us;
+static int hf_bthci_cmd_tip_times_supported_60us;
+static int hf_bthci_cmd_tip_times_supported_80us;
+static int hf_bthci_cmd_tip_times_supported_reserved;
+static int hf_bthci_cmd_tfcs_times_supported;
+static int hf_bthci_cmd_tfcs_times_supported_15us;
+static int hf_bthci_cmd_tfcs_times_supported_20us;
+static int hf_bthci_cmd_tfcs_times_supported_30us;
+static int hf_bthci_cmd_tfcs_times_supported_40us;
+static int hf_bthci_cmd_tfcs_times_supported_50us;
+static int hf_bthci_cmd_tfcs_times_supported_60us;
+static int hf_bthci_cmd_tfcs_times_supported_80us;
+static int hf_bthci_cmd_tfcs_times_supported_100us;
+static int hf_bthci_cmd_tfcs_times_supported_120us;
+static int hf_bthci_cmd_tfcs_times_supported_reserved;
+static int hf_bthci_cmd_tpm_times_supported;
+static int hf_bthci_cmd_tpm_times_supported_10us;
+static int hf_bthci_cmd_tpm_times_supported_20us;
+static int hf_bthci_cmd_tpm_times_supported_reserved;
+static int hf_bthci_cmd_tsw_time_supported;
+static int hf_bthci_cmd_tx_snr_capability;
+static int hf_bthci_cmd_tx_snr_capability_18dB;
+static int hf_bthci_cmd_tx_snr_capability_21dB;
+static int hf_bthci_cmd_tx_snr_capability_24dB;
+static int hf_bthci_cmd_tx_snr_capability_27dB;
+static int hf_bthci_cmd_tx_snr_capability_30dB;
+static int hf_bthci_cmd_tx_snr_capability_reserved;
+static int hf_bthci_cmd_fae_table;
+static int hf_bthci_cmd_create_context;
+static int hf_bthci_cmd_main_mode_type;
+static int hf_bthci_cmd_sub_mode_type;
+static int hf_bthci_cmd_min_main_mode_steps;
+static int hf_bthci_cmd_max_main_mode_steps;
+static int hf_bthci_cmd_main_mode_repetition;
+static int hf_bthci_cmd_mode0_steps;
+static int hf_bthci_cmd_cs_role;
+static int hf_bthci_cmd_rtt_type;
+static int hf_bthci_cmd_cs_sync_phy;
+static int hf_bthci_cmd_channel_map_repetition;
+static int hf_bthci_cmd_channel_selection_type;
+static int hf_bthci_cmd_ch3c_shape;
+static int hf_bthci_cmd_ch3c_jump;
+static int hf_bthci_cmd_companion_signal_enable;
+static int hf_bthci_cmd_cs_enable;
+static int hf_bthci_cmd_max_procedure_len;
+static int hf_bthci_cmd_min_procedure_interval;
+static int hf_bthci_cmd_max_procedure_interval;
+static int hf_bthci_cmd_max_procedure_count;
+static int hf_bthci_cmd_min_subevent_len;
+static int hf_bthci_cmd_max_subevent_len;
+static int hf_bthci_cmd_subevent_len;
+static int hf_bthci_cmd_tone_antenna_selection;
+static int hf_bthci_cmd_tx_pwr_delta;
+static int hf_bthci_cmd_preferred_peer_antenna;
+static int hf_bthci_cmd_preferred_peer_antenna_reserved;
+static int hf_bthci_cmd_preferred_peer_antenna_first;
+static int hf_bthci_cmd_preferred_peer_antenna_second;
+static int hf_bthci_cmd_preferred_peer_antenna_third;
+static int hf_bthci_cmd_preferred_peer_antenna_fourth;
+static int hf_bthci_cmd_snr_control_initiator;
+static int hf_bthci_cmd_snr_control_reflector;
+static int hf_bthci_cmd_cs_subevent_interval;
+static int hf_bthci_cmd_max_num_subevents;
+static int hf_bthci_cmd_tx_power_setting;
+static int hf_bthci_cmd_t_ip1_time;
+static int hf_bthci_cmd_t_ip2_time;
+static int hf_bthci_cmd_t_fcs_time;
+static int hf_bthci_cmd_t_pm_time;
+static int hf_bthci_cmd_t_sw_time;
+static int hf_bthci_cmd_drbg_nonce;
+static int hf_bthci_cmd_cs_override_config;
+static int hf_bthci_cmd_override_config_reserved;
+static int hf_bthci_cmd_override_config_stable_phase_test;
+static int hf_bthci_cmd_override_config_cs_sync_data;
+static int hf_bthci_cmd_override_config_ss_marker_value;
+static int hf_bthci_cmd_override_config_ss_marker_position;
+static int hf_bthci_cmd_override_config_cs_sync_aa;
+static int hf_bthci_cmd_override_config_tone_ant_permutation;
+static int hf_bthci_cmd_override_config_tpm_tone_ext;
+static int hf_bthci_cmd_override_config_main_mode_steps;
+static int hf_bthci_cmd_override_config_channel_list;
+static int hf_bthci_cmd_cs_override_param_length;
+static int hf_bthci_cmd_cs_override_param_data;
+static int hf_bthci_cmd_override_param_channel_length;
+static int hf_bthci_cmd_override_param_channels;
+static int hf_bthci_cmd_override_param_main_mode_steps;
+static int hf_bthci_cmd_override_param_tpm_tone_ext;
+static int hf_bthci_cmd_override_param_tone_antenna_permutation;
+static int hf_bthci_cmd_override_param_cs_sync_aa_initiator;
+static int hf_bthci_cmd_override_param_cs_sync_aa_reflector;
+static int hf_bthci_cmd_override_param_ss_marker_1_position;
+static int hf_bthci_cmd_override_param_ss_marker_2_position;
+static int hf_bthci_cmd_override_param_ss_marker_value;
+static int hf_bthci_cmd_override_param_cs_sync_payload_pattern;
+static int hf_bthci_cmd_override_param_cs_sync_user_payload;
+static int hf_bthci_cmd_adv_monitoring_enable;
+static int hf_bthci_cmd_adv_decision_flags;
+static int hf_bthci_cmd_adv_decision_flags_resolvable_tag;
+static int hf_bthci_cmd_adv_decision_flags_reserved;
+static int hf_bthci_cmd_adv_decision_data;
+static int hf_bthci_cmd_num_tests;
+static int hf_bthci_cmd_adv_test_flags;
+static int hf_bthci_cmd_adv_test_flags_start_group;
+static int hf_bthci_cmd_adv_test_flags_data_contains_field_check_pass;
+static int hf_bthci_cmd_adv_test_flags_data_contains_field_check_fail;
+static int hf_bthci_cmd_adv_test_flags_data_not_contain_field;
+static int hf_bthci_cmd_adv_test_flags_reserved;
+static int hf_bthci_cmd_adv_test_field;
+static int hf_bthci_cmd_adv_test_params;
+static int hf_bthci_cmd_rssi_threshold_low;
+static int hf_bthci_cmd_rssi_threshold_high;
+static int hf_bthci_cmd_rssi_threshold_timeout;
+static int hf_bthci_cmd_frame_space_min;
+static int hf_bthci_cmd_frame_space_max;
+static int hf_bthci_cmd_spacing_types;
+static int hf_bthci_cmd_spacing_types_tifs_acl_cp;
+static int hf_bthci_cmd_spacing_types_tifs_acl_pc;
+static int hf_bthci_cmd_spacing_types_tmces;
+static int hf_bthci_cmd_spacing_types_tifs_cis;
+static int hf_bthci_cmd_spacing_types_tmss_cis;
+static int hf_bthci_cmd_spacing_types_reserved;
 
+static int * const hfx_bthci_cmd_event_mask_page_2[] = {
+    &hf_bthci_cmd_evt_mask2_reserved,
+    &hf_bthci_cmd_evt_mask2_25,
+    &hf_bthci_cmd_evt_mask2_24,
+    &hf_bthci_cmd_evt_mask2_23,
+    &hf_bthci_cmd_evt_mask2_22,
+    &hf_bthci_cmd_evt_mask2_21,
+    &hf_bthci_cmd_evt_mask2_20,
+    &hf_bthci_cmd_evt_mask2_19,
+    &hf_bthci_cmd_evt_mask2_18,
+    &hf_bthci_cmd_evt_mask2_17,
+    &hf_bthci_cmd_evt_mask2_16,
+    &hf_bthci_cmd_evt_mask2_15,
+    &hf_bthci_cmd_evt_mask2_14,
+    &hf_bthci_cmd_evt_mask2_13,
+    &hf_bthci_cmd_evt_mask2_12,
+    &hf_bthci_cmd_evt_mask2_11,
+    &hf_bthci_cmd_evt_mask2_10,
+    &hf_bthci_cmd_evt_mask2_09,
+    &hf_bthci_cmd_evt_mask2_08,
+    &hf_bthci_cmd_evt_mask2_07,
+    &hf_bthci_cmd_evt_mask2_06,
+    &hf_bthci_cmd_evt_mask2_05,
+    &hf_bthci_cmd_evt_mask2_04,
+    &hf_bthci_cmd_evt_mask2_03,
+    &hf_bthci_cmd_evt_mask2_02,
+    &hf_bthci_cmd_evt_mask2_01,
+    &hf_bthci_cmd_evt_mask2_00,
+    NULL
+};
 
-static const int *hfx_bthci_cmd_le_event_mask[] = {
+static int * const hfx_bthci_cmd_le_event_mask[] = {
     &hf_bthci_cmd_le_event_mask_le_reserved,
+    &hf_bthci_cmd_le_event_mask_le_frame_space_update_complete,
+    &hf_bthci_cmd_le_event_mask_le_monitored_advertisers_report,
+    &hf_bthci_cmd_le_event_mask_le_cs_test_end_complete,
+    &hf_bthci_cmd_le_event_mask_le_cs_subevent_result_continue,
+    &hf_bthci_cmd_le_event_mask_le_cs_subevent_result,
+    &hf_bthci_cmd_le_event_mask_le_cs_procedure_enable_complete,
+    &hf_bthci_cmd_le_event_mask_le_cs_config_complete,
+    &hf_bthci_cmd_le_event_mask_le_cs_security_enable_complete,
+    &hf_bthci_cmd_le_event_mask_le_cs_read_remote_fae_table_complete,
+    &hf_bthci_cmd_le_event_mask_le_cs_read_remote_supported_capabilities_complete,
+    &hf_bthci_cmd_le_event_mask_le_read_all_remote_features_complete,
+    &hf_bthci_cmd_le_event_mask_le_cis_established_v2,
+    &hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete_v2,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_response_report,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_subevent_data_request,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_transfer_received_v2,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_report_v2,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_established_v2,
+    &hf_bthci_cmd_le_event_mask_le_subrate_changed,
+    &hf_bthci_cmd_le_event_mask_le_biginfo_advertising_report,
+    &hf_bthci_cmd_le_event_mask_le_transmit_power_reporting,
+    &hf_bthci_cmd_le_event_mask_le_path_loss_threshold,
+    &hf_bthci_cmd_le_event_mask_le_request_peer_sca_complete,
+    &hf_bthci_cmd_le_event_mask_le_big_sync_lost,
+    &hf_bthci_cmd_le_event_mask_le_big_sync_established,
+    &hf_bthci_cmd_le_event_mask_le_terminate_big_complete,
+    &hf_bthci_cmd_le_event_mask_le_create_big_complete,
+    &hf_bthci_cmd_le_event_mask_le_cis_request,
+    &hf_bthci_cmd_le_event_mask_le_cis_established_v1,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_transfer_received_v1,
+    &hf_bthci_cmd_le_event_mask_le_cte_request_failed,
+    &hf_bthci_cmd_le_event_mask_le_connection_iq_report,
+    &hf_bthci_cmd_le_event_mask_le_connectionless_iq_report,
+    &hf_bthci_cmd_le_event_mask_le_channel_selection_algorithm,
+    &hf_bthci_cmd_le_event_mask_le_scan_request_received,
+    &hf_bthci_cmd_le_event_mask_le_extended_advertising_set_terminated,
+    &hf_bthci_cmd_le_event_mask_le_extended_scan_timeout,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_lost,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_report_v1,
+    &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_established_v1,
+    &hf_bthci_cmd_le_event_mask_le_extended_advertising_report,
     &hf_bthci_cmd_le_event_mask_le_phy_update_complete,
     &hf_bthci_cmd_le_event_mask_le_direct_advertising_report ,
-    &hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete,
+    &hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete_v1,
     &hf_bthci_cmd_le_event_mask_le_generate_dhkey_complete,
     &hf_bthci_cmd_le_event_mask_le_read_local_p256_public_key_complete,
     &hf_bthci_cmd_le_event_mask_le_data_length_change,
     &hf_bthci_cmd_le_event_mask_le_remote_connection_parameter_request,
     &hf_bthci_cmd_le_event_mask_le_long_term_key_request,
-    &hf_bthci_cmd_le_event_mask_le_read_remote_used_features_complete,
+    &hf_bthci_cmd_le_event_mask_le_read_remote_features_complete,
     &hf_bthci_cmd_le_event_mask_le_connection_update_complete,
     &hf_bthci_cmd_le_event_mask_le_advertising_report,
     &hf_bthci_cmd_le_event_mask_le_connection_complete,
     NULL
 };
 
-static const int *hfx_bthci_cmd_adv_properties[] = {
+static int * const hfx_bthci_cmd_adv_properties[] = {
     &hf_bthci_cmd_advertising_properties_reserved,
+    &hf_bthci_cmd_advertising_properties_decision_pdu_incl_adi,
+    &hf_bthci_cmd_advertising_properties_decision_pdu_incl_adva,
+    &hf_bthci_cmd_advertising_properties_use_decision_pdus,
     &hf_bthci_cmd_advertising_properties_incl_txpower,
     &hf_bthci_cmd_advertising_properties_anonymous_adv,
     &hf_bthci_cmd_advertising_properties_legacy_adv,
@@ -525,20 +957,29 @@ static const int *hfx_bthci_cmd_adv_properties[] = {
     NULL
 };
 
-static const int *hfx_bthci_cmd_periodic_adv_properties[] = {
+static int * const hfx_bthci_cmd_periodic_adv_properties[] = {
     &hf_bthci_cmd_periodic_advertising_properties_reserved,
     &hf_bthci_cmd_advertising_properties_incl_txpower,
     NULL
 };
 
-static const int *hfx_btcmd_all_phys[] = {
+static int * const hfx_bthci_cmd_scan_filter_policy[] = {
+    &hf_bthci_cmd_scan_filter_policy_reserved,
+    &hf_bthci_cmd_scan_filter_policy_decision_mode,
+    &hf_bthci_cmd_scan_filter_policy_extended,
+    &hf_bthci_cmd_scan_filter_policy_filtered,
+    NULL
+};
+
+
+static int * const hfx_btcmd_all_phys[] = {
     &hf_bthci_cmd_all_phys_reserved,
     &hf_bthci_cmd_all_phys_rx_pref,
     &hf_bthci_cmd_all_phys_tx_pref,
     NULL
 };
 
-static const int *hfx_btcmd_phys_pref[] = {
+static int * const hfx_btcmd_phys_pref[] = {
     &hf_bthci_cmd_phys_pref_reserved,
     &hf_bthci_cmd_phys_pref_le_coded,
     &hf_bthci_cmd_phys_pref_le_2m,
@@ -546,20 +987,20 @@ static const int *hfx_btcmd_phys_pref[] = {
     NULL
 };
 
-static const int *hfx_btcmd_phy_options[] = {
+static int * const hfx_btcmd_phy_options[] = {
     &hf_bthci_cmd_phy_options_reserved,
     &hf_bthci_cmd_phy_options_coding,
     NULL
 };
 
-static const int *hfx_btcmd_le_scan_phys[] = {
+static int * const hfx_btcmd_le_scan_phys[] = {
     &hf_bthci_cmd_le_scan_phys_reserved,
     &hf_bthci_cmd_le_scan_phys_le_coded,
     &hf_bthci_cmd_le_scan_phys_le_1m,
     NULL
 };
 
-static const int *hfx_btcmd_le_phys[] = {
+static int * const hfx_btcmd_le_phys[] = {
     &hf_bthci_cmd_le_phys_reserved,
     &hf_bthci_cmd_le_phys_le_coded,
     &hf_bthci_cmd_le_phys_le_2m,
@@ -567,7 +1008,31 @@ static const int *hfx_btcmd_le_phys[] = {
     NULL
 };
 
-static const int *hfx_bthci_cmd_sco_packet_type[] = {
+static int * const hfx_btcmd_sync_cte_type[] = {
+    &hf_bthci_cmd_sync_cte_type_reserved,
+    &hf_bthci_cmd_sync_cte_type_sync_only_with_cte,
+    &hf_bthci_cmd_sync_cte_type_no_sync_aod_2us,
+    &hf_bthci_cmd_sync_cte_type_no_sync_aod_1us,
+    &hf_bthci_cmd_sync_cte_type_no_sync_aoa,
+    NULL
+};
+
+static int * const hfx_btcmd_cte_types[] = {
+    &hf_bthci_cmd_cte_types_reserved,
+    &hf_bthci_cmd_cte_types_aod_2us,
+    &hf_bthci_cmd_cte_types_aod_1us,
+    &hf_bthci_cmd_cte_types_aoa,
+    NULL
+};
+
+static int * const hfx_btcmd_addr_change_reasons[] = {
+    &hf_bthci_cmd_addr_change_reasons_reserved,
+    &hf_bthci_cmd_addr_change_reasons_scan_rsp_data,
+    &hf_bthci_cmd_addr_change_reasons_adv_data,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_sco_packet_type[] = {
     &hf_bthci_cmd_sco_packet_type_reserved,
     &hf_bthci_cmd_sco_packet_type_3ev5,
     &hf_bthci_cmd_sco_packet_type_2ev5,
@@ -582,7 +1047,7 @@ static const int *hfx_bthci_cmd_sco_packet_type[] = {
     NULL
 };
 
-static const int *hfx_bthci_cmd_packet_type[] = {
+static int * const hfx_bthci_cmd_packet_type[] = {
     &hf_bthci_cmd_packet_type_dh5,
     &hf_bthci_cmd_packet_type_dm5,
     &hf_bthci_cmd_packet_type_3dh5,
@@ -600,220 +1065,405 @@ static const int *hfx_bthci_cmd_packet_type[] = {
     NULL
 };
 
-static expert_field ei_command_undecoded                              = EI_INIT;
-static expert_field ei_command_unknown_command                        = EI_INIT;
-static expert_field ei_command_parameter_unexpected                   = EI_INIT;
+static int * const hfx_bthci_cmd_preferred_peer_antenna[] = {
+    &hf_bthci_cmd_preferred_peer_antenna_first,
+    &hf_bthci_cmd_preferred_peer_antenna_second,
+    &hf_bthci_cmd_preferred_peer_antenna_third,
+    &hf_bthci_cmd_preferred_peer_antenna_fourth,
+    &hf_bthci_cmd_preferred_peer_antenna_reserved,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_cs_roles[] = {
+    &hf_bthci_cmd_cs_roles_reserved,
+    &hf_bthci_cmd_cs_roles_reflector,
+    &hf_bthci_cmd_cs_roles_initiator,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_cs_modes_supported[] = {
+    &hf_bthci_cmd_cs_modes_supported_reserved,
+    &hf_bthci_cmd_cs_modes_supported_3,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_rtt_capability[] = {
+    &hf_bthci_cmd_rtt_capability_reserved,
+    &hf_bthci_cmd_rtt_capability_random_precision,
+    &hf_bthci_cmd_rtt_capability_sounding_precision,
+    &hf_bthci_cmd_rtt_capability_coarse_precision,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_nadm_sounding_capability[] = {
+    &hf_bthci_cmd_nadm_sounding_capability_reserved,
+    &hf_bthci_cmd_nadm_sounding_capability_supported,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_nadm_random_capability[] = {
+    &hf_bthci_cmd_nadm_random_capability_reserved,
+    &hf_bthci_cmd_nadm_random_capability_supported,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_cs_sync_phys_supported[] = {
+    &hf_bthci_cmd_cs_sync_phys_supported_reserved,
+    &hf_bthci_cmd_cs_sync_phys_supported_2m2bt,
+    &hf_bthci_cmd_cs_sync_phys_supported_2m,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_cs_subfeatures[] = {
+    &hf_bthci_cmd_cs_subfeatures_reserved,
+    &hf_bthci_cmd_cs_subfeatures_pbr_from_rtt,
+    &hf_bthci_cmd_cs_subfeatures_channel_selection_3c,
+    &hf_bthci_cmd_cs_subfeatures_freq_actuation_error,
+    &hf_bthci_cmd_cs_subfeatures_companion_signal,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_tip_times_supported[] = {
+    &hf_bthci_cmd_tip_times_supported_reserved,
+    &hf_bthci_cmd_tip_times_supported_80us,
+    &hf_bthci_cmd_tip_times_supported_60us,
+    &hf_bthci_cmd_tip_times_supported_50us,
+    &hf_bthci_cmd_tip_times_supported_40us,
+    &hf_bthci_cmd_tip_times_supported_30us,
+    &hf_bthci_cmd_tip_times_supported_20us,
+    &hf_bthci_cmd_tip_times_supported_10us,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_tfcs_times_supported[] = {
+    &hf_bthci_cmd_tfcs_times_supported_reserved,
+    &hf_bthci_cmd_tfcs_times_supported_120us,
+    &hf_bthci_cmd_tfcs_times_supported_100us,
+    &hf_bthci_cmd_tfcs_times_supported_80us,
+    &hf_bthci_cmd_tfcs_times_supported_60us,
+    &hf_bthci_cmd_tfcs_times_supported_50us,
+    &hf_bthci_cmd_tfcs_times_supported_40us,
+    &hf_bthci_cmd_tfcs_times_supported_30us,
+    &hf_bthci_cmd_tfcs_times_supported_20us,
+    &hf_bthci_cmd_tfcs_times_supported_15us,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_tpm_times_supported[] = {
+    &hf_bthci_cmd_tpm_times_supported_reserved,
+    &hf_bthci_cmd_tpm_times_supported_20us,
+    &hf_bthci_cmd_tpm_times_supported_10us,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_tx_snr_capability[] = {
+    &hf_bthci_cmd_tx_snr_capability_reserved,
+    &hf_bthci_cmd_tx_snr_capability_30dB,
+    &hf_bthci_cmd_tx_snr_capability_27dB,
+    &hf_bthci_cmd_tx_snr_capability_24dB,
+    &hf_bthci_cmd_tx_snr_capability_21dB,
+    &hf_bthci_cmd_tx_snr_capability_18dB,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_adv_decision_flags[] = {
+    &hf_bthci_cmd_adv_decision_flags_reserved,
+    &hf_bthci_cmd_adv_decision_flags_resolvable_tag,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_adv_test_flags[] = {
+    &hf_bthci_cmd_adv_test_flags_reserved,
+    &hf_bthci_cmd_adv_test_flags_data_not_contain_field,
+    &hf_bthci_cmd_adv_test_flags_data_contains_field_check_fail,
+    &hf_bthci_cmd_adv_test_flags_data_contains_field_check_pass,
+    &hf_bthci_cmd_adv_test_flags_start_group,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_spacing_types[] = {
+    &hf_bthci_cmd_spacing_types_reserved,
+    &hf_bthci_cmd_spacing_types_tmss_cis,
+    &hf_bthci_cmd_spacing_types_tifs_cis,
+    &hf_bthci_cmd_spacing_types_tmces,
+    &hf_bthci_cmd_spacing_types_tifs_acl_pc,
+    &hf_bthci_cmd_spacing_types_tifs_acl_cp,
+    NULL
+};
+
+static int * const hfx_bthci_cmd_override_config[] = {
+    &hf_bthci_cmd_override_config_reserved,
+    &hf_bthci_cmd_override_config_stable_phase_test,
+    &hf_bthci_cmd_override_config_cs_sync_data,
+    &hf_bthci_cmd_override_config_ss_marker_value,
+    &hf_bthci_cmd_override_config_ss_marker_position,
+    &hf_bthci_cmd_override_config_cs_sync_aa,
+    &hf_bthci_cmd_override_config_tone_ant_permutation,
+    &hf_bthci_cmd_override_config_tpm_tone_ext,
+    &hf_bthci_cmd_override_config_main_mode_steps,
+    &hf_bthci_cmd_override_config_channel_list,
+    NULL
+};
+
+static expert_field ei_command_undecoded;
+static expert_field ei_command_unknown_command;
+static expert_field ei_command_parameter_unexpected;
 
 static dissector_table_t vendor_dissector_table;
 static dissector_table_t hci_vendor_table;
 
 /* Initialize the subtree pointers */
-static gint ett_bthci_cmd = -1;
-static gint ett_opcode = -1;
-static gint ett_cod_mask = -1;
-static gint ett_flow_spec_subtree = -1;
-static gint ett_le_channel_map = -1;
-static gint ett_le_event_mask = -1;
-static gint ett_adv_properties = -1;
-static gint ett_adv_sets = -1;
-static gint ett_phys_flags = -1;
-static gint ett_scan_init_phy_param = -1;
-static gint ett_coding_format = -1;
-static gint ett_packet_type = -1;
-static gint ett_sco_packet_type = -1;
-static gint ett_periods = -1;
-static gint ett_period = -1;
-static gint ett_table = -1;
-static gint ett_table_item = -1;
-static gint ett_patterns = -1;
-static gint ett_pattern = -1;
+static int ett_bthci_cmd;
+static int ett_opcode;
+static int ett_cod_mask;
+static int ett_flow_spec_subtree;
+static int ett_le_channel_map;
+static int ett_event_mask_page_2;
+static int ett_le_event_mask;
+static int ett_adv_properties;
+static int ett_adv_sets;
+static int ett_phys_flags;
+static int ett_phy_param;
+static int ett_filter_policy;
+static int ett_sync_cte_type;
+static int ett_coding_format;
+static int ett_packet_type;
+static int ett_sco_packet_type;
+static int ett_periods;
+static int ett_period;
+static int ett_table;
+static int ett_table_item;
+static int ett_patterns;
+static int ett_pattern;
+static int ett_cis_params;
+static int ett_addr_change_reasons;
+static int ett_adv_subevents;
+static int ett_pref_antenna;
+static int ett_cs_roles;
+static int ett_cs_modes;
+static int ett_cs_capability;
+static int ett_cs_times;
+static int ett_adv_test_flags;
+static int ett_override_config;
+static int ett_override_params;
+static int ett_spacing_types;
 
-static gint proto_btcommon = -1;
-static gint hf_btcommon_eir_ad_entry = -1;
-static gint hf_btcommon_eir_ad_advertising_data = -1;
-static gint hf_btcommon_eir_ad_extended_inquiry_response_data = -1;
-static gint hf_btcommon_eir_ad_unused = -1;
-static gint hf_btcommon_eir_ad_data = -1;
-static gint hf_btcommon_eir_ad_length = -1;
-static gint hf_btcommon_eir_ad_type = -1;
-static gint hf_btcommon_eir_ad_company_id = -1;
-static gint hf_btcommon_eir_ad_flags_reserved = -1;
-static gint hf_btcommon_eir_ad_flags_le_bredr_support_host = -1;
-static gint hf_btcommon_eir_ad_flags_le_bredr_support_controller = -1;
-static gint hf_btcommon_eir_ad_flags_bredr_not_support = -1;
-static gint hf_btcommon_eir_ad_flags_le_general_discoverable_mode = -1;
-static gint hf_btcommon_eir_ad_flags_le_limited_discoverable_mode = -1;
-static gint hf_btcommon_eir_ad_uuid_16 = -1;
-static gint hf_btcommon_eir_ad_uuid_32 = -1;
-static gint hf_btcommon_eir_ad_uuid_128 = -1;
-static gint hf_btcommon_eir_ad_custom_uuid_32 = -1;
-static gint hf_btcommon_eir_ad_custom_uuid_128 = -1;
-static gint hf_btcommon_eir_ad_name = -1;
-static gint hf_btcommon_eir_ad_tx_power = -1;
-static gint hf_btcommon_eir_ad_ssp_oob_length = -1;
-static gint hf_btcommon_eir_ad_bd_addr = -1;
-static gint hf_btcommon_eir_ad_le_bd_addr_reserved = -1;
-static gint hf_btcommon_eir_ad_le_bd_addr_type = -1;
-static gint hf_btcommon_eir_ad_le_role = -1;
-static gint hf_btcommon_eir_ad_service_data = -1;
-static gint hf_btcommon_eir_ad_did_vendor_id = -1;
-static gint hf_btcommon_eir_ad_did_vendor_id_bluetooth_sig = -1;
-static gint hf_btcommon_eir_ad_did_vendor_id_usb_forum = -1;
-static gint hf_btcommon_eir_ad_did_product_id = -1;
-static gint hf_btcommon_eir_ad_did_version = -1;
-static gint hf_btcommon_eir_ad_did_vendor_id_source = -1;
-static gint hf_btcommon_eir_ad_3ds_association_notification = -1;
-static gint hf_btcommon_eir_ad_3ds_battery_level_reporting = -1;
-static gint hf_btcommon_eir_ad_3ds_send_battery_level_report_on_startup = -1;
-static gint hf_btcommon_eir_ad_3ds_reserved = -1;
-static gint hf_btcommon_eir_ad_3ds_factory_test_mode = -1;
-static gint hf_btcommon_eir_ad_3ds_path_loss_threshold = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_fixed = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_3d_capable_tv = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_ignored_1_3 = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_fixed_4 = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_ignored_5 = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_fixed_6 = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_test_mode = -1;
-static gint hf_btcommon_eir_ad_3ds_legacy_path_loss_threshold = -1;
-static gint hf_btcommon_eir_ad_advertising_interval = -1;
-static gint hf_btcommon_eir_ad_appearance = -1;
-static gint hf_btcommon_eir_ad_hash_c = -1;
-static gint hf_btcommon_eir_ad_randomizer_r = -1;
-static gint hf_btcommon_eir_ad_le_secure_confirmation_value = -1;
-static gint hf_btcommon_eir_ad_le_secure_random_value = -1;
-static gint hf_btcommon_eir_ad_oob_flags_data_present = -1;
-static gint hf_btcommon_eir_ad_oob_flags_le_supported_host = -1;
-static gint hf_btcommon_eir_ad_oob_flags_le_bredr_support = -1;
-static gint hf_btcommon_eir_ad_oob_flags_address_type = -1;
-static gint hf_btcommon_eir_ad_oob_flags_reserved = -1;
-static gint hf_btcommon_eir_ad_connection_interval_min = -1;
-static gint hf_btcommon_eir_ad_connection_interval_max = -1;
-static gint hf_btcommon_eir_ad_uri = -1;
-static gint hf_btcommon_eir_ad_ips_flags = -1;
-static gint hf_btcommon_eir_ad_ips_flags_reserved = -1;
-static gint hf_btcommon_eir_ad_ips_flags_location_name = -1;
-static gint hf_btcommon_eir_ad_ips_flags_uncertainty = -1;
-static gint hf_btcommon_eir_ad_ips_flags_floor_number = -1;
-static gint hf_btcommon_eir_ad_ips_flags_altitude = -1;
-static gint hf_btcommon_eir_ad_ips_flags_tx_power = -1;
-static gint hf_btcommon_eir_ad_ips_flags_coordinate_system = -1;
-static gint hf_btcommon_eir_ad_ips_flags_coordinates = -1;
-static gint hf_btcommon_eir_ad_ips_uncertainty = -1;
-static gint hf_btcommon_eir_ad_ips_uncertainty_reserved = -1;
-static gint hf_btcommon_eir_ad_ips_uncertainty_precision = -1;
-static gint hf_btcommon_eir_ad_ips_uncertainty_update_time = -1;
-static gint hf_btcommon_eir_ad_ips_uncertainty_stationary = -1;
-static gint hf_btcommon_eir_ad_ips_latitude = -1;
-static gint hf_btcommon_eir_ad_ips_longitude = -1;
-static gint hf_btcommon_eir_ad_ips_local_north_coordinate = -1;
-static gint hf_btcommon_eir_ad_ips_local_east_coordinate = -1;
-static gint hf_btcommon_eir_ad_ips_tx_power_level = -1;
-static gint hf_btcommon_eir_ad_ips_floor_number = -1;
-static gint hf_btcommon_eir_ad_ips_altitude = -1;
-static gint hf_btcommon_eir_ad_tds_organization_id = -1;
-static gint hf_btcommon_eir_ad_tds_flags = -1;
-static gint hf_btcommon_eir_ad_tds_flags_reserved = -1;
-static gint hf_btcommon_eir_ad_tds_flags_transport_state = -1;
-static gint hf_btcommon_eir_ad_tds_flags_transport_data_incomplete = -1;
-static gint hf_btcommon_eir_ad_tds_flags_role = -1;
-static gint hf_btcommon_eir_ad_tds_data_length = -1;
-static gint hf_btcommon_eir_ad_tds_data = -1;
-static gint hf_btcommon_eir_ad_le_features = -1;
-static gint hf_btcommon_eir_ad_le_channel_map = -1;
-static gint hf_btcommon_eir_ad_instant = -1;
-static gint hf_btcommon_eir_ad_le_features_encryption = -1;
-static gint hf_btcommon_eir_ad_le_features_connection_parameters_request_procedure = -1;
-static gint hf_btcommon_eir_ad_le_features_extended_reject_indication = -1;
-static gint hf_btcommon_eir_ad_le_features_slave_initiated_features_exchange = -1;
-static gint hf_btcommon_eir_ad_le_features_ping = -1;
-static gint hf_btcommon_eir_ad_le_features_data_packet_length_extension = -1;
-static gint hf_btcommon_eir_ad_le_features_ll_privacy = -1;
-static gint hf_btcommon_eir_ad_le_features_extended_scanner_filter_policies = -1;
-static gint hf_btcommon_eir_ad_le_features_2m_phy = -1;
-static gint hf_btcommon_eir_ad_le_features_stable_modulation_index_tx =-1;
-static gint hf_btcommon_eir_ad_le_features_stable_modulation_index_rx = -1;
-static gint hf_btcommon_eir_ad_le_features_coded_phy = -1;
-static gint hf_btcommon_eir_ad_le_features_extended_advertising = -1;
-static gint hf_btcommon_eir_ad_le_features_periodic_advertising = -1;
-static gint hf_btcommon_eir_ad_le_features_channel_selection_algorithm_2 = -1;
-static gint hf_btcommon_eir_ad_le_features_power_class_1 = -1;
-static gint hf_btcommon_eir_ad_le_features_minimum_number_of_used_channels_procedure = -1;
-static gint hf_btcommon_eir_ad_le_features_reserved_1_7 = -1;
-static gint hf_btcommon_eir_ad_le_features_reserved = -1;
-static gint hf_btcommon_cod_class_of_device = -1;
-static gint hf_btcommon_cod_format_type = -1;
-static gint hf_btcommon_cod_major_service_class_information = -1;
-static gint hf_btcommon_cod_major_service_class_telephony = -1;
-static gint hf_btcommon_cod_major_service_class_audio = -1;
-static gint hf_btcommon_cod_major_service_class_object_transfer = -1;
-static gint hf_btcommon_cod_major_service_class_capturing = -1;
-static gint hf_btcommon_cod_major_service_class_rendering = -1;
-static gint hf_btcommon_cod_major_service_class_networking = -1;
-static gint hf_btcommon_cod_major_service_class_positioning = -1;
-static gint hf_btcommon_cod_major_service_class_reserved = -1;
-static gint hf_btcommon_cod_major_service_class_limited_discoverable_mode = -1;
-static gint hf_btcommon_cod_major_device_class = -1;
-static gint hf_btcommon_cod_minor_device_class_computer = -1;
-static gint hf_btcommon_cod_minor_device_class_phone = -1;
-static gint hf_btcommon_cod_minor_device_class_lan_net_load_factor = -1;
-static gint hf_btcommon_cod_minor_device_class_lan_net_type = -1;
-static gint hf_btcommon_cod_minor_device_class_audio_video = -1;
-static gint hf_btcommon_cod_minor_device_class_peripheral_class = -1;
-static gint hf_btcommon_cod_minor_device_class_peripheral_type = -1;
-static gint hf_btcommon_cod_minor_device_class_imaging_class_printer = -1;
-static gint hf_btcommon_cod_minor_device_class_imaging_class_scanner = -1;
-static gint hf_btcommon_cod_minor_device_class_imaging_class_camera = -1;
-static gint hf_btcommon_cod_minor_device_class_imaging_class_display = -1;
-static gint hf_btcommon_cod_minor_device_class_imaging_type = -1;
-static gint hf_btcommon_cod_minor_device_class_wearable = -1;
-static gint hf_btcommon_cod_minor_device_class_toy = -1;
-static gint hf_btcommon_cod_minor_device_class_health = -1;
-static gint hf_btcommon_cod_minor_device_class_unknown = -1;
-static gint hf_btcommon_le_channel_map_0 = -1;
-static gint hf_btcommon_le_channel_map_1 = -1;
-static gint hf_btcommon_le_channel_map_2 = -1;
-static gint hf_btcommon_le_channel_map_3 = -1;
-static gint hf_btcommon_le_channel_map_4 = -1;
-static gint hf_btcommon_le_channel_map_5 = -1;
-static gint hf_btcommon_le_channel_map_6 = -1;
-static gint hf_btcommon_le_channel_map_7 = -1;
-static gint hf_btcommon_le_channel_map_8 = -1;
-static gint hf_btcommon_le_channel_map_9 = -1;
-static gint hf_btcommon_le_channel_map_10 = -1;
-static gint hf_btcommon_le_channel_map_11 = -1;
-static gint hf_btcommon_le_channel_map_12 = -1;
-static gint hf_btcommon_le_channel_map_13 = -1;
-static gint hf_btcommon_le_channel_map_14 = -1;
-static gint hf_btcommon_le_channel_map_15 = -1;
-static gint hf_btcommon_le_channel_map_16 = -1;
-static gint hf_btcommon_le_channel_map_17 = -1;
-static gint hf_btcommon_le_channel_map_18 = -1;
-static gint hf_btcommon_le_channel_map_19 = -1;
-static gint hf_btcommon_le_channel_map_20 = -1;
-static gint hf_btcommon_le_channel_map_21 = -1;
-static gint hf_btcommon_le_channel_map_22 = -1;
-static gint hf_btcommon_le_channel_map_23 = -1;
-static gint hf_btcommon_le_channel_map_24 = -1;
-static gint hf_btcommon_le_channel_map_25 = -1;
-static gint hf_btcommon_le_channel_map_26 = -1;
-static gint hf_btcommon_le_channel_map_27 = -1;
-static gint hf_btcommon_le_channel_map_28 = -1;
-static gint hf_btcommon_le_channel_map_29 = -1;
-static gint hf_btcommon_le_channel_map_30 = -1;
-static gint hf_btcommon_le_channel_map_31 = -1;
-static gint hf_btcommon_le_channel_map_32 = -1;
-static gint hf_btcommon_le_channel_map_33 = -1;
-static gint hf_btcommon_le_channel_map_34 = -1;
-static gint hf_btcommon_le_channel_map_35 = -1;
-static gint hf_btcommon_le_channel_map_36 = -1;
-static gint hf_btcommon_le_channel_map_37 = -1;
-static gint hf_btcommon_le_channel_map_38 = -1;
-static gint hf_btcommon_le_channel_map_39 = -1;
-static gint hf_btcommon_eir_ad_mesh_msg = -1;
+static int proto_btcommon;
+static int hf_btcommon_eir_ad_entry;
+static int hf_btcommon_eir_ad_advertising_data;
+static int hf_btcommon_eir_ad_extended_inquiry_response_data;
+static int hf_btcommon_eir_ad_unused;
+static int hf_btcommon_eir_ad_data;
+static int hf_btcommon_eir_ad_length;
+static int hf_btcommon_eir_ad_type;
+static int hf_btcommon_eir_ad_company_id;
+static int hf_btcommon_eir_ad_flags_reserved;
+static int hf_btcommon_eir_ad_flags_le_bredr_support_host;
+static int hf_btcommon_eir_ad_flags_le_bredr_support_controller;
+static int hf_btcommon_eir_ad_flags_bredr_not_support;
+static int hf_btcommon_eir_ad_flags_le_general_discoverable_mode;
+static int hf_btcommon_eir_ad_flags_le_limited_discoverable_mode;
+static int hf_btcommon_eir_ad_uuid_16;
+static int hf_btcommon_eir_ad_uuid_32;
+static int hf_btcommon_eir_ad_uuid_128;
+static int hf_btcommon_eir_ad_custom_uuid_32;
+static int hf_btcommon_eir_ad_custom_uuid_128;
+static int hf_btcommon_eir_ad_name;
+static int hf_btcommon_eir_ad_tx_power;
+static int hf_btcommon_eir_ad_ssp_oob_length;
+static int hf_btcommon_eir_ad_bd_addr;
+static int hf_btcommon_eir_ad_le_bd_addr_reserved;
+static int hf_btcommon_eir_ad_le_bd_addr_type;
+static int hf_btcommon_eir_ad_le_role;
+static int hf_btcommon_eir_ad_service_data;
+static int hf_btcommon_eir_ad_did_vendor_id;
+static int hf_btcommon_eir_ad_did_vendor_id_bluetooth_sig;
+static int hf_btcommon_eir_ad_did_vendor_id_usb_forum;
+static int hf_btcommon_eir_ad_did_product_id;
+static int hf_btcommon_eir_ad_did_version;
+static int hf_btcommon_eir_ad_did_vendor_id_source;
+static int hf_btcommon_eir_ad_3ds_association_notification;
+static int hf_btcommon_eir_ad_3ds_battery_level_reporting;
+static int hf_btcommon_eir_ad_3ds_send_battery_level_report_on_startup;
+static int hf_btcommon_eir_ad_3ds_reserved;
+static int hf_btcommon_eir_ad_3ds_factory_test_mode;
+static int hf_btcommon_eir_ad_3ds_path_loss_threshold;
+static int hf_btcommon_eir_ad_3ds_legacy_fixed;
+static int hf_btcommon_eir_ad_3ds_legacy_3d_capable_tv;
+static int hf_btcommon_eir_ad_3ds_legacy_ignored_1_3;
+static int hf_btcommon_eir_ad_3ds_legacy_fixed_4;
+static int hf_btcommon_eir_ad_3ds_legacy_ignored_5;
+static int hf_btcommon_eir_ad_3ds_legacy_fixed_6;
+static int hf_btcommon_eir_ad_3ds_legacy_test_mode;
+static int hf_btcommon_eir_ad_3ds_legacy_path_loss_threshold;
+static int hf_btcommon_eir_ad_advertising_interval;
+static int hf_btcommon_eir_ad_appearance;
+static int hf_btcommon_eir_ad_hash_c;
+static int hf_btcommon_eir_ad_randomizer_r;
+static int hf_btcommon_eir_ad_le_secure_confirmation_value;
+static int hf_btcommon_eir_ad_le_secure_random_value;
+static int hf_btcommon_eir_ad_oob_flags_data_present;
+static int hf_btcommon_eir_ad_oob_flags_le_supported_host;
+static int hf_btcommon_eir_ad_oob_flags_le_bredr_support;
+static int hf_btcommon_eir_ad_oob_flags_address_type;
+static int hf_btcommon_eir_ad_oob_flags_reserved;
+static int hf_btcommon_eir_ad_connection_interval_min;
+static int hf_btcommon_eir_ad_connection_interval_max;
+static int hf_btcommon_eir_ad_uri;
+static int hf_btcommon_eir_ad_ips_flags;
+static int hf_btcommon_eir_ad_ips_flags_reserved;
+static int hf_btcommon_eir_ad_ips_flags_location_name;
+static int hf_btcommon_eir_ad_ips_flags_uncertainty;
+static int hf_btcommon_eir_ad_ips_flags_floor_number;
+static int hf_btcommon_eir_ad_ips_flags_altitude;
+static int hf_btcommon_eir_ad_ips_flags_tx_power;
+static int hf_btcommon_eir_ad_ips_flags_coordinate_system;
+static int hf_btcommon_eir_ad_ips_flags_coordinates;
+static int hf_btcommon_eir_ad_ips_uncertainty;
+static int hf_btcommon_eir_ad_ips_uncertainty_reserved;
+static int hf_btcommon_eir_ad_ips_uncertainty_precision;
+static int hf_btcommon_eir_ad_ips_uncertainty_update_time;
+static int hf_btcommon_eir_ad_ips_uncertainty_stationary;
+static int hf_btcommon_eir_ad_ips_latitude;
+static int hf_btcommon_eir_ad_ips_longitude;
+static int hf_btcommon_eir_ad_ips_local_north_coordinate;
+static int hf_btcommon_eir_ad_ips_local_east_coordinate;
+static int hf_btcommon_eir_ad_ips_tx_power_level;
+static int hf_btcommon_eir_ad_ips_floor_number;
+static int hf_btcommon_eir_ad_ips_altitude;
+static int hf_btcommon_eir_ad_tds_organization_id;
+static int hf_btcommon_eir_ad_tds_flags;
+static int hf_btcommon_eir_ad_tds_flags_reserved;
+static int hf_btcommon_eir_ad_tds_flags_transport_state;
+static int hf_btcommon_eir_ad_tds_flags_transport_data_incomplete;
+static int hf_btcommon_eir_ad_tds_flags_role;
+static int hf_btcommon_eir_ad_tds_data_length;
+static int hf_btcommon_eir_ad_tds_data;
+static int hf_btcommon_eir_ad_le_features;
+static int hf_btcommon_eir_ad_le_channel_map;
+static int hf_btcommon_eir_ad_instant;
+static int hf_btcommon_eir_ad_le_features_encryption;
+static int hf_btcommon_eir_ad_le_features_connection_parameters_request_procedure;
+static int hf_btcommon_eir_ad_le_features_extended_reject_indication;
+static int hf_btcommon_eir_ad_le_features_peripheral_initiated_features_exchange;
+static int hf_btcommon_eir_ad_le_features_ping;
+static int hf_btcommon_eir_ad_le_features_data_packet_length_extension;
+static int hf_btcommon_eir_ad_le_features_ll_privacy;
+static int hf_btcommon_eir_ad_le_features_extended_scanner_filter_policies;
+static int hf_btcommon_eir_ad_le_features_2m_phy;
+static int hf_btcommon_eir_ad_le_features_stable_modulation_index_tx;
+static int hf_btcommon_eir_ad_le_features_stable_modulation_index_rx;
+static int hf_btcommon_eir_ad_le_features_coded_phy;
+static int hf_btcommon_eir_ad_le_features_extended_advertising;
+static int hf_btcommon_eir_ad_le_features_periodic_advertising;
+static int hf_btcommon_eir_ad_le_features_channel_selection_algorithm_2;
+static int hf_btcommon_eir_ad_le_features_power_class_1;
+static int hf_btcommon_eir_ad_le_features_minimum_number_of_used_channels_procedure;
+static int hf_btcommon_eir_ad_le_features_reserved_1_7;
+static int hf_btcommon_eir_ad_le_features_reserved;
+static int hf_btcommon_eir_ad_biginfo_big_offset;
+static int hf_btcommon_eir_ad_biginfo_big_offset_units;
+static int hf_btcommon_eir_ad_biginfo_iso_interval;
+static int hf_btcommon_eir_ad_biginfo_num_bis;
+static int hf_btcommon_eir_ad_biginfo_nse;
+static int hf_btcommon_eir_ad_biginfo_bn;
+static int hf_btcommon_eir_ad_biginfo_sub_interval;
+static int hf_btcommon_eir_ad_biginfo_pto;
+static int hf_btcommon_eir_ad_biginfo_bis_spacing;
+static int hf_btcommon_eir_ad_biginfo_irc;
+static int hf_btcommon_eir_ad_biginfo_max_pdu;
+static int hf_btcommon_eir_ad_biginfo_rfu;
+static int hf_btcommon_eir_ad_biginfo_seed_access_address;
+static int hf_btcommon_eir_ad_biginfo_sdu_interval;
+static int hf_btcommon_eir_ad_biginfo_max_sdu;
+static int hf_btcommon_eir_ad_biginfo_base_crc_init;
+static int hf_btcommon_eir_ad_biginfo_channel_map;
+static int hf_btcommon_eir_ad_biginfo_phy;
+static int hf_btcommon_eir_ad_biginfo_bis_payload_count;
+static int hf_btcommon_eir_ad_biginfo_framing;
+static int hf_btcommon_eir_ad_biginfo_giv;
+static int hf_btcommon_eir_ad_biginfo_gskd;
+static int hf_btcommon_eir_ad_biginfo_big_control_access_address;
+static int hf_btcommon_eir_ad_biginfo_bis_access_address;
+static int hf_btcommon_eir_ad_broadcast_code;
+static int hf_btcommon_eir_ad_rsi;
+static int hf_btcommon_eir_ad_broadcast_name;
 
+static int hf_btcommon_cod_class_of_device;
+static int hf_btcommon_cod_format_type;
+static int hf_btcommon_cod_major_service_class_information;
+static int hf_btcommon_cod_major_service_class_telephony;
+static int hf_btcommon_cod_major_service_class_audio;
+static int hf_btcommon_cod_major_service_class_object_transfer;
+static int hf_btcommon_cod_major_service_class_capturing;
+static int hf_btcommon_cod_major_service_class_rendering;
+static int hf_btcommon_cod_major_service_class_networking;
+static int hf_btcommon_cod_major_service_class_positioning;
+static int hf_btcommon_cod_major_service_class_reserved;
+static int hf_btcommon_cod_major_service_class_le_audio;
+static int hf_btcommon_cod_major_service_class_limited_discoverable_mode;
+static int hf_btcommon_cod_major_device_class;
+static int hf_btcommon_cod_minor_device_class_computer;
+static int hf_btcommon_cod_minor_device_class_phone;
+static int hf_btcommon_cod_minor_device_class_lan_net_load_factor;
+static int hf_btcommon_cod_minor_device_class_lan_net_type;
+static int hf_btcommon_cod_minor_device_class_audio_video;
+static int hf_btcommon_cod_minor_device_class_peripheral_class;
+static int hf_btcommon_cod_minor_device_class_peripheral_type;
+static int hf_btcommon_cod_minor_device_class_imaging_class_printer;
+static int hf_btcommon_cod_minor_device_class_imaging_class_scanner;
+static int hf_btcommon_cod_minor_device_class_imaging_class_camera;
+static int hf_btcommon_cod_minor_device_class_imaging_class_display;
+static int hf_btcommon_cod_minor_device_class_imaging_type;
+static int hf_btcommon_cod_minor_device_class_wearable;
+static int hf_btcommon_cod_minor_device_class_toy;
+static int hf_btcommon_cod_minor_device_class_health;
+static int hf_btcommon_cod_minor_device_class_unknown;
+static int hf_btcommon_le_channel_map_0;
+static int hf_btcommon_le_channel_map_1;
+static int hf_btcommon_le_channel_map_2;
+static int hf_btcommon_le_channel_map_3;
+static int hf_btcommon_le_channel_map_4;
+static int hf_btcommon_le_channel_map_5;
+static int hf_btcommon_le_channel_map_6;
+static int hf_btcommon_le_channel_map_7;
+static int hf_btcommon_le_channel_map_8;
+static int hf_btcommon_le_channel_map_9;
+static int hf_btcommon_le_channel_map_10;
+static int hf_btcommon_le_channel_map_11;
+static int hf_btcommon_le_channel_map_12;
+static int hf_btcommon_le_channel_map_13;
+static int hf_btcommon_le_channel_map_14;
+static int hf_btcommon_le_channel_map_15;
+static int hf_btcommon_le_channel_map_16;
+static int hf_btcommon_le_channel_map_17;
+static int hf_btcommon_le_channel_map_18;
+static int hf_btcommon_le_channel_map_19;
+static int hf_btcommon_le_channel_map_20;
+static int hf_btcommon_le_channel_map_21;
+static int hf_btcommon_le_channel_map_22;
+static int hf_btcommon_le_channel_map_23;
+static int hf_btcommon_le_channel_map_24;
+static int hf_btcommon_le_channel_map_25;
+static int hf_btcommon_le_channel_map_26;
+static int hf_btcommon_le_channel_map_27;
+static int hf_btcommon_le_channel_map_28;
+static int hf_btcommon_le_channel_map_29;
+static int hf_btcommon_le_channel_map_30;
+static int hf_btcommon_le_channel_map_31;
+static int hf_btcommon_le_channel_map_32;
+static int hf_btcommon_le_channel_map_33;
+static int hf_btcommon_le_channel_map_34;
+static int hf_btcommon_le_channel_map_35;
+static int hf_btcommon_le_channel_map_36;
+static int hf_btcommon_le_channel_map_37;
+static int hf_btcommon_le_channel_map_38;
+static int hf_btcommon_le_channel_map_39;
+static int hf_btcommon_eir_ad_mesh_msg;
+static int hf_btcommon_eir_ad_mesh_pbadv;
+static int hf_btcommon_eir_ad_mesh_beacon;
 
-static const int *hfx_btcommon_eir_ad_ips_flags[] = {
+static int * const hfx_btcommon_eir_ad_ips_flags[] = {
     &hf_btcommon_eir_ad_ips_flags_reserved,
     &hf_btcommon_eir_ad_ips_flags_location_name,
     &hf_btcommon_eir_ad_ips_flags_uncertainty,
@@ -825,7 +1475,7 @@ static const int *hfx_btcommon_eir_ad_ips_flags[] = {
     NULL
 };
 
-static const int *hfx_btcommon_eir_ad_ips_uncertainty[] = {
+static int * const hfx_btcommon_eir_ad_ips_uncertainty[] = {
     &hf_btcommon_eir_ad_ips_uncertainty_reserved,
     &hf_btcommon_eir_ad_ips_uncertainty_precision,
     &hf_btcommon_eir_ad_ips_uncertainty_update_time,
@@ -833,7 +1483,7 @@ static const int *hfx_btcommon_eir_ad_ips_uncertainty[] = {
     NULL
 };
 
-static const int *hfx_btcommon_eir_ad_tds_flags[] = {
+static int * const hfx_btcommon_eir_ad_tds_flags[] = {
     &hf_btcommon_eir_ad_tds_flags_reserved,
     &hf_btcommon_eir_ad_tds_flags_transport_state,
     &hf_btcommon_eir_ad_tds_flags_transport_data_incomplete,
@@ -841,11 +1491,11 @@ static const int *hfx_btcommon_eir_ad_tds_flags[] = {
     NULL
 };
 
-static const int *hfx_btcommon_eir_ad_le_features_0[] = {
+static int * const hfx_btcommon_eir_ad_le_features_0[] = {
     &hf_btcommon_eir_ad_le_features_encryption,
     &hf_btcommon_eir_ad_le_features_connection_parameters_request_procedure,
     &hf_btcommon_eir_ad_le_features_extended_reject_indication,
-    &hf_btcommon_eir_ad_le_features_slave_initiated_features_exchange,
+    &hf_btcommon_eir_ad_le_features_peripheral_initiated_features_exchange,
     &hf_btcommon_eir_ad_le_features_ping,
     &hf_btcommon_eir_ad_le_features_data_packet_length_extension,
     &hf_btcommon_eir_ad_le_features_ll_privacy,
@@ -853,7 +1503,7 @@ static const int *hfx_btcommon_eir_ad_le_features_0[] = {
     NULL
 };
 
-static const int *hfx_btcommon_eir_ad_le_features_1[] = {
+static int * const hfx_btcommon_eir_ad_le_features_1[] = {
     &hf_btcommon_eir_ad_le_features_2m_phy,
     &hf_btcommon_eir_ad_le_features_stable_modulation_index_tx,
     &hf_btcommon_eir_ad_le_features_stable_modulation_index_rx,
@@ -865,18 +1515,18 @@ static const int *hfx_btcommon_eir_ad_le_features_1[] = {
     NULL
 };
 
-static const int *hfx_btcommon_eir_ad_le_features_2[] = {
+static int * const hfx_btcommon_eir_ad_le_features_2[] = {
     &hf_btcommon_eir_ad_le_features_minimum_number_of_used_channels_procedure,
     &hf_btcommon_eir_ad_le_features_reserved_1_7,
     NULL
 };
 
-static const int *hfx_btcommon_eir_ad_le_features_reserved[] = {
+static int * const hfx_btcommon_eir_ad_le_features_reserved[] = {
     &hf_btcommon_eir_ad_le_features_reserved,
     NULL
 };
 
-static const int **hfx_btcommon_eir_ad_le_features[] = {
+static int * const *hfx_btcommon_eir_ad_le_features[] = {
     hfx_btcommon_eir_ad_le_features_0,
     hfx_btcommon_eir_ad_le_features_1,
     hfx_btcommon_eir_ad_le_features_2,
@@ -887,15 +1537,16 @@ static const int **hfx_btcommon_eir_ad_le_features[] = {
     hfx_btcommon_eir_ad_le_features_reserved
 };
 
-static gint ett_cod = -1;
-static gint ett_eir_ad = -1;
-static gint ett_eir_ad_entry = -1;
-static gint ett_eir_ad_le_features = -1;
+static int ett_cod;
+static int ett_eir_ad;
+static int ett_eir_ad_entry;
+static int ett_eir_ad_le_features;
+static int ett_eir_ad_biginfo_seedaa;
 
-static expert_field ei_eir_ad_undecoded                               = EI_INIT;
-static expert_field ei_eir_ad_unknown                                 = EI_INIT;
-static expert_field ei_eir_ad_not_used                                = EI_INIT;
-static expert_field ei_eir_ad_invalid_length                          = EI_INIT;
+static expert_field ei_eir_ad_undecoded;
+static expert_field ei_eir_ad_unknown;
+static expert_field ei_eir_ad_not_used;
+static expert_field ei_eir_ad_invalid_length;
 
 static dissector_handle_t btcommon_cod_handle;
 static dissector_handle_t btcommon_eir_handle;
@@ -903,11 +1554,17 @@ static dissector_handle_t btcommon_ad_handle;
 static dissector_handle_t btcommon_le_channel_map_handle;
 static dissector_handle_t bthci_cmd_handle;
 static dissector_handle_t btmesh_handle;
+static dissector_handle_t btmesh_pbadv_handle;
+static dissector_handle_t btmesh_beacon_handle;
 
 static dissector_table_t  bluetooth_eir_ad_manufacturer_company_id;
 static dissector_table_t  bluetooth_eir_ad_tds_organization_id;
+static dissector_table_t  bluetooth_eir_ad_service_uuid;
 
-wmem_tree_t *bthci_cmds = NULL;
+bool bthci_vendor_android = false;
+const uint16_t bthci_vendor_manufacturer_android = 0x00e0; // Google LLC
+
+wmem_tree_t *bthci_cmds;
 
 extern value_string_ext ext_usb_vendors_vals;
 extern value_string_ext ext_usb_products_vals;
@@ -947,7 +1604,7 @@ value_string_ext bthci_cmd_ogf_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_ogf_va
     { (base) | 0x011,  "Authentication Requested" }, \
     { (base) | 0x013,  "Set Connection Encryption" }, \
     { (base) | 0x015,  "Change Connection Link Key" }, \
-    { (base) | 0x017,  "Master Link Key" }, \
+    { (base) | 0x017,  "Link Key Selection" }, \
     { (base) | 0x019,  "Remote Name Request" }, \
     { (base) | 0x01A,  "Remote Name Request Cancel" }, \
     { (base) | 0x01B,  "Read Remote Supported Features" }, \
@@ -980,8 +1637,8 @@ value_string_ext bthci_cmd_ogf_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_ogf_va
 /* Bluetooth Core Specification Addendum 4 */ \
     { (base) | 0x03F,  "Truncated Page" }, \
     { (base) | 0x040,  "Truncated Page Cancel" }, \
-    { (base) | 0x041,  "Set Connectionless Slave Broadcast" }, \
-    { (base) | 0x042,  "Set Connectionless Slave Broadcast Receive" }, \
+    { (base) | 0x041,  "Set Connectionless Peripheral Broadcast" }, \
+    { (base) | 0x042,  "Set Connectionless Peripheral Broadcast Receive" }, \
     { (base) | 0x043,  "Start Synchronization Train" }, \
     { (base) | 0x044,  "Receive Synchronization Train" }, \
     { (base) | 0x045,  "Remote OOB Extended Data Request Reply" } \
@@ -1114,7 +1771,7 @@ value_string_ext bthci_cmd_ocf_link_policy_vals_ext = VALUE_STRING_EXT_INIT(bthc
 /* Bluetooth Core Specification Addendum 4 */ \
     { (base) | 0x074,  "Set Reserved LT_ADDR" }, \
     { (base) | 0x075,  "Delete Reserved LT_ADDR" }, \
-    { (base) | 0x076,  "Set Connectionless Slave Broadcast Data" }, \
+    { (base) | 0x076,  "Set Connectionless Peripheral Broadcast Data" }, \
     { (base) | 0x077,  "Read Synchronization Train Parameters" }, \
     { (base) | 0x078,  "Write Synchronization Train Parameters" }, \
     { (base) | 0x079,  "Read Secure Connections Host Support" }, \
@@ -1125,7 +1782,12 @@ value_string_ext bthci_cmd_ocf_link_policy_vals_ext = VALUE_STRING_EXT_INIT(bthc
     { (base) | 0x07E,  "Read Extended Page Timeout" }, \
     { (base) | 0x07F,  "Write Extended Page Timeout" }, \
     { (base) | 0x080,  "Read Extended Inquiry Length" }, \
-    { (base) | 0x081,  "Write Extended Inquiry Length" }
+    { (base) | 0x081,  "Write Extended Inquiry Length" }, \
+/* Bluetooth Core Specification 5.2 */ \
+    { (base) | 0x082,  "Set Ecosystem Base Interval" }, \
+    { (base) | 0x083,  "Configure Data Path" }, \
+/* Bluetooth Core Specification 5.3 */ \
+    { (base) | 0x084,  "Set Min Encryption Key Size" }
 
 static const value_string bthci_cmd_ocf_host_controller_and_baseband_vals[] = {
     HOST_CONTROLLER_AND_BASEBAND_VALS(0x0),
@@ -1145,7 +1807,9 @@ value_string_ext bthci_cmd_ocf_host_controller_and_baseband_vals_ext = VALUE_STR
     { (base) | 0x009,  "Read BD ADDR" }, \
     { (base) | 0x00A,  "Read Data Block Size" }, \
 /* Bluetooth Core Specification Addendum 2 */ \
-    { (base) | 0x00B,  "Read Local Supported Codecs" }
+    { (base) | 0x00B,  "Read Local Supported Codecs" }, \
+/* Bluetooth Core 5.1 */ \
+    { (base) | 0x00C,  "Read Local Simple Pairing Options" }
 
 static const value_string bthci_cmd_ocf_informational_vals[] = {
     INFORMATIONAL_VALS(0x0),
@@ -1200,7 +1864,7 @@ value_string_ext bthci_cmd_ocf_testing_vals_ext = VALUE_STRING_EXT_INIT(bthci_cm
 #define LOW_ENERGY_VALS(base)\
 /* Bluetooth Core 4.0 */ \
     { (base) | 0x001,  "LE Set Event Mask" }, \
-    { (base) | 0x002,  "LE Read Buffer Size" }, \
+    { (base) | 0x002,  "LE Read Buffer Size [v1]" }, \
     { (base) | 0x003,  "LE Read Local Supported Features" }, \
     { (base) | 0x005,  "LE Set Random Address" }, \
     { (base) | 0x006,  "LE Set Advertising Parameters" }, \
@@ -1212,30 +1876,32 @@ value_string_ext bthci_cmd_ocf_testing_vals_ext = VALUE_STRING_EXT_INIT(bthci_cm
     { (base) | 0x00C,  "LE Set Scan Enable" }, \
     { (base) | 0x00D,  "LE Create Connection" }, \
     { (base) | 0x00E,  "LE Create Connection Cancel" }, \
-    { (base) | 0x00F,  "LE Read White List Size" }, \
-    { (base) | 0x010,  "LE Clear White List" }, \
-    { (base) | 0x011,  "LE Add Device To White List" }, \
-    { (base) | 0x012,  "LE Remove Device From White List" }, \
+    { (base) | 0x00F,  "LE Read Filter Accept List Size" }, \
+    { (base) | 0x010,  "LE Clear Filter Accept List" }, \
+    { (base) | 0x011,  "LE Add Device To Filter Accept List" }, \
+    { (base) | 0x012,  "LE Remove Device From Filter Accept List" }, \
     { (base) | 0x013,  "LE Connection Update" }, \
     { (base) | 0x014,  "LE Set Host Channel Classification" }, \
     { (base) | 0x015,  "LE Read Channel Map" }, \
-    { (base) | 0x016,  "LE Read Remote Used Features" }, \
+    { (base) | 0x016,  "LE Read Remote Features" }, \
     { (base) | 0x017,  "LE Encrypt" }, \
     { (base) | 0x018,  "LE Rand" }, \
-    { (base) | 0x019,  "LE Start Encryption" }, \
+    { (base) | 0x019,  "LE Enable Encryption" }, \
     { (base) | 0x01A,  "LE Long Term Key Request Reply" }, \
     { (base) | 0x01B,  "LE Long Term Key Request Negative Reply" }, \
     { (base) | 0x01C,  "LE Read Supported States" }, \
-    { (base) | 0x01D,  "LE Receiver Test" }, \
-    { (base) | 0x01E,  "LE Transmitter Test" }, \
+    { (base) | 0x01D,  "LE Receiver Test [v1]" }, \
+    { (base) | 0x01E,  "LE Transmitter Test [v1]" }, \
     { (base) | 0x01F,  "LE Test End" }, \
+/* Bluetooth Core 4.1 */ \
     { (base) | 0x020,  "LE Remote Connection Parameter Request Reply" }, \
     { (base) | 0x021,  "LE Remote Connection Parameter Request Negative Reply" }, \
+/* Bluetooth Core 4.2 */ \
     { (base) | 0x022,  "LE Set Data Length" }, \
     { (base) | 0x023,  "LE Read Suggested Default Data Length" }, \
     { (base) | 0x024,  "LE Write Suggested Default Data Length" }, \
     { (base) | 0x025,  "LE Read Local P-256 Public Key" }, \
-    { (base) | 0x026,  "LE Generate DHKey" }, \
+    { (base) | 0x026,  "LE Generate DHKey [v1]" }, \
     { (base) | 0x027,  "LE Add Device to Resolving List" }, \
     { (base) | 0x028,  "LE Remove Device From Resolving List" }, \
     { (base) | 0x029,  "LE Clear Resolving List" }, \
@@ -1245,13 +1911,14 @@ value_string_ext bthci_cmd_ocf_testing_vals_ext = VALUE_STRING_EXT_INIT(bthci_cm
     { (base) | 0x02D,  "LE Set Address Resolution Enable" }, \
     { (base) | 0x02E,  "LE Set Resolvable Private Address Timeout" }, \
     { (base) | 0x02F,  "LE Read Maximum Data Length" }, \
+/* Bluetooth Core 5.0 */ \
     { (base) | 0x030,  "LE Read PHY" }, \
     { (base) | 0x031,  "LE Set Default PHY" }, \
     { (base) | 0x032,  "LE Set PHY" }, \
-    { (base) | 0x033,  "LE Enhanced Receiver Test" }, \
-    { (base) | 0x034,  "LE Enhanced Transmitter Test" }, \
+    { (base) | 0x033,  "LE Receiver Test [v2]" }, \
+    { (base) | 0x034,  "LE Transmitter Test [v2]" }, \
     { (base) | 0x035,  "LE Set Advertising Set Random Address" }, \
-    { (base) | 0x036,  "LE Set Extended Advertising Parameters" }, \
+    { (base) | 0x036,  "LE Set Extended Advertising Parameters [v1]" }, \
     { (base) | 0x037,  "LE Set Extended Advertising Data" }, \
     { (base) | 0x038,  "LE Set Extended Scan Response Data" }, \
     { (base) | 0x039,  "LE Set Extended Advertising Enable" }, \
@@ -1259,12 +1926,12 @@ value_string_ext bthci_cmd_ocf_testing_vals_ext = VALUE_STRING_EXT_INIT(bthci_cm
     { (base) | 0x03B,  "LE Read Number of Supported Advertising Sets" }, \
     { (base) | 0x03C,  "LE Remove Advertising Set" }, \
     { (base) | 0x03D,  "LE Clear Advertising Sets" }, \
-    { (base) | 0x03E,  "LE Set Periodic Advertising Parameters" }, \
+    { (base) | 0x03E,  "LE Set Periodic Advertising Parameters [v1]" }, \
     { (base) | 0x03F,  "LE Set Periodic Advertising Data" }, \
     { (base) | 0x040,  "LE Set Periodic Advertising Enable" }, \
     { (base) | 0x041,  "LE Set Extended Scan Parameters" }, \
     { (base) | 0x042,  "LE Set Extended Scan Enable" }, \
-    { (base) | 0x043,  "LE Extended Create Connection" }, \
+    { (base) | 0x043,  "LE Extended Create Connection [v1]" }, \
     { (base) | 0x044,  "LE Periodic Advertising Create Sync" }, \
     { (base) | 0x045,  "LE Periodic Advertising Create Sync Cancel" }, \
     { (base) | 0x046,  "LE Periodic Advertising Terminate Sync" }, \
@@ -1275,7 +1942,91 @@ value_string_ext bthci_cmd_ocf_testing_vals_ext = VALUE_STRING_EXT_INIT(bthci_cm
     { (base) | 0x04B,  "LE Read Transmit Power" }, \
     { (base) | 0x04C,  "LE Read RF Path Compensation" }, \
     { (base) | 0x04D,  "LE Write RF Path Compensation" }, \
-    { (base) | 0x04E,  "LE Set Privacy Mode" }
+    { (base) | 0x04E,  "LE Set Privacy Mode" }, \
+/* Bluetooth Core 5.1 */ \
+    { (base) | 0x04F,  "LE Receiver Test [v3]" }, \
+    { (base) | 0x050,  "LE Transmitter Test [v3]" }, \
+    { (base) | 0x051,  "LE Set Connectionless CTE Transmit Parameters" }, \
+    { (base) | 0x052,  "LE Set Connectionless CTE Transmit Enable" }, \
+    { (base) | 0x053,  "LE Set Connectionless IQ Sampling Enable" }, \
+    { (base) | 0x054,  "LE Set Connection CTE Receive Parameters" }, \
+    { (base) | 0x055,  "LE Set Connection CTE Transmit Parameters" }, \
+    { (base) | 0x056,  "LE Connection CTE Request Enable" }, \
+    { (base) | 0x057,  "LE Connection CTE Response Enable" }, \
+    { (base) | 0x058,  "LE Read Antenna Information" }, \
+    { (base) | 0x059,  "LE Set Periodic Advertising Receive Enable" }, \
+    { (base) | 0x05A,  "LE Periodic Advertising Sync Transfer" }, \
+    { (base) | 0x05B,  "LE Periodic Advertising Set Info Transfer" }, \
+    { (base) | 0x05C,  "LE Set Periodic Advertising Sync Transfer Parameters" }, \
+    { (base) | 0x05D,  "LE Set Default Periodic Advertising Sync Transfer Parameters" }, \
+    { (base) | 0x05E,  "LE Generate DHKey [v2]" }, \
+    { (base) | 0x05F,  "LE Modify Sleep Clock Accuracy" }, \
+/* Bluetooth Core 5.2 */ \
+    { (base) | 0x060,  "LE Read Buffer Size [v2]" }, \
+    { (base) | 0x061,  "LE Read ISO Tx Sync" }, \
+    { (base) | 0x062,  "LE Set CIG Parameters" }, \
+    { (base) | 0x063,  "LE Set CIG Parameters Test" }, \
+    { (base) | 0x064,  "LE Create CIS" }, \
+    { (base) | 0x065,  "LE Remove CIG" }, \
+    { (base) | 0x066,  "LE Accept CIS Request" }, \
+    { (base) | 0x067,  "LE Reject CIS Request" }, \
+    { (base) | 0x068,  "LE Create BIG" }, \
+    { (base) | 0x069,  "LE Create BIG Test" }, \
+    { (base) | 0x06A,  "LE Terminate BIG" }, \
+    { (base) | 0x06B,  "LE BIG Create Sync" }, \
+    { (base) | 0x06C,  "LE BIG Terminate Sync" }, \
+    { (base) | 0x06D,  "LE Request Peer SCA" }, \
+    { (base) | 0x06E,  "LE Setup ISO Data Path" }, \
+    { (base) | 0x06F,  "LE Remove ISO Data Path" }, \
+    { (base) | 0x070,  "LE ISO Transmit Test" }, \
+    { (base) | 0x071,  "LE ISO Receive Test" }, \
+    { (base) | 0x072,  "LE ISO Read Test Counters" }, \
+    { (base) | 0x073,  "LE ISO Test End" }, \
+    { (base) | 0x074,  "LE Set Host Feature [v1]" }, \
+    { (base) | 0x075,  "LE Read ISO Link Quality" }, \
+    { (base) | 0x076,  "LE Enhanced Read Transmit Power Level" }, \
+    { (base) | 0x077,  "LE Read Remote Transmit Power Level" }, \
+    { (base) | 0x078,  "LE Set Path Loss Reporting Parameters" }, \
+    { (base) | 0x079,  "LE Set Path Loss Reporting Enable" }, \
+    { (base) | 0x07A,  "LE Set Transmit Power Reporting Enable" }, \
+    { (base) | 0x07B,  "LE Transmitter Test [v4]" }, \
+/* Bluetooth Core 5.3 */ \
+    { (base) | 0x07C,  "LE Set Data Related Address Changes" }, \
+    { (base) | 0x07D,  "LE Set Default Subrate" }, \
+    { (base) | 0x07E,  "LE Subrate Request" }, \
+/* Bluetooth Core 5.4 */ \
+    { (base) | 0x07F,  "LE Set Extended Advertising Parameters [v2]" }, \
+    { (base) | 0x080,  "LE Set Decision Data" }, /* Bluetooth Core 6.0 */ \
+    { (base) | 0x081,  "LE Set Decision Instructions" }, /* Bluetooth Core 6.0 */ \
+    { (base) | 0x082,  "LE Set Periodic Advertising Subevent Data" }, \
+    { (base) | 0x083,  "LE Set Periodic Advertising Response Data" }, \
+    { (base) | 0x084,  "LE Set Periodic Sync Subevent" }, \
+    { (base) | 0x085,  "LE Extended Create Connection [v2]" }, \
+    { (base) | 0x086,  "LE Set Periodic Advertising Parameters [v2]" }, \
+/* Bluetooth Core 6.0 */ \
+    { (base) | 0x087,  "LE Read All Local Supported Features" }, \
+    { (base) | 0x088,  "LE Read All Remote Features" }, \
+    { (base) | 0x089,  "LE CS Read Local Supported Capabilities" }, \
+    { (base) | 0x08a,  "LE CS Read Remote Supported Capabilities" }, \
+    { (base) | 0x08b,  "LE CS Write Cached Remote Supported Capabilities" }, \
+    { (base) | 0x08c,  "LE CS Security Enable" }, \
+    { (base) | 0x08d,  "LE CS Set Default Settings" }, \
+    { (base) | 0x08e,  "LE CS Read Remote FAE Table" }, \
+    { (base) | 0x08f,  "LE CS Write Cached Remote FAE Table" }, \
+    { (base) | 0x090,  "LE CS Create Config" }, \
+    { (base) | 0x091,  "LE CS Remove Config" }, \
+    { (base) | 0x092,  "LE CS Set Channel Classification" }, \
+    { (base) | 0x093,  "LE CS Set Procedure Parameters" }, \
+    { (base) | 0x094,  "LE CS Procedure Enable" }, \
+    { (base) | 0x095,  "LE CS Test" }, \
+    { (base) | 0x096,  "LE CS Test End" }, \
+    { (base) | 0x097,  "LE Set Host Feature [v2]" }, \
+    { (base) | 0x098,  "LE Add Device To Monitored Advertisers List" }, \
+    { (base) | 0x099,  "LE Remove Device From Monitored Advertisers List" }, \
+    { (base) | 0x09A,  "LE Clear Monitored Advertisers List" }, \
+    { (base) | 0x09B,  "LE Read Monitored Advertisers List Size" }, \
+    { (base) | 0x09C,  "LE Enable Monitored Advertisers" }, \
+    { (base) | 0x09D,  "LE Frame Space Update" }
 
 static const value_string bthci_cmd_ocf_low_energy_vals[] = {
     LOW_ENERGY_VALS(0x0),
@@ -1366,6 +2117,10 @@ static const value_string bthci_cmd_status_vals[] = {
     {0x42, "Unknown Advertising Identifier"},
     {0x43, "Limit Reached"},
     {0x44, "Operation Cancelled by Host"},
+    {0x45, "Packet Too Long"},
+    {0x46, "Too Late"},
+    {0x47, "Too Early"},
+    {0x48, "Insufficient Channels"},
     {0, NULL }
 };
 value_string_ext bthci_cmd_status_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_status_vals);
@@ -1384,7 +2139,7 @@ static const value_string bthci_cmd_cod_major_device_class_vals[] = {
     {0x1F, "Uncategorized: device code not specified"},
     {0, NULL }
 };
-value_string_ext bthci_cmd_cod_major_device_class_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_major_device_class_vals);
+static value_string_ext bthci_cmd_cod_major_device_class_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_major_device_class_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_computer_vals[] = {
     { 0x00,  "Uncategorized, code for device not assigned" },
@@ -1397,7 +2152,7 @@ static const value_string bthci_cmd_cod_minor_device_class_computer_vals[] = {
     { 0x07,  "Tablet" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_computer_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_computer_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_computer_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_computer_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_phone_vals[] = {
     { 0x00,  "Uncategorized, code for device not assigned" },
@@ -1408,7 +2163,7 @@ static const value_string bthci_cmd_cod_minor_device_class_phone_vals[] = {
     { 0x05,  "Common ISDN access" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_phone_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_phone_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_phone_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_phone_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_lan_net_load_factor_vals[] = {
     { 0x00,  "Fully available" },
@@ -1421,13 +2176,13 @@ static const value_string bthci_cmd_cod_minor_device_class_lan_net_load_factor_v
     { 0x07,  "No service available" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_lan_net_load_factor_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_lan_net_load_factor_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_lan_net_load_factor_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_lan_net_load_factor_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_lan_net_type_vals[] = {
     { 0x00,  "Uncategorized (used if no others apply)" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_lan_net_type_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_lan_net_type_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_lan_net_type_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_lan_net_type_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_audio_video_vals[] = {
     { 0x00,  "Uncategorized, code not assigned" },
@@ -1449,7 +2204,7 @@ static const value_string bthci_cmd_cod_minor_device_class_audio_video_vals[] = 
     { 0x12,  "Gaming/Toy" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_audio_video_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_audio_video_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_audio_video_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_audio_video_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_peripheral_class_vals[] = {
     { 0x00,  "Not Keyboard / Not Pointing Device" },
@@ -1458,7 +2213,7 @@ static const value_string bthci_cmd_cod_minor_device_class_peripheral_class_vals
     { 0x03,  "Combo keyboard/pointing device" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_peripheral_class_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_peripheral_class_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_peripheral_class_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_peripheral_class_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_peripheral_type_vals[] = {
     { 0x00,  "Uncategorized device" },
@@ -1473,14 +2228,14 @@ static const value_string bthci_cmd_cod_minor_device_class_peripheral_type_vals[
     { 0x09,  "Handheld gestural input device" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_peripheral_type_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_peripheral_type_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_peripheral_type_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_peripheral_type_vals);
 
 
 static const value_string bthci_cmd_cod_minor_device_class_imaging_type_vals[] = {
     { 0x00,  "Uncategorized, default" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_imaging_type_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_imaging_type_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_imaging_type_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_imaging_type_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_wearable_vals[] = {
     { 0x01,  "Wristwatch" },
@@ -1490,7 +2245,7 @@ static const value_string bthci_cmd_cod_minor_device_class_wearable_vals[] = {
     { 0x05,  "Glasses" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_wearable_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_wearable_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_wearable_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_wearable_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_toy_vals[] = {
     { 0x01,  "Robot" },
@@ -1500,7 +2255,7 @@ static const value_string bthci_cmd_cod_minor_device_class_toy_vals[] = {
     { 0x05,  "Game" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_toy_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_toy_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_toy_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_toy_vals);
 
 static const value_string bthci_cmd_cod_minor_device_class_health_vals[] = {
     { 0x00,  "Undefined" },
@@ -1521,7 +2276,7 @@ static const value_string bthci_cmd_cod_minor_device_class_health_vals[] = {
     { 0x0F,  "Personal Mobility Device" },
     { 0, NULL }
 };
-value_string_ext bthci_cmd_cod_minor_device_class_health_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_health_vals);
+static value_string_ext bthci_cmd_cod_minor_device_class_health_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_cod_minor_device_class_health_vals);
 
 /* https://www.bluetooth.com/specifications/assigned-numbers/generic-access-profile */
 static const value_string bthci_cmd_eir_data_type_vals[] = {
@@ -1542,7 +2297,7 @@ static const value_string bthci_cmd_eir_data_type_vals[] = {
     {0x0F, "Simple Pairing Randomizer R" },
     {0x10, "Device ID / Security Manager TK Value" },
     {0x11, "Security Manager Out of Band Flags" },
-    {0x12, "Slave Connection Interval Range" },
+    {0x12, "Peripheral Connection Interval Range" },
     {0x14, "List of 16-bit Service Solicitation UUIDs" },
     {0x15, "List of 128-bit Service Solicitation UUIDs" },
     {0x16, "Service Data - 16 bit UUID" },
@@ -1567,6 +2322,11 @@ static const value_string bthci_cmd_eir_data_type_vals[] = {
     {0x29, "PB-ADV" },
     {0x2A, "Mesh Message" },
     {0x2B, "Mesh Beacon" },
+    {0x2C, "BIGInfo" },
+    {0x2D, "Broadcast Code" },
+    {0x2E, "Resolvable Set Identifier" },
+    {0x2F, "Advertising Interval - long" },
+    {0x30, "Broadcast_Name" },
     {0x3D, "3D Information Data" },
     {0xFF, "Manufacturer Specific" },
     {   0, NULL }
@@ -1745,17 +2505,17 @@ const value_string bthci_cmd_oob_data_present_vals[] = {
 
 static const value_string bthci_cmd_auth_req_vals[] = {
     {0x00, "MITM Protection Not Required - No Bonding. Numeric Comparison, Automatic Accept Allowed, No Secure Connection" },
-    {0x01, "MITM Protection Required - No Bonding. Use IO Capabilty To Determine Procedure, No Secure Connection" },
+    {0x01, "MITM Protection Required - No Bonding. Use IO Capability To Determine Procedure, No Secure Connection" },
     {0x02, "MITM Protection Not Required - Dedicated Bonding. Numeric Comparison, Automatic Accept Allowed, No Secure Connection" },
-    {0x03, "MITM Protection Required - Dedicated Bonding. Use IO Capabilty To Determine Procedure, No Secure Connection" },
+    {0x03, "MITM Protection Required - Dedicated Bonding. Use IO Capability To Determine Procedure, No Secure Connection" },
     {0x04, "MITM Protection Not Required - General Bonding. Numeric Comparison, Automatic Accept Allowed, No Secure Connection" },
-    {0x05, "MITM Protection Required - General Bonding. Use IO Capabilty To Determine Procedure, No Secure Connection" },
+    {0x05, "MITM Protection Required - General Bonding. Use IO Capability To Determine Procedure, No Secure Connection" },
     {0x08, "MITM Protection Not Required - No Bonding. Numeric Comparison, Automatic Accept Allowed, Secure Connection" },
-    {0x09, "MITM Protection Required - No Bonding. Use IO Capabilty To Determine Procedure, Secure Connection" },
+    {0x09, "MITM Protection Required - No Bonding. Use IO Capability To Determine Procedure, Secure Connection" },
     {0x0A, "MITM Protection Not Required - Dedicated Bonding. Numeric Comparison, Automatic Accept Allowed,  Secure Connection" },
-    {0x0B, "MITM Protection Required - Dedicated Bonding. Use IO Capabilty To Determine Procedure, Secure Connection " },
+    {0x0B, "MITM Protection Required - Dedicated Bonding. Use IO Capability To Determine Procedure, Secure Connection " },
     {0x0C, "MITM Protection Not Required - General Bonding. Numeric Comparison, Automatic Accept Allowed, Secure Connection" },
-    {0x0D, "MITM Protection Required - General Bonding. Use IO Capabilty To Determine Procedure, Secure Connection" },
+    {0x0D, "MITM Protection Required - General Bonding. Use IO Capability To Determine Procedure, Secure Connection" },
     {   0, NULL }
 };
 value_string_ext bthci_cmd_auth_req_vals_ext = VALUE_STRING_EXT_INIT(bthci_cmd_auth_req_vals);
@@ -1768,15 +2528,27 @@ const value_string bthci_cmd_address_types_vals[] = {
     { 0, NULL }
 };
 
+static const value_string cmd_base_address_types_vals[] = {
+    { 0x00, "Public Address" },
+    { 0x01, "Random Address" },
+    { 0, NULL }
+};
+
+static const value_string cmd_identity_address_types_vals[] = {
+    { 0x00, "Public Identity Address" },
+    { 0x01, "Random (Static) Identity Address" },
+    { 0, NULL }
+};
+
 static const value_string cmd_role_vals[] = {
-    {0x00, "Change own Role to Master for this BD_ADDR"},
-    {0x01, "Change own Role to Slave for this BD_ADDR"},
+    {0x00, "Change own Role to Central for this BD_ADDR"},
+    {0x01, "Change own Role to Peripheral for this BD_ADDR"},
     {0, NULL }
 };
 
 static const value_string cmd_acr_role_vals[] = {
-    {0x00, "Become the Master for this connection. The LM will perform the role switch."},
-    {0x01, "Remain the Slave for this connection. The LM will NOT perform the role switch."},
+    {0x00, "Become the Central for this connection. The LM will perform the role switch."},
+    {0x01, "Remain the Peripheral for this connection. The LM will NOT perform the role switch."},
     {0, NULL }
 };
 
@@ -1809,6 +2581,12 @@ static const value_string cmd_inquiry_result_filter_condition_types[] = {
     {0x00, "A new device responded" },
     {0x01, "A device with the specified Class of Device responded" },
     {0x02, "A device with the specified BD_ADDR responded" },
+    {0, NULL }
+};
+
+static const value_string cmd_flow_directions[] = {
+    {0x00, "Outgoing Flow" },
+    {0x01, "Incoming Flow" },
     {0, NULL }
 };
 
@@ -1955,8 +2733,8 @@ const value_string bthci_cmd_page_scan_period_modes[] = {
 };
 
 static const value_string cmd_role_switch_modes[] = {
-    {0, "Local device will be master, and will not accept a master-slave switch request." },
-    {1, "Local device may be master, or may become slave after accepting a master slave switch." },
+    {0, "Local device will be Central, and will not accept a switch request." },
+    {1, "Local device may be Central, or may become Peripheral after accepting a switch." },
     {0, NULL }
 };
 
@@ -2031,9 +2809,9 @@ static const value_string cmd_le_advertising_types[] = {
 
 static const value_string cmd_le_advertising_filter_policy[] = {
     { 0x00, "Allow Scan Req from Any, Allow Connect Req from Any" },
-    { 0x01, "Allow Scan Req from White List Only, Allow Connect Req from Any" },
-    { 0x02, "Allow Scan Req from Any, Allow Connect Req from White List Only" },
-    { 0x03, "Allow Scan Req from White List Only, Allow Connect Req from White List Only." },
+    { 0x01, "Allow Scan Req from Filter Accept List Only, Allow Connect Req from Any" },
+    { 0x02, "Allow Scan Req from Any, Allow Connect Req from Filter Accept List Only" },
+    { 0x03, "Allow Scan Req from Filter Accept List Only, Allow Connect Req from Filter Accept List Only." },
     { 0, NULL }
 };
 
@@ -2043,15 +2821,31 @@ static const value_string cmd_le_scan_types[] = {
     { 0, NULL }
 };
 
-static const value_string cmd_le_scan_filter_policy[] = {
-    { 0x00, "Accept all advertisements. Ignore directed advertisements not addressed to this device" },
-    { 0x01, "Ignore advertisements from devices not in the white list only. Ignore directed advertisements not addressed to this device" },
+static const value_string cmd_decision_mode_filter_policy[] = {
+    { 0x00, "No-decisions Mode" },
+    { 0x01, "Process All PDUs" },
+    { 0x03, "Process Only Decision PDUs" },
     { 0, NULL }
 };
 
 static const value_string cmd_init_filter_policy[] = {
+    { 0x00, "Use provided Peer Address. Ignore decision PDUs" },
+    { 0x01, "Use Filter Accept List. Ignore decision PDUs" },
+    { 0x02, "Process only decision PDUs. Filter Accept List not used, Ignore provided Peer Address" },
+    { 0x03, "Use Filter Accept List for all PDUs" },
+    { 0x04, "Process all decision PDUs. Use Filter Accept List for other PDUs." },
+    { 0, NULL }
+};
+
+static const value_string cmd_sync_filter_policy[] = {
     { 0x00, "Use Peer Address" },
-    { 0x01, "Use White List. Ignore Peer Address" },
+    { 0x01, "Use Periodic Advertiser List. Ignore Peer Address" },
+    { 0, NULL }
+};
+
+static const value_string cmd_privacy_mode[] = {
+    { 0x00, "Use Network Privacy Mode" },
+    { 0x01, "Use Device Privacy Mode" },
     { 0, NULL }
 };
 
@@ -2102,19 +2896,22 @@ static const value_string cmd_le_adv_data_operation[] = {
     { 0x01, "First fragment of fragmented data" },
     { 0x02, "Last fragment of fragmented data" },
     { 0x03, "Complete scan response data" },
+    { 0x04, "Unchanged Data, DID update only" },
     { 0, NULL }
 };
 
 static const value_string cmd_le_adv_data_frag_pref[] = {
-    { 0x00, "The Controller may fragment all Host data" },
-    { 0x01, "The Controller should not fragment or should minimize fragmentation of Host data" },
+    { 0x00, "Controller may fragment all Host data" },
+    { 0x01, "Controller should not fragment or should minimize fragmentation of Host data" },
     { 0, NULL }
 };
 
 static const value_string cmd_le_phy_options_vals[] = {
-    { 0x00, "The Host has no preferred coding on the LE Coded PHY" },
-    { 0x01, "The Host prefers S=2 coding on the LE Coded PHY" },
-    { 0x02, "The Host prefers S=8 coding on the LE Coded PHY" },
+    { 0x00, "Host has no preferred/required coding on LE Coded PHY" },
+    { 0x01, "Host prefers S=2 coding on LE Coded PHY" },
+    { 0x02, "Host prefers S=8 coding on LE Coded PHY" },
+    { 0x03, "Host requires S=2 coding on LE Coded PHY" },
+    { 0x04, "Host requires S=8 coding on LE Coded PHY" },
     { 0, NULL }
 };
 
@@ -2131,6 +2928,96 @@ static const value_string cmd_le_modulation_index_vals[] = {
     { 0x01, "Assume transmitter will have a stable modulation index" },
     { 0, NULL }
 };
+
+static const value_string cmd_cte_type_vals[] = {
+    { 0x00,  "AoA Constant Tone Extension" },
+    { 0x01,  "AoD Constant Tone Extension with 1 usec slots" },
+    { 0x02,  "AoD Constant Tone Extension with 2 usec slots" },
+    { 0xFF,  "No Constant Tone Extension" },
+    { 0, NULL }
+};
+value_string_ext bthci_cmd_cte_type_vals_ext = VALUE_STRING_EXT_INIT(cmd_cte_type_vals);
+
+static const value_string cmd_slot_durations_vals[] = {
+    { 0x01, "Switching and sampling slots are 1 usec each" },
+    { 0x02, "Switching and sampling slots are 2 usec each" },
+    { 0, NULL }
+};
+value_string_ext bthci_cmd_slot_durations_vals_ext = VALUE_STRING_EXT_INIT(cmd_slot_durations_vals);
+
+static const value_string cmd_sync_mode_vals[] = {
+    { 0x00, "No synchronize attempt, no LE Periodic Advertising Sync Transfer Received event sent to Host" },
+    { 0x01, "LE Periodic Advertising Sync Transfer Received event sent to Host. LE Periodic Advertising Report events disabled" },
+    { 0x02, "LE Periodic Advertising Sync Transfer Received event sent to Host. LE Periodic Advertising Report events enabled" },
+    { 0, NULL }
+};
+
+static const value_string cmd_key_type_vals[] = {
+    { 0x00, "Use the generated private key" },
+    { 0x01, "Use the debug private key" },
+    { 0, NULL }
+};
+
+static const value_string cmd_sca_action_vals[] = {
+    { 0x00, "Switch to a more accurate clock" },
+    { 0x01, "Switch to a less accurate clock" },
+    { 0, NULL }
+};
+
+static const value_string cmd_clock_accuray_vals[] = {
+    { 0x00, "251-500 ppm" },
+    { 0x01, "151-250 ppm" },
+    { 0x02, "101-150 ppm" },
+    { 0x03, "76-100 ppm" },
+    { 0x04, "51-75 ppm" },
+    { 0x05, "31-50 ppm" },
+    { 0x06, "21-30 ppm" },
+    { 0x07, "0-20 ppm" },
+    { 0, NULL }
+};
+value_string_ext bthci_cmd_clock_accuray_vals_ext = VALUE_STRING_EXT_INIT(cmd_clock_accuray_vals);
+
+static const value_string cmd_packing_vals[] = {
+    { 0x00, "Sequential" },
+    { 0x01, "Interleaved" },
+    { 0, NULL }
+};
+
+static const value_string cmd_framing_vals[] = {
+    { 0x00, "Unframed" },
+    { 0x01, "Framed, Segmentable Mode" },
+    { 0x02, "Framed, Unsegmented Mode" },
+    { 0, NULL }
+};
+value_string_ext bthci_cmd_framing_vals_ext = VALUE_STRING_EXT_INIT(cmd_framing_vals);
+
+static const value_string cmd_data_path_direction_vals[] = {
+    { 0x00, "Input (Host to Controller)" },
+    { 0x01, "Output (Controller to Host)" },
+    { 0, NULL }
+};
+
+static const value_string cmd_payload_type_vals[] = {
+    { 0x00, "Zero Length" },
+    { 0x01, "Variable Length" },
+    { 0x02, "Maximum Length" },
+    { 0, NULL }
+};
+
+static const value_string cmd_host_enabled_feature_bit_vals[] = {
+    { 32, "Isochronous Channels, Host Support" },
+    { 38, "Connection Subrating, Host Support" },
+    { 0, NULL }
+};
+
+static const value_string cmd_phy_and_coding_vals[] = {
+    { 0x01, "LE 1M" },
+    { 0x02, "LE 2M" },
+    { 0x03, "LE Coded, S=8" },
+    { 0x04, "LE Coded, S=2" },
+    { 0, NULL }
+};
+value_string_ext bthci_cmd_phy_and_coding_vals_ext = VALUE_STRING_EXT_INIT(cmd_phy_and_coding_vals);
 
 static const value_string disable_enable_vals[] = {
     { 0x00, "Disable" },
@@ -2183,7 +3070,7 @@ static const value_string mws_pattern_type_vals[] = {
     {0, NULL }
 };
 
-static const value_string csb_fragment_vals[] = {
+static const value_string cpb_fragment_vals[] = {
     { 0x00, "Continuation" },
     { 0x01, "Start" },
     { 0x02, "End" },
@@ -2191,18 +3078,162 @@ static const value_string csb_fragment_vals[] = {
     {0, NULL }
 };
 
+static const val64_string cmd_biginfo_le_phy_vals64[] = {
+    { 0x00, "LE 1M" },
+    { 0x01, "LE 2M" },
+    { 0x02, "LE Coded" },
+    { 0, NULL }
+};
+
+static const true_false_string tfs_offset_units = {
+    "300 usec",
+    "30 usec"
+};
+
+static const value_string adv_test_field_special[] = {
+    { 0x00, "Resolvable Tag" },
+    { 0x06, "Adv Mode" },
+    { 0x07, "RSSI" },
+    { 0x08, "Path Loss" },
+    { 0x09, "Adv Address" },
+    {0, NULL }
+};
+
+static const value_string cmd_cs_sync_phy_vals[] = {
+    { 0x01, "LE 1M" },
+    { 0x02, "LE 2M" },
+    { 0x03, "LE 2M 2BT" },
+    { 0, NULL }
+};
+
+static const value_string cmd_cs_role_vals[] = {
+    { 0x00, "Initiator" },
+    { 0x01, "Reflector" },
+    {0, NULL }
+};
+value_string_ext bthci_cmd_cs_role_vals_ext = VALUE_STRING_EXT_INIT(cmd_cs_role_vals);
+
+static const value_string cmd_aci_vals[] = {
+    { 0x00, "1:1" },
+    { 0x01, "2:1" },
+    { 0x02, "3:1" },
+    { 0x03, "4:1" },
+    { 0x04, "1:2" },
+    { 0x05, "1:3" },
+    { 0x06, "1:4" },
+    { 0x07, "2:2" },
+    {0, NULL }
+};
+value_string_ext bthci_cmd_aci_vals_ext = VALUE_STRING_EXT_INIT(cmd_aci_vals);
+
+static const value_string cmd_cs_create_context_vals[] = {
+    { 0x00, "Local Controller Only" },
+    { 0x01, "Local and Remote Controller" },
+    {0, NULL }
+};
+
+static const value_string cmd_cs_rtt_type_vals[] = {
+    { 0x00, "Coarse" },
+    { 0x01, "32-bit Sounding Sequence" },
+    { 0x02, "96-bit Sounding Sequence" },
+    { 0x03, "32-bit Random Sequence" },
+    { 0x04, "64-bit Random Sequence" },
+    { 0x05, "96-bit Random Sequence" },
+    { 0x06, "128-bit Random Sequence" },
+    {0, NULL }
+};
+value_string_ext bthci_cmd_cs_rtt_type_vals_ext = VALUE_STRING_EXT_INIT(cmd_cs_rtt_type_vals);
+
+static const value_string cmd_cs_ch_selection_type_vals[] = {
+    { 0x00, "#3b" },
+    { 0x01, "#3c" },
+    {0, NULL }
+};
+value_string_ext bthci_cmd_cs_ch_selection_type_vals_ext = VALUE_STRING_EXT_INIT(cmd_cs_ch_selection_type_vals);
+
+static const value_string cmd_cs_shape_vals[] = {
+    { 0x00, "Hat" },
+    { 0x01, "Cross (X)" },
+    {0, NULL }
+};
+value_string_ext bthci_cmd_cs_shape_vals_ext = VALUE_STRING_EXT_INIT(cmd_cs_shape_vals);
+
+static const value_string cmd_snr_control_vals[] = {
+    { 0x00, "18 dB" },
+    { 0x01, "21 dB" },
+    { 0x02, "24 dB" },
+    { 0x03, "27 dB" },
+    { 0x04, "30 dB" },
+    { 0xff, "Not applied" },
+    {0, NULL }
+};
+
+static const value_string cmd_tone_ext_vals[] = {
+    { 0x00, "No tone extension present" },
+    { 0x01, "Tone extension present for initiator" },
+    { 0x02, "Tone extension present for reflector" },
+    { 0x03, "Tone extension present for both" },
+    { 0x04, "Loop through all valid tone extension patterns" },
+    {0, NULL }
+};
+
+static const value_string cmd_tone_antenna_permutation_vals[] = {
+    { 0xff, "Loop through all valid indices starting from the lowest" },
+    {0, NULL }
+};
+
+static const value_string cmd_ss_marker_2_position_vals[] = {
+    { 0xff, "Sounding sequence or second marker is not present" },
+    {0, NULL }
+};
+
+static const value_string cmd_ss_marker_value_vals[] = {
+    { 0x00, "Use pattern '0011'" },
+    { 0x01, "Use pattern '1100'" },
+    { 0x02, "Loop through pattern '0011' and '1100'" },
+    {0, NULL }
+};
+
+static const value_string cmd_cs_sync_payload_pattern_vals[] = {
+    { 0x00, "PRBS9 sequence" },
+    { 0x01, "Repeated '11110000' sequence" },
+    { 0x02, "Repeated '10101010' sequence" },
+    { 0x03, "PRBS15 sequence" },
+    { 0x04, "Repeated '11111111' sequence" },
+    { 0x05, "Repeated '00000000' sequence" },
+    { 0x06, "Repeated '00001111' sequence" },
+    { 0x07, "Repeated '01010101' sequence" },
+    { 0x80, "Use CS_SYNC_User_Payload" },
+    {0, NULL }
+};
+
+static const value_string cs_sync_antenna_special[] = {
+    {0xfe, "Repetitive order, 1 to 4"},
+    {0xff, "Host has no recommendation"},
+    {0, NULL}
+};
+
+static void tx_power_setting(char *buf, int8_t value) {
+    if (value < 126)
+        snprintf(buf, ITEM_LABEL_LENGTH, "%i dBm", value);
+    else if (value == 126)
+        snprintf(buf, ITEM_LABEL_LENGTH, "Set to minimum");
+    else
+        snprintf(buf, ITEM_LABEL_LENGTH, "Set to maximum");
+}
+
 
 void proto_register_bthci_cmd(void);
 void proto_reg_handoff_bthci_cmd(void);
 void proto_register_btcommon(void);
 void proto_reg_handoff_btcommon(void);
 
-static void bthci_cmd_vendor_prompt(packet_info *pinfo _U_, gchar* result)
+static void bthci_cmd_vendor_prompt(packet_info *pinfo _U_, char* result)
 {
-    g_snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Vendor as");
+    snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Vendor as");
 }
 
-static gint dissect_coding_format(proto_tree *tree, int hf_x, tvbuff_t *tvb, gint offset, gint ett_x)
+static int dissect_coding_format(proto_tree *tree, int hf_x, tvbuff_t *tvb, int offset, int ett_x)
 {
     proto_item *sub_item;
     proto_tree *sub_tree;
@@ -2244,6 +3275,7 @@ dissect_bthci_cmd_cod_mask(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, pr
     proto_tree_add_item(cod_mask_tree, hf_bthci_cmd_cod_major_service_class_networking_mask, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     proto_tree_add_item(cod_mask_tree, hf_bthci_cmd_cod_major_service_class_positioning_mask, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     proto_tree_add_item(cod_mask_tree, hf_bthci_cmd_cod_major_service_class_reserved_mask, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+    proto_tree_add_item(cod_mask_tree, hf_bthci_cmd_cod_major_service_class_le_audio_mask, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     proto_tree_add_item(cod_mask_tree, hf_bthci_cmd_cod_major_service_class_limited_discoverable_mode_mask, tvb, offset, 2, ENC_LITTLE_ENDIAN);
 
     proto_tree_add_item(cod_mask_tree, hf_bthci_cmd_cod_major_device_class_mask, tvb, offset, 2, ENC_LITTLE_ENDIAN);
@@ -2253,7 +3285,7 @@ dissect_bthci_cmd_cod_mask(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, pr
 }
 
 static int
-dissect_bthci_cmd_flow_spec(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *tree, gboolean tx)
+dissect_bthci_cmd_flow_spec(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *tree, bool tx)
 {
     proto_item *ti_flow_spec;
     proto_tree *ti_flow_spec_subtree;
@@ -2278,18 +3310,45 @@ dissect_bthci_cmd_flow_spec(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, p
 }
 
 static int
+dissect_antenna_switching_pattern(tvbuff_t *tvb, int offset, proto_tree *tree)
+{
+    uint8_t length_antenna_pattern;
+
+    proto_tree_add_item(tree, hf_bthci_cmd_antenna_switching_pattern_length, tvb, offset, 1, ENC_NA);
+    length_antenna_pattern = tvb_get_uint8(tvb, offset);
+    offset += 1;
+
+    if (length_antenna_pattern > 0) {
+        proto_item *sub_item;
+        proto_tree *sub_tree;
+
+        sub_item = proto_tree_add_item(tree, hf_bthci_cmd_antenna_switching_pattern, tvb, offset, length_antenna_pattern, ENC_NA);
+        sub_tree = proto_item_add_subtree(sub_item, ett_pattern);
+        proto_item_append_text(sub_item, ": ");
+
+        while (length_antenna_pattern > 0) {
+            proto_tree_add_item(sub_tree, hf_bthci_cmd_antenna_id, tvb, offset, 1, ENC_NA);
+            proto_item_append_text(sub_item, "%d ", tvb_get_uint8(tvb, offset));
+            offset++;
+            length_antenna_pattern--;
+        }
+    }
+    return offset;
+}
+
+static int
 dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
-        proto_tree *tree, guint16 cmd_ocf, bluetooth_data_t *bluetooth_data)
+        proto_tree *tree, uint16_t cmd_ocf, bluetooth_data_t *bluetooth_data)
 {
     proto_item *item;
-    guint32     clock_value;
+    uint32_t    clock_value;
 
     switch (cmd_ocf) {
         case 0x0001: /* Inquiry */
             proto_tree_add_item(tree, hf_bthci_cmd_lap, tvb, offset, 3, ENC_LITTLE_ENDIAN);
             offset+=3;
             item = proto_tree_add_item(tree, hf_bthci_cmd_inq_length, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g sec)", 1.28*tvb_get_guint8(tvb, offset));
+            proto_item_append_text(item, " (%g sec)", 1.28*tvb_get_uint8(tvb, offset));
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_num_responses, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -2305,7 +3364,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             proto_tree_add_item(tree, hf_bthci_cmd_lap, tvb, offset, 3, ENC_LITTLE_ENDIAN);
             offset+=3;
             item = proto_tree_add_item(tree, hf_bthci_cmd_inq_length, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g sec)", 1.28*tvb_get_guint8(tvb, offset));
+            proto_item_append_text(item, " (%g sec)", 1.28*tvb_get_uint8(tvb, offset));
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_num_responses, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -2313,9 +3372,9 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
         case 0x0005: /* Create Connection */
             {
-            guint8  bd_addr[6];
+            uint8_t bd_addr[6];
 
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, bd_addr);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, bd_addr);
 
             proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_packet_type, ett_packet_type, hfx_bthci_cmd_packet_type, ENC_LITTLE_ENDIAN);
             offset += 2;
@@ -2335,12 +3394,12 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             proto_tree_add_item(tree, hf_bthci_cmd_allow_role_switch, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
 
-            if (!pinfo->fd->flags.visited) {
-                guint32           interface_id;
-                guint32           adapter_id;
-                guint32           bd_addr_oui;
-                guint32           bd_addr_id;
-                guint32           frame_number;
+            if (!pinfo->fd->visited) {
+                uint32_t          interface_id;
+                uint32_t          adapter_id;
+                uint32_t          bd_addr_oui;
+                uint32_t          bd_addr_id;
+                uint32_t          frame_number;
                 wmem_tree_key_t   key[6];
                 device_role_t    *device_role;
 
@@ -2365,7 +3424,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
                 device_role = (device_role_t *) wmem_new(wmem_file_scope(), device_role_t);
                 device_role->change_in_frame = frame_number;
-                device_role->role = ROLE_SLAVE;
+                device_role->role = ROLE_PERIPHERAL;
 
                 wmem_tree_insert32_array(bluetooth_data->bdaddr_to_role, key, device_role);
             }
@@ -2389,23 +3448,23 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             break;
 
         case 0x0008: /* Create Connection Cancel Request */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x0009: /* Accept Connection Request */ {
-            guint8  bd_addr[6];
+            uint8_t bd_addr[6];
 
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, bd_addr);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, bd_addr);
 
             proto_tree_add_item(tree, hf_bthci_cmd_acr_role, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset += 1;
 
-            if (!pinfo->fd->flags.visited) {
-                guint32           interface_id;
-                guint32           adapter_id;
-                guint32           bd_addr_oui;
-                guint32           bd_addr_id;
-                guint32           frame_number;
+            if (!pinfo->fd->visited) {
+                uint32_t          interface_id;
+                uint32_t          adapter_id;
+                uint32_t          bd_addr_oui;
+                uint32_t          bd_addr_id;
+                uint32_t          frame_number;
                 wmem_tree_key_t   key[6];
                 device_role_t    *device_role;
 
@@ -2430,7 +3489,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
                 device_role = (device_role_t *) wmem_new(wmem_file_scope(), device_role_t);
                 device_role->change_in_frame = frame_number;
-                device_role->role = ROLE_MASTER;
+                device_role->role = ROLE_CENTRAL;
 
                 wmem_tree_insert32_array(bluetooth_data->bdaddr_to_role, key, device_role);
             }
@@ -2438,34 +3497,34 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             break;
 
         case 0x000a: /* Reject Connection Request */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_reason, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             break;
 
         case 0x000b: /* Link Key Request Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_link_key, tvb, offset, 16, ENC_NA);
             offset+=16;
             break;
 
         case 0x000c: /* Link Key Request Negative Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x000d: /* PIN Code Request Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_pin_code_length ,tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_pin_code ,tvb, offset, 16, ENC_ASCII|ENC_NA);
+            proto_tree_add_item(tree, hf_bthci_cmd_pin_code ,tvb, offset, 16, ENC_ASCII);
             offset+=16;
             break;
 
         case 0x000e: /* PIN Code Request Negative Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x000f: /* Change Connection Packet Type */
@@ -2489,13 +3548,13 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             offset++;
             break;
 
-        case 0x0017: /* Master Link Key */
+        case 0x0017: /* Link Key Selection */
             proto_tree_add_item(tree, hf_bthci_cmd_key_flag, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             break;
 
         case 0x0019: /* Remote Name Request */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_page_scan_repetition_mode, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -2511,7 +3570,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             break;
 
         case 0x001a: /* Remote Name Request Cancel */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x001c: /* Read Remote Extended Features */
@@ -2527,7 +3586,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
                 proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                 offset+=2;
             } else {
-                offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+                offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             }
 
             proto_tree_add_item(tree, hf_bthci_cmd_transmit_bandwidth, tvb, offset, 4, ENC_LITTLE_ENDIAN);
@@ -2555,7 +3614,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
             break;
         case 0x002a: /* Reject Synchronous Connection Request */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_reason, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -2571,7 +3630,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             break;
 
         case 0x002b: /* IO Capability Response */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_io_capability, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -2582,7 +3641,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             break;
 
         case 0x0034: /* IO Capability Request Negative Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             proto_tree_add_item(tree, hf_bthci_cmd_reason, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             break;
@@ -2591,18 +3650,18 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
         case 0x002d: /* User Confirmation Request Negative Reply */
         case 0x002f: /* User Passkey Request Negative Reply */
         case 0x0033: /* Remote OOB Data Request Negative Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x002e: /* User Passkey Request Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_passkey, tvb, offset, 4, ENC_LITTLE_ENDIAN);
             offset+=4;
             break;
 
         case 0x0030: /* Remote OOB Data Request Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_hash_c, tvb, offset, 16, ENC_NA);
             offset+=16;
@@ -2633,8 +3692,8 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
         case 0x0039: /* Accept Logical Link */
             proto_tree_add_item(tree, hf_bthci_cmd_physical_link_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, TRUE);
-            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, FALSE);
+            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, true);
+            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, false);
             break;
 
         case 0x003a: /* Disconnect Logical Link */
@@ -2652,8 +3711,8 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
         case 0x003c: /* Flow Spec Modify */
             proto_tree_add_item(tree, hf_bthci_cmd_logical_link_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, TRUE);
-            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, FALSE);
+            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, true);
+            offset = dissect_bthci_cmd_flow_spec(tvb, offset, pinfo, tree, false);
             break;
 
         case 0x003D: /* Enhanced Setup Synchronous Connection */
@@ -2662,7 +3721,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
                 proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                 offset += 2;
             } else {
-                offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+                offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             }
 
             proto_tree_add_item(tree, hf_bthci_cmd_transmit_bandwidth, tvb, offset, 4, ENC_LITTLE_ENDIAN);
@@ -2733,7 +3792,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
             break;
         case 0x003F: /* Truncated Page */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_page_scan_repetition_mode, tvb, offset, 1, ENC_NA);
             offset += 1;
@@ -2747,7 +3806,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
             break;
         case 0x0040: /* Truncated Page Cancel */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             break;
 
@@ -2757,8 +3816,8 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             /* NOTE: No parameters */
             break;
 
-        case 0x0041: /* Set Connectionless Slave Broadcast */
-            proto_tree_add_item(tree, hf_bthci_cmd_connectionless_slave_broadcast, tvb, offset, 1, ENC_NA);
+        case 0x0041: /* Set Connectionless Peripheral Broadcast */
+            proto_tree_add_item(tree, hf_bthci_cmd_connectionless_peripheral_broadcast, tvb, offset, 1, ENC_NA);
             offset += 1;
 
             proto_tree_add_item(tree, hf_bthci_cmd_lt_addr, tvb, offset, 1, ENC_NA);
@@ -2776,15 +3835,15 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             proto_tree_add_item(tree, hf_bthci_cmd_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset += 2;
 
-            proto_tree_add_item(tree, hf_bthci_cmd_csb_supervision_to, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(tree, hf_bthci_cmd_cpb_supervision_to, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset += 2;
 
             break;
-        case 0x0042: /* Set Connectionless Slave Broadcast Receive */
-            proto_tree_add_item(tree, hf_bthci_cmd_connectionless_slave_broadcast_receive, tvb, offset, 1, ENC_NA);
+        case 0x0042: /* Set Connectionless Peripheral Broadcast Receive */
+            proto_tree_add_item(tree, hf_bthci_cmd_connectionless_peripheral_broadcast_receive, tvb, offset, 1, ENC_NA);
             offset += 1;
 
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_lt_addr, tvb, offset, 1, ENC_NA);
             offset += 1;
@@ -2795,27 +3854,27 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
             proto_tree_add_item(tree, hf_bthci_cmd_clock_offset_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
             offset += 4;
 
-            proto_tree_add_item(tree, hf_bthci_cmd_next_csb_clock, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(tree, hf_bthci_cmd_next_cpb_clock, tvb, offset, 4, ENC_LITTLE_ENDIAN);
             offset += 4;
 
-            proto_tree_add_item(tree, hf_bthci_cmd_csb_supervision_to, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(tree, hf_bthci_cmd_cpb_supervision_to, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset += 2;
 
             proto_tree_add_item(tree, hf_bthci_cmd_remote_timing_accuracy, tvb, offset, 1, ENC_NA);
             offset += 1;
 
-            proto_tree_add_item(tree, hf_bthci_cmd_csb_skip, tvb, offset, 1, ENC_NA);
+            proto_tree_add_item(tree, hf_bthci_cmd_cpb_skip, tvb, offset, 1, ENC_NA);
             offset += 1;
 
             proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_packet_type, ett_packet_type, hfx_bthci_cmd_packet_type, ENC_LITTLE_ENDIAN);
             offset += 2;
 
-            proto_tree_add_item(tree, hf_bthci_cmd_afh_channel_map, tvb, offset, 10, ENC_NA);
+            proto_tree_add_item(tree, hf_bthci_cmd_channel_map, tvb, offset, 10, ENC_NA);
             offset += 10;
 
             break;
         case 0x0044: /* Receive Synchronization Train */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_synchronization_scan_to, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset += 2;
@@ -2828,7 +3887,7 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
             break;
         case 0x0045: /* Remote OOB Extended Data Request Reply */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_c192, tvb, offset, 16, ENC_NA);
             offset += 16;
@@ -2852,57 +3911,37 @@ dissect_link_control_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 }
 
 static int
-dissect_link_policy_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, guint16 cmd_ocf, bluetooth_data_t *bluetooth_data)
+dissect_link_policy_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, uint16_t cmd_ocf, bluetooth_data_t *bluetooth_data)
 {
-    proto_item *item;
-    guint16     timeout;
-
     switch (cmd_ocf) {
         case 0x0001: /* Hold Mode */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_max_interval_hold, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_max_interval_hold, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_min_interval_hold, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_min_interval_hold, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
         case 0x0003: /* sniff mode */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_max_interval_sniff, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " slots (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_max_interval_sniff, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_min_interval_sniff, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " slots (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_min_interval_sniff, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_sniff_attempt, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            if (timeout>0) {
-                proto_item_append_text(item, " (%g msec)", (2*timeout-1)*0.625);
-            } else {
-                proto_item_append_text(item, " (0 msec)");
-            }
+            proto_tree_add_item(tree, hf_bthci_cmd_sniff_attempt, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " slots (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+            proto_tree_add_item(tree, hf_bthci_cmd_sniff_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
         case 0x0005: /* Park Mode */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_max_interval_beacon, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_max_interval_beacon, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_min_interval_beacon, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_min_interval_beacon, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
@@ -2924,7 +3963,7 @@ dissect_link_policy_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tre
             break;
 
         case 0x000b: /* Switch Role */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_role, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -2955,6 +3994,8 @@ dissect_link_policy_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tre
             offset+=2;
             proto_tree_add_item(tree, hf_bthci_cmd_flags, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_flow_direction, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_service_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_token_rate, tvb, offset, 4, ENC_LITTLE_ENDIAN);
@@ -2970,17 +4011,11 @@ dissect_link_policy_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tre
         case 0x0011: /* Sniff Subrating */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-
-            item = proto_tree_add_item(tree, hf_bthci_cmd_max_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " slots (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_max_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-
-            item = proto_tree_add_item(tree, hf_bthci_cmd_min_remote_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " slots (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_min_remote_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-
-            item = proto_tree_add_item(tree, hf_bthci_cmd_min_local_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " slots (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_min_local_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
@@ -2998,12 +4033,11 @@ dissect_link_policy_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tre
 
 static int
 dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
-        proto_tree *tree, guint16 cmd_ocf, bluetooth_data_t *bluetooth_data,
+        proto_tree *tree, uint16_t cmd_ocf, bluetooth_data_t *bluetooth_data,
         bthci_cmd_data_t  *bthci_cmd_data)
 {
     proto_item *item;
-    guint16     timeout;
-    guint8      filter_type, filter_condition_type, num8;
+    uint8_t     filter_type, filter_condition_type, num8;
     int         i;
 
     switch (cmd_ocf) {
@@ -3074,14 +4108,14 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
 
         case 0x0005: /* Set Event Filter */
             proto_tree_add_item(tree, hf_bthci_cmd_filter_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            filter_type = tvb_get_guint8(tvb, 3);
+            filter_type = tvb_get_uint8(tvb, 3);
             offset++;
             switch (filter_type) {
 
                 case 0x01: /* Inquiry Result Filter */
                     proto_tree_add_item(tree, hf_bthci_cmd_inquiry_result_filter_condition_type,
                             tvb, offset, 1, ENC_LITTLE_ENDIAN);
-                    filter_condition_type = tvb_get_guint8(tvb, offset);
+                    filter_condition_type = tvb_get_uint8(tvb, offset);
                     offset++;
                     switch (filter_condition_type) {
                         case 0x01:
@@ -3092,7 +4126,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
                             break;
 
                         case 0x02:
-                            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+                            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
                             break;
 
                         default:
@@ -3104,7 +4138,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
                 case 0x02: /* Connection Setup Filter */
                     proto_tree_add_item(tree, hf_bthci_cmd_connection_setup_filter_condition_type,
                             tvb, offset, 1, ENC_LITTLE_ENDIAN);
-                    filter_condition_type = tvb_get_guint8(tvb, offset);
+                    filter_condition_type = tvb_get_uint8(tvb, offset);
                     offset++;
                     switch (filter_condition_type) {
                         case 0x00:
@@ -3123,7 +4157,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
                             break;
 
                         case 0x02:
-                            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+                            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
                             proto_tree_add_item(tree, hf_bthci_cmd_auto_acc_flag, tvb, offset, 1, ENC_LITTLE_ENDIAN);
                             offset++;
@@ -3147,7 +4181,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             break;
 
         case 0x000d: /* Read Stored Link Key */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_read_all_flag, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -3155,18 +4189,18 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
 
         case 0x0011: /* Write Stored Link Key */
             proto_tree_add_item(tree, hf_bthci_cmd_num_link_keys, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            num8 = tvb_get_guint8(tvb, offset);
+            num8 = tvb_get_uint8(tvb, offset);
             offset += 1;
 
             for (i = 0; i < num8; i++) {
-                offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+                offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
                 proto_tree_add_item(tree, hf_bthci_cmd_link_key, tvb, offset, 16, ENC_NA);
                 offset += 16;
             }
             break;
 
         case 0x0012: /* Delete Stored Link Key */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_delete_all_flag, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
@@ -3174,29 +4208,21 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
 
         case 0x0013: /* Change Local Name */
             proto_tree_add_item(tree, hf_bthci_cmd_device_name, tvb, offset, 248, ENC_UTF_8 | ENC_NA);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
+            if (!pinfo->fd->visited && bthci_cmd_data) {
                 bthci_cmd_data->data.name = tvb_get_string_enc(wmem_file_scope(), tvb, offset, 248, ENC_UTF_8);
             }
             offset += 248;
             break;
 
         case 0x0016: /* Write Connection Accept Timeout */
-            item = proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
         case 0x0018: /* Write Page Timeout */
-            item = proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            if (timeout > 0) {
-                proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
-            } else {
-                proto_item_append_text(item, " Illegal Page Timeout");
-            }
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.page_timeout = timeout;
+            proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.page_timeout = tvb_get_letohs(tvb, offset);
             }
             offset+=2;
             break;
@@ -3204,8 +4230,8 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
         case 0x001a: /* Write Scan Enable */
             proto_tree_add_item(tree, hf_bthci_cmd_scan_enable,
                     tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.scan = tvb_get_guint8(tvb, offset);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.scan = tvb_get_uint8(tvb, offset);
             }
             offset++;
             break;
@@ -3213,24 +4239,24 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
         case 0x0020: /* Write Authentication Enable */
             proto_tree_add_item(tree, hf_bthci_cmd_authentication_enable,
                     tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.authentication = tvb_get_guint8(tvb, offset);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.authentication = tvb_get_uint8(tvb, offset);
             }
             offset++;
             break;
 
         case 0x0022: /* Write Encryption Mode */
             proto_tree_add_item(tree, hf_bthci_cmd_encrypt_mode, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.encryption = tvb_get_guint8(tvb, offset);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.encryption = tvb_get_uint8(tvb, offset);
             }
             offset++;
             break;
 
         case 0x0024: /* Write Class of Device */
             call_dissector(btcommon_cod_handle, tvb_new_subset_length(tvb, offset, 3), pinfo, tree);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.class_of_device = tvb_get_guint24(tvb, offset, ENC_LITTLE_ENDIAN);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.class_of_device = tvb_get_uint24(tvb, offset, ENC_LITTLE_ENDIAN);
             }
             offset += 3;
             break;
@@ -3248,8 +4274,8 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
                     tvb, offset, 2, ENC_LITTLE_ENDIAN);
             proto_tree_add_item(tree, hf_bthci_cmd_air_coding_format,
                     tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.voice_setting = tvb_get_guint16(tvb, offset, ENC_LITTLE_ENDIAN);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.voice_setting = tvb_get_uint16(tvb, offset, ENC_LITTLE_ENDIAN);
             }
             offset+=2;
             break;
@@ -3257,13 +4283,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
         case 0x0028: /* Write Automatic Flush Timeout */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            if (timeout>0) {
-                proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
-            } else {
-                proto_item_append_text(item, " (= No Automatic Flush )");
-            }
+            proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
@@ -3318,18 +4338,18 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
                     tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
 
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.mtus.acl_mtu     = tvb_get_guint16(tvb, offset - 7, ENC_LITTLE_ENDIAN);
-                bthci_cmd_data->data.mtus.sco_mtu     = tvb_get_guint8(tvb,  offset - 5);
-                bthci_cmd_data->data.mtus.acl_packets = tvb_get_guint16(tvb, offset - 4, ENC_LITTLE_ENDIAN);
-                bthci_cmd_data->data.mtus.sco_packets = tvb_get_guint16(tvb, offset - 2, ENC_LITTLE_ENDIAN);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.mtus.acl_mtu     = tvb_get_uint16(tvb, offset - 7, ENC_LITTLE_ENDIAN);
+                bthci_cmd_data->data.mtus.sco_mtu     = tvb_get_uint8(tvb,  offset - 5);
+                bthci_cmd_data->data.mtus.acl_packets = tvb_get_uint16(tvb, offset - 4, ENC_LITTLE_ENDIAN);
+                bthci_cmd_data->data.mtus.sco_packets = tvb_get_uint16(tvb, offset - 2, ENC_LITTLE_ENDIAN);
             }
             break;
 
         case 0x0035: /* Host Number Of Completed Packets */
             proto_tree_add_item(tree, hf_bthci_cmd_num_handles,
                     tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            num8 = tvb_get_guint8(tvb, offset);
+            num8 = tvb_get_uint8(tvb, offset);
             offset++;
 
             for (i=0; i<num8; i++) {
@@ -3347,20 +4367,13 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle,
                     tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_timeout,
-                    tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            timeout = tvb_get_letohs(tvb, offset);
-            if (timeout>0) {
-                proto_item_append_text(item, " slots (%g msec)", timeout*0.625);
-            } else {
-                proto_item_append_text(item, " (= No Link Supervision Timeout)");
-            }
+            proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
         case 0x003a: /* Write Current IAC LAP */
             proto_tree_add_item(tree, hf_bthci_cmd_num_curr_iac, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            num8 = tvb_get_guint8(tvb, offset);
+            num8 = tvb_get_uint8(tvb, offset);
             offset++;
             for (i=0; i<num8; i++) {
                 proto_tree_add_item(tree, hf_bthci_cmd_iac_lap, tvb, offset+(i*3), 3, ENC_LITTLE_ENDIAN);
@@ -3380,7 +4393,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             break;
 
         case 0x003f: /* Set AFH Host Channel Classification */
-            proto_tree_add_item(tree, hf_bthci_cmd_afh_ch_classification, tvb, offset, 10, ENC_NA);
+            proto_tree_add_item(tree, hf_bthci_cmd_ch_classification, tvb, offset, 10, ENC_NA);
             offset+=10;
             break;
 
@@ -3410,8 +4423,8 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
 
         case 0x0045: /* Write Inquiry Mode */
             proto_tree_add_item(tree, hf_bthci_cmd_inq_mode, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.inquiry_mode = tvb_get_guint8(tvb, offset);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.inquiry_mode = tvb_get_uint8(tvb, offset);
             }
             offset++;
             break;
@@ -3430,7 +4443,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             {
             bluetooth_eir_ad_data_t *eir_data;
 
-            eir_data = wmem_new0(wmem_packet_scope(), bluetooth_eir_ad_data_t);
+            eir_data = wmem_new0(pinfo->pool, bluetooth_eir_ad_data_t);
             eir_data->interface_id = bluetooth_data->interface_id;
             eir_data->adapter_id = bluetooth_data->adapter_id;
             eir_data->bd_addr = NULL;
@@ -3452,8 +4465,8 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
 
         case 0x0056: /* Write Simple Pairing Mode */
             proto_tree_add_item(tree, hf_bthci_cmd_simple_pairing_mode, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            if (!pinfo->fd->flags.visited && bthci_cmd_data) {
-                bthci_cmd_data->data.simple_pairing_mode = tvb_get_guint8(tvb, offset);
+            if (!pinfo->fd->visited && bthci_cmd_data) {
+                bthci_cmd_data->data.simple_pairing_mode = tvb_get_uint8(tvb, offset);
             }
             offset++;
             break;
@@ -3476,36 +4489,20 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             break;
 
         case 0x0060: /* Send Keypress Notification */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
 
             proto_tree_add_item(tree, hf_bthci_cmd_notification_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             break;
 
         case 0x0062: /* Write Logical Link Accept Timeout */
-            item =  proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " slots (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
         case 0x0063: /* Set Event Mask Page 2 */
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_00, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_01, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_02, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_03, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_04, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_05, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_06, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_07, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            offset++;
-
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_10, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_11, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_12, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_13, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_14, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_tree_add_item(tree, hf_bthci_cmd_evt_mask2_15, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            offset+=7;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_evt_mask2, ett_event_mask_page_2, hfx_bthci_cmd_event_mask_page_2, ENC_LITTLE_ENDIAN);
+            offset += 8;
             break;
 
         case 0x0065: /* Write Location Data */
@@ -3622,8 +4619,8 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             {
             proto_item *sub_item;
             proto_tree *sub_tree;
-            guint32     number_of_periods;
-            gint        i_item = 1;
+            uint32_t    number_of_periods;
+            int         i_item = 1;
 
             proto_tree_add_item(tree, hf_bthci_external_frame_duration, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset += 2;
@@ -3726,8 +4723,8 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             {
             proto_item *sub_item;
             proto_tree *sub_tree;
-            guint32     number_of_frequencies;
-            gint        i_item = 1;
+            uint32_t    number_of_frequencies;
+            int         i_item = 1;
 
             proto_tree_add_item_ret_uint(tree, hf_bthci_mws_number_of_frequencies, tvb, offset, 1, ENC_NA, &number_of_frequencies);
             offset += 1;
@@ -3758,8 +4755,8 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             {
             proto_item *sub_item;
             proto_tree *sub_tree;
-            guint32     number_of_intervals;
-            gint        i_item = 1;
+            uint32_t    number_of_intervals;
+            int         i_item = 1;
 
             proto_tree_add_item(tree, hf_bthci_mws_pattern_index, tvb, offset, 1, ENC_NA);
             offset += 1;
@@ -3796,20 +4793,20 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             offset += 1;
 
             break;
-        case 0x076: /* Set Connectionless Slave Broadcast Data */
+        case 0x076: /* Set Connectionless Peripheral Broadcast Data */
             {
-            guint32  data_length;
+            uint32_t data_length;
 
             proto_tree_add_item(tree, hf_bthci_cmd_lt_addr, tvb, offset, 1, ENC_NA);
             offset += 1;
 
-            proto_tree_add_item(tree, hf_bthci_cmd_csb_fragment, tvb, offset, 1, ENC_NA);
+            proto_tree_add_item(tree, hf_bthci_cmd_cpb_fragment, tvb, offset, 1, ENC_NA);
             offset += 1;
 
-            proto_tree_add_item_ret_uint(tree, hf_bthci_cmd_csb_data_length, tvb, offset, 1, ENC_NA, &data_length);
+            proto_tree_add_item_ret_uint(tree, hf_bthci_cmd_cpb_data_length, tvb, offset, 1, ENC_NA, &data_length);
             offset += 1;
 
-            proto_tree_add_item(tree, hf_bthci_cmd_csb_data, tvb, offset, data_length, ENC_NA);
+            proto_tree_add_item(tree, hf_bthci_cmd_cpb_data, tvb, offset, data_length, ENC_NA);
             offset += data_length;
 
             }
@@ -3851,6 +4848,39 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
             offset += 2;
 
             break;
+        case 0x082: /* Set Ecosystem Base Interval */
+            {
+            uint16_t interval = tvb_get_letohs(tvb, offset);
+            item = proto_tree_add_item(tree, hf_bthci_cmd_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            if (interval) {
+                proto_item_append_text(item, " (%g msec)",  interval * 1.25);
+            } else {
+                proto_item_append_text(item, " (Ignore Any Previous Hint)");
+            }
+            offset += 2;
+            }
+
+            break;
+        case 0x083: /* Configure Data Path */
+            {
+            uint8_t codec_length;
+            proto_tree_add_item(tree, hf_bthci_cmd_data_path_direction, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_item(tree, hf_bthci_cmd_data_path_id, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            codec_length = tvb_get_uint8(tvb, offset);
+            proto_tree_add_item(tree, hf_bthci_cmd_codec_config_length, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_codec_config, tvb, offset, codec_length, ENC_NA);
+            offset += codec_length;
+            }
+
+            break;
+        case 0x084: /* Set Min Encryption Key Size */
+            proto_tree_add_item(tree, hf_bthci_cmd_min_encryption_key_size, tvb, offset, 1, ENC_NA);
+            offset += 1;
+
+            break;
         default:
             proto_tree_add_expert(tree, pinfo, &ei_command_unknown_command, tvb, offset, -1);
             offset += tvb_reported_length_remaining(tvb, offset);
@@ -3861,7 +4891,7 @@ dissect_host_controller_baseband_cmd(tvbuff_t *tvb, int offset, packet_info *pin
 
 static int
 dissect_informational_parameters_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
-        proto_tree *tree, guint16 cmd_ocf)
+        proto_tree *tree, uint16_t cmd_ocf)
 {
     switch (cmd_ocf) {
 
@@ -3878,6 +4908,7 @@ dissect_informational_parameters_cmd(tvbuff_t *tvb, int offset, packet_info *pin
         case 0x009: /* Read BD ADDR */
         case 0x00A: /* Read Data Block Size */
         case 0x00B: /* Read Local Supported Codecs */
+        case 0x00C: /* Read Local Simple Pairing Options */
             /* NOTE: No parameters */
             break;
 
@@ -3891,7 +4922,7 @@ dissect_informational_parameters_cmd(tvbuff_t *tvb, int offset, packet_info *pin
 
 static int
 dissect_status_parameters_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
-        proto_tree *tree, guint16 cmd_ocf)
+        proto_tree *tree, uint16_t cmd_ocf)
 {
     switch (cmd_ocf) {
 
@@ -3966,7 +4997,7 @@ dissect_status_parameters_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 }
 
 static int
-dissect_testing_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, guint16 cmd_ocf)
+dissect_testing_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, uint16_t cmd_ocf)
 {
     switch (cmd_ocf) {
 
@@ -4017,8 +5048,8 @@ dissect_testing_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *t
     return offset;
 }
 
-static gint
-dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, guint16 cmd_ocf, bluetooth_data_t *bluetooth_data)
+static int
+dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, uint16_t cmd_ocf, bluetooth_data_t *bluetooth_data)
 {
     proto_item  *item;
     proto_item  *sub_item;
@@ -4032,7 +5063,7 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             break;
 
         case 0x0005: /* LE Set Random Address */
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x0006: /* LE Set Advertising Parameters */
@@ -4048,7 +5079,7 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_le_direct_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_channel_map_1, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_channel_map_2, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_channel_map_3, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -4062,7 +5093,7 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             {
             bluetooth_eir_ad_data_t *ad_data;
 
-            ad_data = wmem_new0(wmem_packet_scope(), bluetooth_eir_ad_data_t);
+            ad_data = wmem_new0(pinfo->pool, bluetooth_eir_ad_data_t);
             ad_data->interface_id = bluetooth_data->interface_id;
             ad_data->adapter_id = bluetooth_data->adapter_id;
             ad_data->bd_addr = NULL;
@@ -4085,15 +5116,13 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
         case 0x000b: /* LE Set Scan Parameters */
             proto_tree_add_item(tree, hf_bthci_cmd_le_scan_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             proto_tree_add_item(tree, hf_bthci_cmd_le_own_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_le_scan_filter_policy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_le_scan_filter_policy, ett_filter_policy, hfx_bthci_cmd_scan_filter_policy, ENC_NA);
             offset++;
             break;
 
@@ -4105,66 +5134,54 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             break;
 
         case 0x000d: /* LE Create Connection */
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             proto_tree_add_item(tree, hf_bthci_cmd_le_initiator_filter_policy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             proto_tree_add_item(tree, hf_bthci_cmd_le_own_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             proto_item_append_text(item, " (number events)");
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g sec)",  tvb_get_letohs(tvb, offset)*0.01);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
-        case 0x0011: /* LE Add Device To White List */
-        case 0x0012: /* LE Remove Device From White List */
+        case 0x0011: /* LE Add Device To Filter Accept List */
+        case 0x0012: /* LE Remove Device From Filter Accept List */
             proto_tree_add_item(tree, hf_bthci_cmd_le_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x0013: /* LE Connection Update */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             proto_item_append_text(item, " (number events)");
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g sec)",  tvb_get_letohs(tvb, offset)*0.01);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
@@ -4178,9 +5195,13 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             break;
 
         case 0x0015: /* LE Read Channel Map */
-        case 0x0016: /* LE Read Remote Used Features */
+        case 0x0016: /* LE Read Remote Features */
         case 0x001b: /* LE Long Term Key Request Negative Reply */
         case 0x0030: /* LE Read PHY */
+        case 0x006D: /* LE Request Peer SCA */
+        case 0x008A: /* LE CS Read Remote Supported Capabilities */
+        case 0x008C: /* LE CS Security Enable */
+        case 0x008E: /* LE CS Read Remote FAE Table */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
@@ -4192,7 +5213,7 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=16;
             break;
 
-        case 0x0019: /* LE Start Encryption */
+        case 0x0019: /* LE Enable Encryption */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             proto_tree_add_item(tree, hf_bthci_cmd_random_number, tvb, offset, 8, ENC_NA);
@@ -4210,46 +5231,84 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=16;
             break;
 
-        case 0x001d: /* LE Receiver Test */
+        case 0x001d: /* LE Receiver Test [v1] */
+        case 0x0033: /* LE Receiver Test [v2] */
+        case 0x004f: /* LE Receiver Test [v3] */
             item = proto_tree_add_item(tree, hf_bthci_cmd_rx_frequency, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%d MHz)",  2402 + 2*tvb_get_guint8(tvb, offset));
+            proto_item_append_text(item, " (%d MHz)",  2402 + 2*tvb_get_uint8(tvb, offset));
             offset++;
+
+            if (cmd_ocf >= 0x0033) {
+                proto_tree_add_item(tree, hf_bthci_cmd_phy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset++;
+                proto_tree_add_item(tree, hf_bthci_cmd_modulation_index, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset++;
+            }
+
+            if (cmd_ocf >= 0x004f) {
+                item = proto_tree_add_item(tree, hf_bthci_cmd_cte_length, tvb, offset, 1, ENC_NA);
+                proto_item_append_text(item, " (%d usec)", tvb_get_uint8(tvb, offset)*8);
+                offset++;
+                proto_tree_add_item(tree, hf_bthci_cmd_cte_type, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(tree, hf_bthci_cmd_slot_durations, tvb, offset, 1, ENC_NA);
+                offset++;
+                offset = dissect_antenna_switching_pattern(tvb, offset, tree);
+            }
             break;
 
-        case 0x001e: /* LE Transmitter Test */
+        case 0x001e: /* LE Transmitter Test [v1] */
+        case 0x0034: /* LE Transmitter Test [v2] */
+        case 0x0050: /* LE Transmitter Test [v3] */
+        case 0x007B: /* LE Transmitter Test [v4] */
             item = proto_tree_add_item(tree, hf_bthci_cmd_tx_frequency, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%d MHz)",  2402 + 2*tvb_get_guint8(tvb, offset));
+            proto_item_append_text(item, " (%d MHz)",  2402 + 2*tvb_get_uint8(tvb, offset));
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_test_data_length, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_test_packet_payload, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
+
+            if (cmd_ocf >= 0x0034) {
+                proto_tree_add_item(tree, hf_bthci_cmd_phy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset++;
+            }
+
+            if (cmd_ocf >= 0x0050) {
+                item = proto_tree_add_item(tree, hf_bthci_cmd_cte_length, tvb, offset, 1, ENC_NA);
+                proto_item_append_text(item, " (%d usec)", tvb_get_uint8(tvb, offset)*8);
+                offset++;
+                proto_tree_add_item(tree, hf_bthci_cmd_cte_type, tvb, offset, 1, ENC_NA);
+                offset++;
+                offset = dissect_antenna_switching_pattern(tvb, offset, tree);
+            }
+
+            if (cmd_ocf >= 0x007B) {
+                proto_tree_add_item(tree, hf_bthci_cmd_tx_power_setting, tvb, offset, 1, ENC_NA);
+                offset++;
+            }
             break;
 
         case 0x0020: /*LE Remote Connection Parameter Request Reply */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             proto_item_append_text(item, " (number events)");
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g sec)",  tvb_get_letohs(tvb, offset)*0.01);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
-        case 0x0021: /*  LE Remote Connection Parameter Request Negative Reply */
+        case 0x0021: /* LE Remote Connection Parameter Request Negative Reply */
+        case 0x0067: /* LE Reject CIS Request */
             proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             proto_tree_add_item(tree, hf_bthci_cmd_reason, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -4261,8 +5320,7 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=2;
             proto_tree_add_item(tree, hf_bthci_cmd_le_tx_octets, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
-            sub_item = proto_tree_add_item(tree, hf_bthci_cmd_le_tx_time, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(sub_item, " (%d usec)",  tvb_get_letohs(tvb, offset));
+            proto_tree_add_item(tree, hf_bthci_cmd_le_tx_time, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
@@ -4273,15 +5331,15 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=2;
             break;
 
-        case 0x0026: /* LE Generate DHKey */
+        case 0x0026: /* LE Generate DHKey [v1] */
             proto_tree_add_item(tree, hf_bthci_cmd_le_remote_p_256_public_key, tvb, offset, 64, ENC_NA);
             offset+=64;
             break;
 
         case 0x0027:  /* LE Add Device to Resolving List */
-            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_identity_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             proto_tree_add_item(tree, hf_bthci_cmd_le_peer_irk, tvb, offset, 16, ENC_NA);
             offset+=16;
             proto_tree_add_item(tree, hf_bthci_cmd_le_local_irk, tvb, offset, 16, ENC_NA);
@@ -4289,21 +5347,21 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             break;
 
         case 0x0028: /*  LE Remove Device From Resolving List */
-            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_identity_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x002B: /*   LE Read Peer Resolvable Address */
-            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_identity_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x002C: /*      LE Read Local Resolvable Address" */
-            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_identity_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
         case 0x002D: /* Set Address Resolution Enable */
@@ -4312,8 +5370,7 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             break;
 
         case 0x002E: /* LE Set Resolvable Private Address Timeout */
-            item = proto_tree_add_item(tree, hf_bthci_cmd_le_rpa_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%d sec)",  tvb_get_letohs(tvb, offset));
+            proto_tree_add_item(tree, hf_bthci_cmd_le_rpa_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset+=2;
             break;
 
@@ -4339,44 +5396,21 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=2;
             break;
 
-        case 0x0033: /* LE Enhanced Receiver Test */
-            item = proto_tree_add_item(tree, hf_bthci_cmd_rx_frequency, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%d MHz)",  2402 + 2*tvb_get_guint8(tvb, offset));
-            offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_phy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_modulation_index, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            offset++;
-            break;
-
-        case 0x0034: /* LE Enhanced Transmitter Test */
-            item = proto_tree_add_item(tree, hf_bthci_cmd_tx_frequency, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%d MHz)",  2402 + 2*tvb_get_guint8(tvb, offset));
-            offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_test_data_length, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_test_packet_payload, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_phy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-            offset++;
-            break;
-
         case 0x0035: /* LE Set Advertising Set Random Address */
             proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset+=1;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             break;
 
-        case 0x0036: /* LE Set Extended Advertising Parameters */
+        case 0x0036: /* LE Set Extended Advertising Parameters [v1] */
+        case 0x007F: /* LE Set Extended Advertising Parameters [v2] */
             proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset+=1;
             proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_advertising_properties, ett_adv_properties, hfx_bthci_cmd_adv_properties, ENC_LITTLE_ENDIAN);
             offset+=2;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_advertising_ext_interval_min, tvb, offset, 3, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letoh24(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_ext_interval_min, tvb, offset, 3, ENC_LITTLE_ENDIAN);
             offset+=3;
-            item = proto_tree_add_item(tree, hf_bthci_cmd_advertising_ext_interval_max, tvb, offset, 3, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(item, " (%g msec)",  tvb_get_letoh24(tvb, offset)*0.625);
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_ext_interval_max, tvb, offset, 3, ENC_LITTLE_ENDIAN);
             offset+=3;
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_channel_map_1, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_channel_map_2, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -4386,7 +5420,7 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_filter_policy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_tx_power, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -4401,6 +5435,12 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_scan_req_notif_en, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
+            if (cmd_ocf == 0x007F) {
+                proto_tree_add_item(tree, hf_bthci_cmd_primary_adv_phy_options, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset++;
+                proto_tree_add_item(tree, hf_bthci_cmd_secondary_adv_phy_options, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset++;
+            }
             break;
 
         case 0x0037: /* LE Set Extended Advertising Data */
@@ -4414,12 +5454,12 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=1;
 
             bluetooth_eir_ad_data_t *ad_data;
-            ad_data = wmem_new0(wmem_packet_scope(), bluetooth_eir_ad_data_t);
+            ad_data = wmem_new0(pinfo->pool, bluetooth_eir_ad_data_t);
             ad_data->interface_id = bluetooth_data->interface_id;
             ad_data->adapter_id = bluetooth_data->adapter_id;
             ad_data->bd_addr = NULL;
 
-            guint8 data_length = tvb_get_guint8(tvb, offset);
+            uint8_t data_length = tvb_get_uint8(tvb, offset);
             proto_tree_add_item(tree, hf_bthci_cmd_le_data_length, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             call_dissector_with_data(btcommon_ad_handle, tvb_new_subset_length(tvb, offset, data_length), pinfo, tree, ad_data);
@@ -4433,17 +5473,16 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_enable, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
 
-            guint8 number_of_sets = tvb_get_guint8(tvb, offset);
+            uint8_t number_of_sets = tvb_get_uint8(tvb, offset);
             proto_tree_add_item(tree, hf_bthci_cmd_le_adv_en_sets, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
 
             for (int i = 0; i< number_of_sets; i++) {
-                sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_le_adv_set, tvb, offset, 4, "Set, Handle: %u", tvb_get_guint8(tvb, offset));
+                sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_le_adv_set, tvb, offset, 4, "Set, Handle: %u", tvb_get_uint8(tvb, offset));
                 sub_tree = proto_item_add_subtree(sub_item, ett_adv_sets);
                 proto_tree_add_item(sub_tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
                 offset+=1;
-                item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_adv_duration, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*10.0);
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_le_adv_duration, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                 offset+=2;
                 proto_tree_add_item(sub_tree, hf_bthci_cmd_le_adv_max_extended_events, tvb, offset, 1, ENC_LITTLE_ENDIAN);
                 offset+=1;
@@ -4456,7 +5495,8 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=1;
             break;
 
-        case 0x003E: /* LE Set Periodic Advertising Parameters */
+        case 0x003E: /* LE Set Periodic Advertising Parameters [v1] */
+        case 0x0086: /* LE Set Periodic Advertising Parameters [v2] */
                 proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
                 offset+=1;
             item = proto_tree_add_item(tree, hf_bthci_cmd_le_advts_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
@@ -4468,6 +5508,18 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_periodic_advertising_properties, ett_adv_properties,
                                                       hfx_bthci_cmd_periodic_adv_properties, ENC_LITTLE_ENDIAN);
             offset+=2;
+            if (cmd_ocf == 0x0086) {
+                proto_tree_add_item(tree, hf_bthci_cmd_num_subevents, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset+=1;
+                proto_tree_add_item(tree, hf_bthci_cmd_subevent_interval, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset+=1;
+                proto_tree_add_item(tree, hf_bthci_cmd_response_slot_delay, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset+=1;
+                proto_tree_add_item(tree, hf_bthci_cmd_response_slot_spacing, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset+=1;
+                proto_tree_add_item(tree, hf_bthci_cmd_num_response_slots, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+                offset+=1;
+            }
             break;
 
         case 0x003F: /* LE Set Periodic Advertising Data */
@@ -4478,12 +5530,12 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=1;
 
             bluetooth_eir_ad_data_t *ad_data;
-            ad_data = wmem_new0(wmem_packet_scope(), bluetooth_eir_ad_data_t);
+            ad_data = wmem_new0(pinfo->pool, bluetooth_eir_ad_data_t);
             ad_data->interface_id = bluetooth_data->interface_id;
             ad_data->adapter_id = bluetooth_data->adapter_id;
             ad_data->bd_addr = NULL;
 
-            guint8 data_length = tvb_get_guint8(tvb, offset);
+            uint8_t data_length = tvb_get_uint8(tvb, offset);
             proto_tree_add_item(tree, hf_bthci_cmd_le_data_length, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             call_dissector_with_data(btcommon_ad_handle, tvb_new_subset_length(tvb, offset, data_length), pinfo, tree, ad_data);
@@ -4496,30 +5548,30 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             proto_tree_add_item(tree, hf_bthci_cmd_le_advts_enable, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-                offset+=1;
+            offset+=1;
             break;
 
         case 0x0041: /* LE Set Extended Scan Parameters */
             {
+            uint8_t scanning_phys, phy = 0;
             proto_tree_add_item(tree, hf_bthci_cmd_le_own_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            proto_tree_add_item(tree, hf_bthci_cmd_le_scan_filter_policy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_le_scan_filter_policy, ett_filter_policy, hfx_bthci_cmd_scan_filter_policy, ENC_NA);
             offset++;
-            guint8 scanning_phys = tvb_get_guint8(tvb, offset);
-            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_le_scan_phys, ett_scan_init_phy_param, hfx_btcmd_le_scan_phys, ENC_NA);
+            scanning_phys = tvb_get_uint8(tvb, offset);
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_le_scan_phys, ett_phy_param, hfx_btcmd_le_scan_phys, ENC_NA);
             offset += 1;
             for (int i = 1; i < 0x08; i <<=1) {
+                phy++;
                 if (scanning_phys & i) {
                     sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_le_scan_phy_param, tvb, offset, 5, "Scanning PHY: %s",
-                                                                                        val_to_str_const(i, cmd_le_phy_vals, "Unknown"));
-                    sub_tree = proto_item_add_subtree(sub_item, ett_scan_init_phy_param);
+                                                                                        val_to_str_const(phy, cmd_le_phy_vals, "Unknown"));
+                    sub_tree = proto_item_add_subtree(sub_item, ett_phy_param);
                     proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
                     offset++;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
                 }
             }
@@ -4539,74 +5591,1120 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
             offset+=2;
             break;
 
-        case 0x0043: /* LE Extended Create Connection */
+        case 0x0085: /* LE Extended Create Connection [v2] */
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            offset+=1;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_subevent, tvb, offset, 1, ENC_LITTLE_ENDIAN);
+            if (tvb_get_uint8(tvb, offset) == 0xff) {
+                proto_item_append_text(item, " (not used)");
+            }
+            offset+=1;
+            /* FALLTHROUGH */
+
+        case 0x0043: /* LE Extended Create Connection [v1] */
             {
+            uint8_t initiating_phys, phy = 0;
             proto_tree_add_item(tree, hf_bthci_cmd_le_initiator_filter_policy, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_le_own_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
             proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
             offset++;
-            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
-            guint8 initiating_phys = tvb_get_guint8(tvb, offset);
-            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_le_init_phys, ett_scan_init_phy_param, hfx_btcmd_le_phys, ENC_NA);
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            initiating_phys = tvb_get_uint8(tvb, offset);
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_le_phys, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
             offset += 1;
             for (int i = 1; i < 0x08; i <<=1) {
+                phy++;
                 if (initiating_phys & i) {
                     sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_le_init_phy_param, tvb, offset, 16, "Initiating PHY: %s",
-                                                                                        val_to_str_const(i, cmd_le_phy_vals, "Unknown"));
-                    sub_tree = proto_item_add_subtree(sub_item, ett_scan_init_phy_param);
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+                                                                                        val_to_str_const(phy, cmd_le_phy_vals, "Unknown"));
+                    sub_tree = proto_item_add_subtree(sub_item, ett_phy_param);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_scan_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_con_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*1.25);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_con_interval_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
                     item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_con_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     proto_item_append_text(item, " (number events)");
                     offset+=2;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g sec)",  tvb_get_letohs(tvb, offset)*0.01);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_min_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
-                    item = proto_tree_add_item(sub_tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(item, " (%g msec)",  tvb_get_letohs(tvb, offset)*0.625);
+                    proto_tree_add_item(sub_tree, hf_bthci_cmd_le_max_ce_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                     offset+=2;
                 }
             }
             }
             break;
 
-        case 0x002: /* LE Read Buffer Size */
-        case 0x003: /* LE Read Local Supported Features */
-        case 0x007: /* LE Read Advertising Channel Tx Power */
-        case 0x00E: /* LE Create Connection Cancel */
-        case 0x00F: /* LE Read White List Size */
-        case 0x010: /* LE Clear White List */
-        case 0x018: /* LE Rand */
-        case 0x01C: /* LE Read Supported States */
-        case 0x01F: /* LE Test End */
-        case 0x023: /* LE Read Suggested Default Data Length */
-        case 0x025: /* LE Read Local P-256 Public Key */
-        case 0x029: /* LE Clear Resolving List */
-        case 0x02A: /* LE Read Resolving List Size */
-        case 0x02F: /* LE Read Maximum Data Length */
-        case 0x03A: /* LE Read Maximum Advertising Data Length */
-        case 0x03B: /* LE Read Number of Supported Advertising Sets */
-        case 0x03D: /* LE Clear Advertising Sets */
-        case 0x045: /* LE Periodic Advertising Create Sync Cancel */
-        case 0x049: /* LE Clear Periodic Advertiser List */
-        case 0x04A: /* LE Read Periodic Advertiser List Size */
-        case 0x04B: /* LE Read Transmit Power */
-        case 0x04C: /* LE Read RF Path Compensation */
+        case 0x0044: /* LE Periodic Advertising Create Sync */
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_filter_policy, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_sid, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            proto_tree_add_item(tree, hf_bthci_cmd_skip, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_sync_cte_type, ett_sync_cte_type, hfx_btcmd_sync_cte_type, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0046: /* LE Periodic Advertising Terminate Sync */
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            break;
+
+        case 0x0047: /* LE Add Device To Periodic Advertiser List */
+        case 0x0048: /* LE Remove Device From Periodic Advertiser List */
+            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_address_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_sid, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x004D: /* LE Write RF Path Compensation */
+            item = proto_tree_add_item(tree, hf_bthci_cmd_rf_tx_path_compensation_value, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            proto_item_append_text(item, " (%g dB)", tvb_get_letohis(tvb, offset)*0.1);
+            offset+=2;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_rf_rx_path_compensation_value, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            proto_item_append_text(item, " (%g dB)", tvb_get_letohis(tvb, offset)*0.1);
+            offset+=2;
+            break;
+
+        case 0x004E: /* LE Set Privacy Mode */
+            proto_tree_add_item(tree, hf_bthci_cmd_le_peer_identity_address_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_privacy_mode, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0051: /* LE Set Connectionless CTE Transmit Parameters */
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_cte_length, tvb, offset, 1, ENC_NA);
+            proto_item_append_text(item, " (%d usec)", tvb_get_uint8(tvb, offset)*8);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cte_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cte_count, tvb, offset, 1, ENC_NA);
+            offset++;
+            offset = dissect_antenna_switching_pattern(tvb, offset, tree);
+            break;
+
+        case 0x0052: /* LE Set Connectionless CTE Transmit Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cte_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0053: /* LE Set Connectionless IQ Sampling Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_iq_sampling_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_slot_durations, tvb, offset, 1, ENC_NA);
+            offset++;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_max_sampled_ctes, tvb, offset, 1, ENC_NA);
+            if (tvb_get_uint8(tvb, offset) == 0)
+                proto_item_append_text(item, " (Sample and report all available CTEs)");
+            offset++;
+            offset = dissect_antenna_switching_pattern(tvb, offset, tree);
+            break;
+
+        case 0x0054: /* LE Set Connection CTE Receive Parameters */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_iq_sampling_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_slot_durations, tvb, offset, 1, ENC_NA);
+            offset++;
+            offset = dissect_antenna_switching_pattern(tvb, offset, tree);
+            break;
+
+        case 0x0055: /* LE Set Connection CTE Transmit Parameters */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_cte_types, ett_sync_cte_type, hfx_btcmd_cte_types, ENC_NA);
+            offset++;
+            offset = dissect_antenna_switching_pattern(tvb, offset, tree);
+            break;
+
+        case 0x0056: /* LE Connection CTE Request Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_cte_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_cte_request_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            if (tvb_get_letohs(tvb, offset) == 0)
+                proto_item_append_text(item, " (Initiate once, at earliest opportunity)");
+            else
+                proto_item_append_text(item, " (Connection Events)");
+            offset+=2;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_cte_length, tvb, offset, 1, ENC_NA);
+            proto_item_append_text(item, " (%d usec)", tvb_get_uint8(tvb, offset)*8);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cte_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0057: /* LE Connection CTE Response Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_cte_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0059: /* LE Set Periodic Advertising Receive Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_reporting_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x005A: /* LE Periodic Advertising Sync Transfer */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_service_data_past, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            break;
+
+        case 0x005B: /* LE Periodic Advertising Set Info Transfer */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_service_data_past, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x005C: /* LE Set Periodic Advertising Sync Transfer Parameters */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            /* FALL THROUGH */
+
+        case 0x005D: /* LE Set Default Periodic Advertising Sync Transfer Parameters */
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_mode, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_skip, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_sync_cte_type, ett_sync_cte_type, hfx_btcmd_sync_cte_type, ENC_NA);
+            offset++;
+            break;
+
+        case 0x005E: /* LE Generate DHKey [v2] */
+            proto_tree_add_item(tree, hf_bthci_cmd_le_remote_p_256_public_key, tvb, offset, 64, ENC_NA);
+            offset+=64;
+            proto_tree_add_item(tree, hf_bthci_cmd_key_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x005F: /* LE Modify Sleep Clock Accuracy */
+            proto_tree_add_item(tree, hf_bthci_cmd_sca_action, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0061: /* LE Read ISO Tx Sync */
+        case 0x0072: /* LE ISO Read Test Counters */
+        case 0x0073: /* LE ISO Test End */
+        case 0x0075: /* LE Read ISO Link Quality */
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_bis_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            break;
+
+        case 0x0062: /* LE Set CIG Parameters */
+            {
+            uint8_t cis_count;
+            proto_tree_add_item(tree, hf_bthci_cmd_cig_id, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sdu_interval_c_to_p, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_sdu_interval_p_to_c, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_peripherals_clock_accuracy, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_packing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_framing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_transport_latency_c_to_p, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_transport_latency_p_to_c, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_count, tvb, offset, 1, ENC_NA);
+            cis_count = tvb_get_uint8(tvb, offset);
+            offset++;
+
+            for (int i = 0; i < cis_count; i++) {
+                sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_cis_params, tvb, offset, 9, "CIS Parameters, CIS Id: 0x%x", tvb_get_uint8(tvb, offset));
+                sub_tree = proto_item_add_subtree(sub_item, ett_cis_params);
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_cis_id, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_max_sdu_c_to_p, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                offset+=2;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_max_sdu_p_to_c, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                offset+=2;
+                proto_tree_add_bitmask(sub_tree, tvb, offset, hf_bthci_cmd_phy_c_to_p, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
+                offset++;
+                proto_tree_add_bitmask(sub_tree, tvb, offset, hf_bthci_cmd_phy_p_to_c, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_rtn_c_to_p, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_rtn_p_to_c, tvb, offset, 1, ENC_NA);
+                offset++;
+            }
+            }
+            break;
+
+        case 0x0063: /* LE Set CIG Parameters Test */
+            {
+            uint8_t cis_count;
+            proto_tree_add_item(tree, hf_bthci_cmd_cig_id, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sdu_interval_c_to_p, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_sdu_interval_p_to_c, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_ft_c_to_p, tvb, offset, 1, ENC_NA);
+            proto_item_append_text(item, " ISO Intervals");
+            offset++;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_ft_p_to_c, tvb, offset, 1, ENC_NA);
+            proto_item_append_text(item, " ISO Intervals");
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_iso_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_peripherals_clock_accuracy, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_packing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_framing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_count, tvb, offset, 1, ENC_NA);
+            cis_count = tvb_get_uint8(tvb, offset);
+            offset++;
+
+            for (int i = 0; i < cis_count; i++) {
+                sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_cis_params, tvb, offset, 14, "CIS Parameters, CIS Id: 0x%x", tvb_get_uint8(tvb, offset));
+                sub_tree = proto_item_add_subtree(sub_item, ett_cis_params);
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_cis_id, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_nse, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_max_sdu_c_to_p, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                offset+=2;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_max_sdu_p_to_c, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                offset+=2;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_max_pdu_c_to_p, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                offset+=2;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_max_pdu_p_to_c, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                offset+=2;
+                proto_tree_add_bitmask(sub_tree, tvb, offset, hf_bthci_cmd_phy_c_to_p, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
+                offset++;
+                proto_tree_add_bitmask(sub_tree, tvb, offset, hf_bthci_cmd_phy_p_to_c, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
+                offset++;
+                item = proto_tree_add_item(sub_tree, hf_bthci_cmd_bn_c_to_p, tvb, offset, 1, ENC_NA);
+                if (tvb_get_uint8(tvb, offset) == 0)
+                    proto_item_append_text(item, " (No data)");
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_bn_p_to_c, tvb, offset, 1, ENC_NA);
+                if (tvb_get_uint8(tvb, offset) == 0)
+                    proto_item_append_text(item, " (No data)");
+                offset++;
+            }
+            }
+            break;
+
+        case 0x0064: /* LE Create CIS */
+            {
+            uint8_t cis_count;
+            uint32_t k_shandle, chandle;
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_count, tvb, offset, 1, ENC_NA);
+            cis_count = tvb_get_uint8(tvb, offset);
+            offset++;
+            for (int i = 0; i < cis_count; i++) {
+                sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_cis_params, tvb, offset, 4, "CIS Handle: 0x%03x, Connection Handle: 0x%03x",
+                                                      tvb_get_letohs(tvb, offset), tvb_get_letohs(tvb, offset+2));
+                sub_tree = proto_item_add_subtree(sub_item, ett_cis_params);
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_cis_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                k_shandle = tvb_get_letohs(tvb, offset) & 0xfff;
+                offset+=2;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                chandle = tvb_get_letohs(tvb, offset) & 0xfff;
+                offset+=2;
+
+                if (!pinfo->fd->visited) {
+                    wmem_tree_key_t     key[5];
+                    uint32_t            interface_id;
+                    uint32_t            adapter_id;
+                    uint32_t            frame_number;
+                    stream_connection_handle_pair_t  *stream_connection_handle_pair;
+
+                    interface_id = bluetooth_data->interface_id;
+                    adapter_id   = bluetooth_data->adapter_id;
+                    frame_number = pinfo->num;
+
+                    key[0].length = 1;
+                    key[0].key    = &interface_id;
+                    key[1].length = 1;
+                    key[1].key    = &adapter_id;
+                    key[2].length = 1;
+                    key[2].key    = &k_shandle;
+                    key[3].length = 1;
+                    key[3].key    = &frame_number;
+                    key[4].length = 0;
+                    key[4].key    = NULL;
+
+                    stream_connection_handle_pair =
+                        (stream_connection_handle_pair_t *) wmem_new(wmem_file_scope(), stream_connection_handle_pair_t);
+                    stream_connection_handle_pair->chandle = chandle;
+                    stream_connection_handle_pair->change_in_frame = frame_number;
+
+                    wmem_tree_insert32_array(bluetooth_data->shandle_to_chandle, key, stream_connection_handle_pair);
+                }
+            }
+            }
+            break;
+
+        case 0x0065: /* LE Remove CIG */
+            proto_tree_add_item(tree, hf_bthci_cmd_cig_id, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0066: /* LE Accept CIS Request */
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            break;
+
+        case 0x0068: /* LE Create BIG */
+            proto_tree_add_item(tree, hf_bthci_cmd_big_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_bis, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sdu_interval, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_sdu, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_transport_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_rtn, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_phy, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_packing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_framing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_encryption, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_broadcast_code, tvb, offset, 16, ENC_NA);
+            offset+=16;
+            break;
+
+        case 0x0069: /* LE Create BIG Test */
+            proto_tree_add_item(tree, hf_bthci_cmd_big_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_bis, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sdu_interval, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_iso_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_nse, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_sdu, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_pdu, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_phy, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_packing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_framing, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_bn, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_irc, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_pto, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_encryption, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_broadcast_code, tvb, offset, 16, ENC_NA);
+            offset+=16;
+            break;
+
+        case 0x006A: /* LE Terminate BIG */
+            proto_tree_add_item(tree, hf_bthci_cmd_big_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_reason, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x006B: /* LE BIG Create Sync */
+            {
+            uint8_t num_bis;
+
+            proto_tree_add_item(tree, hf_bthci_cmd_big_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_encryption, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_broadcast_code, tvb, offset, 16, ENC_NA);
+            offset+=16;
+            proto_tree_add_item(tree, hf_bthci_cmd_mse, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_bis, tvb, offset, 1, ENC_NA);
+            num_bis = tvb_get_uint8(tvb, offset);
+            offset++;
+            for (int i = 0; i < num_bis; i++) {
+                proto_tree_add_item(tree, hf_bthci_cmd_bis_index, tvb, offset, 1, ENC_NA);
+            offset++;
+            }
+            }
+            break;
+
+        case 0x006C: /* LE BIG Terminate Sync */
+            proto_tree_add_item(tree, hf_bthci_cmd_big_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x006E: /* LE Setup ISO Data Path */
+            {
+            uint8_t codec_length;
+            const char *str = "Disabled";
+
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_bis_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_data_path_direction, tvb, offset, 1, ENC_NA);
+            offset++;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_data_path_id, tvb, offset, 1, ENC_NA);
+            if (tvb_get_uint8(tvb, offset) == 0)
+                str = "HCI";
+            else if (tvb_get_uint8(tvb, offset) < 0xff)
+                str = "Logical Channel Number";
+            proto_item_append_text(item, " (%s)", str);
+            offset++;
+            offset = dissect_coding_format(tree, hf_bthci_cmd_coding_format, tvb, offset, ett_coding_format);
+            proto_tree_add_item(tree, hf_bthci_cmd_controller_delay, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            codec_length = tvb_get_uint8(tvb, offset);
+            proto_tree_add_item(tree, hf_bthci_cmd_codec_config_length, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_codec_config, tvb, offset, codec_length, ENC_NA);
+            offset += codec_length;
+            }
+            break;
+
+        case 0x006F: /* LE Remove ISO Data Path */
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_bis_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_data_path_direction, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0070: /* LE ISO Transmit Test */
+        case 0x0071: /* LE ISO Receive Test */
+            proto_tree_add_item(tree, hf_bthci_cmd_cis_bis_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_payload_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0074: /* LE Set Host Feature */
+            proto_tree_add_item(tree, hf_bthci_cmd_feature_bit_number, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_feature_bit_value, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0076: /* LE Enhanced Read Transmit Power Level */
+        case 0x0077: /* LE Read Remote Transmit Power Level */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_phy_and_coding, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0078: /* LE Set Path Loss Reporting Parameters */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_high_threshold, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_high_hysteresis, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_low_threshold, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_low_hysteresis, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_min_time_spent, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            break;
+
+        case 0x0079: /* LE Set Path Loss Reporting Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_reporting_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x007A: /* LE Set Transmit Power Reporting Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_local_reporting_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_remote_reporting_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x007C: /* LE Set Data Related Changes */
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_addr_change_reasons, ett_addr_change_reasons, hfx_btcmd_addr_change_reasons, ENC_NA);
+            offset++;
+            break;
+
+        case 0x007E: /* LE Subrate Request */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            /* FALLTHROUGH */
+
+        case 0x007D: /* LE Set Default Subrate */
+            proto_tree_add_item(tree, hf_bthci_cmd_subrate_factor_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_subrate_factor_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_le_con_latency, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            proto_item_append_text(item, " (subrated events)");
+            offset+=2;
+            item = proto_tree_add_item(tree, hf_bthci_cmd_continuation_number, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            proto_item_append_text(item, " (underlying events)");
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_le_supervision_timeout, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            break;
+
+        case 0x0080: /* LE Set Decision Data */
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_adv_decision_flags, ett_adv_properties, hfx_bthci_cmd_adv_decision_flags, ENC_NA);
+            offset += 1;
+            uint8_t data_length = tvb_get_uint8(tvb, offset);
+            proto_tree_add_item(tree, hf_bthci_cmd_le_data_length, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_adv_decision_data, tvb, offset, data_length, ENC_NA);
+            offset+=data_length;
+            break;
+
+        case 0x0081: /* LE Set Decision Instructions */
+            {
+            uint8_t num_tests, test_field;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_tests, tvb, offset, 1, ENC_NA);
+            num_tests = tvb_get_uint8(tvb, offset);
+            offset++;
+            for (int i = 0; i < num_tests; i++) {
+                proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_adv_test_flags, ett_adv_test_flags, hfx_bthci_cmd_adv_test_flags, ENC_NA);
+                offset += 1;
+                test_field = tvb_get_uint8(tvb, offset);
+                item = proto_tree_add_item(tree, hf_bthci_cmd_adv_test_field, tvb, offset, 1, ENC_NA);
+                if (test_field > 16) {
+                    if (test_field <= 24)
+                        proto_item_append_text(item, " (Arbitrary Data, exactly %u octets)", test_field - 16);
+                    else if (test_field > 32 && test_field <= 40)
+                        proto_item_append_text(item, " (Arbitrary Data, at least %u octets)", test_field - 32);
+                    else if (test_field > 48 && test_field <= 56)
+                        proto_item_append_text(item, " (Arbitrary Data, at most %u octets)", test_field - 48);
+                    else if (test_field >= 240)
+                        proto_item_append_text(item, " (Vendor specific)");
+                }
+                offset++;
+                proto_tree_add_item(tree, hf_bthci_cmd_adv_test_params, tvb, offset, 16, ENC_NA);
+                offset+=16;
+            }
+            }
+            break;
+
+        case 0x0082: /* LE Set Periodic Advertising Subevent */
+            {
+            uint8_t sub_events, length;
+            proto_tree_add_item(tree, hf_bthci_cmd_advertising_handle, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_subevents, tvb, offset, 1, ENC_NA);
+            sub_events = tvb_get_uint8(tvb, offset);
+            offset++;
+            for (int i = 0; i < sub_events; i++) {
+                length = 4 + tvb_get_uint8(tvb, offset+3);
+                sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_subevents, tvb, offset, length,
+                                                      "Sub-event: %u", tvb_get_uint8(tvb, offset));
+                sub_tree = proto_item_add_subtree(sub_item, ett_adv_subevents);
+
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_subevent, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_response_slot_start, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_response_slot_count, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_subevent_data_length, tvb, offset, 1, ENC_NA);
+                length = tvb_get_uint8(tvb, offset);
+                offset++;
+
+                bluetooth_eir_ad_data_t *ad_data;
+                ad_data = wmem_new0(pinfo->pool, bluetooth_eir_ad_data_t);
+                ad_data->interface_id = bluetooth_data->interface_id;
+                ad_data->adapter_id = bluetooth_data->adapter_id;
+                ad_data->bd_addr = NULL;
+                call_dissector_with_data(btcommon_ad_handle, tvb_new_subset_length(tvb, offset, length), pinfo, sub_tree, ad_data);
+                offset += length;
+            }
+            }
+            break;
+
+        case 0x0083: /* LE Set Periodic Advertising Response Data */
+            {
+            uint8_t length;
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_request_event, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_request_subevent, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_response_subevent, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_response_slot, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_response_data_length, tvb, offset, 1, ENC_NA);
+            length = tvb_get_uint8(tvb, offset);
+            offset++;
+
+            bluetooth_eir_ad_data_t *ad_data;
+            ad_data = wmem_new0(pinfo->pool, bluetooth_eir_ad_data_t);
+            ad_data->interface_id = bluetooth_data->interface_id;
+            ad_data->adapter_id = bluetooth_data->adapter_id;
+            ad_data->bd_addr = NULL;
+            call_dissector_with_data(btcommon_ad_handle, tvb_new_subset_length(tvb, offset, length), pinfo, tree, ad_data);
+            offset += length;
+            }
+            break;
+
+        case 0x0084: /* LE Set Periodic Sync Subevent */
+            {
+            uint8_t sub_events;
+            proto_tree_add_item(tree, hf_bthci_cmd_sync_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_advertising_properties, ett_adv_properties, hfx_bthci_cmd_adv_properties, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_subevents, tvb, offset, 1, ENC_NA);
+            sub_events = tvb_get_uint8(tvb, offset);
+            offset++;
+            sub_item = proto_tree_add_none_format(tree, hf_bthci_cmd_subevents, tvb, offset, sub_events, "Sub-events");
+            sub_tree = proto_item_add_subtree(sub_item, ett_adv_subevents);
+            for (int i = 0; i < sub_events; i++) {
+                proto_tree_add_item(sub_tree, hf_bthci_cmd_subevent, tvb, offset, 1, ENC_NA);
+                offset++;
+            }
+            }
+            break;
+
+        case 0x0088: /* LE Read All Remote Features */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_pages_requested, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            break;
+
+        case 0x008B: /* LE CS Write Cached Remote Supported Capabilities */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_config, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_consecutive_procedures, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset += 2;
+            proto_tree_add_item(tree, hf_bthci_cmd_num_antennas_supported, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_antenna_paths_supported, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_cs_roles, ett_cs_roles, hfx_bthci_cmd_cs_roles, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_cs_modes_supported, ett_cs_modes, hfx_bthci_cmd_cs_modes_supported, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_rtt_capability, ett_cs_capability, hfx_bthci_cmd_rtt_capability, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_rtt_aa_only_n, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_item(tree, hf_bthci_cmd_rtt_sounding_n, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_item(tree, hf_bthci_cmd_rtt_random_n, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_nadm_sounding_capability, ett_cs_capability, hfx_bthci_cmd_nadm_sounding_capability, ENC_NA);
+            offset += 2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_nadm_random_capability, ett_cs_capability, hfx_bthci_cmd_nadm_random_capability, ENC_NA);
+            offset += 2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_cs_sync_phys_supported, ett_cs_capability, hfx_bthci_cmd_cs_sync_phys_supported, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_cs_subfeatures_supported, ett_cs_capability, hfx_bthci_cmd_cs_subfeatures, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_tip1_times_supported, ett_cs_times, hfx_bthci_cmd_tip_times_supported, ENC_NA);
+            offset += 2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_tip2_times_supported, ett_cs_times, hfx_bthci_cmd_tip_times_supported, ENC_NA);
+            offset += 2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_tfcs_times_supported, ett_cs_times, hfx_bthci_cmd_tfcs_times_supported, ENC_NA);
+            offset += 2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_tpm_times_supported, ett_cs_times, hfx_bthci_cmd_tpm_times_supported, ENC_NA);
+            offset += 2;
+            proto_tree_add_item(tree, hf_bthci_cmd_tsw_time_supported, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_tx_snr_capability, ett_cs_capability, hfx_bthci_cmd_tx_snr_capability, ENC_NA);
+            offset += 1;
+            break;
+
+        case 0x008D: /* LE CS Set Default Settings */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_cs_roles, ett_cs_roles, hfx_bthci_cmd_cs_roles, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_sync_antenna_selection, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_tx_power, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x008F: /* LE CS Write Cached Remote FAE Table */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_fae_table, tvb, offset, 72, ENC_NA);
+            offset+=72;
+            break;
+
+        case 0x0090: /* LE CS Create Config */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_config_id, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_create_context, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_main_mode_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sub_mode_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_min_main_mode_steps, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_main_mode_steps, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_main_mode_repetition, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_mode0_steps, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_role, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_rtt_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_sync_phy, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_channel_map, tvb, offset, 10, ENC_NA);
+            offset += 10;
+            proto_tree_add_item(tree, hf_bthci_cmd_channel_map_repetition, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_channel_selection_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_ch3c_shape, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_ch3c_jump, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_companion_signal_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0091: /* LE CS Remove Config */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_config_id, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0092: /* LE CS Channel Classification */
+            proto_tree_add_item(tree, hf_bthci_cmd_ch_classification, tvb, offset, 10, ENC_NA);
+            offset+=10;
+            break;
+
+        case 0x0093: /* LE CS Set Procedure Parametes */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_config_id, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_procedure_len, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_min_procedure_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_procedure_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_procedure_count, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_min_subevent_len, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_subevent_len, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_tone_antenna_selection, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_phy_and_coding, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_tx_pwr_delta, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_preferred_peer_antenna, ett_pref_antenna,
+                                   hfx_bthci_cmd_preferred_peer_antenna, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_snr_control_initiator, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_snr_control_reflector, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0094: /* LE CS Procedure Enable */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_config_id, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0095: /* LE CS Test */
+            {
+            uint8_t role, rtt_type, length;
+            uint16_t override_config;
+            proto_tree_add_item(tree, hf_bthci_cmd_main_mode_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_sub_mode_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_main_mode_repetition, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_mode0_steps, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_role, tvb, offset, 1, ENC_NA);
+            role = tvb_get_uint8(tvb, offset);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_rtt_type, tvb, offset, 1, ENC_NA);
+            rtt_type = tvb_get_uint8(tvb, offset);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_sync_phy, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_sync_antenna_selection, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_subevent_len, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset+=3;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_subevent_interval, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_max_num_subevents, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_tx_power_setting, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_t_ip1_time, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_t_ip2_time, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_t_fcs_time, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_t_pm_time, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_t_sw_time, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_tone_antenna_selection, tvb, offset, 1, ENC_NA);
+            offset++;
+            /* 1 byte reserved for future use */
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_snr_control_initiator, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_snr_control_reflector, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_drbg_nonce, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_channel_map_repetition, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_cs_override_config, ett_override_config, hfx_bthci_cmd_override_config, ENC_LITTLE_ENDIAN);
+            override_config = tvb_get_uint16(tvb, offset, ENC_LITTLE_ENDIAN);
+            offset += 2;
+            proto_tree_add_item(tree, hf_bthci_cmd_cs_override_param_length, tvb, offset, 1, ENC_NA);
+            length = tvb_get_uint8(tvb, offset);
+            offset++;
+            sub_tree = proto_tree_add_subtree(tree, tvb, offset, length, ett_override_params, NULL, "Override Parameter Data");
+            if (override_config & (1 << 0)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_channel_length, tvb, offset, 1, ENC_NA);
+              length = tvb_get_uint8(tvb, offset);
+              offset++;
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_channels, tvb, offset, length, ENC_NA);
+              offset += length;
+            }
+            else {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_channel_map, tvb, offset, 10, ENC_NA);
+              offset += 10;
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_channel_selection_type, tvb, offset, 1, ENC_NA);
+              offset++;
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_ch3c_shape, tvb, offset, 1, ENC_NA);
+              offset++;
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_ch3c_jump, tvb, offset, 1, ENC_NA);
+              offset++;
+            }
+            if (override_config & (1 << 2)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_main_mode_steps, tvb, offset, 1, ENC_NA);
+              offset++;
+            }
+            if (override_config & (1 << 3)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_tpm_tone_ext, tvb, offset, 1, ENC_NA);
+              offset++;
+            }
+            if (override_config & (1 << 4)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_tone_antenna_permutation, tvb, offset, 1, ENC_NA);
+              offset++;
+            }
+            if (override_config & (1 << 5)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_cs_sync_aa_initiator, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+              offset += 4;
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_cs_sync_aa_reflector, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+              offset += 4;
+            }
+            if (override_config & (1 << 6)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_ss_marker_1_position, tvb, offset, 1, ENC_NA);
+              offset++;
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_ss_marker_2_position, tvb, offset, 1, ENC_NA);
+              offset++;
+            }
+            if (override_config & (1 << 7)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_ss_marker_value, tvb, offset, 1, ENC_NA);
+              offset++;
+            }
+            if (override_config & (1 << 8)) {
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_cs_sync_payload_pattern, tvb, offset, 1, ENC_NA);
+              offset++;
+              proto_tree_add_item(sub_tree, hf_bthci_cmd_override_param_cs_sync_user_payload, tvb, offset, 16, ENC_NA);
+              offset += 16;
+            }
+            if (!pinfo->fd->visited) {
+                /* store CS role and RTT type configuration for later dissection of CS results */
+                wmem_tree_key_t     key[6];
+                uint32_t            interface_id;
+                uint32_t            adapter_id;
+                uint32_t            frame_number;
+                uint32_t            connection_handle = 0xfff;
+                uint32_t            config_id = 0;
+                cs_configuration_t *cs_configuration;
+
+                interface_id = bluetooth_data->interface_id;
+                adapter_id   = bluetooth_data->adapter_id;
+                frame_number = pinfo->num;
+
+                key[0].length = 1;
+                key[0].key    = &interface_id;
+                key[1].length = 1;
+                key[1].key    = &adapter_id;
+                key[2].length = 1;
+                key[2].key    = &connection_handle;
+                key[3].length = 1;
+                key[3].key    = &config_id;
+                key[4].length = 1;
+                key[4].key    = &frame_number;
+                key[5].length = 0;
+                key[5].key    = NULL;
+
+                cs_configuration = (cs_configuration_t *) wmem_new(wmem_file_scope(), cs_configuration_t);
+                cs_configuration->cs_role = role;
+                cs_configuration->rtt_type = rtt_type;
+                wmem_tree_insert32_array(bluetooth_data->cs_configurations, key, cs_configuration);
+            }
+            }
+            break;
+
+        case 0x0097: /* LE Set Host Feature [v2] */
+            proto_tree_add_item(tree, hf_bthci_cmd_feature_bit_number2, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_feature_bit_value, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0098: /* LE Add Device To Monitored Advertisers List */
+            proto_tree_add_item(tree, hf_bthci_cmd_le_address_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            proto_tree_add_item(tree, hf_bthci_cmd_rssi_threshold_low, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_rssi_threshold_high, tvb, offset, 1, ENC_NA);
+            offset++;
+            proto_tree_add_item(tree, hf_bthci_cmd_rssi_threshold_timeout, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x0099: /* LE Remove Device From Monitored Advertisers List */
+            proto_tree_add_item(tree, hf_bthci_cmd_le_address_type, tvb, offset, 1, ENC_NA);
+            offset++;
+            offset = dissect_bd_addr(hf_bthci_cmd_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_data->interface_id, bluetooth_data->adapter_id, NULL);
+            break;
+
+        case 0x009C: /* LE Enable Monitored Advertisers */
+            proto_tree_add_item(tree, hf_bthci_cmd_adv_monitoring_enable, tvb, offset, 1, ENC_NA);
+            offset++;
+            break;
+
+        case 0x009D: /* LE Frame Space Update */
+            proto_tree_add_item(tree, hf_bthci_cmd_connection_handle, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_frame_space_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_item(tree, hf_bthci_cmd_frame_space_max, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset+=2;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_le_phys, ett_phy_param, hfx_btcmd_le_phys, ENC_NA);
+            offset += 1;
+            proto_tree_add_bitmask(tree, tvb, offset, hf_bthci_cmd_spacing_types, ett_spacing_types, hfx_bthci_cmd_spacing_types, ENC_NA);
+            offset += 2;
+            break;
+
+        case 0x0002: /* LE Read Buffer Size [v1] */
+        case 0x0003: /* LE Read Local Supported Features */
+        case 0x0007: /* LE Read Advertising Channel Tx Power */
+        case 0x000E: /* LE Create Connection Cancel */
+        case 0x000F: /* LE Read Filter Accept List Size */
+        case 0x0010: /* LE Clear Filter Accept List */
+        case 0x0018: /* LE Rand */
+        case 0x001C: /* LE Read Supported States */
+        case 0x001F: /* LE Test End */
+        case 0x0023: /* LE Read Suggested Default Data Length */
+        case 0x0025: /* LE Read Local P-256 Public Key */
+        case 0x0029: /* LE Clear Resolving List */
+        case 0x002A: /* LE Read Resolving List Size */
+        case 0x002F: /* LE Read Maximum Data Length */
+        case 0x003A: /* LE Read Maximum Advertising Data Length */
+        case 0x003B: /* LE Read Number of Supported Advertising Sets */
+        case 0x003D: /* LE Clear Advertising Sets */
+        case 0x0045: /* LE Periodic Advertising Create Sync Cancel */
+        case 0x0049: /* LE Clear Periodic Advertiser List */
+        case 0x004A: /* LE Read Periodic Advertiser List Size */
+        case 0x004B: /* LE Read Transmit Power */
+        case 0x004C: /* LE Read RF Path Compensation */
+        case 0x0058: /* LE Read Antenna Information */
+        case 0x0060: /* LE Read Buffer Size [v2] */
+        case 0x0087: /* LE Read All Local Supported Features */
+        case 0x0089: /* LE CS Read Local Supported Capabilities */
+        case 0x0096: /* LE CS Test End */
+        case 0x009A: /* LE Clear Monitored Advertisers List */
+        case 0x009B: /* LE Read Monitored Advertisers List Size */
 
             /* NOTE: No parameters */
             break;
@@ -4620,23 +6718,23 @@ dissect_le_cmd(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, 
 }
 
 /* Code to actually dissect the packets */
-static gint
+static int
 dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
     proto_item        *ti_cmd;
     proto_tree        *bthci_cmd_tree;
-    guint32            opcode;
-    guint16            ocf;
-    guint8             param_length;
-    guint8             ogf;
-    gint               offset = 0;
+    uint32_t           opcode;
+    uint16_t           ocf;
+    uint8_t            param_length;
+    uint8_t            ogf;
+    int                offset = 0;
     proto_item        *ti_opcode;
     proto_tree        *opcode_tree;
-    gint               hfx;
+    int                hfx;
     bluetooth_data_t  *bluetooth_data;
-    guint32            interface_id;
-    guint32            adapter_id;
-    guint32            frame_number;
+    uint32_t           interface_id;
+    uint32_t           adapter_id;
+    uint32_t           frame_number;
     wmem_tree_key_t    key[5];
     bthci_cmd_data_t  *bthci_cmd_data = NULL;
     proto_tree        *sub_item;
@@ -4673,7 +6771,7 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     set_address(&pinfo->net_dst, AT_STRINGZ, 11, "controller");
     set_address(&pinfo->dl_src,  AT_STRINGZ,  5, "host");
     set_address(&pinfo->dl_dst,  AT_STRINGZ, 11, "controller");
-    if (!pinfo->fd->flags.visited) {
+    if (!pinfo->fd->visited) {
         address *addr;
 
         addr = (address *) wmem_memdup(wmem_file_scope(), &pinfo->dl_src, sizeof(address));
@@ -4687,7 +6785,7 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
 
     opcode = tvb_get_letohs(tvb, offset);
     ocf = opcode & 0x03ff;
-    ogf = (guint8) (opcode >> 10);
+    ogf = (uint8_t) (opcode >> 10);
 
     if (ogf == HCI_OGF_VENDOR_SPECIFIC)
         proto_item_append_text(ti_cmd," - %s", val_to_str_ext(opcode, &bthci_cmd_opcode_vals_ext, "Vendor Command 0x%04x"));
@@ -4697,7 +6795,7 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     if (have_tap_listener(bluetooth_hci_summary_tap)) {
         bluetooth_hci_summary_tap_t  *tap_hci_summary;
 
-        tap_hci_summary = wmem_new(wmem_packet_scope(), bluetooth_hci_summary_tap_t);
+        tap_hci_summary = wmem_new(pinfo->pool, bluetooth_hci_summary_tap_t);
 
         tap_hci_summary->interface_id  = bluetooth_data->interface_id;
         tap_hci_summary->adapter_id    = bluetooth_data->adapter_id;
@@ -4712,14 +6810,14 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         tap_queue_packet(bluetooth_hci_summary_tap, pinfo, tap_hci_summary);
     }
 
-    if (!pinfo->fd->flags.visited) {
+    if (!pinfo->fd->visited) {
         bthci_cmd_data = (bthci_cmd_data_t *) wmem_new(wmem_file_scope(), bthci_cmd_data_t);
         bthci_cmd_data->opcode = opcode;
         bthci_cmd_data->command_in_frame = frame_number;
         bthci_cmd_data->command_abs_ts = pinfo->abs_ts;
-        bthci_cmd_data->pending_in_frame = max_disconnect_in_frame;
+        bthci_cmd_data->pending_in_frame = bluetooth_max_disconnect_in_frame;
         bthci_cmd_data->pending_abs_ts = pinfo->abs_ts;
-        bthci_cmd_data->response_in_frame = max_disconnect_in_frame;
+        bthci_cmd_data->response_in_frame = bluetooth_max_disconnect_in_frame;
         bthci_cmd_data->response_abs_ts = pinfo->abs_ts;
     }
 
@@ -4751,13 +6849,13 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     offset+=2;
 
     proto_tree_add_item(bthci_cmd_tree, hf_bthci_cmd_param_length, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-    param_length = tvb_get_guint8(tvb, offset);
+    param_length = tvb_get_uint8(tvb, offset);
     offset++;
 
     if (ogf == HCI_OGF_VENDOR_SPECIFIC) {
         col_append_fstr(pinfo->cinfo, COL_INFO, "Vendor Command 0x%04X (opcode 0x%04X)", ocf, opcode);
 
-        if (!dissector_try_payload_new(vendor_dissector_table, tvb, pinfo, tree, TRUE, bluetooth_data)) {
+        if (!dissector_try_payload_with_data(vendor_dissector_table, tvb, pinfo, tree, true, bluetooth_data)) {
             if (bluetooth_data) {
                 hci_vendor_data_t  *hci_vendor_data;
 
@@ -4770,9 +6868,13 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
 
                 hci_vendor_data = (hci_vendor_data_t *) wmem_tree_lookup32_array(bluetooth_data->hci_vendors, key);
                 if (hci_vendor_data) {
-                    gint sub_offset;
+                    int sub_offset = 0;
 
-                    sub_offset = dissector_try_uint_new(hci_vendor_table, hci_vendor_data->manufacturer, tvb, pinfo, tree, TRUE, bluetooth_data);
+                    if (bthci_vendor_android) {
+                      sub_offset = dissector_try_uint_with_data(hci_vendor_table, bthci_vendor_manufacturer_android, tvb, pinfo, tree, true, bluetooth_data);
+                    } else {
+                      sub_offset = dissector_try_uint_with_data(hci_vendor_table, hci_vendor_data->manufacturer, tvb, pinfo, tree, true, bluetooth_data);
+                    }
 
                     if (sub_offset > 0 && sub_offset < tvb_captured_length_remaining(tvb, offset))
                         proto_tree_add_expert(bthci_cmd_tree, pinfo, &ei_command_parameter_unexpected, tvb, offset + sub_offset, tvb_captured_length_remaining(tvb, sub_offset + offset));
@@ -4821,7 +6923,7 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         }
     }
 
-    if (!pinfo->fd->flags.visited && bthci_cmd_data) {
+    if (!pinfo->fd->visited && bthci_cmd_data) {
         key[0].length = 1;
         key[0].key    = &interface_id;
         key[1].length = 1;
@@ -4852,25 +6954,25 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
 
     subtree = (wmem_tree_t *) wmem_tree_lookup32_array(bthci_cmds, key);
     bthci_cmd_data = (subtree) ? (bthci_cmd_data_t *) wmem_tree_lookup32_le(subtree, pinfo->num) : NULL;
-    if (bthci_cmd_data && bthci_cmd_data->pending_in_frame < max_disconnect_in_frame) {
+    if (bthci_cmd_data && bthci_cmd_data->pending_in_frame < bluetooth_max_disconnect_in_frame) {
         nstime_t  delta;
 
         sub_item = proto_tree_add_uint(bthci_cmd_tree, hf_pending_in_frame, tvb, 0, 0, bthci_cmd_data->pending_in_frame);
-        PROTO_ITEM_SET_GENERATED(sub_item);
+        proto_item_set_generated(sub_item);
 
         nstime_delta(&delta, &bthci_cmd_data->pending_abs_ts, &bthci_cmd_data->command_abs_ts);
         sub_item = proto_tree_add_double(bthci_cmd_tree, hf_command_pending_time_delta, tvb, 0, 0, nstime_to_msec(&delta));
-        PROTO_ITEM_SET_GENERATED(sub_item);
+        proto_item_set_generated(sub_item);
     }
-    if (bthci_cmd_data && bthci_cmd_data->response_in_frame < max_disconnect_in_frame) {
+    if (bthci_cmd_data && bthci_cmd_data->response_in_frame < bluetooth_max_disconnect_in_frame) {
         nstime_t  delta;
 
         sub_item = proto_tree_add_uint(bthci_cmd_tree, hf_response_in_frame, tvb, 0, 0, bthci_cmd_data->response_in_frame);
-        PROTO_ITEM_SET_GENERATED(sub_item);
+        proto_item_set_generated(sub_item);
 
         nstime_delta(&delta, &bthci_cmd_data->response_abs_ts, &bthci_cmd_data->command_abs_ts);
         sub_item = proto_tree_add_double(bthci_cmd_tree, hf_command_response_time_delta, tvb, 0, 0, nstime_to_msec(&delta));
-        PROTO_ITEM_SET_GENERATED(sub_item);
+        proto_item_set_generated(sub_item);
     }
 
     return offset;
@@ -5068,7 +7170,7 @@ proto_register_bthci_cmd(void)
         { &hf_bthci_cmd_clock_offset,
           { "Clock Offset",        "bthci_cmd.clock_offset",
             FT_UINT16, BASE_HEX, NULL, 0x7FFF,
-            "Bit 2-16 of the Clock Offset between CLKmaster-CLKslave", HFILL }
+            "Bit 2-16 of the Clock Offset, CLKNPeripheral-CLK", HFILL }
         },
         { &hf_bthci_cmd_clock_offset_valid,
           { "Clock_Offset_Valid_Flag",     "bthci_cmd.clock_offset_valid",
@@ -5162,47 +7264,57 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_max_interval_hold,
           { "Hold Mode Max Interval",        "bthci_cmd.hold_mode_max_int",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Maximal acceptable number of Baseband slots to wait in Hold Mode.", HFILL }
         },
         { &hf_bthci_cmd_min_interval_hold,
           { "Hold Mode Min Interval",        "bthci_cmd.hold_mode_min_int",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Minimum acceptable number of Baseband slots to wait in Hold Mode.", HFILL }
         },
         { &hf_bthci_cmd_max_interval_sniff,
           { "Sniff Max Interval",        "bthci_cmd.sniff_max_int",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Maximal acceptable number of Baseband slots between each sniff period.", HFILL }
         },
         { &hf_bthci_cmd_min_interval_sniff,
           { "Sniff Min Interval",        "bthci_cmd.sniff_min_int",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Minimum acceptable number of Baseband slots between each sniff period.", HFILL }
         },
         { &hf_bthci_cmd_sniff_attempt,
           { "Sniff Attempt",        "bthci_cmd.sniff_attempt",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
             "Number of Baseband receive slots for sniff attempt.", HFILL }
+        },
+        { &hf_bthci_cmd_sniff_timeout,
+          { "Timeout",        "bthci_cmd.sniff_timeout",
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_timeout,
           { "Timeout",        "bthci_cmd.timeout",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Number of Baseband slots for timeout.", HFILL }
         },
         { &hf_bthci_cmd_max_interval_beacon,
           { "Beacon Max Interval",        "bthci_cmd.beacon_max_int",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Maximal acceptable number of Baseband slots between consecutive beacons.", HFILL }
         },
         { &hf_bthci_cmd_min_interval_beacon,
           { "Beacon Min Interval",        "bthci_cmd.beacon_min_int",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Minimum acceptable number of Baseband slots between consecutive beacons.", HFILL }
         },
         { &hf_bthci_cmd_flags,
           { "Flags",        "bthci_cmd.flags",
             FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_flow_direction,
+          { "Flow Direction",        "bthci_cmd.flow_direction",
+            FT_UINT8, BASE_HEX, VALS(cmd_flow_directions), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_service_type,
@@ -5236,7 +7348,7 @@ proto_register_bthci_cmd(void)
             "Delay Variation, in microseconds", HFILL }
         },
         { &hf_bthci_cmd_link_policy_setting_switch,
-          { "Enable Master Slave Switch", "bthci_cmd.link_policy_switch",
+          { "Enable Role Switch", "bthci_cmd.link_policy_switch",
             FT_UINT16, BASE_DEC, VALS(cmd_boolean), 0x0001,
             NULL, HFILL }
         },
@@ -5322,7 +7434,12 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_cod_major_service_class_reserved_mask,
           { "Major Service Classes Mask: Reserved", "bthci_cmd.class_of_device_mask.major_service_classes.reserved",
-            FT_UINT16, BASE_HEX, NULL, 0x00C0,
+            FT_UINT16, BASE_HEX, NULL, 0x0080,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cod_major_service_class_le_audio_mask,
+          { "Major Service Classes Mask: LE Audio", "bthci_cmd.class_of_device_mask.major_service_classes.le_audio",
+            FT_UINT16, BASE_HEX, NULL, 0x0040,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_cod_major_service_class_limited_discoverable_mode_mask,
@@ -5436,7 +7553,7 @@ proto_register_bthci_cmd(void)
             "Number of IACs which are currently in use", HFILL }
         },
         { &hf_bthci_cmd_iac_lap,
-          { "IAC LAP", "bthci_cmd.num_curr_iac",
+          { "IAC LAP", "bthci_cmd.num_iac_lap",
             FT_UINT24, BASE_HEX, NULL, 0x0,
             "LAP(s)used to create IAC", HFILL }
         },
@@ -5486,9 +7603,9 @@ proto_register_bthci_cmd(void)
             "Change Connection Link Key Complete Bit", HFILL }
         },
         { &hf_bthci_cmd_evt_mask_11,
-          { "Master Link Key Complete", "bthci_cmd.evt_mask_11",
+          { "Link Key Type Changed Complete", "bthci_cmd.evt_mask_11",
             FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x02,
-            "Master Link Key Complete Bit", HFILL }
+            "Link Key Type Changed Complete Bit", HFILL }
         },
         { &hf_bthci_cmd_evt_mask_12,
           { "Read Remote Supported Features", "bthci_cmd.evt_mask_12",
@@ -5551,7 +7668,7 @@ proto_register_bthci_cmd(void)
             "Loopback Command Bit", HFILL }
         },
         { &hf_bthci_cmd_evt_mask_31,
-          { "Data Buffer Overflow" , "bthci_cmd.evt_mask_31",
+          { "Data Buffer Overflow", "bthci_cmd.evt_mask_31",
             FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x02,
             "Data Buffer Overflow Bit", HFILL }
         },
@@ -5729,12 +7846,12 @@ proto_register_bthci_cmd(void)
         { &hf_bthci_cmd_transmit_bandwidth,
           {"Tx Bandwidth (bytes/s)", "bthci_cmd.tx_bandwidth",
            FT_UINT32, BASE_DEC, NULL, 0x0,
-           "Tx Bandwidth", HFILL}
+           NULL, HFILL}
         },
         { &hf_bthci_cmd_receive_bandwidth,
           {"Rx Bandwidth (bytes/s)", "bthci_cmd.rx_bandwidth",
            FT_UINT32, BASE_DEC, NULL, 0x0,
-           "Rx Bandwidth", HFILL}
+           NULL, HFILL}
         },
         { &hf_bthci_cmd_max_latency_ms,
           {"Max. Latency (ms)", "bthci_cmd.max_latency_ms",
@@ -5743,7 +7860,7 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_max_latency,
           {"Max. Latency", "bthci_cmd.max_latency",
-           FT_UINT16, BASE_DEC, NULL, 0x0,
+           FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
            "Max. Latency in baseband slots", HFILL}
         },
         { &hf_bthci_cmd_retransmission_effort,
@@ -5757,7 +7874,7 @@ proto_register_bthci_cmd(void)
            NULL, HFILL}
         },
         { &hf_bthci_cmd_inq_mode,
-          {"Inquiry Mode", "bthci_cmd.inq_scan_type",
+          {"Inquiry Mode", "bthci_cmd.inq_mode",
            FT_UINT8, BASE_DEC, VALS(bthci_cmd_inq_modes), 0x0,
            NULL, HFILL}
         },
@@ -5782,52 +7899,52 @@ proto_register_bthci_cmd(void)
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_hv1,
-          { "HV1",        "bthci_cmd.sco_packet_type.hv1",
+          { "HV1 may be used",        "bthci_cmd.sco_packet_type.hv1",
             FT_BOOLEAN, 16, NULL, 0x0001,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_hv2,
-          { "HV2",        "bthci_cmd.sco_packet_type.hv2",
+          { "HV2 may be used",        "bthci_cmd.sco_packet_type.hv2",
             FT_BOOLEAN, 16, NULL, 0x0002,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_hv3,
-          { "HV3",        "bthci_cmd.sco_packet_type.hv3",
+          { "HV3 may be used",        "bthci_cmd.sco_packet_type.hv3",
             FT_BOOLEAN, 16, NULL, 0x0004,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_ev3,
-          { "EV3",        "bthci_cmd.sco_packet_type.ev3",
+          { "EV3 may be used",        "bthci_cmd.sco_packet_type.ev3",
             FT_BOOLEAN, 16, NULL, 0x0008,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_ev4,
-          { "EV4",        "bthci_cmd.sco_packet_type.ev4",
+          { "EV4 may be used",        "bthci_cmd.sco_packet_type.ev4",
             FT_BOOLEAN, 16, NULL, 0x0010,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_ev5,
-          { "EV5",        "bthci_cmd.sco_packet_type.ev5",
+          { "EV5 may be used",        "bthci_cmd.sco_packet_type.ev5",
             FT_BOOLEAN, 16, NULL, 0x0020,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_2ev3,
-          { "2-EV3",        "bthci_cmd.sco_packet_type.2ev3",
+          { "2-EV3 may NOT be used",        "bthci_cmd.sco_packet_type.2ev3",
             FT_BOOLEAN, 16, NULL, 0x0040,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_3ev3,
-          { "3-EV3",        "bthci_cmd.sco_packet_type.3ev3",
+          { "3-EV3 may NOT be used",        "bthci_cmd.sco_packet_type.3ev3",
             FT_BOOLEAN, 16, NULL, 0x0080,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_2ev5,
-          { "2-EV5",        "bthci_cmd.sco_packet_type.2ev5",
+          { "2-EV5 may NOT be used",        "bthci_cmd.sco_packet_type.2ev5",
             FT_BOOLEAN, 16, NULL, 0x0100,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_sco_packet_type_3ev5,
-          { "3-EV5",        "bthci_cmd.sco_packet_type.3ev5",
+          { "3-EV5 may NOT be used",        "bthci_cmd.sco_packet_type.3ev5",
             FT_BOOLEAN, 16, NULL, 0x0200,
             NULL, HFILL }
         },
@@ -5838,12 +7955,12 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_min_remote_timeout,
           {"Min. Remote Timeout", "bthci_cmd.min_remote_timeout",
-           FT_UINT16, BASE_DEC, NULL, 0x0,
+           FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
            "Min. Remote Timeout in baseband slots", HFILL}
         },
         { &hf_bthci_cmd_min_local_timeout,
           {"Min. Local Timeout", "bthci_cmd.min_local_timeout",
-           FT_UINT16, BASE_DEC, NULL, 0x0,
+           FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
            "Min. Local Timeout in baseband slots", HFILL}
         },
         { &hf_bthci_cmd_flush_packet_type,
@@ -5856,9 +7973,9 @@ proto_register_bthci_cmd(void)
            FT_UINT8, BASE_DEC, VALS(cmd_en_disabled), 0x0,
            NULL, HFILL}
         },
-        { &hf_bthci_cmd_afh_ch_classification,
-          { "Channel Classification",           "bthci_cmd.afh_ch_classification",
-            FT_NONE, BASE_NONE, NULL, 0x0,
+        { &hf_bthci_cmd_ch_classification,
+          { "Channel Classification",           "bthci_cmd.ch_classification",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_which_clock,
@@ -5972,75 +8089,145 @@ proto_register_bthci_cmd(void)
             NULL, HFILL }
         },
 
+        { &hf_bthci_cmd_evt_mask2,
+          { "Event Mask Page 2", "bthci_cmd.evt_mask2",
+            FT_UINT64, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
         { &hf_bthci_cmd_evt_mask2_00,
           { "Physical Link Complete", "bthci_cmd.evt_mask2_00",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x01,
-            "Physical Link Complete Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x01),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_01,
           { "Channel Selected", "bthci_cmd.evt_mask2_01",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x02,
-            "Channel Selected Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x02),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_02,
           { "Disconnection Physical Link", "bthci_cmd.evt_mask2_02",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x04,
-            "Disconnection Physical Link Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x04),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_03,
          { "Physical Link Loss Early Warning", "bthci_cmd.evt_mask2_03",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x08,
-            "Physical Link Loss Early Warning Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x08),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_04,
           { "Physical Link Recovery", "bthci_cmd.evt_mask2_04",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x10,
-            "Physical Link Recovery Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x10),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_05,
           { "Logical Link Complete", "bthci_cmd.evt_mask2_05",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x20,
-            "Logical Link Complete Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x20),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_06,
           { "Disconnection Logical Link Complete", "bthci_cmd.evt_mask2_06",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x40,
-            "Disconnection Logical Link Complete Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x40),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_07,
           { "Flow Spec Modify Complete", "bthci_cmd.evt_mask2_07",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x80,
-            "Flow Spec Modify Complete Bit", HFILL }
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x80),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_08,
+          { "Number Of Completed Data Blocks", "bthci_cmd.evt_mask2_8",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x100),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_09,
+          { "AMP Start Test", "bthci_cmd.evt_mask2_9",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x200),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_10,
-          { "Number Of Completed Data Blocks", "bthci_cmd.evt_mask2_10",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x01,
-            "Number Of Completed Data Blocks Bit", HFILL }
+          { "AMP Test End", "bthci_cmd.evt_mask2_10",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x400),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_11,
-          { "AMP Start Test", "bthci_cmd.evt_mask2_11",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x02,
-            "AMP Start Test Bit", HFILL }
+          { "AMP Receiver Report", "bthci_cmd.evt_mask2_11",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x800),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_12,
-          { "AMP Test End", "bthci_cmd.evt_mask2_12",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x04,
-            "AMP Test End Bit", HFILL }
+          { "Short Range Mode Change Complete", "bthci_cmd.evt_mask2_12",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x1000),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_13,
-          { "AMP Receiver Report", "bthci_cmd.evt_mask2_13",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x08,
-            "AMP Receiver Report Bit", HFILL }
+          { "AMP Status Change", "bthci_cmd.evt_mask2_13",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x2000),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_14,
-          { "Short Range Mode Change Complete", "bthci_cmd.evt_mask2_14",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x10,
-            "Short Range Mode Change Complete Bit", HFILL }
+          { "Triggered Clock Capture", "bthci_cmd.evt_mask2_14",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x4000),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_evt_mask2_15,
-          { "AMP Status Change", "bthci_cmd.evt_mask2_15",
-            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x20,
-            "AMP Status Change Bit", HFILL }
+          { "Synchronization Train Complete", "bthci_cmd.evt_mask2_15",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x8000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_16,
+          { "Synchronization Train Received", "bthci_cmd.evt_mask2_16",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x10000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_17,
+          { "Connectionless Peripheral Broadcast Receive", "bthci_cmd.evt_mask2_17",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x20000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_18,
+          { "Connectionless Peripheral Broadcast Timeout", "bthci_cmd.evt_mask2_18",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x40000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_19,
+          { "Truncated Page Complete", "bthci_cmd.evt_mask2_19",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x80000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_20,
+          { "Peripheral Page Response Timeout", "bthci_cmd.evt_mask2_20",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x100000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_21,
+          { "Connectionless Peripheral Broadcast Channel Map Change", "bthci_cmd.evt_mask2_21",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x200000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_22,
+          { "Inquiry Response Notification", "bthci_cmd.evt_mask2_22",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x400000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_23,
+          { "Authenticated Payload Timeout Expired", "bthci_cmd.evt_mask2_23",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x800000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_24,
+          { "SAM Status Change", "bthci_cmd.evt_mask2_24",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x1000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_25,
+          { "Encryption Change [v2]", "bthci_cmd.evt_mask2_25",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x2000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_evt_mask2_reserved,
+          { "Reserved", "bthci_cmd.evt_mask2_25_reserved",
+            FT_UINT64, BASE_HEX, NULL, UINT64_C(0xFFFFFFFFFC000000),
+            NULL, HFILL }
         },
         { &hf_bthci_cmd_location_domain_aware,
           { "Location Domain Aware", "bthci_cmd.location_domain_aware",
@@ -6113,78 +8300,283 @@ proto_register_bthci_cmd(void)
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_simultaneous_host,
-          { "Simultaneous LE Host", "bthci_cmd.le_simlutaneous_host",
+          { "Simultaneous LE Host", "bthci_cmd.le_simultaneous_host",
             FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x0,
             "Support for both LE and BR/EDR to same device", HFILL }
         },
         { &hf_bthci_cmd_le_event_mask,
-          { "LE Connection Complete",                      "bthci_cmd.le_event_mask",
+          { "LE Event Mask",                               "bthci_cmd.le_event_mask",
             FT_UINT64, BASE_HEX, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_connection_complete,
           { "LE Connection Complete",                      "bthci_cmd.le_event_mask.le_connection_complete",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x01),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x01),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_advertising_report,
           { "LE Advertising Report",                       "bthci_cmd.le_event_mask.le_advertising_report",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x02),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x02),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_connection_update_complete,
           { "LE Connection Update Complete",               "bthci_cmd.le_event_mask.le_connection_update_complete",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x04),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x04),
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_le_event_mask_le_read_remote_used_features_complete,
-          { "LE Read Remote Used Features Complete",       "bthci_cmd.le_event_mask.le_read_remote_used_features_complete",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x08),
+        { &hf_bthci_cmd_le_event_mask_le_read_remote_features_complete,
+          { "LE Read Remote Features (Page 0) Complete",       "bthci_cmd.le_event_mask.le_read_remote_features_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x08),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_long_term_key_request,
           { "LE Long Term Key Request",                    "bthci_cmd.le_event_mask.le_long_term_key_request",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x10),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x10),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_remote_connection_parameter_request,
           { "LE Remote Connection Parameter Request",      "bthci_cmd.le_event_mask.le_remote_connection_parameter_request",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x20),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x20),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_data_length_change,
           { "LE Data Length Change",                       "bthci_cmd.le_event_mask.le_data_length_change",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x40),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x40),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_read_local_p256_public_key_complete,
           { "LE Read Local P-256 Public Key Complete",     "bthci_cmd.le_event_mask.le_read_local_p256_public_key_complete",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x80),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x80),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_generate_dhkey_complete,
           { "LE Generate DHKey Complete",                  "bthci_cmd.le_event_mask.le_generate_dhkey_complete",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x100),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x100),
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete,
-          { "LE Enhanced Connection Complete",             "bthci_cmd.le_event_mask.le_enhanced_connection_complete",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x200),
+        { &hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete_v1,
+          { "LE Enhanced Connection Complete [v1]",             "bthci_cmd.le_event_mask.le_enhanced_connection_complete_v1",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x200),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_direct_advertising_report,
           { "LE Direct Advertising Report",                "bthci_cmd.le_event_mask.le_direct_advertising_report",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x400),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x400),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_phy_update_complete,
           { "LE PHY Update Complete",                "bthci_cmd.le_event_mask.le_phy_update_complete",
-            FT_BOOLEAN, 64, NULL, G_GUINT64_CONSTANT(0x800),
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x800),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_extended_advertising_report,
+          { "LE Extended Advertising Report",              "bthci_cmd.le_event_mask.le_extended_advertising_report",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x1000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_established_v1,
+          { "LE Periodic Advertising Sync Established [v1]",    "bthci_cmd.le_event_mask.le_periodic_advertising_sync_established_v1",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x2000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_report_v1,
+          { "LE Periodic Advertising Report [v1]",              "bthci_cmd.le_event_mask.le_periodic_advertising_report_v1",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x4000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_lost,
+          { "LE Periodic Advertising Sync Lost",           "bthci_cmd.le_event_mask.le_periodic_advertising_sync_lost",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x8000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_extended_scan_timeout,
+          { "LE Extended Scan Timeout",                    "bthci_cmd.le_event_mask.le_extended_scan_timeout",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x10000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_extended_advertising_set_terminated,
+          { "LE Extended Advertising Set Terminated",      "bthci_cmd.le_event_mask.le_extended_advertising_set_terminated",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x20000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_scan_request_received,
+          { "LE Scan Request Received",                    "bthci_cmd.le_event_mask.le_scan_request_received",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x40000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_channel_selection_algorithm,
+          { "LE Channel Selection Algorithm",              "bthci_cmd.le_event_mask.le_channel_selection_algorithm",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x80000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_connectionless_iq_report,
+          { "LE Connectionless IQ Report", "bthci_cmd.le_event_mask.le_connectionless_iq_report",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x100000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_connection_iq_report,
+          { "LE Connection IQ Report", "bthci_cmd.le_event_mask.le_connection_iq_report",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x200000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cte_request_failed,
+          { "LE CTE Request Failed", "bthci_cmd.le_event_mask.le_cte_request_failed",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x400000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_transfer_received_v1,
+          { "LE Periodic Advertising Sync Transfer Received [v1]", "bthci_cmd.le_event_mask.le_periodic_advertising_sync_transfer_received_v1",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x800000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cis_established_v1,
+          { "LE CIS Established [v1]", "bthci_cmd.le_event_mask.le_cis_established_v1",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x1000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cis_request,
+          { "LE CIS Request", "bthci_cmd.le_event_mask.le_cis_request",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x2000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_create_big_complete,
+          { "LE Create BIG Complete", "bthci_cmd.le_event_mask.le_create_big_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x4000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_terminate_big_complete,
+          { "LE Terminate BIG Complete", "bthci_cmd.le_event_mask.le_terminate_big_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x8000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_big_sync_established,
+          { "LE BIG Sync Established", "bthci_cmd.le_event_mask.le_big_sync_established",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x10000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_big_sync_lost,
+          { "LE BIG Sync Lost", "bthci_cmd.le_event_mask.le_big_sync_lost",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x20000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_request_peer_sca_complete,
+          { "LE Request Peer SCA Complete", "bthci_cmd.le_event_mask.le_request_peer_sca_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x40000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_path_loss_threshold,
+          { "LE Path Loss Threshold", "bthci_cmd.le_event_mask.le_path_loss_threshold",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x80000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_transmit_power_reporting,
+          { "LE Transmit Power Reporting", "bthci_cmd.le_event_mask.le_transmit_power_reporting",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x100000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_biginfo_advertising_report,
+          { "LE BIGInfo Advertising Report", "bthci_cmd.le_event_mask.le_biginfo_advertising_report",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x200000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_subrate_changed,
+          { "LE Subrate Changed", "bthci_cmd.le_event_mask.le_subrate_changed",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x400000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_established_v2,
+          { "LE Periodic Advertising Sync Established [v2]", "bthci_cmd.le_event_mask.le_periodic_advertising_sync_established_v2",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x800000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_report_v2,
+          { "LE Periodic Advertising Report [v2]", "bthci_cmd.le_event_mask.le_event_mask_le_periodic_advertising_report_v2",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x1000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_sync_transfer_received_v2,
+          { "LE Periodic Advertising Sync Transfer Received [v2]", "bthci_cmd.le_event_mask.le_periodic_advertising_sync_transfer_received_v2",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x2000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_subevent_data_request,
+          { "LE Periodic Advertising Subevent Data Request", "bthci_cmd.le_event_mask.le_periodic_advertising_subevent_data_request",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x4000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_periodic_advertising_response_report,
+          { "LE Periodic Advertising Response Report", "bthci_cmd.le_event_mask.le_periodic_advertising_response_report",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x8000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_enhanced_connection_complete_v2,
+          { "LE Enhanced Connection Complete [v2]", "bthci_cmd.le_event_mask.le_enhanced_connection_complete_v2",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x10000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cis_established_v2,
+          { "LE CIS Established [v2]", "bthci_cmd.le_event_mask.le_cis_established_v2",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x20000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_read_all_remote_features_complete,
+          { "LE Read All Remote Features Complete", "bthci_cmd.le_event_mask.le_read_all_remote_features_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x40000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_read_remote_supported_capabilities_complete,
+          { "LE CS Read Remote Supported Capabilities Complete", "bthci_cmd.le_event_mask.le_cs_read_remote_supported_capabilities_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x80000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_read_remote_fae_table_complete,
+          { "LE CS Read Remote FAE Table Complete", "bthci_cmd.le_event_mask.le_cs_read_remote_fae_table_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x100000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_security_enable_complete,
+          { "LE CS Security Enable Complete", "bthci_cmd.le_event_mask.le_cs_security_enable_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x200000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_config_complete,
+          { "LE CS Config Complete", "bthci_cmd.le_event_mask.le_cs_config_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x400000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_procedure_enable_complete,
+          { "LE CS Procedure Enable Complete", "bthci_cmd.le_event_mask.le_cs_procedure_enable_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x800000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_subevent_result,
+          { "LE CS Subevent Result", "bthci_cmd.le_event_mask.le_cs_subevent_result",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x1000000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_subevent_result_continue,
+          { "LE CS Subevent Result Continue", "bthci_cmd.le_event_mask.le_cs_subevent_result_continue",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x2000000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_cs_test_end_complete,
+          { "LE CS Test End Complete", "bthci_cmd.le_event_mask.le_cs_test_end_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x4000000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_monitored_advertisers_report,
+          { "LE Monitored Advertisers Report", "bthci_cmd.le_event_mask.le_monitored_advertisers_report",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x8000000000000),
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_event_mask_le_frame_space_update_complete,
+          { "LE Frame Space Update Complete", "bthci_cmd.le_event_mask.le_frame_space_update_complete",
+            FT_BOOLEAN, 64, NULL, UINT64_C(0x10000000000000),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_event_mask_le_reserved,
-          { "Reserved",                                    "bthci_cmd.le_event_mask.reserved",
-            FT_UINT64, BASE_HEX, NULL, G_GUINT64_CONSTANT(0xFFFFFFFFFFFFF000),
+          { "Reserved", "bthci_cmd.le_event_mask.reserved",
+            FT_UINT64, BASE_HEX, NULL, UINT64_C(0xFFE0000000000000),
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_advts_interval_min,
@@ -6215,6 +8607,11 @@ proto_register_bthci_cmd(void)
         { &hf_bthci_cmd_le_peer_address_type,
           { "Peer Address Type", "bthci_cmd.le_peer_address_type",
             FT_UINT8, BASE_HEX, VALS(bthci_cmd_address_types_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_peer_identity_address_type,
+          { "Peer Identity Address Type", "bthci_cmd.le_peer_identity_address_type",
+            FT_UINT8, BASE_HEX, VALS(cmd_identity_address_types_vals), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_direct_address_type,
@@ -6269,17 +8666,37 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_le_scan_interval,
           { "Scan Interval", "bthci_cmd.le_scan_interval",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_scan_window,
           { "Scan Window", "bthci_cmd.le_scan_window",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_scan_filter_policy,
           { "Scan Filter Policy", "bthci_cmd.le_scan_filter_policy",
-            FT_UINT8, BASE_HEX, VALS(cmd_le_scan_filter_policy), 0x0,
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_scan_filter_policy_filtered,
+          { "Filtered (Use Filter Accept List)", "bthci_cmd.scan_filter_policy.filtered",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_scan_filter_policy_extended,
+          { "Extended (Allow Unresolvable TargetA Address)", "bthci_cmd.scan_filter_policy.extended",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_scan_filter_policy_decision_mode,
+          { "Decision Mode", "bthci_cmd.scan_filter_policy.decision_mode",
+            FT_UINT8, BASE_HEX, VALS(cmd_decision_mode_filter_policy), 0x0C,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_scan_filter_policy_reserved,
+          { "Reserved", "bthci_cmd.scan_filter_policy.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xF0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_initiator_filter_policy,
@@ -6289,32 +8706,32 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_le_con_interval_min,
           { "Connection Interval Min", "bthci_cmd.le_con_interval_min",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_con_interval_max,
           { "Connection Interval Max", "bthci_cmd.le_con_interval_max",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_con_latency,
-          { "Connection Latency", "bthci_cmd.le_con_latency",
+          { "Max Connection Latency", "bthci_cmd.le_con_latency",
             FT_UINT16, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_supervision_timeout,
           { "Supervision Timeout", "bthci_cmd.le_supv_timeout",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p01_sec), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_min_ce_length,
           { "Min CE Length", "bthci_cmd.le_min_ce_length",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Min. Connection Event Length", HFILL }
         },
         { &hf_bthci_cmd_le_max_ce_length,
           { "Max CE Length", "bthci_cmd.le_max_ce_length",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             "Max. Connection Event Length", HFILL }
         },
         { &hf_bthci_cmd_le_channel_map,
@@ -6343,18 +8760,18 @@ proto_register_bthci_cmd(void)
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_long_term_key,
-          { "Long Term Key",        "bthci_cmd.le_long_tem_key",
+          { "Long Term Key",        "bthci_cmd.le_long_term_key",
             FT_BYTES, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_rx_frequency,
           { "Rx Frequency", "bthci_cmd.rx_frequency",
-            FT_UINT8, BASE_HEX, NULL, 0x0,
+            FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_tx_frequency,
           { "Tx Frequency", "bthci_cmd.tx_frequency",
-            FT_UINT8, BASE_HEX, NULL, 0x0,
+            FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_test_data_length,
@@ -6363,7 +8780,7 @@ proto_register_bthci_cmd(void)
             NULL, HFILL }
         },
         { &hf_bthci_cmd_test_packet_payload,
-          { "Packet Payload", "bthci_cmd.le_test_data_length",
+          { "Packet Payload", "bthci_cmd.le_test_payload",
             FT_UINT8, BASE_HEX, VALS(cmd_le_test_pkt_payload), 0x0,
             NULL, HFILL }
         },
@@ -6379,7 +8796,7 @@ proto_register_bthci_cmd(void)
         },
         { &hf_command_response_time_delta,
             { "Command-Response Delta",          "bthci_cmd.command_response_delta",
-            FT_DOUBLE, BASE_NONE|BASE_UNIT_STRING, &units_milliseconds, 0x00,
+            FT_DOUBLE, BASE_NONE|BASE_UNIT_STRING, UNS(&units_milliseconds), 0x00,
             NULL, HFILL }
         },
         { &hf_pending_in_frame,
@@ -6389,27 +8806,27 @@ proto_register_bthci_cmd(void)
         },
         { &hf_command_pending_time_delta,
             { "Command-Pending Delta",          "bthci_cmd.command_pending_delta",
-            FT_DOUBLE, BASE_NONE|BASE_UNIT_STRING, &units_milliseconds, 0x00,
+            FT_DOUBLE, BASE_NONE|BASE_UNIT_STRING, UNS(&units_milliseconds), 0x00,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_tx_octets,
           { "TxOctets", "bthci_cmd.le_tx_octets",
-            FT_UINT16, BASE_HEX, NULL, 0x0,
+            FT_UINT16, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_tx_time,
           { "TxTime", "bthci_cmd.le_tx_time",
-            FT_UINT16, BASE_HEX, NULL, 0x0,
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_suggested_max_tx_octets,
           { "SuggestedMaxTxOctets", "bthci_cmd.le_suggested_max_tx_octets",
-            FT_UINT16, BASE_HEX, NULL, 0x0,
+            FT_UINT16, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_suggested_max_tx_time,
           { "SuggestedMaxTxTime", "bthci_cmd.le_suggested_max_tx_time",
-            FT_UINT16, BASE_HEX, NULL, 0x0,
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_remote_p_256_public_key,
@@ -6434,22 +8851,22 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_le_rpa_timeout,
           { "RPA Timeout", "bthci_cmd.le_rpa_timeout",
-            FT_UINT16, BASE_HEX, NULL, 0x0,
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_second_seconds), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_handle,
           { "Advertising Handle", "bthci_cmd.advertising_handle",
-            FT_UINT8, BASE_HEX, NULL, 0x0,
+            FT_UINT8, BASE_HEX|BASE_SPECIAL_VALS, VALS(bluetooth_not_used_0xff_special), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_ext_interval_min,
           { "Advertising Interval Min", "bthci_cmd.le_advts_interval_min",
-            FT_UINT24, BASE_DEC, NULL, 0x0,
+            FT_UINT24, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_ext_interval_max,
           { "Advertising Interval Max", "bthci_cmd.le_advts_interval_max",
-            FT_UINT24, BASE_DEC, NULL, 0x0,
+            FT_UINT24, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties,
@@ -6457,44 +8874,59 @@ proto_register_bthci_cmd(void)
             FT_UINT16, BASE_HEX, NULL, 0x0,
             NULL, HFILL }
         },
+        { &hf_bthci_cmd_advertising_properties_decision_pdu_incl_adi,
+          { "Include ADI in Decision PDUs", "bthci_cmd.adv_properties.decision_pdu_incl_adi",
+            FT_BOOLEAN, 16, NULL, 0x0200,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_advertising_properties_decision_pdu_incl_adva,
+          { "Include AdvA in Decision PDUs", "bthci_cmd.adv_properties.decision_pdu_incl_adva",
+            FT_BOOLEAN, 16, NULL, 0x0100,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_advertising_properties_use_decision_pdus,
+          { "Use Decision PDUs", "bthci_cmd.adv_properties.use_decision_pdus",
+            FT_BOOLEAN, 16, NULL, 0x0080,
+            NULL, HFILL }
+        },
         { &hf_bthci_cmd_advertising_properties_incl_txpower,
           { "Include Tx Power", "bthci_cmd.adv_properties.txpower",
-            FT_BOOLEAN, 16, NULL, 0x40,
+            FT_BOOLEAN, 16, NULL, 0x0040,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties_anonymous_adv,
           { "Anonymous Advertisement", "bthci_cmd.adv_properties.anonymous_adv",
-            FT_BOOLEAN, 16, NULL, 0x20,
+            FT_BOOLEAN, 16, NULL, 0x0020,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties_legacy_adv,
           { "Use Legacy PDUs", "bthci_cmd.adv_properties.legacy_adv",
-            FT_BOOLEAN, 16, NULL, 0x10,
+            FT_BOOLEAN, 16, NULL, 0x0010,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties_hdc_connectable_directed,
           { "High Duty Cycle Connectable Directed", "bthci_cmd.adv_properties.hdc_connectable_directed",
-            FT_BOOLEAN, 16, NULL, 0x08,
+            FT_BOOLEAN, 16, NULL, 0x0008,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties_directed,
           { "Directed", "bthci_cmd.adv_properties.directed",
-            FT_BOOLEAN, 16, NULL, 0x04,
+            FT_BOOLEAN, 16, NULL, 0x0004,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties_scannable,
           { "Scannable", "bthci_cmd.adv_properties.scannable",
-            FT_BOOLEAN, 16, NULL, 0x02,
+            FT_BOOLEAN, 16, NULL, 0x0002,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties_connectable,
           { "Connectable", "bthci_cmd.adv_properties.connectable",
-            FT_BOOLEAN, 16, NULL, 0x01,
+            FT_BOOLEAN, 16, NULL, 0x0001,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_advertising_properties_reserved,
           { "Reserved", "bthci_cmd.adv_properties.reserved",
-            FT_UINT16, BASE_HEX, NULL, 0xFF80,
+            FT_UINT16, BASE_HEX, NULL, 0xFC00,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_periodic_advertising_properties,
@@ -6514,7 +8946,7 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_sec_adv_max_skip,
           { "Secondary Advertising Max Skip", "bthci_cmd.secondary_advertising_max_skip",
-            FT_UINT8, BASE_HEX, NULL, 0x0,
+            FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_secondary_advertising_phy,
@@ -6554,7 +8986,7 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_le_adv_duration,
           { "Duration", "bthci_cmd.adv_duration",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p01_sec), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_le_adv_max_extended_events,
@@ -6672,8 +9104,8 @@ proto_register_bthci_cmd(void)
             FT_UINT16, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_le_init_phys,
-          { "Initiating PHYs", "bthci_cmd.le_init_phys",
+        { &hf_bthci_cmd_le_phys,
+          { "PHYs", "bthci_cmd.le_phys",
             FT_UINT8, BASE_HEX, NULL, 0x0,
             NULL, HFILL }
         },
@@ -6700,6 +9132,1416 @@ proto_register_bthci_cmd(void)
         { &hf_bthci_cmd_le_init_phy_param,
           { "Initiating PHY", "bthci_cmd.le_init_phy_param",
             FT_NONE, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_le_privacy_mode,
+          { "Privacy Mode", "bthci_cmd.le_privacy_mode",
+            FT_UINT8, BASE_HEX, VALS(cmd_privacy_mode), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_filter_policy,
+          { "Filter Policy", "bthci_cmd.le_sync_filter_policy",
+            FT_UINT8, BASE_HEX, VALS(cmd_sync_filter_policy), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_skip,
+          { "Skip", "bthci_cmd.skip",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_handle,
+          { "Sync Handle",             "bthci_cmd.sync_handle",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rf_tx_path_compensation_value,
+          { "RF Tx Path Compensation Value",   "bthci_cmd.rf_tx_path_compensation_value",
+            FT_INT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rf_rx_path_compensation_value,
+          { "RF Rx Path Compensation Value",   "bthci_cmd.rf_rx_path_compensation_value",
+            FT_INT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_length,
+          { "CTE Length",   "bthci_cmd.cte_length",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_type,
+          { "CTE Type",   "bthci_cmd.cte_type",
+            FT_UINT8, BASE_HEX, VALS(cmd_cte_type_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_slot_durations,
+          { "Slot Durations",   "bthci_cmd.slot_durations",
+            FT_UINT8, BASE_HEX, VALS(cmd_slot_durations_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_antenna_switching_pattern_length,
+          { "Antenna Switching Pattern Length",   "bthci_cmd.antenna_switching_pattern_length",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_antenna_switching_pattern,
+          { "Antenna Switching Pattern",   "bthci_cmd.antenna_switching_pattern",
+            FT_NONE, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_antenna_id,
+          { "Antenna Id",   "bthci_cmd.antenna_id",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_count,
+          { "CTE Count",   "bthci_cmd.cte_count",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_enable,
+          { "CTE Enable",   "bthci_cmd.cte_enable",
+            FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_iq_sampling_enable,
+          { "IQ Sampling Enable",   "bthci_cmd.iq_sampling_enable",
+            FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_sampled_ctes,
+          { "Max Sampled CTEs",   "bthci_cmd.max_sampled_ctes",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_request_interval,
+          { "CTE Request Interval",   "bthci_cmd.cte_request_interval",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_reporting_enable,
+          { "Reporting Enable", "bthci_cmd.reporting_enable",
+            FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_cte_type,
+          { "Sync CTE Type", "bthci_cmd.sync_cte_type",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_cte_type_no_sync_aoa,
+          { "No sync to packets with AoA CTE", "bthci_cmd.sync_cte_type.no_sync_aoa",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_cte_type_no_sync_aod_1us,
+          { "No sync to packets with AoD 1 usec CTE", "bthci_cmd.sync_cte_type.no_sync_aod_1us",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_cte_type_no_sync_aod_2us,
+          { "No sync to packets with AoD 2 usec CTE", "bthci_cmd.sync_cte_type.no_sync_aod_2us",
+            FT_BOOLEAN, 8, NULL, 0x04,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_cte_type_sync_only_with_cte,
+          { "Sync only to packets with CTE", "bthci_cmd.sync_cte_type.sync_only_with_cte",
+            FT_BOOLEAN, 8, NULL, 0x10,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_cte_type_reserved,
+          { "Reserved", "bthci_cmd.sync_cte_type.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xE8,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_types,
+          { "Allowed CTE Types", "bthci_cmd.cte_types",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_types_aoa,
+          { "AoA", "bthci_cmd.cte_types.aoa",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_types_aod_1us,
+          { "AoD 1 usec slots", "bthci_cmd.cte_types.aod_1us",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_types_aod_2us,
+          { "AoD 2 usec slots", "bthci_cmd.cte_types.aod_2us",
+            FT_BOOLEAN, 8, NULL, 0x04,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cte_types_reserved,
+          { "Reserved", "bthci_cmd.cte_types.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xF8,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_service_data_past,
+          { "Service Data", "bthci_cmd.service_data_past",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_mode,
+          { "Mode",   "bthci_cmd.sync_mode",
+            FT_UINT8, BASE_HEX, VALS(cmd_sync_mode_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_key_type,
+          { "Key Type",   "bthci_cmd.key_type",
+            FT_UINT8, BASE_HEX, VALS(cmd_key_type_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sca_action,
+          { "Action",   "bthci_cmd.sca_action",
+            FT_UINT8, BASE_HEX, VALS(cmd_sca_action_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cig_id,
+          { "CIG Id",   "bthci_cmd.cig_id",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sdu_interval_c_to_p,
+          { "SDU Interval Central to Peripheral",   "bthci_cmd.sdu_interval_c_to_p",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sdu_interval_p_to_c,
+          { "SDU Interval Peripheral to Central",   "bthci_cmd.sdu_interval_p_to_c",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sdu_interval,
+          { "SDU Interval",   "bthci_cmd.sdu_interval",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_peripherals_clock_accuracy,
+          { "Peripherals Clock Accuracy", "bthci_cmd.peripherals_clock_accuracy",
+            FT_UINT8, BASE_HEX, VALS(cmd_clock_accuray_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_packing,
+          { "Packing", "bthci_cmd.packing",
+            FT_UINT8, BASE_HEX, VALS(cmd_packing_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_framing,
+          { "Framing", "bthci_cmd.framing",
+            FT_UINT8, BASE_HEX, VALS(cmd_framing_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_ft_c_to_p,
+          { "Flush Timeout Central to Peripheral", "bthci_cmd.ft_c_to_p",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_ft_p_to_c,
+          { "Flush Timeout Peripheral to Central", "bthci_cmd.ft_p_to_c",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_iso_interval,
+          { "ISO Interval", "bthci_cmd.iso_interval",
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cis_count,
+          { "CIS Count", "bthci_cmd.cis_count",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cis_params,
+          { "CIS Parameters", "bthci_cmd.cis_params",
+            FT_NONE, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cis_id,
+          { "CIS Id", "bthci_cmd.cis_id",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_nse,
+          { "Number of Sub-Events", "bthci_cmd.nse",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_sdu_c_to_p,
+          { "Max SDU Central to Peripheral", "bthci_cmd.max_sdu_c_to_p",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_octet_octets), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_sdu_p_to_c,
+          { "Max SDU Peripheral to Central", "bthci_cmd.max_sdu_p_to_c",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_octet_octets), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_sdu,
+          { "Max SDU", "bthci_cmd.max_sdu",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_octet_octets), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_pdu_c_to_p,
+          { "Max PDU Central to Peripheral", "bthci_cmd.max_pdu_c_to_p",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_octet_octets), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_pdu_p_to_c,
+          { "Max PDU Peripheral to Central", "bthci_cmd.max_pdu_p_to_c",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_octet_octets), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_pdu,
+          { "Max PDU", "bthci_cmd.max_pdu",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_octet_octets), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_phy_c_to_p,
+          { "PHY Central to Peripheral", "bthci_cmd.phy_c_to_p",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_phy_p_to_c,
+          { "PHY Peripheral to Central", "bthci_cmd.phy_p_to_c",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_bn_c_to_p,
+          { "Burst Number Central to Peripheral", "bthci_cmd.bn_c_to_p",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_bn_p_to_c,
+          { "Burst Number Peripheral to Central", "bthci_cmd.bn_p_to_c",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_bn,
+          { "Burst Number", "bthci_cmd.bn",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_transport_latency_c_to_p,
+          { "Max Transport Latency Central to Peripheral", "bthci_cmd.max_transport_latency_c_to_p",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_milliseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_transport_latency_p_to_c,
+          { "Max Transport Latency Peripheral to Central", "bthci_cmd.max_transport_latency_p_to_c",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_milliseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_transport_latency,
+          { "Max Transport Latency", "bthci_cmd.max_transport_latency",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_milliseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtn_c_to_p,
+          { "Max Retransmissions Central to Peripheral", "bthci_cmd.rtn_c_to_p",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtn_p_to_c,
+          { "Max Retransmissions Peripheral to Central", "bthci_cmd.rtn_p_to_c",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtn,
+          { "Max Retransmissions", "bthci_cmd.rtn",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cis_handle,
+          { "CIS Handle",             "bthci_cmd.cis_handle",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_big_handle,
+          { "BIG Handle",             "bthci_cmd.big_handle",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cis_bis_handle,
+          { "CIS/BIS Handle",             "bthci_cmd.cis_bis_handle",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_num_bis,
+          { "Number of BISes", "bthci_cmd.num_bis",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_irc,
+          { "Scheduled Payload Retransmissions", "bthci_cmd.irc",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_pto,
+          { "Pre-Transmission Offset", "bthci_cmd.pto",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_encryption,
+          { "Encryption", "bthci_cmd.encryption",
+            FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_broadcast_code,
+          { "Broadcast Code", "bthci_cmd.broadcast_code",
+            FT_NONE, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_mse,
+          { "Max Sub-Events", "bthci_cmd.mse",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_bis_index,
+          { "BIS Index", "bthci_cmd.bis_index",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sync_timeout,
+          { "Sync Timeout", "bthci_cmd.sync_timeout",
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p01_sec), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_data_path_direction,
+          { "Data Path Direction", "bthci_cmd.data_path_direction",
+            FT_UINT8, BASE_HEX, VALS(cmd_data_path_direction_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_data_path_id,
+          { "Data Path Id", "bthci_cmd.data_path_id",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_coding_format,
+          { "Coding Format", "bthci_cmd.coding_format",
+            FT_NONE, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_controller_delay,
+          { "Controller Delay", "bthci_cmd.controller_delay",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_codec_config_length,
+          { "Codec Configuration Length", "bthci_cmd.codec_config_length",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_codec_config,
+          { "Codec Configuration", "bthci_cmd.codec_config",
+            FT_NONE, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_payload_type,
+          { "Payload Type", "bthci_cmd.payload_type",
+            FT_UINT8, BASE_HEX, VALS(cmd_payload_type_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_feature_bit_number,
+          { "Feature Bit Number", "bthci_cmd.feature_bit_number",
+            FT_UINT8, BASE_DEC, VALS(cmd_host_enabled_feature_bit_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_feature_bit_number2,
+          { "Feature Bit Number", "bthci_cmd.feature_bit_number",
+            FT_UINT16, BASE_DEC, VALS(cmd_host_enabled_feature_bit_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_feature_bit_value,
+          { "Feature Bit Value", "bthci_cmd.feature_bit_value",
+            FT_UINT8, BASE_HEX, VALS(cmd_en_disabled), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_phy_and_coding,
+          { "PHY", "bthci_cmd.phy_and_coding",
+            FT_UINT8, BASE_HEX, VALS(cmd_phy_and_coding_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_high_threshold,
+          { "High Threshold", "bthci_cmd.high_threshold",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_decibels), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_high_hysteresis,
+          { "High Hysteresis", "bthci_cmd.high_hysteresis",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_decibels), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_low_threshold,
+          { "Low Threshold", "bthci_cmd.low_threshold",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_decibels), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_low_hysteresis,
+          { "Low Hysteresis", "bthci_cmd.low_hysteresis",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_decibels), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_min_time_spent,
+          { "Minimum Observation Time", "bthci_cmd.min_time_spent",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_local_reporting_enable,
+          { "Local Reporting Enable", "bthci_cmd.local_reporting_enable",
+            FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_remote_reporting_enable,
+          { "Remote Reporting Enable", "bthci_cmd.remote_reporting_enable",
+            FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_addr_change_reasons,
+          { "Address Change Reasons", "bthci_cmd.addr_change_reasons",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_addr_change_reasons_adv_data,
+          { "Advertising Data Changed", "bthci_cmd.addr_change_reasons.adv_data",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_addr_change_reasons_scan_rsp_data,
+          { "Scan Response Data Changed", "bthci_cmd.addr_change_reasons.scan_rsp_data",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_addr_change_reasons_reserved,
+          { "Reserved", "bthci_cmd.addr_change_reasons.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xFC,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_subrate_factor_min,
+          { "Minimum Subrate Factor", "bthci_cmd.subrate_min",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_subrate_factor_max,
+          { "Maximum Subrate Factor", "bthci_cmd.subrate_max",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_continuation_number,
+          { "Continuation Number", "bthci_cmd.continuation_number",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_primary_adv_phy_options,
+          { "Primary Adv PHY Options", "bthci_cmd.primary_adv_phy_options",
+            FT_UINT8, BASE_HEX, VALS(cmd_le_phy_options_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_secondary_adv_phy_options,
+          { "Primary Adv PHY Options", "bthci_cmd.secondary_adv_phy_options",
+            FT_UINT8, BASE_HEX, VALS(cmd_le_phy_options_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_num_subevents,
+          { "Number of Sub-events", "bthci_cmd.num_subevents",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_subevent_interval,
+          { "Sub-event Interval", "bthci_cmd.subevent_interval",
+            FT_UINT8, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_response_slot_delay,
+          { "Response Slot Delay", "bthci_cmd.resp_slot_delay",
+            FT_UINT8, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_response_slot_spacing,
+          { "Response Slot Spacing", "bthci_cmd.resp_slot_spacing",
+            FT_UINT8, BASE_CUSTOM, CF_FUNC(bluetooth_unit_1p25_ms), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_num_response_slots,
+          { "Response Slots", "bthci_cmd.num_resp_slots",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_subevent,
+          { "Sub-event", "bthci_cmd.subevent",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(bluetooth_not_used_0xff_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_subevents,
+          { "Sub-events", "bthci_cmd.subevents",
+            FT_NONE, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_response_slot_start,
+          { "Response Slot Start", "bthci_cmd.resp_slot_start",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_response_slot_count,
+          { "Response Slot Count", "bthci_cmd.resp_slot_count",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_subevent_data_length,
+          { "Sub-event Data Length", "bthci_cmd.subevent_data_length",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_request_event,
+          { "Request Event", "bthci_cmd.request_event",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_request_subevent,
+          { "Request Sub-event", "bthci_cmd.request_subevent",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_response_subevent,
+          { "Response Sub-event", "bthci_cmd.response_subevent",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_response_slot,
+          { "Response Slot", "bthci_cmd.response_slot",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_response_data_length,
+          { "Response Data Length", "bthci_cmd.response_data_length",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_pages_requested,
+          { "Pages Requested", "bthci_cmd.pages_requested",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_config_id,
+          { "Config Id", "bthci_cmd.config_id",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_roles,
+          { "Roles", "bthci_cmd.cs_roles",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_roles_initiator,
+          { "Initiator", "bthci_cmd.cs_roles.initiator",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_roles_reflector,
+          { "Reflector", "bthci_cmd.cs_roles.reflector",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_roles_reserved,
+          { "Reserved", "bthci_cmd.cs_roles.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xfc,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_sync_antenna_selection,
+          { "CS Sync Antenna Selection", "bthci_cmd.cs_sync_antenna_selection",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(cs_sync_antenna_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_num_config,
+          { "Number of Configurations", "bthci_cmd.num_config",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_consecutive_procedures,
+          { "Max Consecutive Procedures", "bthci_cmd.max_consecutive_procedures",
+            FT_UINT16, BASE_DEC|BASE_SPECIAL_VALS, VALS(bluetooth_procedure_count_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_num_antennas_supported,
+          { "Number of Antennas Supported", "bthci_cmd.num_antennas_supported",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_antenna_paths_supported,
+          { "Max Antenna Paths Supported", "bthci_cmd.max_antenna_paths_supported",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_modes_supported,
+          { "Modes Supported", "bthci_cmd.cs_modes_supported",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_modes_supported_3,
+          { "Mode-3", "bthci_cmd.cs_modes_supported.3",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_modes_supported_reserved,
+          { "Reserved", "bthci_cmd.cs_modes_supported.reserved",
+            FT_BOOLEAN, 8, NULL, 0xfe,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_capability,
+          { "RTT Capability", "bthci_cmd.rtt_capability",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_capability_coarse_precision,
+          { "10ns Coarse Precision", "bthci_cmd.rtt_capability.coarse_precision",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_capability_sounding_precision,
+          { "10ns Sounding Precision", "bthci_cmd.rtt_capability.sounding_precision",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_capability_random_precision,
+          { "10ns Random Precision", "bthci_cmd.rtt_capability.random_precision",
+            FT_BOOLEAN, 8, NULL, 0x04,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_capability_reserved,
+          { "Reserved", "bthci_cmd.rtt_capability.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xf8,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_aa_only_n,
+          { "RTT Coarse, CS Sync exchanges needed", "bthci_cmd.rtt_aa_only_n",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(bluetooth_not_supported_0x00_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_sounding_n,
+          { "RTT Sounding, CS Sync exchanges needed", "bthci_cmd.rtt_sounding_n",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(bluetooth_not_supported_0x00_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_random_n,
+          { "RTT Random Payload, CS Sync exchanges needed", "bthci_cmd.rtt_random_n",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(bluetooth_not_supported_0x00_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_nadm_sounding_capability,
+          { "Optional NADM Sounding Capability", "bthci_cmd.optional_nadm_sounding_capability",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_nadm_sounding_capability_supported,
+          { "Phase-based NADM Metric", "bthci_cmd.optional_nadm_sounding_capability.supported",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_nadm_sounding_capability_reserved,
+          { "Reserved", "bthci_cmd.optional_nadm_sounding_capability.reserved",
+            FT_UINT16, BASE_HEX, NULL, 0x00fe,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_nadm_random_capability,
+          { "Optional NADM Random Capability", "bthci_cmd.optional_nadm_random_capability",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_nadm_random_capability_supported,
+          { "Phase-based NADM Metric", "bthci_cmd.optional_nadm_random_capability.supported",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_nadm_random_capability_reserved,
+          { "Reserved", "bthci_cmd.optional_nadm_random_capability.reserved",
+            FT_UINT16, BASE_HEX, NULL, 0x00fe,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_sync_phys_supported,
+          { "Optional CS_SYNC PHYs", "bthci_cmd.cs_sync_phys_supported",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_sync_phys_supported_2m,
+          { "LE 2M", "bthci_cmd.cs_sync_phys_supported.2m",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_sync_phys_supported_2m2bt,
+          { "LE 2M 2BT", "bthci_cmd.cs_sync_phys_supported.2m2bt",
+            FT_BOOLEAN, 8, NULL, 0x04,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_sync_phys_supported_reserved,
+          { "Reserved", "bthci_cmd.cs_sync_phys_supported.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xf9,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_subfeatures_supported,
+          { "Subfeatures Supported", "bthci_cmd.optional_cs_subfeatures",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_subfeatures_companion_signal,
+          { "Companion Signal", "bthci_cmd.optional_cs_subfeatures.companion_signal",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_subfeatures_freq_actuation_error,
+          { "Zero Freq. Actuation Error Relative to Mode-0 Tx in Reflector", "bthci_cmd.optional_cs_subfeatures.freq_actuation_error",
+            FT_BOOLEAN, 16, NULL, 0x0002,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_subfeatures_channel_selection_3c,
+          { "Channel Selection Algorithm #3c", "bthci_cmd.optional_cs_subfeatures.channel_selection_3c",
+            FT_BOOLEAN, 16, NULL, 0x0004,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_subfeatures_pbr_from_rtt,
+          { "Phase-based Ranging from RTT sounding sequence", "bthci_cmd.optional_cs_subfeatures.pbr_from_rtt",
+            FT_BOOLEAN, 16, NULL, 0x0008,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_subfeatures_reserved,
+          { "Reserved", "bthci_cmd.optional_cs_subfeatures.reserved",
+            FT_UINT16, BASE_HEX, NULL, 0xfff0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip1_times_supported,
+          { "T_IP1 Times Supported", "bthci_cmd.tip1_times_supported",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip2_times_supported,
+          { "T_IP2 Times Supported", "bthci_cmd.tip2_times_supported",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_10us,
+          { "10 microseconds", "bthci_cmd.tip_times_supported_10us",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_20us,
+          { "20 microseconds", "bthci_cmd.tip_times_supported_20us",
+            FT_BOOLEAN, 16, NULL, 0x0002,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_30us,
+          { "30 microseconds", "bthci_cmd.tip_times_supported_30us",
+            FT_BOOLEAN, 16, NULL, 0x0004,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_40us,
+          { "40 microseconds", "bthci_cmd.tip_times_supported_40us",
+            FT_BOOLEAN, 16, NULL, 0x0008,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_50us,
+          { "50 microseconds", "bthci_cmd.tip_times_supported_50us",
+            FT_BOOLEAN, 16, NULL, 0x0010,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_60us,
+          { "60 microseconds", "bthci_cmd.tip_times_supported_60us",
+            FT_BOOLEAN, 16, NULL, 0x0020,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_80us,
+          { "80 microseconds", "bthci_cmd.tip_times_supported_80us",
+            FT_BOOLEAN, 16, NULL, 0x0040,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tip_times_supported_reserved,
+          { "Reserved", "bthci_cmd.tip_times_supported_reserved",
+            FT_UINT16, BASE_HEX, NULL, 0xff80,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported,
+          { "T_FCS Times Supported", "bthci_cmd.tfcs_times_supported",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_15us,
+          { "15 microseconds", "bthci_cmd.tfcs_times_supported_15us",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_20us,
+          { "20 microseconds", "bthci_cmd.tfcs_times_supported_20us",
+            FT_BOOLEAN, 16, NULL, 0x0002,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_30us,
+          { "30 microseconds", "bthci_cmd.tfcs_times_supported_30us",
+            FT_BOOLEAN, 16, NULL, 0x0004,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_40us,
+          { "40 microseconds", "bthci_cmd.tfcs_times_supported_40us",
+            FT_BOOLEAN, 16, NULL, 0x0008,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_50us,
+          { "50 microseconds", "bthci_cmd.tfcs_times_supported_50us",
+            FT_BOOLEAN, 16, NULL, 0x0010,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_60us,
+          { "60 microseconds", "bthci_cmd.tfcs_times_supported_60us",
+            FT_BOOLEAN, 16, NULL, 0x0020,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_80us,
+          { "80 microseconds", "bthci_cmd.tfcs_times_supported_80us",
+            FT_BOOLEAN, 16, NULL, 0x0040,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_100us,
+          { "100 microseconds", "bthci_cmd.tfcs_times_supported_100us",
+            FT_BOOLEAN, 16, NULL, 0x0080,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_120us,
+          { "120 microseconds", "bthci_cmd.tfcs_times_supported_120us",
+            FT_BOOLEAN, 16, NULL, 0x0100,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tfcs_times_supported_reserved,
+          { "Reserved", "bthci_cmd.tfcs_times_supported_reserved",
+            FT_UINT16, BASE_HEX, NULL, 0xfe00,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tpm_times_supported,
+          { "T_PM Times Supported", "bthci_cmd.tpm_times_supported",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tpm_times_supported_10us,
+          { "10 microseconds", "bthci_cmd.tpm_times_supported_10us",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tpm_times_supported_20us,
+          { "20 microseconds", "bthci_cmd.tpm_times_supported_20us",
+            FT_BOOLEAN, 16, NULL, 0x0002,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tpm_times_supported_reserved,
+          { "Reserved", "bthci_cmd.tpm_times_supported_reserved",
+            FT_UINT16, BASE_HEX, NULL, 0xfffc,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tsw_time_supported,
+          { "T_SW Time Supported", "bthci_cmd.tsw_time_supported",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_snr_capability,
+          { "Tx SNR Capability", "bthci_cmd.tx_snr_capability",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_snr_capability_18dB,
+          { "18 dB", "bthci_cmd.tx_snr_capability_18dB",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_snr_capability_21dB,
+          { "21 dB", "bthci_cmd.tx_snr_capability_21dB",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_snr_capability_24dB,
+          { "24 dB", "bthci_cmd.tx_snr_capability_24dB",
+            FT_BOOLEAN, 8, NULL, 0x04,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_snr_capability_27dB,
+          { "27 dB", "bthci_cmd.tx_snr_capability_27dB",
+            FT_BOOLEAN, 8, NULL, 0x08,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_snr_capability_30dB,
+          { "30 dB", "bthci_cmd.tx_snr_capability_30dB",
+            FT_BOOLEAN, 8, NULL, 0x10,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_snr_capability_reserved,
+          { "Reserved", "bthci_cmd.tx_snr_capability_reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xe0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_fae_table,
+          { "FAE Table", "bthci_cmd.fae_table",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_create_context,
+          { "Create Context", "bthci_cmd.create_context",
+            FT_UINT8, BASE_HEX, VALS(cmd_cs_create_context_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_main_mode_type,
+          { "Main Mode Type", "bthci_cmd.main_mode_type",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_sub_mode_type,
+          { "Sub Mode Type", "bthci_cmd.sub_mode_type",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(bluetooth_not_used_0xff_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_min_main_mode_steps,
+          { "Min Main Mode Steps", "bthci_cmd.min_main_mode_steps",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_main_mode_steps,
+          { "Max Main Mode Steps", "bthci_cmd.max_main_mode_steps",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_main_mode_repetition,
+          { "Main Mode Repetitions", "bthci_cmd.main_mode_repetition",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_mode0_steps,
+          { "Mode-0 Steps", "bthci_cmd.mode0_steps",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_role,
+          { "Role", "bthci_cmd.cs_role",
+            FT_UINT8, BASE_HEX, VALS(cmd_cs_role_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rtt_type,
+          { "RTT Type", "bthci_cmd.rtt_type",
+            FT_UINT8, BASE_HEX, VALS(cmd_cs_rtt_type_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_sync_phy,
+          { "CS Sync PHY", "bthci_cmd.cs_sync_phy",
+            FT_UINT8, BASE_HEX, VALS(cmd_cs_sync_phy_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_channel_map_repetition,
+          { "Channel Map Repetitions", "bthci_cmd.channel_map_repetition",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_channel_selection_type,
+          { "Channel Selection Type", "bthci_cmd.channel_selection_type",
+            FT_UINT8, BASE_HEX, VALS(cmd_cs_ch_selection_type_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_ch3c_shape,
+          { "Ch3c Shape", "bthci_cmd.ch3c_shape",
+            FT_UINT8, BASE_HEX, VALS(cmd_cs_shape_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_ch3c_jump,
+          { "Ch3c Jump", "bthci_cmd.ch3c_jump",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_companion_signal_enable,
+          { "Companion Signal Enable", "bthci_cmd.companion_signal_enable",
+            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_enable,
+          { "CS Enable", "bthci_cmd.cs_enable",
+            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_procedure_len,
+          { "Max Procedure Length", "bthci_cmd.max_procedure_len",
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_min_procedure_interval,
+          { "Min Procedure Interval", "bthci_cmd.min_procedure_interval",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_procedure_interval,
+          { "Max Procedure Interval", "bthci_cmd.max_procedure_interval",
+            FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_procedure_count,
+          { "Max Procedure Count", "bthci_cmd.max_procedure_count",
+            FT_UINT16, BASE_DEC|BASE_SPECIAL_VALS, VALS(bluetooth_procedure_count_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_min_subevent_len,
+          { "Min Subevent Length", "bthci_cmd.min_subevent_len",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_subevent_len,
+          { "Max Subevent Length", "bthci_cmd.max_subevent_len",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_subevent_len,
+          { "Subevent Length", "bthci_cmd.subevent_len",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tone_antenna_selection,
+          { "Antenna Config Selection Index", "bthci_cmd.tone_antenna_selection",
+            FT_UINT8, BASE_HEX, VALS(cmd_aci_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_pwr_delta,
+          {"Tx Power Delta (dB)", "bthci_cmd.tx_pwr_delta",
+           FT_INT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_decibels), 0x0,
+           NULL, HFILL}
+        },
+        { &hf_bthci_cmd_preferred_peer_antenna,
+          { "Preferred Peer Antenna", "bthci_cmd.preferred_peer_antenna",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_preferred_peer_antenna_first,
+          { "1st Ordered Element", "bthci_cmd.preferred_peer_antenna.first",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_preferred_peer_antenna_second,
+          { "2nd Ordered Element", "bthci_cmd.preferred_peer_antenna.second",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_preferred_peer_antenna_third,
+          { "3rd Ordered Element", "bthci_cmd.preferred_peer_antenna.third",
+            FT_BOOLEAN, 8, NULL, 0x04,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_preferred_peer_antenna_fourth,
+          { "4th Ordered Element", "bthci_cmd.preferred_peer_antenna.fourth",
+            FT_BOOLEAN, 8, NULL, 0x08,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_preferred_peer_antenna_reserved,
+          { "Reserved", "bthci_cmd.preferred_peer_antenna.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xF0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_snr_control_initiator,
+          { "SNR Adjustment, Initiator", "bthci_cmd.snr_control_initiator",
+            FT_UINT8, BASE_HEX, VALS(cmd_snr_control_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_snr_control_reflector,
+          { "SNR Adjustment, Reflector", "bthci_cmd.snr_control_reflector",
+            FT_UINT8, BASE_HEX, VALS(cmd_snr_control_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_subevent_interval,
+          { "Subevent Interval", "bthci_cmd.cs_subevent_interval",
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p625_ms), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_max_num_subevents,
+          { "Max Num Subevents", "bthci_cmd.max_num_subevents",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_tx_power_setting,
+          { "Tx Power Level", "bthci_cmd.tx_power_setting",
+            FT_INT8, BASE_CUSTOM, CF_FUNC(tx_power_setting), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_t_ip1_time,
+          { "T_IP1 Time", "bthci_cmd.t_ip1_time",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_t_ip2_time,
+          { "T_IP2 Time", "bthci_cmd.t_ip2_time",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_t_fcs_time,
+          { "T_FCS Time", "bthci_cmd.t_fcs_time",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_t_pm_time,
+          { "T_PM Time", "bthci_cmd.t_pm_time",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_t_sw_time,
+          { "T_SW Time", "bthci_cmd.t_sw_time",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_drbg_nonce,
+          { "DRBG Nonce", "bthci_cmd.drbg_nonce",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_override_config,
+          { "Override Config", "bthci_cmd.cs_override_config",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_reserved,
+          { "Reserved", "bthci_cmd.override_config.reserved",
+            FT_UINT16, BASE_HEX, NULL, 0xFA02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_channel_list,
+          { "Channel List", "bthci_cmd.override_config.channel_list",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_main_mode_steps,
+          { "Main Mode Steps", "bthci_cmd.override_config.main_mode_steps",
+            FT_BOOLEAN, 16, NULL, 0x0004,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_tpm_tone_ext,
+          { "T_PM Tone Extension", "bthci_cmd.override_config.tpm_tone_ext",
+            FT_BOOLEAN, 16, NULL, 0x0008,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_tone_ant_permutation,
+          { "Tone Antenna Permutation", "bthci_cmd.override_config.tone_ant_permutation",
+            FT_BOOLEAN, 16, NULL, 0x0010,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_cs_sync_aa,
+          { "CS Sync Access Address", "bthci_cmd.override_config.cs_sync_aa",
+            FT_BOOLEAN, 16, NULL, 0x0020,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_ss_marker_position,
+          { "SS Marker Position", "bthci_cmd.override_config.ss_marker_position",
+            FT_BOOLEAN, 16, NULL, 0x0040,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_ss_marker_value,
+          { "SS Marker Value", "bthci_cmd.override_config.ss_marker_value",
+            FT_BOOLEAN, 16, NULL, 0x0080,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_cs_sync_data,
+          { "CS Sync Data", "bthci_cmd.override_config.cs_sync_data",
+            FT_BOOLEAN, 16, NULL, 0x0100,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_config_stable_phase_test,
+          { "Stable Phase Test", "bthci_cmd.override_config.stable_phase_test",
+            FT_BOOLEAN, 16, NULL, 0x0400,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_override_param_length,
+          { "Override Parameter Length", "bthci_cmd.cs_override_param_length",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_cs_override_param_data,
+          { "Override Parameter Data", "bthci_cmd.cs_override_param_data",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_channel_length,
+          { "Channel Length", "bthci_cmd.override_param_channel_length",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_channels,
+          { "Channels", "bthci_cmd.override_param_channels",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_main_mode_steps,
+          { "Main Mode Steps", "bthci_cmd.override_param_main_mode_steps",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_tpm_tone_ext,
+          { "Tone Extension", "bthci_cmd.override_param_tpm_tone_ext",
+            FT_UINT8, BASE_DEC, VALS(cmd_tone_ext_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_tone_antenna_permutation,
+          { "Tone Antenna Permutation", "bthci_cmd.override_param_tone_antenna_permutation",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(cmd_tone_antenna_permutation_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_cs_sync_aa_initiator,
+          { "CS SYNC AA Initiator", "bthci_cmd.override_param_cs_sync_aa_initiator",
+            FT_UINT32, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_cs_sync_aa_reflector,
+          { "CS SYNC AA Reflector", "bthci_cmd.override_param_cs_sync_aa_reflector",
+            FT_UINT32, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_ss_marker_1_position,
+          { "SS Marker 1 Position", "bthci_cmd.override_param_ss_marker_1_position",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_ss_marker_2_position,
+          { "SS Marker 2 Position", "bthci_cmd.override_param_ss_marker_2_position",
+            FT_UINT8, BASE_DEC|BASE_SPECIAL_VALS, VALS(cmd_ss_marker_2_position_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_ss_marker_value,
+          { "SS Marker Value", "bthci_cmd.override_param_ss_marker_value",
+            FT_UINT8, BASE_DEC, VALS(cmd_ss_marker_value_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_cs_sync_payload_pattern,
+          { "CS SYNC Payload Pattern", "bthci_cmd.override_param_cs_sync_payload_pattern",
+            FT_UINT8, BASE_DEC, VALS(cmd_cs_sync_payload_pattern_vals), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_override_param_cs_sync_user_payload,
+          { "CS SYNC User Payload", "bthci_cmd.override_param_cs_sync_user_payload",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_monitoring_enable,
+          { "Advertiser Monitoring Enable", "bthci_cmd.adv_monitoring_enable",
+            FT_UINT8, BASE_HEX, VALS(cmd_boolean), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_decision_data,
+          { "Decision Data", "bthci_cmd.decision_data",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_decision_flags,
+          { "Decision Flags", "bthci_cmd.adv_decision_flags",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_decision_flags_resolvable_tag,
+          { "Resolvable Tag Present", "bthci_cmd.adv_decision_flags.resolvable_tag",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_decision_flags_reserved,
+          { "Reserved", "bthci_cmd.adv_decision_flags.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xFE,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_num_tests,
+          { "Number of Tests", "bthci_cmd.num_tests",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_flags,
+          { "Test Flags", "bthci_cmd.adv_test_flags",
+            FT_UINT8, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_flags_start_group,
+          { "Start of New Test Group", "bthci_cmd.adv_test_flags.start_group",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_flags_data_contains_field_check_pass,
+          { "Pass If Contains Field & Match", "bthci_cmd.adv_test_flags.data_contains_field_check_pass",
+            FT_BOOLEAN, 8, NULL, 0x02,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_flags_data_contains_field_check_fail,
+          { "Pass If Contains Field & No Match", "bthci_cmd.adv_test_flags.data_contains_field_check_fail",
+            FT_BOOLEAN, 8, NULL, 0x04,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_flags_data_not_contain_field,
+          { "Pass If Does Not Contain Field", "bthci_cmd.adv_test_flags.data_not_contain_field",
+            FT_BOOLEAN, 8, NULL, 0x08,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_flags_reserved,
+          { "Reserved", "bthci_cmd.adv_test_flags.reserved",
+            FT_UINT8, BASE_HEX, NULL, 0xF0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_field,
+          { "Test Field", "bthci_cmd.adv_test_field",
+            FT_UINT8, BASE_HEX|BASE_SPECIAL_VALS, VALS(adv_test_field_special), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_adv_test_params,
+          { "Test Parameters", "bthci_cmd.adv_test_params",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rssi_threshold_low,
+          { "RSSI Threshold Low", "bthci_cmd.rssi_threshold_low",
+            FT_INT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_dbm), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rssi_threshold_high,
+          { "RSSI Threshold High", "bthci_cmd.rssi_threshold_high",
+            FT_INT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_dbm), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_rssi_threshold_timeout,
+          { "Timeout", "bthci_cmd.rssi_threshold_timeout",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_seconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_frame_space_min,
+          { "Minimum Frame Space", "bthci_cmd.frame_space_min",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_frame_space_max,
+          { "Maximum Frame Space", "bthci_cmd.frame_space_max",
+            FT_UINT16, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microseconds), 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_spacing_types,
+          { "Spacing Types", "bthci_cmd.spacing_types",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_spacing_types_tifs_acl_cp,
+          { "T_IFS_ACL_CP", "bthci_cmd.spacing_types.tifs_acl_cp",
+            FT_BOOLEAN, 16, NULL, 0x0001,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_spacing_types_tifs_acl_pc,
+          { "T_IFS_ACL_PC", "bthci_cmd.spacing_types.tifs_acl_pc",
+            FT_BOOLEAN, 16, NULL, 0x0002,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_spacing_types_tmces,
+          { "T_MCES", "bthci_cmd.spacing_types.tmces",
+            FT_BOOLEAN, 16, NULL, 0x0004,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_spacing_types_tifs_cis,
+          { "T_IFS_CIS", "bthci_cmd.spacing_types.tifs_cis",
+            FT_BOOLEAN, 16, NULL, 0x0008,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_spacing_types_tmss_cis,
+          { "T_MSS_CIS", "bthci_cmd.spacing_types.tmss_cis",
+            FT_BOOLEAN, 16, NULL, 0x0010,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_spacing_types_reserved,
+          { "Reserved", "bthci_cmd.spacing_types.reserved",
+            FT_UINT16, BASE_HEX, NULL, 0xFFE0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_triggered_clock_capture,
@@ -6837,8 +10679,8 @@ proto_register_bthci_cmd(void)
             FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_connectionless_slave_broadcast,
-          { "Connectionless Slave Broadcast", "bthci_cmd.connectionless_slave_broadcast",
+        { &hf_bthci_cmd_connectionless_peripheral_broadcast,
+          { "Connectionless Peripheral Broadcast", "bthci_cmd.connectionless_peripheral_broadcast",
             FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
             NULL, HFILL }
         },
@@ -6857,39 +10699,39 @@ proto_register_bthci_cmd(void)
             FT_UINT16, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_csb_supervision_to,
-          { "Supervision To", "bthci_cmd.csb_supervision_to",
+        { &hf_bthci_cmd_cpb_supervision_to,
+          { "Supervision To", "bthci_cmd.cpb_supervision_to",
             FT_UINT16, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_connectionless_slave_broadcast_receive,
-          { "Connectionless Slave Broadcast Receive", "bthci_cmd.connectionless_slave_broadcast_receive",
+        { &hf_bthci_cmd_connectionless_peripheral_broadcast_receive,
+          { "Connectionless Peripheral Broadcast Receive", "bthci_cmd.connectionless_peripheral_broadcast_receive",
             FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_clock_offset_32,
           { "Clock Offset", "bthci_cmd.clock_offset_32",
             FT_UINT32, BASE_HEX, NULL, 0x0FFFFFFF,
-            "Bits 0-27 of the Clock Offset between CLKslave-CLK", HFILL }
+            "Bits 0-27 of the Clock Offset between CLKNreceiver-CLKNtransmitter", HFILL }
         },
-        { &hf_bthci_cmd_next_csb_clock,
-          { "Next CSB Clock", "bthci_cmd.next_csb_clock",
+        { &hf_bthci_cmd_next_cpb_clock,
+          { "Next CPB Clock", "bthci_cmd.next_cpb_clock",
             FT_UINT32, BASE_HEX, NULL, 0x0FFFFFFF,
-            "Bits 0-27 of the Clock Offset between CLKslave-CLK", HFILL }
+            "Bits 0-27 of the Clock Offset between CLKperipheral-CLK", HFILL }
         },
         { &hf_bthci_cmd_remote_timing_accuracy,
           { "Remote Timing Accuracy", "bthci_cmd.remote_timing_accuracy",
             FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_csb_skip,
-          { "CSB Skip", "bthci_cmd.csb_skip",
+        { &hf_bthci_cmd_cpb_skip,
+          { "CPB Skip", "bthci_cmd.cpb_skip",
             FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
 /* TODO: More detailed dissection */
-        { &hf_bthci_cmd_afh_channel_map,
-          {"AFH Channel Map", "bthci_cmd.afh_channel_map",
+        { &hf_bthci_cmd_channel_map,
+          {"Channel Map", "bthci_cmd.channel_map",
            FT_BYTES, BASE_NONE, NULL, 0x0,
            NULL, HFILL}
         },
@@ -7150,29 +10992,34 @@ proto_register_bthci_cmd(void)
             FT_UINT8, BASE_HEX, VALS(disable_enable_vals), 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_csb_fragment,
-          { "CSB Fragment", "bthci_cmd.csb.fragment",
-            FT_UINT8, BASE_HEX, VALS(csb_fragment_vals), 0x0,
+        { &hf_bthci_cmd_cpb_fragment,
+          { "CPB Fragment", "bthci_cmd.cpb.fragment",
+            FT_UINT8, BASE_HEX, VALS(cpb_fragment_vals), 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_csb_data_length,
-          { "CSB Data Length", "bthci_cmd.csb.data_length",
+        { &hf_bthci_cmd_cpb_data_length,
+          { "CPB Data Length", "bthci_cmd.cpb.data_length",
             FT_UINT8, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
-        { &hf_bthci_cmd_csb_data,
-          { "CSB Data", "bthci_cmd.csb.data",
+        { &hf_bthci_cmd_cpb_data,
+          { "CPB Data", "bthci_cmd.cpb.data",
             FT_BYTES, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_authenticated_payload_timeout,
           { "Authenticated Payload Timeout", "bthci_cmd.authenticated_payload_timeout",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_CUSTOM, CF_FUNC(bluetooth_unit_0p01_sec), 0x0,
             NULL, HFILL }
         },
         { &hf_bthci_cmd_extended_inquiry_length,
           { "Extended Inquiry Length",           "bthci_cmd.extended_inquiry_length",
             FT_UINT16, BASE_DEC, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_bthci_cmd_min_encryption_key_size,
+          { "Minimum Encryption Key Size", "bthci_cmd.min_encryption_key_size",
+            FT_UINT8, BASE_DEC|BASE_UNIT_STRING, UNS(&units_octet_octets), 0x0,
             NULL, HFILL }
         }
     };
@@ -7183,18 +11030,21 @@ proto_register_bthci_cmd(void)
         { &ei_command_undecoded,            { "bthci_cmd.expert.command.undecoded", PI_UNDECODED, PI_NOTE, "Command undecoded", EXPFILL }}
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_bthci_cmd,
         &ett_opcode,
         &ett_cod,
         &ett_cod_mask,
         &ett_flow_spec_subtree,
         &ett_le_channel_map,
+        &ett_event_mask_page_2,
         &ett_le_event_mask,
         &ett_adv_properties,
         &ett_adv_sets,
         &ett_phys_flags,
-        &ett_scan_init_phy_param,
+        &ett_phy_param,
+        &ett_filter_policy,
+        &ett_sync_cte_type,
         &ett_coding_format,
         &ett_packet_type,
         &ett_sco_packet_type,
@@ -7203,7 +11053,19 @@ proto_register_bthci_cmd(void)
         &ett_table,
         &ett_table_item,
         &ett_patterns,
-        &ett_pattern
+        &ett_pattern,
+        &ett_cis_params,
+        &ett_addr_change_reasons,
+        &ett_adv_subevents,
+        &ett_pref_antenna,
+        &ett_cs_roles,
+        &ett_cs_modes,
+        &ett_cs_capability,
+        &ett_cs_times,
+        &ett_adv_test_flags,
+        &ett_override_config,
+        &ett_override_params,
+        &ett_spacing_types
     };
 
     proto_bthci_cmd = proto_register_protocol("Bluetooth HCI Command", "HCI_CMD", "bthci_cmd");
@@ -7222,9 +11084,13 @@ proto_register_bthci_cmd(void)
     prefs_register_static_text_preference(module, "hci_cmd.version",
             "Bluetooth HCI version: 4.0 (Core)",
             "Version of protocol supported by this dissector.");
+    prefs_register_bool_preference(module, "bthci_vendor_android",
+        "Android HCI Vendor Commands/Events",
+        "Whether HCI Vendor Commands/Events should be dissected as Android specific",
+        &bthci_vendor_android);
 
-    vendor_dissector_table = register_decode_as_next_proto(proto_bthci_cmd, "Vendor", "bthci_cmd.vendor",
-                                                           "BT HCI Vendor", bthci_cmd_vendor_prompt);
+    vendor_dissector_table = register_decode_as_next_proto(proto_bthci_cmd, "bthci_cmd.vendor",
+                                                           "BT HCI Command Vendor", bthci_cmd_vendor_prompt);
 }
 
 
@@ -7244,81 +11110,82 @@ proto_reg_handoff_bthci_cmd(void)
 #define PROTO_DATA_BLUETOOTH_EIR_AD_MANUFACTURER_COMPANY_ID  0
 #define PROTO_DATA_BLUETOOTH_EIR_AD_TDS_ORGANIZATION_ID      1
 
-static void bluetooth_eir_ad_manufacturer_company_id_prompt(packet_info *pinfo, gchar* result)
+static void bluetooth_eir_ad_manufacturer_company_id_prompt(packet_info *pinfo, char* result)
 {
-    guint16 *value_data;
+    uint16_t *value_data;
 
-    value_data = (guint16 *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_MANUFACTURER_COMPANY_ID);
+    value_data = (uint16_t *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_MANUFACTURER_COMPANY_ID);
     if (value_data)
-        g_snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "EIR/AD Manufacturer Company ID 0x%02x as", (guint) *value_data);
+        snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "EIR/AD Manufacturer Company ID 0x%02x as", (unsigned) *value_data);
     else
-        g_snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Unknown EIR/AD Manufacturer");
+        snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Unknown EIR/AD Manufacturer");
 }
 
-static gpointer bluetooth_eir_ad_manufacturer_company_id_value(packet_info *pinfo)
+static void *bluetooth_eir_ad_manufacturer_company_id_value(packet_info *pinfo)
 {
-    guint16 *value_data;
+    uint16_t *value_data;
 
-    value_data = (guint16 *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_MANUFACTURER_COMPANY_ID);
+    value_data = (uint16_t *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_MANUFACTURER_COMPANY_ID);
 
     if (value_data)
-        return GUINT_TO_POINTER((gulong)*value_data);
+        return GUINT_TO_POINTER((unsigned long)*value_data);
 
     return NULL;
 }
 
-static void bluetooth_eir_ad_tds_organization_id_prompt(packet_info *pinfo, gchar* result)
+static void bluetooth_eir_ad_tds_organization_id_prompt(packet_info *pinfo, char* result)
 {
-    guint8 *value_data;
+    uint8_t *value_data;
 
-    value_data = (guint8 *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_TDS_ORGANIZATION_ID);
+    value_data = (uint8_t *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_TDS_ORGANIZATION_ID);
     if (value_data)
-        g_snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "TDS Organization ID 0x%02x as", (guint) *value_data);
+        snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "TDS Organization ID 0x%02x as", (unsigned) *value_data);
     else
-        g_snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Unknown TDS Organization ID");
+        snprintf(result, MAX_DECODE_AS_PROMPT_LEN, "Unknown TDS Organization ID");
 }
 
-static gpointer bluetooth_eir_ad_tds_organization_id_value(packet_info *pinfo)
+static void *bluetooth_eir_ad_tds_organization_id_value(packet_info *pinfo)
 {
-    guint8 *value_data;
+    uint8_t *value_data;
 
-    value_data = (guint8 *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_TDS_ORGANIZATION_ID);
+    value_data = (uint8_t *) p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_TDS_ORGANIZATION_ID);
 
     if (value_data)
-        return GUINT_TO_POINTER((gulong)*value_data);
+        return GUINT_TO_POINTER((unsigned long)*value_data);
 
     return NULL;
 }
 
-static gint
+static int
 dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetooth_eir_ad_data_t *bluetooth_eir_ad_data)
 {
     proto_item  *entry_item;
     proto_tree  *entry_tree;
     proto_item  *sub_item;
     proto_tree  *sub_tree;
-    gint         offset = 0;
-    gint         offset_start;
-    guint8       length;
-    guint8       sub_length;
-    guint8       type;
-    guint8       flags;
-    guint8       data_size;
-    gint64       end_offset;
-    gboolean     has_bd_addr = FALSE;
-    guint8       bd_addr[6];
-    guint8      *name = NULL;
+    int          offset = 0;
+    int          offset_start;
+    uint8_t      length;
+    uint8_t      sub_length;
+    uint8_t      type;
+    uint8_t      flags;
+    int          data_size;
+    int64_t      end_offset;
+    bool         has_bd_addr = false;
+    uint8_t      bd_addr[6];
+    uint8_t     *name = NULL;
     bluetooth_uuid_t uuid;
+    uint32_t     interval, num_bis;
 
     DISSECTOR_ASSERT(bluetooth_eir_ad_data);
 
     data_size = tvb_reported_length(tvb);
 
     while (offset < data_size) {
-        length = tvb_get_guint8(tvb, offset);
+        length = tvb_get_uint8(tvb, offset);
         if (length <= 0) break;
 
-        type = tvb_get_guint8(tvb, offset + 1);
+        type = tvb_get_uint8(tvb, offset + 1);
 
         entry_item = proto_tree_add_none_format(tree, hf_btcommon_eir_ad_entry, tvb, offset, length + 1, "%s",
                 val_to_str_const(type, bthci_cmd_eir_data_type_vals, "Unknown"));
@@ -7359,13 +11226,13 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
         case 0x1F: /* List of 32-bit Service Solicitation UUIDs */
             end_offset = offset + length;
             while (offset < end_offset) {
-                uuid = get_uuid(tvb, offset, 4);
+                uuid = get_bluetooth_uuid(tvb, offset, 4);
                 if (uuid.bt_uuid) {
                     sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
                     proto_item_append_text(sub_item, " (%s)", val_to_str_ext_const(uuid.bt_uuid, &bluetooth_uuid_vals_ext, "Unknown"));
                 } else {
                     sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_custom_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(sub_item, " (%s)", print_uuid(&uuid));
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
                 }
 
                 offset += 4;
@@ -7377,14 +11244,14 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
         case 0x15: /* List of 128-bit Service Solicitation UUIDs */
             end_offset = offset + length;
             while (offset < end_offset) {
-                uuid = get_uuid(tvb, offset, 16);
+                uuid = get_bluetooth_uuid(tvb, offset, 16);
                 if (uuid.bt_uuid) {
-                    sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_uuid(&uuid));
+                    sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_bluetooth_uuid(pinfo->pool, &uuid));
                     proto_item_append_text(sub_item, " (%s)", val_to_str_ext_const(uuid.bt_uuid, &bluetooth_uuid_vals_ext, "Unknown"));
                 }
                 else {
-                    sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_custom_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_uuid(&uuid));
-                    proto_item_append_text(sub_item, " (%s)", print_uuid(&uuid));
+                    sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_custom_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_bluetooth_uuid(pinfo->pool, &uuid));
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
                 }
 
                 offset += 16;
@@ -7395,9 +11262,9 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
         case 0x08: /* Device Name (shortened) */
         case 0x09: /* Device Name */
             proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_name, tvb, offset, length, ENC_UTF_8 | ENC_NA);
-            proto_item_append_text(entry_item, ": %s", tvb_format_text(tvb, offset, length));
+            proto_item_append_text(entry_item, ": %s", tvb_format_text(pinfo->pool, tvb, offset, length));
             if (!name || type == 0x09)
-                name = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, length, ENC_UTF_8);
+                name = tvb_get_string_enc(pinfo->pool, tvb, offset, length, ENC_UTF_8);
             offset += length;
 
             break;
@@ -7407,10 +11274,10 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
                 expert_add_info(pinfo, sub_item, &ei_eir_ad_undecoded);
             }
             else if (length == 8) { /* DID */
-                guint16       vendor_id_source;
-                guint16       vendor_id;
-                guint16       product_id;
-                const gchar  *str_val;
+                uint16_t      vendor_id_source;
+                uint16_t      vendor_id;
+                uint16_t      product_id;
+                const char   *str_val;
 
                 proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_did_vendor_id_source, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                 vendor_id_source = tvb_get_letohs(tvb, offset);
@@ -7459,8 +11326,8 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             break;
         case 0x0C: /* BD_ADDR */
             /* From CSS v3.pdf */
-            offset = dissect_bd_addr(hf_btcommon_eir_ad_bd_addr, pinfo, tree, tvb, offset, FALSE, bluetooth_eir_ad_data->interface_id, bluetooth_eir_ad_data->adapter_id, bd_addr);
-            has_bd_addr = TRUE;
+            offset = dissect_bd_addr(hf_btcommon_eir_ad_bd_addr, pinfo, tree, tvb, offset, false, bluetooth_eir_ad_data->interface_id, bluetooth_eir_ad_data->adapter_id, bd_addr);
+            has_bd_addr = true;
             break;
 
         case 0x0D: /* Class Of Device */
@@ -7489,7 +11356,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             offset += 1;
 
             break;
-        case 0x12: /* Slave Connection Interval Range */
+        case 0x12: /* Peripheral Connection Interval Range */
             sub_item = proto_tree_add_item(tree, hf_btcommon_eir_ad_connection_interval_min, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             proto_item_append_text(sub_item, " (%g msec)", tvb_get_letohs(tvb, offset) * 1.25);
             offset += 2;
@@ -7506,19 +11373,26 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             offset += 2;
 
             if (length - 2 > 0) {
-                proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_service_data, tvb, offset, length - 2, ENC_NA);
+                uuid = get_bluetooth_uuid(tvb, offset-2, 2);
+                if (!dissector_try_string_with_data(bluetooth_eir_ad_service_uuid, print_numeric_bluetooth_uuid(pinfo->pool, &uuid),
+                        tvb_new_subset_length(tvb, offset, length - 2), pinfo, entry_tree, true, bluetooth_eir_ad_data)) {
+                    proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_service_data, tvb, offset, length - 2, ENC_NA);
+                }
                 offset += length - 2;
             }
             break;
         case 0x20: /* Service Data - 32 bit UUID */
-            uuid = get_uuid(tvb, offset, 4);
-            if (uuid.bt_uuid) {
-                sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
-                proto_item_append_text(sub_item, " (%s)", val_to_str_ext_const(uuid.bt_uuid, &bluetooth_uuid_vals_ext, "Unknown"));
-            }
-            else {
-                sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_custom_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
-                proto_item_append_text(sub_item, " (%s)", print_uuid(&uuid));
+            uuid = get_bluetooth_uuid(tvb, offset, 4);
+            if (!dissector_try_string_with_data(bluetooth_eir_ad_service_uuid, print_numeric_bluetooth_uuid(pinfo->pool, &uuid),
+                    tvb_new_subset_length(tvb, offset + 4, length - 4), pinfo, entry_tree, true, bluetooth_eir_ad_data)) {
+                if (uuid.bt_uuid) {
+                        sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+                        proto_item_append_text(sub_item, " (%s)", val_to_str_ext_const(uuid.bt_uuid, &bluetooth_uuid_vals_ext, "Unknown"));
+                }
+                else {
+                    sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_custom_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
+                }
             }
             offset += 4;
 
@@ -7528,14 +11402,17 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             }
             break;
         case 0x21: /* Service Data - 128 bit UUID */
-            uuid = get_uuid(tvb, offset, 16);
-            if (uuid.bt_uuid) {
-                sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_uuid(&uuid));
-                proto_item_append_text(sub_item, " (%s)", val_to_str_ext_const(uuid.bt_uuid, &bluetooth_uuid_vals_ext, "Unknown"));
-            }
-            else {
-                sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_custom_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_uuid(&uuid));
-                proto_item_append_text(sub_item, " (%s)", print_uuid(&uuid));
+            uuid = get_bluetooth_uuid(tvb, offset, 16);
+            if (!dissector_try_string_with_data(bluetooth_eir_ad_service_uuid, print_numeric_bluetooth_uuid(pinfo->pool, &uuid),
+                    tvb_new_subset_length(tvb, offset + 16, length - 16), pinfo, entry_tree, true, bluetooth_eir_ad_data)) {
+                if (uuid.bt_uuid) {
+                    sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_bluetooth_uuid(pinfo->pool, &uuid));
+                    proto_item_append_text(sub_item, " (%s)", val_to_str_ext_const(uuid.bt_uuid, &bluetooth_uuid_vals_ext, "Unknown"));
+                }
+                else {
+                    sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_custom_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_bluetooth_uuid(pinfo->pool, &uuid));
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
+                }
             }
             offset += 16;
 
@@ -7548,13 +11425,13 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
         case 0x18: /* Random Target Address */
             end_offset = offset + length;
             while (offset < end_offset) {
-                offset = dissect_bd_addr(hf_btcommon_eir_ad_bd_addr, pinfo, entry_tree, tvb, offset, FALSE, bluetooth_eir_ad_data->interface_id, bluetooth_eir_ad_data->adapter_id, NULL);
+                offset = dissect_bd_addr(hf_btcommon_eir_ad_bd_addr, pinfo, entry_tree, tvb, offset, false, bluetooth_eir_ad_data->interface_id, bluetooth_eir_ad_data->adapter_id, NULL);
             }
 
             break;
         case 0x19: /* Appearance */
             proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_appearance, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-            proto_item_append_text(entry_item, ": %s", val_to_str(tvb_get_letohs(tvb, offset), bthci_cmd_appearance_vals, "Unknown"));
+            proto_item_append_text(entry_item, ": %s", val_to_str_const(tvb_get_letohs(tvb, offset), bthci_cmd_appearance_vals, "Unknown"));
             offset += 2;
 
             break;
@@ -7570,7 +11447,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_le_bd_addr_type, tvb, offset, 1, ENC_NA);
             offset += 1;
 
-            offset = dissect_bd_addr(hf_btcommon_eir_ad_bd_addr, pinfo, entry_tree, tvb, offset, FALSE, bluetooth_eir_ad_data->interface_id, bluetooth_eir_ad_data->adapter_id, NULL);
+            offset = dissect_bd_addr(hf_btcommon_eir_ad_bd_addr, pinfo, entry_tree, tvb, offset, false, bluetooth_eir_ad_data->interface_id, bluetooth_eir_ad_data->adapter_id, NULL);
 
             break;
         case 0x1C: /* LE Role */
@@ -7598,7 +11475,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
                 break;
 
             sub_item = proto_tree_add_bitmask(entry_tree, tvb, offset, hf_btcommon_eir_ad_ips_flags, ett_eir_ad_entry, hfx_btcommon_eir_ad_ips_flags, ENC_LITTLE_ENDIAN);
-            flags = tvb_get_guint8(tvb, offset);
+            flags = tvb_get_uint8(tvb, offset);
             offset += 1;
 
             if (flags & 0x01) {
@@ -7643,16 +11520,16 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
         case 0x26: /* Transport Discovery Data */
             end_offset = offset + length;
             while (offset < end_offset) {
-                guint8 organization_id;
+                uint8_t organization_id;
 
                 proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_tds_organization_id, tvb, offset, 1, ENC_NA);
-                organization_id = tvb_get_guint8(tvb, offset);
+                organization_id = tvb_get_uint8(tvb, offset);
                 offset += 1;
 
                 if (p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_TDS_ORGANIZATION_ID) == NULL) {
-                    guint8 *value_data;
+                    uint8_t *value_data;
 
-                    value_data = wmem_new(wmem_file_scope(), guint8);
+                    value_data = wmem_new(wmem_file_scope(), uint8_t);
                     *value_data = organization_id;
 
                     p_add_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_TDS_ORGANIZATION_ID, value_data);
@@ -7662,7 +11539,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
                 offset += 1;
 
                 sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_tds_data_length, tvb, offset, 1, ENC_NA);
-                sub_length = tvb_get_guint8(tvb, offset);
+                sub_length = tvb_get_uint8(tvb, offset);
                 offset += 1;
 
                 if (length > 3 && sub_length > length - 3) {
@@ -7674,7 +11551,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
 
                     new_tvb = tvb_new_subset_length(tvb, offset, sub_length);
 
-                    if (!dissector_try_uint_new(bluetooth_eir_ad_tds_organization_id, organization_id, new_tvb, pinfo, tree, TRUE, bluetooth_eir_ad_data)) {
+                    if (!dissector_try_uint_with_data(bluetooth_eir_ad_tds_organization_id, organization_id, new_tvb, pinfo, tree, true, bluetooth_eir_ad_data)) {
                         sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_tds_data, tvb, offset, sub_length, ENC_NA);
                         expert_add_info(pinfo, sub_item, &ei_eir_ad_undecoded);
                     }
@@ -7687,9 +11564,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
 
             break;
         case 0x27: {/* LE Supported Features */
-            guint8  i = 0;
-
-            while (tvb_captured_length_remaining(tvb, offset) > 0 && i < 8) {
+            for (uint8_t i=0; (tvb_captured_length_remaining(tvb, offset) > 0) && (i < 8); i++) {
                 proto_tree_add_bitmask(entry_tree, tvb, offset, hf_btcommon_eir_ad_le_features, ett_eir_ad_le_features, hfx_btcommon_eir_ad_le_features[i], ENC_NA);
                 offset += 1;
             }
@@ -7725,16 +11600,102 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             offset += 1;
 
             break;
-        case 0x2a:
+        case 0x29: /* PB-ADV */
+            if (btmesh_pbadv_handle) {
+                call_dissector(btmesh_pbadv_handle, tvb_new_subset_length(tvb, offset, length), pinfo, proto_tree_get_root(tree));
+            } else {
+                proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_mesh_pbadv, tvb, offset, length, ENC_NA);
+            }
+            offset += length;
+
+            break;
+        case 0x2a: /* Mesh Message */
             if (btmesh_handle) {
                 call_dissector(btmesh_handle, tvb_new_subset_length(tvb, offset, length), pinfo, proto_tree_get_root(tree));
             } else {
                 proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_mesh_msg, tvb, offset, length, ENC_NA);
             }
             offset += length;
+
+            break;
+        case 0x2b: /* Mesh Beacon */
+            if (btmesh_beacon_handle) {
+                call_dissector(btmesh_beacon_handle, tvb_new_subset_length(tvb, offset, length), pinfo, proto_tree_get_root(tree));
+            } else {
+                proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_mesh_beacon, tvb, offset, length, ENC_NA);
+            }
+            offset += length;
+
+            break;
+        case 0x2c: /* BIGInfo */
+            sub_item = proto_tree_add_item_ret_uint(entry_tree, hf_btcommon_eir_ad_biginfo_big_offset, tvb, offset, 4, ENC_LITTLE_ENDIAN, &interval);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_big_offset_units, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            proto_item_append_text(sub_item, " (%u usec)", interval * ((tvb_get_uint32(tvb, offset, ENC_LITTLE_ENDIAN) & 0x00004000) != 0 ? 300 : 30));
+            sub_item = proto_tree_add_item_ret_uint(entry_tree, hf_btcommon_eir_ad_biginfo_iso_interval, tvb, offset, 4, ENC_LITTLE_ENDIAN, &interval);
+            proto_item_append_text(sub_item, " (%g msec)", interval * 1.25);
+            proto_tree_add_item_ret_uint(entry_tree, hf_btcommon_eir_ad_biginfo_num_bis, tvb, offset, 4, ENC_LITTLE_ENDIAN, &num_bis);
+            offset += 4;
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_nse, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_bn, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_sub_interval, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_pto, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            offset += 4;
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_bis_spacing, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_irc, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+            offset += 3;
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_max_pdu, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_rfu, tvb, offset, 1, ENC_NA);
+            offset += 1;
+            sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_seed_access_address, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            sub_tree = proto_item_add_subtree(sub_item, ett_eir_ad_biginfo_seedaa);
+            for (uint32_t bis = 0; bis <= num_bis; ++bis) {
+                uint32_t aa = tvb_get_uint32(tvb, offset, ENC_LITTLE_ENDIAN);
+                uint8_t d = (35 * bis + 42) & 0x7f;
+                uint32_t dw = (0xfc000000 * (d & 1)) | ((d & 0x02) << 24) | ((d & 0x40) << 18) | ((d & 0x02) << 22) | ((d & 0x30) << 16) | ((d & 0x0c) << 15);
+                aa ^= dw;
+                proto_tree_add_uint(sub_tree, bis ? hf_btcommon_eir_ad_biginfo_bis_access_address : hf_btcommon_eir_ad_biginfo_big_control_access_address, tvb, 0, 0, aa);
+            }
+            offset += 4;
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_sdu_interval, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_max_sdu, tvb, offset, 4, ENC_LITTLE_ENDIAN);
+            offset += 4;
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_base_crc_init, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+            offset += 2;
+            sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_channel_map, tvb, offset, 5, ENC_LITTLE_ENDIAN);
+            sub_tree = proto_item_add_subtree(sub_item, ett_le_channel_map);
+            call_dissector(btcommon_le_channel_map_handle, tvb_new_subset_length(tvb, offset, 5), pinfo, sub_tree);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_phy, tvb, offset, 5, ENC_LITTLE_ENDIAN);
+            offset += 5;
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_bis_payload_count, tvb, offset, 5, ENC_LITTLE_ENDIAN);
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_framing, tvb, offset, 5, ENC_LITTLE_ENDIAN);
+            offset += 5;
+            if (length >= 57) {
+                proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_giv, tvb, offset, 8, ENC_NA);
+                offset += 8;
+                proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_biginfo_gskd, tvb, offset, 16, ENC_NA);
+                offset += 16;
+            }
+
+            break;
+        case 0x2d: /* Broadcast Code */
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_broadcast_code, tvb, offset, length, ENC_UTF_8 | ENC_NA);
+            proto_item_append_text(entry_item, ": %s", tvb_format_text(pinfo->pool, tvb, offset, length));
+            offset += length;
+
+            break;
+        case 0x2e: /* Resolvable Set Identifier */
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_rsi, tvb, offset, length, ENC_NA);
+            offset += length;
+
+            break;
+        case 0x30: /* Broadcast Name */
+            proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_broadcast_name, tvb, offset, length, ENC_UTF_8 | ENC_NA);
+            offset += length;
+
             break;
         case 0xFF: /* Manufacturer Specific */ {
-            guint16  company_id;
+            uint16_t company_id;
 
             proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_company_id, tvb, offset, 2, ENC_LITTLE_ENDIAN);
             company_id = tvb_get_letohs(tvb, offset);
@@ -7742,15 +11703,15 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             length -= 2;
 
             if (p_get_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_MANUFACTURER_COMPANY_ID) == NULL) {
-                guint16 *value_data;
+                uint16_t *value_data;
 
-                value_data = wmem_new(wmem_file_scope(), guint16);
+                value_data = wmem_new(wmem_file_scope(), uint16_t);
                 *value_data = company_id;
 
                 p_add_proto_data(pinfo->pool, pinfo, proto_btcommon, PROTO_DATA_BLUETOOTH_EIR_AD_MANUFACTURER_COMPANY_ID, value_data);
             }
 
-            if (company_id == 0x000F && tvb_get_guint8(tvb, offset) == 0) { /* 3DS profile Legacy Devices */
+            if (company_id == 0x000F && tvb_get_uint8(tvb, offset) == 0) { /* 3DS profile Legacy Devices */
                 proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_3ds_legacy_fixed, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
@@ -7769,7 +11730,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
 
                 new_tvb = tvb_new_subset_length(tvb, offset, length);
 
-                if (!dissector_try_uint_new(bluetooth_eir_ad_manufacturer_company_id, company_id, new_tvb, pinfo, entry_tree, TRUE, bluetooth_eir_ad_data)) {
+                if (!dissector_try_uint_with_data(bluetooth_eir_ad_manufacturer_company_id, company_id, new_tvb, pinfo, entry_tree, true, bluetooth_eir_ad_data)) {
                     sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_data, tvb, offset, length, ENC_NA);
                     expert_add_info(pinfo, sub_item, &ei_eir_ad_undecoded);
                 }
@@ -7799,12 +11760,12 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
     if  (bluetooth_eir_ad_data && bluetooth_eir_ad_data->bd_addr && name && have_tap_listener(bluetooth_device_tap)) {
         bluetooth_device_tap_t  *tap_device;
 
-        tap_device = wmem_new(wmem_packet_scope(), bluetooth_device_tap_t);
+        tap_device = wmem_new(pinfo->pool, bluetooth_device_tap_t);
         tap_device->interface_id  = bluetooth_eir_ad_data->interface_id;
         tap_device->adapter_id    = bluetooth_eir_ad_data->adapter_id;
         memcpy(tap_device->bd_addr, bluetooth_eir_ad_data->bd_addr, 6);
-        tap_device->has_bd_addr = TRUE;
-        tap_device->is_local = FALSE;
+        tap_device->has_bd_addr = true;
+        tap_device->is_local = false;
         tap_device->type = BLUETOOTH_DEVICE_NAME;
         tap_device->data.name = name;
         tap_queue_packet(bluetooth_device_tap, pinfo, tap_device);
@@ -7813,7 +11774,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
     if (has_bd_addr && name && have_tap_listener(bluetooth_device_tap)) {
         bluetooth_device_tap_t  *tap_device;
 
-        tap_device = wmem_new(wmem_packet_scope(), bluetooth_device_tap_t);
+        tap_device = wmem_new(pinfo->pool, bluetooth_device_tap_t);
         if (bluetooth_eir_ad_data) {
             tap_device->interface_id  = bluetooth_eir_ad_data->interface_id;
             tap_device->adapter_id    = bluetooth_eir_ad_data->adapter_id;
@@ -7822,8 +11783,8 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
             tap_device->adapter_id    = HCI_ADAPTER_DEFAULT;
         }
         memcpy(tap_device->bd_addr, bd_addr, 6);
-        tap_device->has_bd_addr = TRUE;
-        tap_device->is_local = FALSE;
+        tap_device->has_bd_addr = true;
+        tap_device->is_local = false;
         tap_device->type = BLUETOOTH_DEVICE_NAME;
         tap_device->data.name = name;
         tap_queue_packet(bluetooth_device_tap, pinfo, tap_device);
@@ -7832,22 +11793,22 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
     return offset + data_size;
 }
 
-static gint
+static int
 dissect_btcommon_cod(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
     proto_item  *cod_item;
     proto_item  *cod_tree;
-    guint16      major_service_classes;
-    guint8       major_device_class;
-    guint8       minor_device_class;
-    const gchar *minor_device_class_name;
-    gint         offset = 0;
+    uint16_t     major_service_classes;
+    uint8_t      major_device_class;
+    uint8_t      minor_device_class;
+    const char *minor_device_class_name;
+    int          offset = 0;
 
     cod_item = proto_tree_add_item(tree, hf_btcommon_cod_class_of_device, tvb, offset, 3, ENC_LITTLE_ENDIAN);
     cod_tree = proto_item_add_subtree(cod_item, ett_cod);
 
-    major_device_class = tvb_get_guint8(tvb, offset + 1) & 0x1F;
-    minor_device_class = tvb_get_guint8(tvb, offset) >> 2;
+    major_device_class = tvb_get_uint8(tvb, offset + 1) & 0x1F;
+    minor_device_class = tvb_get_uint8(tvb, offset) >> 2;
 
     switch(major_device_class) {
     case 0x01: /* Computer */
@@ -7910,6 +11871,7 @@ dissect_btcommon_cod(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, vo
     proto_tree_add_item(cod_tree, hf_btcommon_cod_major_service_class_networking, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     proto_tree_add_item(cod_tree, hf_btcommon_cod_major_service_class_positioning, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     proto_tree_add_item(cod_tree, hf_btcommon_cod_major_service_class_reserved, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+    proto_tree_add_item(cod_tree, hf_btcommon_cod_major_service_class_le_audio, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     proto_tree_add_item(cod_tree, hf_btcommon_cod_major_service_class_limited_discoverable_mode, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     major_service_classes = tvb_get_letohs(tvb, offset) >> 5;
 
@@ -7936,7 +11898,7 @@ dissect_btcommon_cod(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, vo
     return offset;
 }
 
-static gint
+static int
 dissect_btcommon_ad(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
     proto_item *main_item;
@@ -7948,7 +11910,7 @@ dissect_btcommon_ad(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *d
     return dissect_eir_ad_data(tvb, pinfo, main_tree, (bluetooth_eir_ad_data_t *) data);
 }
 
-static gint
+static int
 dissect_btcommon_eir(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
     proto_item *main_item;
@@ -7960,10 +11922,11 @@ dissect_btcommon_eir(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *
     return dissect_eir_ad_data(tvb, pinfo, main_tree, (bluetooth_eir_ad_data_t *) data);
 }
 
-static gint
-dissect_btcommon_le_channel_map(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
+static int
+dissect_btcommon_le_channel_map(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data)
 {
-    gint offset = 0;
+    int offset = 0;
+    int *reserved_bits_offset = (int *)data;
 
     proto_tree_add_item(tree, hf_btcommon_le_channel_map_0, tvb, offset, 1, ENC_NA);
     proto_tree_add_item(tree, hf_btcommon_le_channel_map_1, tvb, offset, 1, ENC_NA);
@@ -8010,9 +11973,15 @@ dissect_btcommon_le_channel_map(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tre
     proto_tree_add_item(tree, hf_btcommon_le_channel_map_34, tvb, offset, 1, ENC_NA);
     proto_tree_add_item(tree, hf_btcommon_le_channel_map_35, tvb, offset, 1, ENC_NA);
     proto_tree_add_item(tree, hf_btcommon_le_channel_map_36, tvb, offset, 1, ENC_NA);
-    proto_tree_add_item(tree, hf_btcommon_le_channel_map_37, tvb, offset, 1, ENC_NA);
-    proto_tree_add_item(tree, hf_btcommon_le_channel_map_38, tvb, offset, 1, ENC_NA);
-    proto_tree_add_item(tree, hf_btcommon_le_channel_map_39, tvb, offset, 1, ENC_NA);
+
+    if (reserved_bits_offset) {
+        *reserved_bits_offset = offset;
+    } else {
+        proto_tree_add_item(tree, hf_btcommon_le_channel_map_37, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(tree, hf_btcommon_le_channel_map_38, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(tree, hf_btcommon_le_channel_map_39, tvb, offset, 1, ENC_NA);
+    }
+
     offset += 1;
 
     return offset;
@@ -8245,7 +12214,7 @@ proto_register_btcommon(void)
             NULL, HFILL }
         },
         { &hf_btcommon_eir_ad_3ds_legacy_fixed_6,
-          { "3DS Legacy Fixed",                            "btcommon.eir_ad.entry.3ds_legacy.fixed.4",
+          { "3DS Legacy Fixed",                            "btcommon.eir_ad.entry.3ds_legacy.fixed.6",
             FT_BOOLEAN, 8, NULL, 0x40,
             NULL, HFILL }
         },
@@ -8296,7 +12265,7 @@ proto_register_btcommon(void)
         },
         { &hf_btcommon_eir_ad_oob_flags_address_type,
           { "Address Type",                                               "btcommon.eir_ad.entry.oob_flags.oob_address_type",
-            FT_UINT8, BASE_HEX, VALS(bthci_cmd_address_types_vals), 0x08,
+            FT_UINT8, BASE_HEX, VALS(cmd_base_address_types_vals), 0x08,
             NULL, HFILL }
         },
         { &hf_btcommon_eir_ad_oob_flags_le_bredr_support,
@@ -8336,7 +12305,7 @@ proto_register_btcommon(void)
         },
         {&hf_btcommon_eir_ad_ips_flags_reserved,
             {"Reserved", "btcommon.eir_ad.entry.ips.flags.reserved",
-            FT_UINT8, BASE_HEX, NULL, 0xC0,
+            FT_UINT8, BASE_HEX, NULL, 0x80,
             NULL, HFILL}
         },
         {&hf_btcommon_eir_ad_ips_flags_location_name,
@@ -8505,8 +12474,8 @@ proto_register_btcommon(void)
             FT_BOOLEAN, 8, NULL, 0x04,
             NULL, HFILL }
         },
-        { &hf_btcommon_eir_ad_le_features_slave_initiated_features_exchange,
-          { "Slave-Initiated Features Exchange",           "btcommon.eir_ad.le_features.slave_initiated_features_exchange",
+        { &hf_btcommon_eir_ad_le_features_peripheral_initiated_features_exchange,
+          { "Peripheral-Initiated Features Exchange",           "btcommon.eir_ad.le_features.peripheral_initiated_features_exchange",
             FT_BOOLEAN, 8, NULL, 0x08,
             NULL, HFILL }
         },
@@ -8585,6 +12554,141 @@ proto_register_btcommon(void)
             FT_UINT8, BASE_HEX, NULL, 0xFF,
             NULL, HFILL }
         },
+        { &hf_btcommon_eir_ad_biginfo_big_offset,
+          { "BIG_Offset", "btcommon.eir_ad.entry.biginfo.big_offset",
+            FT_UINT32, BASE_DEC, NULL, 0x00003fff,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_big_offset_units,
+          { "BIG_Offset_Units", "btcommon.eir_ad.entry.biginfo.big_offset_units",
+            FT_BOOLEAN, 32, TFS(&tfs_offset_units), 0x00004000,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_eir_ad_biginfo_iso_interval,
+          { "ISO_Interval", "btcommon.eir_ad.entry.biginfo.iso_interval",
+            FT_UINT32, BASE_DEC, NULL, 0x07ff8000,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_num_bis,
+          { "Num_BIS", "btcommon.eir_ad.entry.biginfo.num_bis",
+            FT_UINT32, BASE_DEC, NULL, 0xf8000000,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_nse,
+          { "NSE", "btcommon.eir_ad.entry.biginfo.nse",
+            FT_UINT32, BASE_DEC, NULL, 0x0000001f,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_bn,
+          { "BN", "btcommon.eir_ad.entry.biginfo.bn",
+            FT_UINT32, BASE_DEC, NULL, 0x000000e0,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_sub_interval,
+          { "Sub_Interval", "btcommon.eir_ad.entry.biginfo.sub_interval",
+            FT_UINT32, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microsecond_microseconds), 0x0fffff00,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_pto,
+          { "PTO", "btcommon.eir_ad.entry.biginfo.pto",
+            FT_UINT32, BASE_DEC, NULL, 0xf0000000,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_bis_spacing,
+          { "BIS_Spacing", "btcommon.eir_ad.entry.biginfo.bis_spacing",
+            FT_UINT24, BASE_DEC|BASE_UNIT_STRING, UNS(&units_microsecond_microseconds), 0x0fffff,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_irc,
+          { "IRC", "btcommon.eir_ad.entry.biginfo.irc",
+            FT_UINT24, BASE_DEC, NULL, 0xf00000,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_max_pdu,
+          { "Max_PDU", "btcommon.eir_ad.entry.biginfo.max_pdu",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_rfu,
+          { "Reserved", "btcommon.eir_ad.entry.biginfo.rfu",
+            FT_UINT8, BASE_DEC, NULL, 0x0,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_seed_access_address,
+          { "Seed Access Address", "btcommon.eir_ad.entry.biginfo.seed_access_address",
+            FT_UINT32, BASE_HEX, NULL, 0x0,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_sdu_interval,
+          { "SDU_Interval", "btcommon.eir_ad.entry.biginfo.sdu_interval",
+            FT_UINT32, BASE_DEC, NULL, 0x000fffff,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_max_sdu,
+          { "Max_SDU", "btcommon.eir_ad.entry.biginfo.max_sdu",
+            FT_UINT32, BASE_DEC, NULL, 0xfff00000,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_base_crc_init,
+          { "BaseCRCInit", "btcommon.eir_ad.entry.biginfo.base_crc_init",
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_channel_map,
+          { "Channel Map", "btcommon.eir_ad.entry.biginfo.channel_map",
+            FT_UINT40, BASE_HEX, NULL, 0x1fffffffff,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_phy,
+          { "PHY", "btcommon.eir_ad.entry.biginfo.phy",
+            FT_UINT40, BASE_DEC|BASE_VAL64_STRING, VALS64(cmd_biginfo_le_phy_vals64), 0xe000000000,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_bis_payload_count,
+          { "bisPayloadCount", "btcommon.eir_ad.entry.biginfo.bis_payload_count",
+            FT_UINT40, BASE_DEC, NULL, 0x7fffffffff,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_framing,
+          { "Framing", "btcommon.eir_ad.entry.biginfo.framing",
+            FT_BOOLEAN, 40, NULL, 0x8000000000,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_eir_ad_biginfo_giv,
+            { "GIV", "btcommon.eir_ad.entry.biginfo.giv",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_eir_ad_biginfo_gskd,
+            { "GSKD", "btcommon.eir_ad.entry.biginfo.gskd",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_eir_ad_biginfo_big_control_access_address,
+          { "BIG Control Access Address", "btcommon.eir_ad.entry.biginfo.big_control_access_address",
+            FT_UINT32, BASE_HEX, NULL, 0x0,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_biginfo_bis_access_address,
+          { "BIS Access Address", "btcommon.eir_ad.entry.biginfo.bis_access_address",
+            FT_UINT32, BASE_HEX, NULL, 0x0,
+            NULL, HFILL}
+        },
+        { &hf_btcommon_eir_ad_broadcast_code,
+          { "Broadcast Code", "btcommon.eir_ad.entry.broadcast_code",
+            FT_STRING, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_eir_ad_rsi,
+          { "Resolvable Set Identifier", "btcommon.eir_ad.entry.rsi",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_eir_ad_broadcast_name,
+          { "Broadcast Name", "btcommon.eir_ad.entry.broadcast_name",
+            FT_STRING, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
         { &hf_btcommon_cod_class_of_device,
           { "Class of Device", "btcommon.cod.class_of_device",
             FT_UINT24, BASE_HEX, NULL, 0x0,
@@ -8632,7 +12736,12 @@ proto_register_btcommon(void)
         },
         { &hf_btcommon_cod_major_service_class_reserved,
           { "Major Service Classes: Reserved", "btcommon.cod.major_service_classes.reserved",
-            FT_UINT16, BASE_HEX, NULL, 0x00C0,
+            FT_UINT16, BASE_HEX, NULL, 0x0080,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_cod_major_service_class_le_audio,
+          { "Major Service Classes: LE Audio", "btcommon.cod.major_service_classes.le_audio",
+            FT_UINT16, BASE_HEX, NULL, 0x0040,
             NULL, HFILL }
         },
         { &hf_btcommon_cod_major_service_class_limited_discoverable_mode,
@@ -8731,17 +12840,17 @@ proto_register_btcommon(void)
             NULL, HFILL }
         },
         { &hf_btcommon_le_channel_map_39,
-            { "RF Channel 39 (2480 MHz - Reserved for Advertising - 39)",         "btcommon.le_channel_map.39",
+            { "Reserved",                                            "btcommon.le_channel_map.39",
             FT_BOOLEAN, 8, NULL, 0x80,
             NULL, HFILL }
         },
         { &hf_btcommon_le_channel_map_38,
-            { "RF Channel 12 (2426 MHz - Reserved for Advertising - 38)",         "btcommon.le_channel_map.38",
+            { "Reserved",                                            "btcommon.le_channel_map.38",
             FT_BOOLEAN, 8, NULL, 0x40,
             NULL, HFILL }
         },
         { &hf_btcommon_le_channel_map_37,
-            { "RF Channel 0 (2402 MHz - Reserved for Advertising - 37)",          "btcommon.le_channel_map.37",
+            { "Reserved",                                            "btcommon.le_channel_map.37",
             FT_BOOLEAN, 8, NULL, 0x20,
             NULL, HFILL }
         },
@@ -8931,17 +13040,27 @@ proto_register_btcommon(void)
             NULL, HFILL }
         },
         { &hf_btcommon_eir_ad_mesh_msg,
-        { "Mesh message content",        "btcommon.eir_ad.entry.mesh_msg",
+            { "Mesh message content",        "btcommon.eir_ad.entry.mesh_msg",
             FT_BYTES, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
         },
-
+        { &hf_btcommon_eir_ad_mesh_pbadv,
+            { "Mesh PB-ADV message content",        "btcommon.eir_ad.entry.mesh_pbadv",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_btcommon_eir_ad_mesh_beacon,
+            { "Mesh Beacon message content",        "btcommon.eir_ad.entry.mesh_beacon",
+            FT_BYTES, BASE_NONE, NULL, 0x0,
+            NULL, HFILL }
+        },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_eir_ad,
         &ett_eir_ad_entry,
         &ett_eir_ad_le_features,
+        &ett_eir_ad_biginfo_seedaa
     };
 
     static ei_register_info ei[] = {
@@ -8953,12 +13072,12 @@ proto_register_btcommon(void)
 
     static build_valid_func bluetooth_eir_ad_manufacturer_company_id_da_build_value[1] = {bluetooth_eir_ad_manufacturer_company_id_value};
     static decode_as_value_t bluetooth_eir_ad_manufacturer_company_id_da_values = {bluetooth_eir_ad_manufacturer_company_id_prompt, 1, bluetooth_eir_ad_manufacturer_company_id_da_build_value};
-    static decode_as_t bluetooth_eir_ad_manufacturer_company_id_da = {"btcommon.eir_ad", "EIR/AD Manufacturer Company ID", "btcommon.eir_ad.manufacturer_company_id", 1, 0, &bluetooth_eir_ad_manufacturer_company_id_da_values, NULL, NULL,
+    static decode_as_t bluetooth_eir_ad_manufacturer_company_id_da = {"btcommon.eir_ad", "btcommon.eir_ad.manufacturer_company_id", 1, 0, &bluetooth_eir_ad_manufacturer_company_id_da_values, NULL, NULL,
                                  decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
 
     static build_valid_func bluetooth_eir_ad_tds_organization_id_da_build_value[1] = {bluetooth_eir_ad_tds_organization_id_value};
     static decode_as_value_t bluetooth_eir_ad_tds_organization_id_da_values = {bluetooth_eir_ad_tds_organization_id_prompt, 1, bluetooth_eir_ad_tds_organization_id_da_build_value};
-    static decode_as_t bluetooth_eir_ad_tds_organization_id_da = {"btcommon.eir_ad", "EIR/AD TDS Organization ID", "btcommon.eir_ad.tds_organization_id", 1, 0, &bluetooth_eir_ad_tds_organization_id_da_values, NULL, NULL,
+    static decode_as_t bluetooth_eir_ad_tds_organization_id_da = {"btcommon.eir_ad", "btcommon.eir_ad.tds_organization_id", 1, 0, &bluetooth_eir_ad_tds_organization_id_da_values, NULL, NULL,
                                  decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
 
     proto_btcommon = proto_register_protocol("Bluetooth Common", "BT Common", "btcommon");
@@ -8978,6 +13097,10 @@ proto_register_btcommon(void)
     bluetooth_eir_ad_manufacturer_company_id = register_dissector_table("btcommon.eir_ad.manufacturer_company_id", "BT EIR/AD Manufacturer Company ID", proto_btcommon, FT_UINT16, BASE_HEX);
     bluetooth_eir_ad_tds_organization_id     = register_dissector_table("btcommon.eir_ad.tds_organization_id",     "BT EIR/AD TDS Organization ID", proto_btcommon, FT_UINT8, BASE_HEX);
 
+    // Key for this table is the lower-case hex-representation of the service UUID. 16-bit UUIDs will have 4 characters, 32-bit UUIDs will have 8 characters.
+    // 128-bit UUIDs have 4 dashes in them, and therefore have 36 characters.
+    bluetooth_eir_ad_service_uuid            = register_dissector_table("btcommon.eir_ad.entry.uuid",              "BT EIR/AD Service UUID", proto_btcommon, FT_STRING, STRING_CASE_SENSITIVE);
+
     register_decode_as(&bluetooth_eir_ad_manufacturer_company_id_da);
     register_decode_as(&bluetooth_eir_ad_tds_organization_id_da);
 }
@@ -8986,9 +13109,14 @@ void
 proto_reg_handoff_btcommon(void)
 {
     btmesh_handle = find_dissector("btmesh.msg");
+    btmesh_pbadv_handle = find_dissector("btmesh.pbadv");
+    btmesh_beacon_handle = find_dissector("btmesh.beacon");
 }
+
+
+
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

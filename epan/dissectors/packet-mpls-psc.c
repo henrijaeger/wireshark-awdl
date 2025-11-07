@@ -22,24 +22,26 @@
 void proto_register_mpls_psc(void);
 void proto_reg_handoff_mpls_psc(void);
 
-static gint proto_mpls_psc = -1;
+static dissector_handle_t mpls_psc_handle;
 
-static gint ett_mpls_psc = -1;
+static int proto_mpls_psc;
 
-static int hf_mpls_psc_ver = -1;
-static int hf_mpls_psc_req = -1;
-static int hf_mpls_psc_pt = -1;
-static int hf_mpls_psc_rev = -1;
-static int hf_mpls_psc_fpath = -1;
-static int hf_mpls_psc_dpath = -1;
-static int hf_mpls_psc_tlvlen = -1;
+static int ett_mpls_psc;
+
+static int hf_mpls_psc_ver;
+static int hf_mpls_psc_req;
+static int hf_mpls_psc_pt;
+static int hf_mpls_psc_rev;
+static int hf_mpls_psc_fpath;
+static int hf_mpls_psc_dpath;
+static int hf_mpls_psc_tlvlen;
 
 /*
  * FF: please keep this list in sync with
  * http://www.iana.org/assignments/mpls-oam-parameters/mpls-oam-parameters.xml
  * Registry Name: 'MPLS PSC Request'
  */
-const range_string mpls_psc_req_rvals[] = {
+static const range_string mpls_psc_req_rvals[] = {
     {  0,  0, "No Request"            },
     {  1,  1, "Do Not Revert"         },
     {  2,  3, "Unassigned"            },
@@ -57,7 +59,7 @@ const range_string mpls_psc_req_rvals[] = {
     { 0,   0, NULL                    }
 };
 
-const value_string mpls_psc_req_short_vals[] = {
+static const value_string mpls_psc_req_short_vals[] = {
     {  0, "NR"  },
     {  1, "DNR" },
     {  4, "WTR" },
@@ -69,7 +71,7 @@ const value_string mpls_psc_req_short_vals[] = {
     {  0, NULL  }
 };
 
-const range_string mpls_psc_pt_rvals[] = {
+static const range_string mpls_psc_pt_rvals[] = {
     { 0, 0, "for future extensions"                             },
     { 1, 1, "unidirectional switching using a permanent bridge" },
     { 2, 2, "bidirectional switching using a selector bridge"   },
@@ -77,20 +79,20 @@ const range_string mpls_psc_pt_rvals[] = {
     { 0, 0, NULL                                                }
 };
 
-const range_string mpls_psc_rev_rvals[] = {
+static const range_string mpls_psc_rev_rvals[] = {
     { 0, 0, "non-revertive mode" },
     { 1, 1, "revertive mode"     },
     { 0, 0, NULL                 }
 };
 
-const range_string mpls_psc_fpath_rvals[] = {
+static const range_string mpls_psc_fpath_rvals[] = {
     { 0,   0, "protection"            },
     { 1,   1, "working"               },
     { 2, 255, "for future extensions" },
     { 0,   0, NULL                    }
 };
 
-const range_string mpls_psc_dpath_rvals[] = {
+static const range_string mpls_psc_dpath_rvals[] = {
     { 0,   0, "protection is not in use" },
     { 1,   1, "protection is in use"     },
     { 2, 255, "for future extensions"    },
@@ -102,18 +104,18 @@ dissect_mpls_psc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 {
     proto_item *ti;
     proto_tree *psc_tree;
-    guint32     offset   = 0;
-    guint8      req;
-    guint8      fpath;
-    guint8      path;
+    uint32_t    offset   = 0;
+    uint8_t     req;
+    uint8_t     fpath;
+    uint8_t     path;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "PSC");
     col_clear(pinfo->cinfo, COL_INFO);
 
     /* build cinfo */
-    req   = (tvb_get_guint8(tvb, offset) & 0x3C) >> 2;
-    fpath = tvb_get_guint8(tvb, offset + 2);
-    path  = tvb_get_guint8(tvb, offset + 3);
+    req   = (tvb_get_uint8(tvb, offset) & 0x3C) >> 2;
+    fpath = tvb_get_uint8(tvb, offset + 2);
+    path  = tvb_get_uint8(tvb, offset + 3);
 
     col_add_fstr(pinfo->cinfo, COL_INFO,
                  "%s(%u,%u)",
@@ -211,7 +213,7 @@ proto_register_mpls_psc(void)
         },
     };
 
-    static gint *ett[] = {
+    static int *ett[] = {
         &ett_mpls_psc,
     };
 
@@ -222,19 +224,18 @@ proto_register_mpls_psc(void)
 
     proto_register_field_array(proto_mpls_psc, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
+
+    mpls_psc_handle = register_dissector("mpls_psc", dissect_mpls_psc, proto_mpls_psc);
 }
 
 void
 proto_reg_handoff_mpls_psc(void)
 {
-    dissector_handle_t mpls_psc_handle;
-
-    mpls_psc_handle    = create_dissector_handle( dissect_mpls_psc, proto_mpls_psc );
     dissector_add_uint("pwach.channel_type", PW_ACH_TYPE_PSC, mpls_psc_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

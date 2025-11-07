@@ -1,16 +1,16 @@
-/* sctp_graph_arwn_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef SCTP_GRAPH_ARWND_DIALOG_H
 #define SCTP_GRAPH_ARWND_DIALOG_H
 
 #include <config.h>
-#include <glib.h>
 
 #include "cfile.h"
 
@@ -39,19 +39,19 @@ public slots:
 private slots:
     void on_pushButton_4_clicked();
 
-    void graphClicked(QCPAbstractPlottable* plottable, QMouseEvent* event);
+    void graphClicked(QCPAbstractPlottable* plottable, int, QMouseEvent* event);
 
     void on_saveButton_clicked();
 
 private:
     Ui::SCTPGraphArwndDialog *ui;
-    guint16 selected_assoc_id;
+    uint16_t selected_assoc_id;
     capture_file *cap_file_;
     int frame_num;
     int direction;
-    int startArwnd;
+    uint32_t startArwnd;
     QVector<double> xa, ya;
-    QVector<guint32> fa;
+    QVector<uint32_t> fa;
  //   QVector<QString> typeStrings;
 
     void drawGraph(const _sctp_assoc_info *selected_assoc);
@@ -59,16 +59,3 @@ private:
 };
 
 #endif // SCTP_GRAPH_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

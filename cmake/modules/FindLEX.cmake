@@ -2,17 +2,15 @@
 # - Find flex/lex executable
 #
 
-INCLUDE(FindCygwin)
-INCLUDE(FindChocolatey)
+include(FindChocolatey)
 
-FIND_PROGRAM(LEX_EXECUTABLE
+find_program(LEX_EXECUTABLE
   NAMES
     win_flex
     flex
     lex
   PATHS
     ${CHOCOLATEY_BIN_PATH}
-    ${CYGWIN_INSTALL_PATH}/bin
     /bin
     /usr/bin
     /usr/local/bin
@@ -36,7 +34,7 @@ MACRO(ADD_LEX_FILES _source _generated)
 
       ADD_CUSTOM_COMMAND(
         OUTPUT ${_outc} ${_outh}
-        COMMAND ${LEX_EXECUTABLE} -o${_outc} --header-file=${_outh} ${_in}
+        COMMAND ${LEX_EXECUTABLE} $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:--debug> --outfile=${_outc} --header-file=${_outh} ${_in}
         DEPENDS ${_in}
       )
       LIST(APPEND ${_source} ${_in})

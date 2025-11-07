@@ -1,10 +1,11 @@
-/* response_time_delay_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __RESPONSE_TIME_DELAY_DIALOG_H__
 #define __RESPONSE_TIME_DELAY_DIALOG_H__
@@ -48,6 +49,6 @@ private slots:
  * @param value register_rtd_t* representing dissetor RTD table
  * @param userdata is unused
  */
-gboolean register_response_time_delay_tables(const void *key, void *value, void *userdata);
+bool register_response_time_delay_tables(const void *key, void *value, void *userdata);
 
 #endif // __RESPONSE_TIME_DELAY_DIALOG_H__

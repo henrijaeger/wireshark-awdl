@@ -187,8 +187,8 @@ corecapture_awdl_add_tagged_field(packet_info *pinfo, proto_tree *tree, tvbuff_t
   awdl_tagged_field_data_t field_data;
   int parsed;
   
-  tag_no = tvb_get_guint16(tvb, offset, ENC_LITTLE_ENDIAN);
-  tag_len = tvb_get_guint16(tvb, offset + CC_AWDL_TAG_LENGTH, ENC_LITTLE_ENDIAN);
+  tag_no = tvb_get_uint16(tvb, offset, ENC_LITTLE_ENDIAN);
+  tag_len = tvb_get_uint16(tvb, offset + CC_AWDL_TAG_LENGTH, ENC_LITTLE_ENDIAN);
   
   if (tree) {
     ti = proto_tree_add_item(orig_tree, hf_tlv_tag, tvb, offset, tag_len + CC_AWDL_HDR_LENGTH, ENC_NA);
@@ -209,7 +209,7 @@ corecapture_awdl_add_tagged_field(packet_info *pinfo, proto_tree *tree, tvbuff_t
   tag_tvb = tvb_new_subset_length(tvb, offset, tag_len);
   field_data.item_tag = ti;
   field_data.item_tag_length = ti_len;
-  if (!(parsed = dissector_try_uint_new(awdl_tagged_field_table, tag_no, tag_tvb, pinfo, tree, FALSE, &field_data)))
+  if (!(parsed = dissector_try_uint_with_data(awdl_tagged_field_table, tag_no, tag_tvb, pinfo, tree, FALSE, &field_data)))
   {
     proto_tree_add_item(tree, hf_awdl_tag_data, tag_tvb, 0, tag_len, ENC_NA);
     expert_add_info_format(pinfo, ti_tag, &ei_cc_awdl_tag_data,
@@ -309,7 +309,7 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
   tvbuff_t                    *next_tvb;
   proto_item                *ti = NULL;
   guint16                          tlv_tag;
-  guint8                    tlv_count, pl_type, data_type;
+  guint8                    tlv_count, pl_type; //, data_type;
   gint                             len;
   int                         offset=0;
   char *infotext, *longtext;
@@ -338,11 +338,11 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
   proto_tree_add_item (corecapture_tree, hf_logcount, tvb, offset, 4, ENC_LITTLE_ENDIAN);
   offset+=4;
   proto_tree_add_item (corecapture_tree, hf_payloadtype, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-  pl_type = tvb_get_guint8(tvb, offset);
+  pl_type = tvb_get_uint8(tvb, offset);
   
   offset+=1;
   proto_tree_add_item (corecapture_tree, hf_tlv_count, tvb, offset, 1, ENC_LITTLE_ENDIAN);
-  tlv_count = tvb_get_guint8(tvb, offset);
+  tlv_count = tvb_get_uint8(tvb, offset);
   offset+=1;
   //TODO: Fill
   offset+=2;
@@ -367,10 +367,10 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
   
   
   
-  data_type=0;
+//  data_type=0;
   
   if (tlv_count>0) {
-    tlv_tag = tvb_get_guint16(tvb, offset, ENC_LITTLE_ENDIAN);
+    tlv_tag = tvb_get_uint16(tvb, offset, ENC_LITTLE_ENDIAN);
     //if the first TLV is ACTION, the payload contains an AF, otherwise it is Ethernet data.
     is_awdl_action_frame = (tlv_tag == CC_AWDL_ACTION);
   }
@@ -409,7 +409,7 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
       len = tvb_reported_length_remaining (tvb, offset);
       
       vendor_tvb = tvb_new_subset_length(tvb, offset, len);
-      dissector_try_uint_new(vendor_specific_action_table, oui, vendor_tvb, pinfo, tree, FALSE, NULL);
+      dissector_try_uint_with_data(vendor_specific_action_table, oui, vendor_tvb, pinfo, tree, FALSE, NULL);
     } else {
       // dissect as Ethernet frame
       proto_item_set_len (ti, offset);
@@ -426,7 +426,7 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
 
 
 static void
-corecapture_awdl_register_tags()
+corecapture_awdl_register_tags(void)
 {
   dissector_add_uint("corecapture.awdl.tlv.tag", CC_AWDL_ACTION, create_dissector_handle(corecapture_awdl_tag_action, -1));
   dissector_add_uint("corecapture.awdl.tlv.tag", CC_AWDL_LLC, create_dissector_handle(corecapture_awdl_tag_llc, -1));

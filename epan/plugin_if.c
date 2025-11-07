@@ -20,11 +20,12 @@
 #include <glib.h>
 #include <epan/epan.h>
 #include <epan/proto.h>
+#include <wsutil/ws_assert.h>
 
 #include "plugin_if.h"
 
-static GList * menubar_entries = NULL;
-static GList * menubar_menunames = NULL;
+static GList * menubar_entries;
+static GList * menubar_menunames;
 
 static GHashTable * plugin_if_callback_functions;
 
@@ -41,7 +42,7 @@ static void plugin_if_call_gui_cb(plugin_if_callback_t actionType, GHashTable * 
 
     plugin_if_init_hashtable();
 
-    if ( g_hash_table_lookup_extended(plugin_if_callback_functions, GINT_TO_POINTER(actionType), NULL, (gpointer*)&action) )
+    if ( g_hash_table_lookup_extended(plugin_if_callback_functions, GINT_TO_POINTER(actionType), NULL, (void **)&action) )
     {
         if ( action != NULL )
             action(dataSet);
@@ -54,25 +55,25 @@ extern GList * ext_menubar_get_entries(void)
     return menubar_entries;
 }
 
-extern ext_menu_t * ext_menubar_register_menu(int proto_id, const gchar * menulabel,
-        gboolean is_plugin)
+extern ext_menu_t * ext_menubar_register_menu(int proto_id, const char * menulabel,
+        bool is_plugin)
 {
     ext_menubar_t * entry = NULL;
-    gchar * name = NULL;
+    char * name = NULL;
 
     /* A name for the entry must be provided */
-    g_assert(menulabel != NULL && strlen ( menulabel ) > 0 );
+    ws_assert(menulabel != NULL && strlen ( menulabel ) > 0 );
 
     /* A protocol must exist for the given id */
-    g_assert(find_protocol_by_id(proto_id) != NULL);
+    ws_assert(find_protocol_by_id(proto_id) != NULL);
 
     /* Create unique name, which is used by GTK to provide the menu */
     name = g_strconcat(proto_get_protocol_filter_name(proto_id), "Menu", NULL);
 
     /* For now, a protocol may only register one main menu */
-    g_assert(g_list_find(menubar_menunames, name) == NULL);
+    ws_assert(g_list_find(menubar_menunames, name) == NULL);
 
-    entry = (ext_menubar_t *)g_malloc0(sizeof(ext_menubar_t));
+    entry = g_new0(ext_menubar_t, 1);
     entry->type = EXT_MENUBAR_MENU;
     entry->proto = proto_id;
     entry->is_plugin = is_plugin;
@@ -93,38 +94,38 @@ extern ext_menu_t * ext_menubar_register_menu(int proto_id, const gchar * menula
     return entry;
 }
 
-extern ext_menu_t * ext_menubar_set_parentmenu(ext_menu_t * menu, const gchar * parentmenu)
+extern ext_menu_t * ext_menubar_set_parentmenu(ext_menu_t * menu, const char * parentmenu)
 {
-    g_assert(menu != NULL && menu->parent == NULL);
+    ws_assert(menu != NULL && menu->parent == NULL);
 
-    g_assert(parentmenu != 0);
+    ws_assert(parentmenu != 0);
 
     menu->parent_menu = g_strdup(parentmenu);
 
     return menu;
 }
 
-extern ext_menu_t * ext_menubar_add_submenu(ext_menu_t * parent, const gchar *menulabel)
+extern ext_menu_t * ext_menubar_add_submenu(ext_menu_t * parent, const char *menulabel)
 {
     ext_menubar_t * entry = NULL;
 
     /* A name for the entry must be provided */
-    g_assert(menulabel != NULL && strlen ( menulabel ) > 0 );
+    ws_assert(menulabel != NULL && strlen ( menulabel ) > 0 );
 
     /* Parent must be a valid parent */
-    g_assert(parent != NULL && parent->type == EXT_MENUBAR_MENU);
+    ws_assert(parent != NULL && parent->type == EXT_MENUBAR_MENU);
 
     parent->submenu_cnt++;
 
     /* Create submenu entry */
-    entry = (ext_menubar_t *)g_malloc0(sizeof(ext_menubar_t));
+    entry = g_new0(ext_menubar_t, 1);
     entry->type = EXT_MENUBAR_MENU;
     entry->parent = parent;
     /* Just a convenience */
     entry->proto = parent->proto;
     entry->is_plugin = parent->is_plugin;
     /* Create unique name, which is used by GTK to provide the menu */
-    entry->name = g_strdup_printf("%sS%02d", parent->name, parent->submenu_cnt);
+    entry->name = ws_strdup_printf("%sS%02d", parent->name, parent->submenu_cnt);
     entry->label = g_strdup(menulabel);
     entry->tooltip = g_strdup(menulabel);
 
@@ -134,23 +135,23 @@ extern ext_menu_t * ext_menubar_add_submenu(ext_menu_t * parent, const gchar *me
 }
 
 static void ext_menubar_add_generic_entry (
-        ext_menubar_entry_t type, ext_menu_t * parent, const gchar * label,
-        const gchar * tooltip, ext_menubar_action_cb callback, gpointer user_data )
+        ext_menubar_entry_t type, ext_menu_t * parent, const char * label,
+        const char * tooltip, ext_menubar_action_cb callback, void *user_data )
 {
     ext_menubar_t * entry = NULL;
 
     /* A valid parent must exist */
-    g_assert(parent != NULL && parent->type == EXT_MENUBAR_MENU);
+    ws_assert(parent != NULL && parent->type == EXT_MENUBAR_MENU);
     /* A label for the entry must be provided */
-    g_assert(label != NULL && strlen ( label ) > 0 );
+    ws_assert(label != NULL && strlen ( label ) > 0 );
 
     parent->item_cnt++;
 
     /* Create menu entry */
-    entry = (ext_menubar_t*)g_malloc0(sizeof(ext_menubar_t));
+    entry = g_new0(ext_menubar_t, 1);
     entry->type = type;
     /* Create unique name, which is used by GTK to provide the menu */
-    entry->name = g_strdup_printf("%sI%02d", parent->name, parent->item_cnt);
+    entry->name = ws_strdup_printf("%sI%02d", parent->name, parent->item_cnt);
     entry->label = g_strdup(label);
 
     if ( tooltip != NULL && strlen(tooltip) > 0 )
@@ -162,44 +163,44 @@ static void ext_menubar_add_generic_entry (
     parent->children = g_list_append(parent->children, entry);
 }
 
-extern void ext_menubar_add_entry(ext_menu_t * parent, const gchar *label,
-        const gchar *tooltip, ext_menubar_action_cb callback, gpointer user_data)
+extern void ext_menubar_add_entry(ext_menu_t * parent, const char *label,
+        const char *tooltip, ext_menubar_action_cb callback, void *user_data)
 {
     /* A callback must be provided */
-    g_assert(callback != NULL);
+    ws_assert(callback != NULL);
 
     ext_menubar_add_generic_entry ( EXT_MENUBAR_ITEM, parent, label, tooltip, callback, user_data );
 }
 
-extern void ext_menubar_add_website(ext_menu_t * parent, const gchar *label,
-        const gchar *tooltip, const gchar *url)
+extern void ext_menubar_add_website(ext_menu_t * parent, const char *label,
+        const char *tooltip, const char *url)
 {
     /* An url for the entry must be provided */
-    g_assert(url != NULL && strlen ( url ) > 0 );
+    ws_assert(url != NULL && strlen ( url ) > 0 );
 
-    ext_menubar_add_generic_entry ( EXT_MENUBAR_URL, parent, label, tooltip, NULL, (gpointer) g_strdup(url) );
+    ext_menubar_add_generic_entry ( EXT_MENUBAR_URL, parent, label, tooltip, NULL, (void *) g_strdup(url) );
 }
 
 extern void ext_menubar_add_separator(ext_menu_t *parent)
 {
-    ext_menubar_add_generic_entry ( EXT_MENUBAR_SEPARATOR, parent, g_strdup("-"), NULL, NULL, NULL );
+    ext_menubar_add_generic_entry ( EXT_MENUBAR_SEPARATOR, parent, "-", NULL, NULL, NULL );
 }
 
 /* Implementation of external toolbar handlers */
 
-static GList * toolbar_entries = NULL;
+static GList * toolbar_entries;
 
 extern GList * ext_toolbar_get_entries(void)
 {
     return toolbar_entries;
 }
 
-ext_toolbar_t * ext_toolbar_register_toolbar(const gchar * toolbarlabel)
+ext_toolbar_t * ext_toolbar_register_toolbar(const char * toolbarlabel)
 {
     ext_toolbar_t * entry = NULL;
 
     /* A name for the entry must be provided */
-    g_assert(toolbarlabel != NULL && strlen ( toolbarlabel ) > 0 );
+    ws_assert(toolbarlabel != NULL && strlen ( toolbarlabel ) > 0 );
 
     entry = g_new0(ext_toolbar_t, 1);
     entry->type = EXT_TOOLBAR_BAR;
@@ -216,8 +217,8 @@ ext_toolbar_t * ext_toolbar_register_toolbar(const gchar * toolbarlabel)
     return entry;
 }
 
-static gint
-ext_toolbar_compare(gconstpointer  a, gconstpointer  b)
+static int
+ext_toolbar_compare(const void *   a, const void *   b)
 {
     if ( !a || !b )
         return -1;
@@ -228,7 +229,7 @@ ext_toolbar_compare(gconstpointer  a, gconstpointer  b)
     return strcmp(ta->name, tb->name);
 }
 
-void ext_toolbar_unregister_toolbar_by_name(const gchar * toolbar_name)
+void ext_toolbar_unregister_toolbar_by_name(const char * toolbar_name)
 {
     GList * walker = 0;
 
@@ -276,8 +277,8 @@ void ext_toolbar_unregister_toolbar(ext_toolbar_t * toolbar)
     }
 }
 
-static gint
-ext_toolbar_insert_sort(gconstpointer a, gconstpointer b)
+static int
+ext_toolbar_insert_sort(const void *a, const void *b)
 {
     const ext_toolbar_t * ca = (const ext_toolbar_t *)a;
     const ext_toolbar_t * cb = (const ext_toolbar_t *)b;
@@ -302,18 +303,18 @@ ext_toolbar_insert_sort(gconstpointer a, gconstpointer b)
 }
 
 ext_toolbar_t *
-ext_toolbar_add_entry( ext_toolbar_t * parent, ext_toolbar_item_t type, const gchar *label,
-        const gchar *defvalue, const gchar *tooltip, gboolean capture_only, GList * value_list,
-        gboolean is_required, const gchar * regex, ext_toolbar_action_cb callback, gpointer user_data)
+ext_toolbar_add_entry( ext_toolbar_t * parent, ext_toolbar_item_t type, const char *label,
+        const char *defvalue, const char *tooltip, bool capture_only, GList * value_list,
+        bool is_required, const char * regex, ext_toolbar_action_cb callback, void *user_data)
 {
     ext_toolbar_t * entry = NULL;
 
     /* A valid parent must exist */
-    g_assert(parent != NULL && parent->type == EXT_TOOLBAR_BAR);
+    ws_assert(parent != NULL && parent->type == EXT_TOOLBAR_BAR);
     /* A label for the entry must be provided */
-    g_assert(label != NULL && strlen ( label ) > 0 );
+    ws_assert(label != NULL && strlen ( label ) > 0 );
     /* A callback must be provided */
-    g_assert(callback != NULL);
+    ws_assert(callback != NULL);
 
     parent->item_cnt++;
 
@@ -346,8 +347,8 @@ ext_toolbar_add_entry( ext_toolbar_t * parent, ext_toolbar_item_t type, const gc
     return entry;
 }
 
-static gint
-ext_toolbar_search_label(gconstpointer tb, gconstpointer lbl)
+static int
+ext_toolbar_search_label(const void *tb, const void *lbl)
 {
     if ( ! tb || ! lbl )
         return -1;
@@ -356,12 +357,12 @@ ext_toolbar_search_label(gconstpointer tb, gconstpointer lbl)
     if ( toolbar->type != EXT_TOOLBAR_ITEM )
         return -2;
 
-    const gchar * label = (const gchar * )lbl;
+    const char * label = (const char * )lbl;
 
     return g_strcmp0(toolbar->name, label);
 }
 
-ext_toolbar_t * ext_toolbar_entry_by_label(const ext_toolbar_t * toolbar, const gchar * label)
+ext_toolbar_t * ext_toolbar_entry_by_label(const ext_toolbar_t * toolbar, const char * label)
 {
     ext_toolbar_t * result = 0;
     GList * entry = g_list_find_custom(toolbar->children, label, ext_toolbar_search_label);
@@ -370,7 +371,7 @@ ext_toolbar_t * ext_toolbar_entry_by_label(const ext_toolbar_t * toolbar, const 
     return result;
 }
 
-GList * ext_toolbar_add_val(GList * entries, gchar * value, gchar * display, gboolean is_default)
+GList * ext_toolbar_add_val(GList * entries, char * value, char * display, bool is_default)
 {
     ext_toolbar_value_t * newval = g_new0(ext_toolbar_value_t, 1);
     newval->value = g_strdup(value);
@@ -383,7 +384,7 @@ GList * ext_toolbar_add_val(GList * entries, gchar * value, gchar * display, gbo
 typedef struct _ext_toolbar_update_entry_t
 {
     ext_toolbar_action_cb callback;
-    gpointer item_data;
+    void *item_data;
 } ext_toolbar_update_entry_t;
 
 typedef struct _ext_toolbar_update_list_t
@@ -392,8 +393,8 @@ typedef struct _ext_toolbar_update_list_t
     GList * entries;
 } ext_toolbar_update_list_t;
 
-static gint
-ext_toolbar_find_item(gconstpointer a, gconstpointer b)
+static int
+ext_toolbar_find_item(const void *a, const void *b)
 {
     if ( a == 0 || b == 0 )
         return -1;
@@ -407,9 +408,9 @@ ext_toolbar_find_item(gconstpointer a, gconstpointer b)
     return -1;
 }
 
-static GList * toolbar_updates = NULL;
+static GList * toolbar_updates;
 
-void ext_toolbar_register_update_cb(ext_toolbar_t * entry, ext_toolbar_action_cb callback, gpointer item_data)
+void ext_toolbar_register_update_cb(ext_toolbar_t * entry, ext_toolbar_action_cb callback, void *item_data)
 {
     if ( entry == 0 || item_data == 0 || callback == 0 )
         return;
@@ -434,7 +435,7 @@ void ext_toolbar_register_update_cb(ext_toolbar_t * entry, ext_toolbar_action_cb
 }
 
 static void
-ext_toolbar_update_entry(ext_toolbar_update_type_t update_type, ext_toolbar_t * entry, gpointer data, gpointer idx, gboolean silent)
+ext_toolbar_update_entry(ext_toolbar_update_type_t update_type, ext_toolbar_t * entry, void *data, void *idx, bool silent)
 {
     GList * update = g_list_find_custom(toolbar_updates, entry, ext_toolbar_find_item);
     GList * walker = NULL;
@@ -462,38 +463,38 @@ ext_toolbar_update_entry(ext_toolbar_update_type_t update_type, ext_toolbar_t * 
     g_free(update_data);
 }
 
-void ext_toolbar_update_value(ext_toolbar_t * entry, gpointer data, gboolean silent)
+void ext_toolbar_update_value(ext_toolbar_t * entry, void *data, bool silent)
 {
     ext_toolbar_update_entry( EXT_TOOLBAR_UPDATE_VALUE, entry, data, NULL, silent );
 }
 
-void ext_toolbar_update_data(ext_toolbar_t * entry, gpointer data, gboolean silent)
+void ext_toolbar_update_data(ext_toolbar_t * entry, void *data, bool silent)
 {
     if ( entry->item_type == EXT_TOOLBAR_SELECTOR )
         ext_toolbar_update_entry( EXT_TOOLBAR_UPDATE_DATA, entry, data, NULL, silent );
 }
 
-void ext_toolbar_update_data_by_index(ext_toolbar_t * entry, gpointer data, gpointer idx, gboolean silent)
+void ext_toolbar_update_data_by_index(ext_toolbar_t * entry, void *data, void *idx, bool silent)
 {
     if ( entry->item_type == EXT_TOOLBAR_SELECTOR )
         ext_toolbar_update_entry( EXT_TOOLBAR_UPDATE_DATABYINDEX, entry, data, idx, silent );
 }
 
-void ext_toolbar_update_data_add_entry(ext_toolbar_t * entry, gpointer data, gpointer idx, gboolean silent)
+void ext_toolbar_update_data_add_entry(ext_toolbar_t * entry, void *data, void *idx, bool silent)
 {
     if ( entry->item_type == EXT_TOOLBAR_SELECTOR )
         ext_toolbar_update_entry( EXT_TOOLBAR_UPDATE_DATA_ADD, entry, data, idx, silent );
 }
 
-void ext_toolbar_update_data_remove_entry(ext_toolbar_t * entry, gpointer data, gpointer idx, gboolean silent)
+void ext_toolbar_update_data_remove_entry(ext_toolbar_t * entry, void *data, void *idx, bool silent)
 {
     if ( entry->item_type == EXT_TOOLBAR_SELECTOR )
         ext_toolbar_update_entry( EXT_TOOLBAR_UPDATE_DATA_REMOVE, entry, data, idx, silent );
 }
 
-void ext_toolbar_update_data_set_active(ext_toolbar_t * entry, gboolean status)
+void ext_toolbar_update_data_set_active(ext_toolbar_t * entry, bool status)
 {
-    ext_toolbar_update_entry(EXT_TOOLBAR_SET_ACTIVE, entry, GINT_TO_POINTER(status ? 1 : 0), 0, TRUE );
+    ext_toolbar_update_entry(EXT_TOOLBAR_SET_ACTIVE, entry, GINT_TO_POINTER(status ? 1 : 0), 0, true );
 }
 
 /* Implementation of GUI callback methods follows.
@@ -503,22 +504,22 @@ void ext_toolbar_update_data_set_active(ext_toolbar_t * entry, gboolean status)
  * cannot call gui functionality directly, the gui has to perform the function within
  * it' own scope. */
 
-extern void plugin_if_apply_filter(const char * filter_string, gboolean force)
+extern void plugin_if_apply_filter(const char * filter_string, bool force)
 {
     plugin_if_callback_t actionType;
     GHashTable * dataSet = NULL;
 
-    actionType = ( force == TRUE ) ? PLUGIN_IF_FILTER_ACTION_APPLY : PLUGIN_IF_FILTER_ACTION_PREPARE;
+    actionType = ( force == true ) ? PLUGIN_IF_FILTER_ACTION_APPLY : PLUGIN_IF_FILTER_ACTION_PREPARE;
     dataSet = g_hash_table_new(g_str_hash, g_str_equal);
 
-    g_hash_table_insert( dataSet, g_strdup("action_type"), (gpointer) &actionType );
+    g_hash_table_insert( dataSet, g_strdup("action_type"), (void *) &actionType );
     g_hash_table_insert( dataSet, g_strdup("filter_string"), g_strdup(filter_string) );
-    g_hash_table_insert( dataSet, g_strdup("force"), (gpointer) &force );
+    g_hash_table_insert( dataSet, g_strdup("force"), (void *) &force );
 
     plugin_if_call_gui_cb(actionType, dataSet);
 }
 
-extern void plugin_if_goto_frame(guint32 framenr)
+extern void plugin_if_goto_frame(uint32_t framenr)
 {
     GHashTable * dataSet = NULL;
 
@@ -544,11 +545,11 @@ extern void plugin_if_save_preference(const char * pref_module, const char * pre
 
 extern void plugin_if_get_ws_info(ws_info_t **ws_info_ptr)
 {
-    static ws_info_t ws_info = { FALSE, FILE_CLOSED, NULL, 0, 0, FALSE };
+    static ws_info_t ws_info = { false, FILE_CLOSED, NULL, 0, 0, false };
 #ifdef HAVE_LIBPCAP
 
     GHashTable * dataSet;
-    gchar * pluginKey = g_strdup("ws_info");
+    char * pluginKey = g_strdup("ws_info");
 
     dataSet = g_hash_table_new(g_str_hash, g_str_equal);
 
@@ -563,11 +564,11 @@ extern void plugin_if_get_ws_info(ws_info_t **ws_info_ptr)
 
     /* Initialise the ws_info structure */
 
-    ws_info.ws_info_supported = FALSE;
+    ws_info.ws_info_supported = false;
     ws_info.cf_count = 0;
     ws_info.cf_filename = NULL;
     ws_info.cf_framenr = 0;
-    ws_info.frame_passed_dfilter = FALSE;
+    ws_info.frame_passed_dfilter = false;
     ws_info.cf_state = FILE_CLOSED;
 
 #endif /* HAVE_LIBPCAP */
@@ -575,12 +576,46 @@ extern void plugin_if_get_ws_info(ws_info_t **ws_info_ptr)
     *ws_info_ptr = &ws_info;
 }
 
+extern void* plugin_if_get_frame_data(plugin_if_frame_data_cb extract_cb, void* user_data) {
+    GHashTable* dataSet = NULL;
+    void* ret_value = NULL;
+
+    dataSet = g_hash_table_new(g_str_hash, g_str_equal);
+
+    g_hash_table_insert(dataSet, g_strdup("extract_cb"), extract_cb);
+    g_hash_table_insert(dataSet, g_strdup("user_data"), user_data);
+    g_hash_table_insert(dataSet, g_strdup("ret_value_ptr"), &ret_value);
+
+    plugin_if_call_gui_cb(PLUGIN_IF_GET_FRAME_DATA, dataSet);
+
+    g_hash_table_destroy(dataSet);
+
+    return ret_value;
+}
+
+extern void* plugin_if_get_capture_file(plugin_if_capture_file_cb extract_cb, void* user_data) {
+    GHashTable* dataSet = NULL;
+    void* ret_value = NULL;
+
+    dataSet = g_hash_table_new(g_str_hash, g_str_equal);
+
+    g_hash_table_insert(dataSet, g_strdup("extract_cb"), extract_cb);
+    g_hash_table_insert(dataSet, g_strdup("user_data"), user_data);
+    g_hash_table_insert(dataSet, g_strdup("ret_value_ptr"), &ret_value);
+
+    plugin_if_call_gui_cb(PLUGIN_IF_GET_CAPTURE_FILE, dataSet);
+
+    g_hash_table_destroy(dataSet);
+
+    return ret_value;
+}
+
 extern void plugin_if_register_gui_cb(plugin_if_callback_t actionType, plugin_if_gui_cb callback)
 {
     plugin_if_init_hashtable();
 
     if ( ! g_hash_table_lookup_extended(plugin_if_callback_functions, GINT_TO_POINTER(actionType), NULL, NULL ) )
-        g_hash_table_insert(plugin_if_callback_functions, GINT_TO_POINTER(actionType), (gpointer)callback);
+        g_hash_table_insert(plugin_if_callback_functions, GINT_TO_POINTER(actionType), (void *)callback);
 }
 
 /*

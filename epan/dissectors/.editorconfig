@@ -1,10 +1,19 @@
 #
 # Editor configuration
 #
-# http://editorconfig.org/
+# https://editorconfig.org/
 #
 
+# packet-ncp2222.inc
+[*.inc]
+indent_style = space
+indent_size = 4
+
 [file-file.[ch]]
+indent_style = tab
+indent_size = tab
+
+[file-rbm.[ch]]
 indent_style = tab
 indent_size = tab
 
@@ -181,10 +190,6 @@ indent_size = 3
 
 [packet-bjnp.[ch]]
 indent_size = 2
-
-[packet-bootp.[ch]]
-indent_style = tab
-indent_size = tab
 
 [packet-bootparams.[ch]]
 indent_style = tab
@@ -553,11 +558,19 @@ indent_size = 2
 indent_style = tab
 indent_size = tab
 
+[packet-dhcp.[ch]]
+indent_style = tab
+indent_size = tab
+
 [packet-dhcp-failover.[ch]]
 indent_style = tab
 indent_size = tab
 
 [packet-diameter.[ch]]
+indent_style = tab
+indent_size = tab
+
+[packet-discard.[ch]]
 indent_style = tab
 indent_size = tab
 
@@ -713,6 +726,10 @@ indent_size = tab
 indent_style = tab
 indent_size = tab
 
+[packet-extrememesh.[ch]]
+indent_style = tab
+indent_size = tab
+
 [packet-f1ap.[ch]]
 indent_size = 2
 
@@ -735,10 +752,6 @@ indent_style = tab
 indent_size = tab
 
 [packet-foundry.[ch]]
-indent_style = tab
-indent_size = tab
-
-[packet-fpp.[ch]]
 indent_style = tab
 indent_size = tab
 
@@ -1276,6 +1289,14 @@ indent_size = tab
 
 [packet-loop.[ch]]
 indent_size = 2
+
+[packet-loratap.[ch]]
+indent_style = tab
+indent_size = tab
+
+[packet-lorawan.[ch]]
+indent_style = tab
+indent_size = tab
 
 [packet-lpd.[ch]]
 indent_style = tab
@@ -1928,10 +1949,6 @@ indent_size = 2
 indent_style = tab
 indent_size = tab
 
-[packet-socketcan.[ch]]
-indent_style = tab
-indent_size = tab
-
 [packet-spdy.[ch]]
 indent_size = 2
 
@@ -2039,6 +2056,10 @@ indent_size = 2
 indent_style = tab
 indent_size = tab
 
+[packet-tpm20.c]
+indent_style = tab
+indent_size = tab
+
 [packet-tr.[ch]]
 indent_style = tab
 indent_size = tab
@@ -2061,9 +2082,6 @@ indent_size = tab
 [packet-tuxedo.[ch]]
 indent_style = tab
 indent_size = tab
-
-[packet-udp.[ch]]
-indent_size = 2
 
 [packet-udt.[ch]]
 indent_style = tab

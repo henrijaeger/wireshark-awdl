@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -18,6 +19,7 @@
 #include <epan/rtd_table.h>
 #include <epan/timestamp.h>
 #include <epan/stat_tap_ui.h>
+#include <wsutil/cmdarg_err.h>
 #include <ui/cli/tshark-tap.h>
 
 typedef struct _rtd_t {
@@ -32,8 +34,8 @@ rtd_draw(void *arg)
 {
 	rtd_data_t* rtd_data = (rtd_data_t*)arg;
 	rtd_t* rtd = (rtd_t*)rtd_data->user_data;
-	gchar* tmp_str;
-	guint i, j;
+	char* tmp_str;
+	unsigned i, j;
 
 	/* printing results */
 	printf("\n");
@@ -100,10 +102,10 @@ init_rtd_tables(register_rtd_t* rtd, const char *filter)
 
 	rtd_table_dissector_init(rtd, &ui->rtd.stat_table, NULL, NULL);
 
-	error_string = register_tap_listener(get_rtd_tap_listener_name(rtd), &ui->rtd, filter, 0, NULL, get_rtd_packet_func(rtd), rtd_draw);
+	error_string = register_tap_listener(get_rtd_tap_listener_name(rtd), &ui->rtd, filter, 0, NULL, get_rtd_packet_func(rtd), rtd_draw, NULL);
 	if (error_string) {
-		free_rtd_table(&ui->rtd.stat_table, NULL, NULL);
-		fprintf(stderr, "tshark: Couldn't register srt tap: %s\n", error_string->str);
+		free_rtd_table(&ui->rtd.stat_table);
+		cmdarg_err("Couldn't register srt tap: %s", error_string->str);
 		g_string_free(error_string, TRUE);
 		exit(1);
 	}
@@ -119,7 +121,7 @@ dissector_rtd_init(const char *opt_arg, void* userdata)
 	rtd_table_get_filter(rtd, opt_arg, &filter, &err);
 	if (err != NULL)
 	{
-		fprintf(stderr, "tshark: %s\n", err);
+		cmdarg_err("%s", err);
 		g_free(err);
 		exit(1);
 	}
@@ -128,12 +130,12 @@ dissector_rtd_init(const char *opt_arg, void* userdata)
 }
 
 /* Set GUI fields for register_rtd list */
-gboolean
+bool
 register_rtd_tables(const void *key _U_, void *value, void *userdata _U_)
 {
 	register_rtd_t *rtd = (register_rtd_t*)value;
 	stat_tap_ui ui_info;
-	gchar *cli_string;
+	char *cli_string;
 
 	cli_string = rtd_table_get_tap_string(rtd);
 	ui_info.group = REGISTER_STAT_GROUP_RESPONSE_TIME;
@@ -144,11 +146,11 @@ register_rtd_tables(const void *key _U_, void *value, void *userdata _U_)
 	ui_info.params = NULL;
 	register_stat_tap_ui(&ui_info, rtd);
 	g_free(cli_string);
-	return FALSE;
+	return false;
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

@@ -1,6 +1,7 @@
-/* glib-compat.h
+/** @file
+*
 * Definitions to provide some functions that are not present in older
-* GLIB versions (down to 2.22)
+* GLIB versions we support (currently down to 2.50)
 *
 * Wireshark - Network traffic analyzer
 * By Gerald Combs <gerald@wireshark.org>
@@ -14,22 +15,94 @@
 #include "ws_symbol_export.h"
 #include "ws_attributes.h"
 
-#if !GLIB_CHECK_VERSION(2, 28, 0)
-WS_DLL_PUBLIC void g_slist_free_full(GSList *list, GDestroyNotify  free_func);
-WS_DLL_PUBLIC void g_list_free_full(GList *list, GDestroyNotify free_func);
-WS_DLL_PUBLIC gint64 g_get_monotonic_time (void);
-#endif /* !GLIB_CHECK_VERSION(2, 28, 0) */
+#include <glib.h>
+#include <string.h>
 
-#if !GLIB_CHECK_VERSION(2, 30, 0)
-WS_DLL_PUBLIC GPtrArray* g_ptr_array_new_full(guint reserved_size, GDestroyNotify element_free_func);
-#endif /* !GLIB_CHECK_VERSION(2, 30, 0) */
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
 
-#if !GLIB_CHECK_VERSION(2,31,18)
-WS_DLL_PUBLIC gpointer g_async_queue_timeout_pop(GAsyncQueue *queue, guint64 timeout);
-#endif /* !GLIB_CHECK_VERSION(2,31,18) */
+#if !GLIB_CHECK_VERSION(2, 61, 2)
 
-#if !GLIB_CHECK_VERSION(2,31,0)
-WS_DLL_PUBLIC GThread *g_thread_new (const gchar *name, GThreadFunc func, gpointer data);
-#endif /* !GLIB_CHECK_VERSION(2,31,0) */
+typedef volatile gint   gatomicrefcount;
+
+typedef struct _GRealArray  GRealArray;
+struct _GRealArray
+{
+  guint8 *data;
+  guint   len;
+  guint   alloc;
+  guint   elt_size;
+  guint   zero_terminated ;
+  guint   clear;
+  gatomicrefcount ref_count;
+  GDestroyNotify clear_func;
+};
+
+static inline gboolean
+g_array_binary_search (GArray        *array,
+                       const void *   target,
+                       GCompareFunc   compare_func,
+                       guint         *out_match_index)
+{
+  gboolean result = FALSE;
+  GRealArray *_array = (GRealArray *) array;
+  guint left, middle, right;
+  gint val;
+
+  g_return_val_if_fail (_array != NULL, FALSE);
+  g_return_val_if_fail (compare_func != NULL, FALSE);
+
+  if (G_LIKELY(_array->len))
+    {
+      left = 0;
+      right = _array->len - 1;
+
+      while (left <= right)
+        {
+          middle = left + (right - left) / 2;
+
+          val = compare_func (_array->data + (_array->elt_size * middle), target);
+          if (val == 0)
+            {
+              result = TRUE;
+              break;
+            }
+          else if (val < 0)
+            left = middle + 1;
+          else if (/* val > 0 && */ middle > 0)
+            right = middle - 1;
+          else
+            break;  /* element not found */
+        }
+    }
+
+  if (result && out_match_index != NULL)
+    *out_match_index = middle;
+
+  return result;
+}
+#endif
+
+#if !GLIB_CHECK_VERSION(2, 68, 0)
+static inline void *
+g_memdup2(const void *mem, size_t byte_size)
+{
+  void * new_mem;
+
+  if (mem && byte_size != 0) {
+      new_mem = g_malloc(byte_size);
+      memcpy(new_mem, mem, byte_size);
+  }
+  else
+    new_mem = NULL;
+
+  return new_mem;
+}
+#endif
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif /* GLIB_COMPAT_H */

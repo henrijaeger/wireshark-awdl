@@ -1,27 +1,28 @@
 %include {
 
 /* dtd_parser.lemon
-* XML dissector for wireshark 
-* XML's DTD grammar
-*
-* Copyright 2005, Luis E. Garcia Ontanon <luis@ontanon.org>
-*
-* Wireshark - Network traffic analyzer
-* By Gerald Combs <gerald@wireshark.org>
-* Copyright 1998 Gerald Combs
-*
-* SPDX-License-Identifier: GPL-2.0-or-later
-*/
+ * XML dissector for wireshark
+ * XML's DTD grammar
+ *
+ * Copyright 2005, Luis E. Garcia Ontanon <luis@ontanon.org>
+ *
+ * Wireshark - Network traffic analyzer
+ * By Gerald Combs <gerald@wireshark.org>
+ * Copyright 1998 Gerald Combs
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
 #include <stdio.h>
 #include <glib.h>
 #include <assert.h>
+#include <ws_diag_control.h>
 #include "dtd.h"
 #include "dtd_parse.h"
 
-static dtd_named_list_t* dtd_named_list_new(gchar* name, GPtrArray* list) {
+static dtd_named_list_t* dtd_named_list_new(char* name, GPtrArray* list) {
 	dtd_named_list_t* nl = g_new(dtd_named_list_t,1);
 
 	nl->name = name;
@@ -36,11 +37,16 @@ static GPtrArray* g_ptr_array_join(GPtrArray* a, GPtrArray* b){
 		g_ptr_array_add(a,g_ptr_array_remove_index_fast(b,0));
 	}
 
-	g_ptr_array_free(b,TRUE);
+	g_ptr_array_free(b,true);
 
 	return a;
 }
 
+DIAG_OFF_LEMON()
+} /* end of %include */
+
+%code {
+DIAG_ON_LEMON()
 }
 
 %name DtdParse
@@ -59,7 +65,7 @@ static GPtrArray* g_ptr_array_join(GPtrArray* a, GPtrArray* b){
 %syntax_error {
 	if (!TOKEN)
 		g_string_append_printf(bd->error,"syntax error at end of file");
-	else 
+	else
 		g_string_append_printf(bd->error,"syntax error in %s at or before '%s': \n", TOKEN->location,TOKEN->text);
 }
 
@@ -77,11 +83,11 @@ dtd ::= dtd_parts.
 doctype ::= TAG_START DOCTYPE_KW NAME(Name) OPEN_BRACKET dtd_parts CLOSE_BRACKET TAG_STOP. {
 	dtd_named_list_t* root;
 	GPtrArray* root_elems = g_ptr_array_new();
-	guint i;
-	gchar *name;
+	unsigned i;
+	char *name;
 
 	if(! bd->proto_name) {
-		bd->proto_name = Name->text;
+		bd->proto_name = g_strdup(Name->text);
 	}
 
 	g_free(bd->proto_root);
@@ -132,7 +138,7 @@ element(A) ::= TAG_START ELEMENT_KW NAME(B) sub_elements(C) TAG_STOP. {
 attrib_list(A) ::= attrib_list(B) attrib(C). { g_ptr_array_add(B,C); A = B; }
 attrib_list(A) ::= attrib(B).  { A = g_ptr_array_new(); g_ptr_array_add(A,B);  }
 
-%type   attrib				{ gchar* }
+%type   attrib				{ char* }
 attrib(A) ::= NAME(B) att_type att_default. {
 	A = g_ascii_strdown(B->text, -1);
 	g_free(B->text);
@@ -144,7 +150,7 @@ att_type ::= ATT_TYPE.
 att_type ::= enumeration.
 
 att_default ::= ATT_DEF.
-att_default ::= ATT_DEF_WITH_VALUE QUOTED. 
+att_default ::= ATT_DEF_WITH_VALUE QUOTED.
 att_default ::= QUOTED.
 att_default ::= IMPLIED_KW.
 att_default ::= REQUIRED_KW.
@@ -178,7 +184,7 @@ element_list(A) ::= sub_elements(B).						{ A = B; }
 element_list(A) ::= element_list(B) COMMA sub_elements(C).	{ A = g_ptr_array_join(B,C); }
 element_list(A) ::= element_list(B) PIPE sub_elements(C).	{ A = g_ptr_array_join(B,C); }
 
-%type   element_child		{ gchar* }
+%type   element_child		{ char* }
 element_child(A) ::= NAME(B).			{
 	A = g_ascii_strdown(B->text, -1);
 	g_free(B->text);

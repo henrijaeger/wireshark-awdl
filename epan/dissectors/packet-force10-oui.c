@@ -15,7 +15,7 @@
 
 void proto_register_force10_oui(void);
 
-static int hf_llc_force10_pid = -1;
+static int hf_llc_force10_pid;
 
 static const value_string force10_pid_vals[] = {
 	{ 0x0111,	"FEFD" },	/* Far End Failure Detection */
@@ -40,7 +40,7 @@ proto_register_force10_oui(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

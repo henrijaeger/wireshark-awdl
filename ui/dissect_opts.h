@@ -1,11 +1,13 @@
-/* dissect_opts.h
+/** @file
+ *
  * Dissection options (parameters that affect dissection)
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 
 /** @file
@@ -25,41 +27,35 @@ extern "C" {
  * Long options.
  * We do not currently have long options corresponding to all short
  * options; we should probably pick appropriate option names for them.
- *
- * For long options with no corresponding short options, we define values
- * outside the range of ASCII graphic characters, make that the last
- * component of the entry for the long option, and have a case for that
- * option in the switch statement.
- *
- * We also pick values >= 4096, so as not to collide with capture options,
- * and <= 65535, so as to leave values > 65535 for options specific to a
- * program.
  */
 
-/*
- * Non-capture long-only options should start here, to avoid collision
- * with capture options.
- */
-#define LONGOPT_DISABLE_PROTOCOL  4096
-#define LONGOPT_ENABLE_HEURISTIC  4097
-#define LONGOPT_DISABLE_HEURISTIC 4098
-#define LONGOPT_ENABLE_PROTOCOL   4099
+#define LONGOPT_DISABLE_PROTOCOL      LONGOPT_BASE_DISSECTOR+1
+#define LONGOPT_ENABLE_HEURISTIC      LONGOPT_BASE_DISSECTOR+2
+#define LONGOPT_DISABLE_HEURISTIC     LONGOPT_BASE_DISSECTOR+3
+#define LONGOPT_ENABLE_PROTOCOL       LONGOPT_BASE_DISSECTOR+4
+#define LONGOPT_ONLY_PROTOCOLS        LONGOPT_BASE_DISSECTOR+5
+#define LONGOPT_DISABLE_ALL_PROTOCOLS LONGOPT_BASE_DISSECTOR+6
 
 /*
  * Options for dissecting common to all dissecting programs.
  */
 #define LONGOPT_DISSECT_COMMON \
-    {"disable-protocol", required_argument, NULL, LONGOPT_DISABLE_PROTOCOL }, \
-    {"enable-heuristic", required_argument, NULL, LONGOPT_ENABLE_HEURISTIC }, \
-    {"disable-heuristic", required_argument, NULL, LONGOPT_DISABLE_HEURISTIC }, \
-    {"enable-protocol", required_argument, NULL, LONGOPT_ENABLE_PROTOCOL }, \
+    {"disable-protocol", ws_required_argument, NULL, LONGOPT_DISABLE_PROTOCOL }, \
+    {"enable-heuristic", ws_required_argument, NULL, LONGOPT_ENABLE_HEURISTIC }, \
+    {"disable-heuristic", ws_required_argument, NULL, LONGOPT_DISABLE_HEURISTIC }, \
+    {"enable-protocol", ws_required_argument, NULL, LONGOPT_ENABLE_PROTOCOL }, \
+    {"only-protocols", ws_required_argument, NULL, LONGOPT_ONLY_PROTOCOLS }, \
+    {"disable-all-protocols", ws_no_argument, NULL, LONGOPT_DISABLE_ALL_PROTOCOLS }, \
+    {"read-filter", ws_required_argument, NULL, 'R' }, \
+    {"display-filter", ws_required_argument, NULL, 'Y' }, \
 
 #define OPTSTRING_DISSECT_COMMON \
-    "d:K:nN:t:u:"
+    "d:K:nN:R:t:u:Y:"
 
 /** Capture options coming from user interface */
 typedef struct dissect_options_tag {
     ts_type time_format;
+    ts_precision time_precision;
     GSList *enable_protocol_slist; //enable protocols that are disabled by default
     GSList *disable_protocol_slist;
     GSList *enable_heur_slist;
@@ -68,26 +64,22 @@ typedef struct dissect_options_tag {
 
 extern dissect_options global_dissect_options;
 
-/* initialize the dissect_options with some reasonable values */
-extern void
-dissect_opts_init(void);
-
 /*
  * Handle a command line option.
- * Returns TRUE if the option is valid, FALSE if not; an error message
+ * Returns true if the option is valid, false if not; an error message
  * is reported with cmdarg_err() if it's not valid.
  */
-extern gboolean
+extern bool
 dissect_opts_handle_opt(int opt, char *optarg_str_p);
 
 /*
  * Set up disabled protocols and enabled/disabled heuristic protocols
  * as per specified command-line options.
  *
- * Returns TRUE if all specified heuristic protocols exist, FALSE
+ * Returns true if all specified heuristic protocols exist, false
  * otherwise.
  */
-extern gboolean
+extern bool
 setup_enabled_and_disabled_protocols(void);
 
 #ifdef __cplusplus
@@ -95,16 +87,3 @@ setup_enabled_and_disabled_protocols(void);
 #endif /* __cplusplus */
 
 #endif /* dissect_opts.h */
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

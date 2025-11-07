@@ -7,54 +7,113 @@
  *
  */
 #include "config.h"
+#include "iptrace.h"
+
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include "wtap-int.h"
 #include "file_wrappers.h"
 #include "atm.h"
-#include "iptrace.h"
+
+/*
+ * Private per-wtap_t data needed to read a file.
+ */
+typedef struct {
+	GHashTable *interface_ids;	/* map name/description/link-layer type to interface ID */
+	unsigned num_interface_ids;	/* Number of interface IDs assigned */
+} iptrace_t;
 
 #define IPTRACE_IFT_HF	0x3d    /* Support for PERCS IP-HFI*/
 #define IPTRACE_IFT_IB  0xc7    /* IP over Infiniband. Number by IANA */
 
-static gboolean iptrace_read_1_0(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset);
-static gboolean iptrace_seek_read_1_0(wtap *wth, gint64 seek_off,
-    wtap_rec *rec, Buffer *buf, int *err, gchar **err_info);
+static void iptrace_close(wtap *wth);
 
-static gboolean iptrace_read_2_0(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset);
-static gboolean iptrace_seek_read_2_0(wtap *wth, gint64 seek_off,
-    wtap_rec *rec, Buffer *buf, int *err, gchar **err_info);
+static bool iptrace_read_1_0(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset);
+static bool iptrace_seek_read_1_0(wtap *wth, int64_t seek_off,
+    wtap_rec *rec, int *err, char **err_info);
 
-static gboolean iptrace_read_rec_data(FILE_T fh, Buffer *buf,
-    wtap_rec *rec, int *err, gchar **err_info);
+static bool iptrace_read_2_0(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset);
+static bool iptrace_seek_read_2_0(wtap *wth, int64_t seek_off,
+    wtap_rec *rec, int *err, char **err_info);
+
+static bool iptrace_read_rec_data(FILE_T fh,
+    wtap_rec *rec, int *err, char **err_info);
 static void fill_in_pseudo_header(int encap,
-    union wtap_pseudo_header *pseudo_header, guint8 *header);
+    union wtap_pseudo_header *pseudo_header, const char *pkt_text);
 static int wtap_encap_ift(unsigned int  ift);
 
-#define NAME_SIZE 11
+/*
+ * Size of the version string in the file header.
+ */
+#define VERSION_STRING_SIZE	11
 
-wtap_open_return_val iptrace_open(wtap *wth, int *err, gchar **err_info)
+/*
+ * Hash table to map interface name and description, and link-layer
+ * type, to interface ID.
+ */
+#define PREFIX_SIZE		4
+
+typedef struct {
+	char prefix[PREFIX_SIZE+1];
+	uint8_t unit;
+	uint8_t if_type;
+} if_info;
+
+static int iptrace_1_0_file_type_subtype = -1;
+static int iptrace_2_0_file_type_subtype = -1;
+
+void register_iptrace(void);
+
+static gboolean destroy_if_info(void *key, void *value _U_,
+    void *user_data _U_)
 {
-	char name[NAME_SIZE+1];
+	if_info *info = (if_info *)key;
 
-	if (!wtap_read_bytes(wth->fh, name, NAME_SIZE, err, err_info)) {
+	g_free(info);
+
+	return true;
+}
+
+static unsigned if_info_hash(const void *info_arg)
+{
+	if_info *info = (if_info *)info_arg;
+
+	return g_str_hash(info->prefix) + info->unit + info->if_type;
+}
+
+static gboolean if_info_equal(const void *info1_arg, const void *info2_arg)
+{
+	if_info *info1 = (if_info *)info1_arg;
+	if_info *info2 = (if_info *)info2_arg;
+
+	return strcmp(info1->prefix, info2->prefix) == 0 &&
+	       info1->unit == info2->unit &&
+	       info1->if_type == info2->if_type;
+}
+
+wtap_open_return_val iptrace_open(wtap *wth, int *err, char **err_info)
+{
+	char version_string[VERSION_STRING_SIZE+1];
+	iptrace_t *iptrace;
+
+	if (!wtap_read_bytes(wth->fh, version_string, VERSION_STRING_SIZE,
+	    err, err_info)) {
 		if (*err != WTAP_ERR_SHORT_READ)
 			return WTAP_OPEN_ERROR;
 		return WTAP_OPEN_NOT_MINE;
 	}
-	name[NAME_SIZE] = '\0';
+	version_string[VERSION_STRING_SIZE] = '\0';
 
-	if (strcmp(name, "iptrace 1.0") == 0) {
-		wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_IPTRACE_1_0;
+	if (strcmp(version_string, "iptrace 1.0") == 0) {
+		wth->file_type_subtype = iptrace_1_0_file_type_subtype;
 		wth->subtype_read = iptrace_read_1_0;
 		wth->subtype_seek_read = iptrace_seek_read_1_0;
 		wth->file_tsprec = WTAP_TSPREC_SEC;
 	}
-	else if (strcmp(name, "iptrace 2.0") == 0) {
-		wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_IPTRACE_2_0;
+	else if (strcmp(version_string, "iptrace 2.0") == 0) {
+		wth->file_type_subtype = iptrace_2_0_file_type_subtype;
 		wth->subtype_read = iptrace_read_2_0;
 		wth->subtype_seek_read = iptrace_seek_read_2_0;
 		wth->file_tsprec = WTAP_TSPREC_NSEC;
@@ -63,7 +122,31 @@ wtap_open_return_val iptrace_open(wtap *wth, int *err, gchar **err_info)
 		return WTAP_OPEN_NOT_MINE;
 	}
 
+	/* This is an iptrace file */
+	wth->subtype_close = iptrace_close;
+	iptrace = g_new(iptrace_t, 1);
+	iptrace->interface_ids = g_hash_table_new(if_info_hash, if_info_equal);
+	iptrace->num_interface_ids = 0;
+	wth->priv = (void *)iptrace;
+
 	return WTAP_OPEN_MINE;
+}
+
+static void iptrace_close(wtap *wth)
+{
+	iptrace_t *iptrace = (iptrace_t *)wth->priv;
+
+	g_hash_table_foreach_remove(iptrace->interface_ids, destroy_if_info, NULL);
+	g_hash_table_destroy(iptrace->interface_ids);
+}
+
+static void add_new_if_info(iptrace_t *iptrace, if_info *info, void * *result)
+{
+	if_info *new_info = g_new(if_info, 1);
+	*new_info = *info;
+	*result = GUINT_TO_POINTER(iptrace->num_interface_ids);
+	g_hash_table_insert(iptrace->interface_ids, (void *)new_info, *result);
+	iptrace->num_interface_ids++;
 }
 
 /***********************************************************
@@ -88,59 +171,83 @@ wtap_open_return_val iptrace_open(wtap *wth, int *err, gchar **err_info)
  *
  *	the raw packet data.
  */
-typedef struct {
-/* 0-3 */	guint32		pkt_length;	/* packet length + 0x16 */
-/* 4-7 */	guint32		tv_sec;		/* time stamp, seconds since the Epoch */
-/* 8-11 */	guint32		junk1;		/* ???, not time */
-/* 12-15 */	char		if_name[4];	/* null-terminated */
-/* 16-27 */	char		junk2[12];	/* ??? */
-/* 28 */	guint8		if_type;	/* BSD net/if_types.h */
-/* 29 */	guint8		tx_flag;	/* 0=receive, 1=transmit */
-} iptrace_1_0_phdr;
 
-#define IPTRACE_1_0_PHDR_SIZE	30	/* initial header plus packet data */
-#define IPTRACE_1_0_PDATA_SIZE	22	/* packet data */
+/*
+ * Offsets of fields in the initial header.
+ */
+#define IPTRACE_1_0_REC_LENGTH_OFFSET	0	/* 0-3: size of record data */
+#define IPTRACE_1_0_TV_SEC_OFFSET	4	/* 4-7: time stamp, seconds since the Epoch */
 
-static gboolean
-iptrace_read_rec_1_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
-    int *err, gchar **err_info)
+#define IPTRACE_1_0_PHDR_SIZE	8	/* initial header */
+
+/*
+ * Offsets of fields in the packet information.
+ */
+/* Bytes 0-2 unknown */
+#define IPTRACE_1_0_UNIT_OFFSET		3	/* 3: interface unit number */
+#define IPTRACE_1_0_PREFIX_OFFSET	4	/* 4-7: null-terminated name prefix */
+#define IPTRACE_1_0_PKT_TEXT_OFFSET	8	/* 8-19: text in 2.0; what is it in 1.0? */
+#define IPTRACE_1_0_IF_TYPE_OFFSET	20	/* 20: SNMP ifType value */
+#define IPTRACE_1_0_TX_FLAGS_OFFSET	21	/* 21: 0=receive, 1=transmit */
+
+#define IPTRACE_1_0_PINFO_SIZE	22	/* packet information */
+
+static bool
+iptrace_read_rec_1_0(wtap *wth, FILE_T fh, wtap_rec *rec,
+    int *err, char **err_info)
 {
-	guint8			header[IPTRACE_1_0_PHDR_SIZE];
-	iptrace_1_0_phdr	pkt_hdr;
-	guint32			packet_size;
+	iptrace_t		*iptrace = (iptrace_t *)wth->priv;
+	uint8_t			header[IPTRACE_1_0_PHDR_SIZE];
+	uint32_t		record_length;
+	uint8_t			pkt_info[IPTRACE_1_0_PINFO_SIZE];
+	if_info			info;
+	uint32_t		packet_size;
+	void			*result;
 
-	if (!wtap_read_bytes_or_eof(fh, header, sizeof header, err, err_info)) {
+	if (!wtap_read_bytes_or_eof(fh, header, IPTRACE_1_0_PHDR_SIZE, err,
+	    err_info)) {
 		/* Read error or EOF */
-		return FALSE;
+		return false;
+	}
+
+	/* Get the record length */
+	record_length = pntoh32(&header[IPTRACE_1_0_REC_LENGTH_OFFSET]);
+	if (record_length < IPTRACE_1_0_PINFO_SIZE) {
+		/*
+		 * Uh-oh, the record isn't big enough to even have a
+		 * packet information header.
+		 */
+		*err = WTAP_ERR_BAD_FILE;
+		*err_info = ws_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet information header",
+		    record_length);
+		return false;
 	}
 
 	/*
-	 * Byte 28 of the frame header appears to be a BSD-style IFT_xxx
-	 * value giving the type of the interface.  Check out the
-	 * <net/if_types.h> header file.
+	 * Get the packet information.
 	 */
-	pkt_hdr.if_type = header[28];
-	rec->rec_header.packet_header.pkt_encap = wtap_encap_ift(pkt_hdr.if_type);
-	if (rec->rec_header.packet_header.pkt_encap == WTAP_ENCAP_UNKNOWN) {
-		*err = WTAP_ERR_UNSUPPORTED;
-		*err_info = g_strdup_printf("iptrace: interface type IFT=0x%02x unknown or unsupported",
-		    pkt_hdr.if_type);
-		return FALSE;
+	if (!wtap_read_bytes(fh, pkt_info, IPTRACE_1_0_PINFO_SIZE, err,
+	    err_info)) {
+		/* Read error or EOF */
+		return false;
 	}
 
-	/* Read the packet metadata */
-	packet_size = pntoh32(&header[0]);
-	if (packet_size < IPTRACE_1_0_PDATA_SIZE) {
-		/*
-		 * Uh-oh, the record isn't big enough to even have a
-		 * packet meta-data header.
-		 */
-		*err = WTAP_ERR_BAD_FILE;
-		*err_info = g_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet meta-data header",
-		    packet_size);
-		return FALSE;
+	/*
+	 * The if_type field of the frame header appears to be an SNMP
+	 * ifType value giving the type of the interface.  Check out the
+	 * <net/if_types.h> header file.
+	 */
+	info.if_type = pkt_info[IPTRACE_1_0_IF_TYPE_OFFSET];
+	rec->rec_header.packet_header.pkt_encap = wtap_encap_ift(info.if_type);
+	if (rec->rec_header.packet_header.pkt_encap == WTAP_ENCAP_UNKNOWN) {
+		*err = WTAP_ERR_UNSUPPORTED;
+		*err_info = ws_strdup_printf("iptrace: interface type IFT=0x%02x unknown or unsupported",
+		    info.if_type);
+		return false;
 	}
-	packet_size -= IPTRACE_1_0_PDATA_SIZE;
+
+	/* Get the packet data size */
+	packet_size = record_length - IPTRACE_1_0_PINFO_SIZE;
 
 	/*
 	 * AIX appears to put 3 bytes of padding in front of FDDI
@@ -157,9 +264,9 @@ iptrace_read_rec_1_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
 			 * the padding.
 			 */
 			*err = WTAP_ERR_BAD_FILE;
-			*err_info = g_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet meta-data header",
-			    packet_size + IPTRACE_1_0_PDATA_SIZE);
-			return FALSE;
+			*err_info = ws_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet meta-data header",
+			    record_length);
+			return false;
 		}
 		packet_size -= 3;
 
@@ -167,7 +274,7 @@ iptrace_read_rec_1_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
 		 * Skip the padding.
 		 */
 		if (!wtap_read_bytes(fh, NULL, 3, err, err_info))
-			return FALSE;
+			return false;
 	}
 	if (packet_size > WTAP_MAX_PACKET_SIZE_STANDARD) {
 		/*
@@ -175,36 +282,90 @@ iptrace_read_rec_1_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
 		 * to allocate space for an immensely-large packet.
 		 */
 		*err = WTAP_ERR_BAD_FILE;
-		*err_info = g_strdup_printf("iptrace: File has %u-byte packet, bigger than maximum of %u",
+		*err_info = ws_strdup_printf("iptrace: File has %u-byte packet, bigger than maximum of %u",
 		    packet_size, WTAP_MAX_PACKET_SIZE_STANDARD);
-		return FALSE;
+		return false;
 	}
 
 	rec->rec_type = REC_TYPE_PACKET;
-	rec->presence_flags = WTAP_HAS_TS;
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
+	rec->presence_flags = WTAP_HAS_TS | WTAP_HAS_INTERFACE_ID;
 	rec->rec_header.packet_header.len = packet_size;
 	rec->rec_header.packet_header.caplen = packet_size;
-	rec->ts.secs = pntoh32(&header[4]);
+	rec->ts.secs = pntoh32(&header[IPTRACE_1_0_TV_SEC_OFFSET]);
 	rec->ts.nsecs = 0;
+	wtap_block_add_uint32_option(rec->block, OPT_PKT_FLAGS,
+	    pkt_info[IPTRACE_1_0_TX_FLAGS_OFFSET] ?
+	      (PACK_FLAGS_DIRECTION_OUTBOUND << PACK_FLAGS_DIRECTION_SHIFT) :
+	      (PACK_FLAGS_DIRECTION_INBOUND << PACK_FLAGS_DIRECTION_SHIFT));
 
 	/* Fill in the pseudo-header. */
-	fill_in_pseudo_header(rec->rec_header.packet_header.pkt_encap, &rec->rec_header.packet_header.pseudo_header, header);
+	fill_in_pseudo_header(rec->rec_header.packet_header.pkt_encap,
+	    &rec->rec_header.packet_header.pseudo_header,
+	    (const char *)&pkt_info[IPTRACE_1_0_PKT_TEXT_OFFSET]);
 
 	/* Get the packet data */
-	return iptrace_read_rec_data(fh, buf, rec, err, err_info);
+	if (!iptrace_read_rec_data(fh, rec, err, err_info))
+		return false;
+
+	/*
+	 * No errors - get the interface ID.
+	 *
+	 * We do *not* trust the name to be null-terminated.
+	 */
+	memcpy(info.prefix, &pkt_info[IPTRACE_1_0_PREFIX_OFFSET],
+	    sizeof info.prefix);
+	info.prefix[PREFIX_SIZE] = '\0';
+	info.unit = pkt_info[IPTRACE_1_0_UNIT_OFFSET];
+
+	/*
+	 * Try to find the entry with that name, description, and
+	 * interface type.
+	 */
+	if (!g_hash_table_lookup_extended(iptrace->interface_ids,
+	    (const void *)&info, NULL, &result)) {
+		wtap_block_t int_data;
+		wtapng_if_descr_mandatory_t *int_data_mand;
+
+		/*
+		 * Not found; make a new entry.
+		 */
+		add_new_if_info(iptrace, &info, &result);
+
+		/*
+		 * Now make a new IDB and add it.
+		 */
+		int_data = wtap_block_create(WTAP_BLOCK_IF_ID_AND_INFO);
+		int_data_mand = (wtapng_if_descr_mandatory_t *)wtap_block_get_mandatory_data(int_data);
+
+		int_data_mand->wtap_encap = rec->rec_header.packet_header.pkt_encap;
+		int_data_mand->tsprecision = WTAP_TSPREC_SEC;
+		int_data_mand->time_units_per_second = 1; /* No fractional time stamp */
+		int_data_mand->snap_len = WTAP_MAX_PACKET_SIZE_STANDARD;	/* XXX - not known */
+
+		wtap_block_add_uint8_option(int_data, OPT_IDB_TSRESOL, 0); /* 1-second resolution */
+		/* Interface statistics */
+		int_data_mand->num_stat_entries = 0;
+		int_data_mand->interface_statistics = NULL;
+
+		wtap_block_set_string_option_value_format(int_data,
+		    OPT_IDB_NAME, "%s%u", info.prefix, info.unit);
+		wtap_add_idb(wth, int_data);
+	}
+	rec->rec_header.packet_header.interface_id = GPOINTER_TO_UINT(result);
+	return true;
 }
 
 /* Read the next packet */
-static gboolean iptrace_read_1_0(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset)
+static bool iptrace_read_1_0(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset)
 {
 	*data_offset = file_tell(wth->fh);
 
 	/* Read the packet */
-	if (!iptrace_read_rec_1_0(wth->fh, &wth->rec, wth->rec_data,
-	    err, err_info)) {
+	if (!iptrace_read_rec_1_0(wth, wth->fh, rec, err, err_info)) {
 		/* Read error or EOF */
-		return FALSE;
+		return false;
 	}
 
 	/* If the per-file encapsulation isn't known, set it to this
@@ -214,28 +375,29 @@ static gboolean iptrace_read_1_0(wtap *wth, int *err, gchar **err_info,
 	   set it to WTAP_ENCAP_PER_PACKET, as this file doesn't
 	   have a single encapsulation for all packets in the file. */
 	if (wth->file_encap == WTAP_ENCAP_UNKNOWN)
-		wth->file_encap = wth->rec.rec_header.packet_header.pkt_encap;
+		wth->file_encap = rec->rec_header.packet_header.pkt_encap;
 	else {
-		if (wth->file_encap != wth->rec.rec_header.packet_header.pkt_encap)
+		if (wth->file_encap != rec->rec_header.packet_header.pkt_encap)
 			wth->file_encap = WTAP_ENCAP_PER_PACKET;
 	}
 
-	return TRUE;
+	return true;
 }
 
-static gboolean iptrace_seek_read_1_0(wtap *wth, gint64 seek_off,
-    wtap_rec *rec, Buffer *buf, int *err, gchar **err_info)
+static bool iptrace_seek_read_1_0(wtap *wth, int64_t seek_off,
+    wtap_rec *rec, int *err, char **err_info)
 {
 	if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
-		return FALSE;
+		return false;
 
 	/* Read the packet */
-	if (!iptrace_read_rec_1_0(wth->random_fh, rec, buf, err, err_info)) {
+	if (!iptrace_read_rec_1_0(wth, wth->random_fh, rec, err,
+	    err_info)) {
 		if (*err == 0)
 			*err = WTAP_ERR_SHORT_READ;
-		return FALSE;
+		return false;
 	}
-	return TRUE;
+	return true;
 }
 
 /***********************************************************
@@ -260,42 +422,77 @@ static gboolean iptrace_seek_read_1_0(wtap *wth, gint64 seek_off,
  *
  *	the raw packet data.
  */
-typedef struct {
-/* 0-3 */	guint32		pkt_length;	/* packet length + 32 */
-/* 4-7 */	guint32		tv_sec0;	/* time stamp, seconds since the Epoch */
-/* 8-11 */	guint32		junk1;		/* ?? */
-/* 12-15 */	char		if_name[4];	/* null-terminated */
-/* 16-27 */	char		if_desc[12];	/* interface description. */
-/* 28 */	guint8		if_type;	/* BSD net/if_types.h */
-/* 29 */	guint8		tx_flag;	/* 0=receive, 1=transmit */
-/* 30-31 */	guint16		junk3;
-/* 32-35 */	guint32		tv_sec;		/* time stamp, seconds since the Epoch */
-/* 36-39 */	guint32		tv_nsec;	/* nanoseconds since that second */
-} iptrace_2_0_phdr;
 
-#define IPTRACE_2_0_PHDR_SIZE	40	/* initial header plus packet data */
-#define IPTRACE_2_0_PDATA_SIZE	32	/* packet data */
+/*
+ * Offsets of fields in the initial header.
+ */
+#define IPTRACE_2_0_REC_LENGTH_OFFSET	0	/* 0-3: size of record data */
+#define IPTRACE_2_0_TV_SEC0_OFFSET	4	/* 4-7: time stamp, seconds since the Epoch */
 
-static gboolean
-iptrace_read_rec_2_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
-    int *err, gchar **err_info)
+#define IPTRACE_2_0_PHDR_SIZE	8	/* initial header */
+
+/*
+ * Offsets of fields in the packet information.
+ */
+/* Bytes 0-2 unknown */
+#define IPTRACE_2_0_UNIT_OFFSET		3	/* 3: interface unit number */
+#define IPTRACE_2_0_PREFIX_OFFSET	4	/* 4-7: null-terminated name prefix */
+#define IPTRACE_2_0_PKT_TEXT_OFFSET	8	/* 8-19: text stuff */
+#define IPTRACE_2_0_IF_TYPE_OFFSET	20	/* 20: SNMP ifType value */
+#define IPTRACE_2_0_TX_FLAGS_OFFSET	21	/* 21: 0=receive, 1=transmit */
+/* Bytes 22-23 unknown */
+#define IPTRACE_2_0_TV_SEC_OFFSET	24	/* 24-27: time stamp, seconds since the Epoch */
+#define IPTRACE_2_0_TV_NSEC_OFFSET	28	/* 28-31: nanoseconds since that second */
+
+#define IPTRACE_2_0_PINFO_SIZE	32	/* packet information */
+
+static bool
+iptrace_read_rec_2_0(wtap *wth, FILE_T fh, wtap_rec *rec,
+    int *err, char **err_info)
 {
-	guint8			header[IPTRACE_2_0_PHDR_SIZE];
-	iptrace_2_0_phdr	pkt_hdr;
-	guint32			packet_size;
+	iptrace_t		*iptrace = (iptrace_t *)wth->priv;
+	uint8_t			header[IPTRACE_2_0_PHDR_SIZE];
+	uint32_t		record_length;
+	uint8_t			pkt_info[IPTRACE_2_0_PINFO_SIZE];
+	if_info			info;
+	uint32_t		packet_size;
+	void			*result;
 
-	if (!wtap_read_bytes_or_eof(fh, header, sizeof header, err, err_info)) {
+	if (!wtap_read_bytes_or_eof(fh, header, IPTRACE_2_0_PHDR_SIZE, err,
+	    err_info)) {
 		/* Read error or EOF */
-		return FALSE;
+		return false;
+	}
+
+	/* Get the record length */
+	record_length = pntoh32(&header[IPTRACE_2_0_REC_LENGTH_OFFSET]);
+	if (record_length < IPTRACE_2_0_PINFO_SIZE) {
+		/*
+		 * Uh-oh, the record isn't big enough to even have a
+		 * packet information header.
+		 */
+		*err = WTAP_ERR_BAD_FILE;
+		*err_info = ws_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet information header",
+		    record_length);
+		return false;
 	}
 
 	/*
-	 * Byte 28 of the frame header appears to be a BSD-style IFT_xxx
-	 * value giving the type of the interface.  Check out the
+	 * Get the packet information.
+	 */
+	if (!wtap_read_bytes(fh, pkt_info, IPTRACE_2_0_PINFO_SIZE, err,
+	    err_info)) {
+		/* Read error or EOF */
+		return false;
+	}
+
+	/*
+	 * The if_type field of the frame header appears to be an SNMP
+	 * ifType value giving the type of the interface.  Check out the
 	 * <net/if_types.h> header file.
 	 */
-	pkt_hdr.if_type = header[28];
-	rec->rec_header.packet_header.pkt_encap = wtap_encap_ift(pkt_hdr.if_type);
+	info.if_type = pkt_info[IPTRACE_2_0_IF_TYPE_OFFSET];
+	rec->rec_header.packet_header.pkt_encap = wtap_encap_ift(info.if_type);
 #if 0
 	/*
 	 * We used to error out if the interface type in iptrace was
@@ -315,25 +512,14 @@ iptrace_read_rec_2_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
 	 */
 	if (rec->rec_header.packet_header.pkt_encap == WTAP_ENCAP_UNKNOWN) {
 		*err = WTAP_ERR_UNSUPPORTED;
-		*err_info = g_strdup_printf("iptrace: interface type IFT=0x%02x unknown or unsupported",
-		    pkt_hdr.if_type);
-		return FALSE;
+		*err_info = ws_strdup_printf("iptrace: interface type IFT=0x%02x unknown or unsupported",
+		    info.if_type);
+		return false;
 	}
 #endif
 
-	/* Read the packet metadata */
-	packet_size = pntoh32(&header[0]);
-	if (packet_size < IPTRACE_2_0_PDATA_SIZE) {
-		/*
-		 * Uh-oh, the record isn't big enough to even have a
-		 * packet meta-data header.
-		 */
-		*err = WTAP_ERR_BAD_FILE;
-		*err_info = g_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet meta-data header",
-		    packet_size);
-		return FALSE;
-	}
-	packet_size -= IPTRACE_2_0_PDATA_SIZE;
+	/* Get the packet data size */
+	packet_size = record_length - IPTRACE_2_0_PINFO_SIZE;
 
 	/*
 	 * AIX appears to put 3 bytes of padding in front of FDDI
@@ -350,9 +536,9 @@ iptrace_read_rec_2_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
 			 * the padding.
 			 */
 			*err = WTAP_ERR_BAD_FILE;
-			*err_info = g_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet meta-data header",
-			    packet_size + IPTRACE_2_0_PDATA_SIZE);
-			return FALSE;
+			*err_info = ws_strdup_printf("iptrace: file has a %u-byte record, too small to have even a packet meta-data header",
+			    record_length);
+			return false;
 		}
 		packet_size -= 3;
 
@@ -360,7 +546,7 @@ iptrace_read_rec_2_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
 		 * Skip the padding.
 		 */
 		if (!wtap_read_bytes(fh, NULL, 3, err, err_info))
-			return FALSE;
+			return false;
 	}
 	if (packet_size > WTAP_MAX_PACKET_SIZE_STANDARD) {
 		/*
@@ -368,36 +554,90 @@ iptrace_read_rec_2_0(FILE_T fh, wtap_rec *rec, Buffer *buf,
 		 * to allocate space for an immensely-large packet.
 		 */
 		*err = WTAP_ERR_BAD_FILE;
-		*err_info = g_strdup_printf("iptrace: File has %u-byte packet, bigger than maximum of %u",
+		*err_info = ws_strdup_printf("iptrace: File has %u-byte packet, bigger than maximum of %u",
 		    packet_size, WTAP_MAX_PACKET_SIZE_STANDARD);
-		return FALSE;
+		return false;
 	}
 
 	rec->rec_type = REC_TYPE_PACKET;
-	rec->presence_flags = WTAP_HAS_TS;
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
+	rec->presence_flags = WTAP_HAS_TS | WTAP_HAS_INTERFACE_ID;
 	rec->rec_header.packet_header.len = packet_size;
 	rec->rec_header.packet_header.caplen = packet_size;
-	rec->ts.secs = pntoh32(&header[32]);
-	rec->ts.nsecs = pntoh32(&header[36]);
+	rec->ts.secs = pntoh32(&pkt_info[IPTRACE_2_0_TV_SEC_OFFSET]);
+	rec->ts.nsecs = pntoh32(&pkt_info[IPTRACE_2_0_TV_NSEC_OFFSET]);
+	wtap_block_add_uint32_option(rec->block, OPT_PKT_FLAGS,
+	    pkt_info[IPTRACE_2_0_TX_FLAGS_OFFSET] ?
+	      (PACK_FLAGS_DIRECTION_OUTBOUND << PACK_FLAGS_DIRECTION_SHIFT) :
+	      (PACK_FLAGS_DIRECTION_INBOUND << PACK_FLAGS_DIRECTION_SHIFT));
 
-	/* Fill in the pseudo_header. */
-	fill_in_pseudo_header(rec->rec_header.packet_header.pkt_encap, &rec->rec_header.packet_header.pseudo_header, header);
+	/* Fill in the pseudo-header. */
+	fill_in_pseudo_header(rec->rec_header.packet_header.pkt_encap,
+	    &rec->rec_header.packet_header.pseudo_header,
+	    (const char *)&pkt_info[IPTRACE_1_0_PKT_TEXT_OFFSET]);
 
 	/* Get the packet data */
-	return iptrace_read_rec_data(fh, buf, rec, err, err_info);
+	if (!iptrace_read_rec_data(fh, rec, err, err_info))
+		return false;
+
+	/*
+	 * No errors - get the interface ID.
+	 *
+	 * We do *not* trust the name to be null-terminated.
+	 */
+	memcpy(info.prefix, &pkt_info[IPTRACE_2_0_PREFIX_OFFSET],
+	    sizeof info.prefix);
+	info.prefix[PREFIX_SIZE] = '\0';
+	info.unit = pkt_info[IPTRACE_2_0_UNIT_OFFSET];
+
+	/*
+	 * Try to find the entry with that name, description, and
+	 * interface type.
+	 */
+	if (!g_hash_table_lookup_extended(iptrace->interface_ids,
+	    (const void *)&info, NULL, &result)) {
+		wtap_block_t int_data;
+		wtapng_if_descr_mandatory_t *int_data_mand;
+
+		/*
+		 * Not found; make a new entry.
+		 */
+		add_new_if_info(iptrace, &info, &result);
+
+		/*
+		 * Now make a new IDB and add it.
+		 */
+		int_data = wtap_block_create(WTAP_BLOCK_IF_ID_AND_INFO);
+		int_data_mand = (wtapng_if_descr_mandatory_t *)wtap_block_get_mandatory_data(int_data);
+
+		int_data_mand->wtap_encap = rec->rec_header.packet_header.pkt_encap;
+		int_data_mand->tsprecision = WTAP_TSPREC_NSEC;
+		int_data_mand->time_units_per_second = 1000000000; /* Nanosecond resolution */
+		int_data_mand->snap_len = WTAP_MAX_PACKET_SIZE_STANDARD;	/* XXX - not known */
+
+		wtap_block_add_uint8_option(int_data, OPT_IDB_TSRESOL, 0x09); /* nanosecond resolution */
+		/* Interface statistics */
+		int_data_mand->num_stat_entries = 0;
+		int_data_mand->interface_statistics = NULL;
+
+		wtap_block_set_string_option_value_format(int_data,
+		    OPT_IDB_NAME, "%s%u", info.prefix, info.unit);
+		wtap_add_idb(wth, int_data);
+	}
+	rec->rec_header.packet_header.interface_id = GPOINTER_TO_UINT(result);
+	return true;
 }
 
 /* Read the next packet */
-static gboolean iptrace_read_2_0(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset)
+static bool iptrace_read_2_0(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset)
 {
 	*data_offset = file_tell(wth->fh);
 
 	/* Read the packet */
-	if (!iptrace_read_rec_2_0(wth->fh, &wth->rec, wth->rec_data,
-	    err, err_info)) {
+	if (!iptrace_read_rec_2_0(wth, wth->fh, rec, err, err_info)) {
 		/* Read error or EOF */
-		return FALSE;
+		return false;
 	}
 
 	/* If the per-file encapsulation isn't known, set it to this
@@ -407,46 +647,46 @@ static gboolean iptrace_read_2_0(wtap *wth, int *err, gchar **err_info,
 	   set it to WTAP_ENCAP_PER_PACKET, as this file doesn't
 	   have a single encapsulation for all packets in the file. */
 	if (wth->file_encap == WTAP_ENCAP_UNKNOWN)
-		wth->file_encap = wth->rec.rec_header.packet_header.pkt_encap;
+		wth->file_encap = rec->rec_header.packet_header.pkt_encap;
 	else {
-		if (wth->file_encap != wth->rec.rec_header.packet_header.pkt_encap)
+		if (wth->file_encap != rec->rec_header.packet_header.pkt_encap)
 			wth->file_encap = WTAP_ENCAP_PER_PACKET;
 	}
 
-	return TRUE;
+	return true;
 }
 
-static gboolean iptrace_seek_read_2_0(wtap *wth, gint64 seek_off,
-    wtap_rec *rec, Buffer *buf, int *err, gchar **err_info)
+static bool iptrace_seek_read_2_0(wtap *wth, int64_t seek_off,
+    wtap_rec *rec, int *err, char **err_info)
 {
 	if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
-		return FALSE;
+		return false;
 
 	/* Read the packet */
-	if (!iptrace_read_rec_2_0(wth->random_fh, rec, buf, err, err_info)) {
+	if (!iptrace_read_rec_2_0(wth, wth->random_fh, rec, err,
+	    err_info)) {
 		if (*err == 0)
 			*err = WTAP_ERR_SHORT_READ;
-		return FALSE;
+		return false;
 	}
-	return TRUE;
+	return true;
 }
 
-static gboolean
-iptrace_read_rec_data(FILE_T fh, Buffer *buf, wtap_rec *rec,
-    int *err, gchar **err_info)
+static bool
+iptrace_read_rec_data(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 {
-	if (!wtap_read_packet_bytes(fh, buf, rec->rec_header.packet_header.caplen, err, err_info))
-		return FALSE;
+	if (!wtap_read_bytes_buffer(fh, &rec->data, rec->rec_header.packet_header.caplen, err, err_info))
+		return false;
 
 	if (rec->rec_header.packet_header.pkt_encap == WTAP_ENCAP_ATM_PDUS) {
 		/*
 		 * Attempt to guess from the packet data, the VPI,
 		 * and the VCI information about the type of traffic.
 		 */
-		atm_guess_traffic_type(rec, ws_buffer_start_ptr(buf));
+		atm_guess_traffic_type(rec);
 	}
 
-	return TRUE;
+	return true;
 }
 
 /*
@@ -468,7 +708,7 @@ iptrace_read_rec_data(FILE_T fh, Buffer *buf, wtap_rec *rec,
  */
 static void
 fill_in_pseudo_header(int encap, union wtap_pseudo_header *pseudo_header,
-    guint8 *header)
+    const char *pkt_text)
 {
 	char	if_text[9];
 	char	*decimal;
@@ -479,7 +719,7 @@ fill_in_pseudo_header(int encap, union wtap_pseudo_header *pseudo_header,
 
 	case WTAP_ENCAP_ATM_PDUS:
 		/* Rip apart the "x.y" text into Vpi/Vci numbers */
-		memcpy(if_text, &header[20], 8);
+		memcpy(if_text, &pkt_text[4], 8);
 		if_text[8] = '\0';
 		decimal = strchr(if_text, '.');
 		if (decimal) {
@@ -493,7 +733,7 @@ fill_in_pseudo_header(int encap, union wtap_pseudo_header *pseudo_header,
 		 * OK, which value means "DTE->DCE" and which value means
 		 * "DCE->DTE"?
 		 */
-		pseudo_header->atm.channel = header[29];
+		pseudo_header->atm.channel = pkt_text[13];
 
 		pseudo_header->atm.vpi = Vpi;
 		pseudo_header->atm.vci = Vci;
@@ -560,7 +800,7 @@ wtap_encap_ift(unsigned int  ift)
 /* 0x24 */	WTAP_ENCAP_UNKNOWN,	/* IFT_ARCNETPLUS */
 /* 0x25 */	WTAP_ENCAP_ATM_PDUS,	/* IFT_ATM */
 	};
-	#define NUM_IFT_ENCAPS (sizeof ift_encap / sizeof ift_encap[0])
+	#define NUM_IFT_ENCAPS array_length(ift_encap)
 
 	if (ift < NUM_IFT_ENCAPS) {
 		return ift_encap[ift];
@@ -570,7 +810,6 @@ wtap_encap_ift(unsigned int  ift)
 			/* Infiniband*/
 			case IPTRACE_IFT_IB:
 				return WTAP_ENCAP_INFINIBAND;
-				break;
 
 			/* Host Fabric Interface */
 			case IPTRACE_IFT_HF:
@@ -584,7 +823,6 @@ wtap_encap_ift(unsigned int  ift)
 				have to figure out which field in the iptrace file
 				encodes it. */
 				return WTAP_ENCAP_RAW_IP;
-				break;
 
 			default:
 				return WTAP_ENCAP_UNKNOWN;
@@ -592,8 +830,71 @@ wtap_encap_ift(unsigned int  ift)
 	}
 }
 
+/* Options for interface blocks. */
+static const struct supported_option_type interface_block_options_supported[] = {
+	/* No comments, just an interface name. */
+	{ OPT_IDB_NAME, ONE_OPTION_SUPPORTED }
+};
+
+static const struct supported_block_type iptrace_1_0_blocks_supported[] = {
+	/*
+	 * iptrace supports multiple interfaces, with descriptions, and
+	 * supports associating packets with interfaces.  Interface
+	 * description blocks are used for that.
+	 */
+	{ WTAP_BLOCK_IF_ID_AND_INFO, MULTIPLE_BLOCKS_SUPPORTED, OPTION_TYPES_SUPPORTED(interface_block_options_supported) },
+
+	/*
+	 * iptrace is a capture format, so it obviously supports packets.
+	 * It supports no packet options, however.
+	 */
+	{ WTAP_BLOCK_PACKET, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info iptrace_1_0_info = {
+	"AIX iptrace 1.0", "iptrace_1", NULL, NULL,
+	false, BLOCKS_SUPPORTED(iptrace_1_0_blocks_supported),
+	NULL, NULL, NULL
+};
+
+static const struct supported_block_type iptrace_2_0_blocks_supported[] = {
+	/*
+	 * iptrace supports multiple interfaces, with descriptions, and
+	 * supports associating packets with interfaces.  Interface
+	 * description blocks are used for that.
+	 */
+	{ WTAP_BLOCK_IF_ID_AND_INFO, MULTIPLE_BLOCKS_SUPPORTED, OPTION_TYPES_SUPPORTED(interface_block_options_supported) },
+
+	/*
+	 * iptrace is a capture format, so it obviously supports packets.
+	 * It supports no packet options, however.
+	 */
+	{ WTAP_BLOCK_PACKET, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info iptrace_2_0_info = {
+	"AIX iptrace 2.0", "iptrace_2", NULL, NULL,
+	false, BLOCKS_SUPPORTED(iptrace_2_0_blocks_supported),
+	NULL, NULL, NULL
+};
+
+void register_iptrace(void)
+{
+	iptrace_1_0_file_type_subtype = wtap_register_file_type_subtype(&iptrace_1_0_info);
+	iptrace_2_0_file_type_subtype = wtap_register_file_type_subtype(&iptrace_2_0_info);
+
+	/*
+	 * Register names for backwards compatibility with the
+	 * wtap_filetypes table in Lua.
+	 */
+	wtap_register_backwards_compatibility_lua_name("IPTRACE_1_0",
+	    iptrace_1_0_file_type_subtype);
+	wtap_register_backwards_compatibility_lua_name("IPTRACE_2_0",
+	    iptrace_2_0_file_type_subtype);
+}
+
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

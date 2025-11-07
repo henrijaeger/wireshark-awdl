@@ -1,11 +1,8 @@
 /* Do not modify this file. Changes will be overwritten.                      */
 /* Generated automatically by the ASN.1 to Wireshark dissector compiler       */
 /* packet-spnego.c                                                            */
-/* asn2wrs.py -b -p spnego -c ./spnego.cnf -s ./packet-spnego-template -D . -O ../.. spnego.asn */
+/* asn2wrs.py -b -q -L -p spnego -c ./spnego.cnf -s ./packet-spnego-template -D . -O ../.. spnego.asn */
 
-/* Input file: packet-spnego-template.c */
-
-#line 1 "./asn1/spnego/packet-spnego-template.c"
 /* packet-spnego-template.c
  * Routines for the simple and protected GSS-API negotiation mechanism
  * as described in RFC 2478.
@@ -32,8 +29,9 @@
 #include <epan/asn1.h>
 #include <epan/conversation.h>
 #include <epan/proto_data.h>
+#include <epan/tfs.h>
 #include <wsutil/wsgcrypt.h>
-#include "packet-dcerpc.h"
+#include <wsutil/array.h>
 #include "packet-gssapi.h"
 #include "packet-kerberos.h"
 #include "packet-ber.h"
@@ -45,114 +43,138 @@
 void proto_register_spnego(void);
 void proto_reg_handoff_spnego(void);
 
+static dissector_handle_t spnego_wrap_handle;
+
 /* Initialize the protocol and registered fields */
-static int proto_spnego = -1;
-static int proto_spnego_krb5 = -1;
+static int proto_spnego;
+static int proto_spnego_krb5;
 
 
-static int hf_spnego_wraptoken = -1;
+static int hf_spnego_wraptoken;
 static int hf_spnego_krb5_oid;
-static int hf_spnego_krb5 = -1;
-static int hf_spnego_krb5_tok_id = -1;
-static int hf_spnego_krb5_sgn_alg = -1;
-static int hf_spnego_krb5_seal_alg = -1;
-static int hf_spnego_krb5_snd_seq = -1;
-static int hf_spnego_krb5_sgn_cksum = -1;
-static int hf_spnego_krb5_confounder = -1;
-static int hf_spnego_krb5_filler = -1;
-static int hf_spnego_krb5_cfx_flags = -1;
-static int hf_spnego_krb5_cfx_flags_01 = -1;
-static int hf_spnego_krb5_cfx_flags_02 = -1;
-static int hf_spnego_krb5_cfx_flags_04 = -1;
-static int hf_spnego_krb5_cfx_ec = -1;
-static int hf_spnego_krb5_cfx_rrc = -1;
-static int hf_spnego_krb5_cfx_seq = -1;
+static int hf_spnego_krb5;
+static int hf_spnego_krb5_tok_id;
+static int hf_spnego_krb5_sgn_alg;
+static int hf_spnego_krb5_seal_alg;
+static int hf_spnego_krb5_snd_seq;
+static int hf_spnego_krb5_sgn_cksum;
+static int hf_spnego_krb5_confounder;
+static int hf_spnego_krb5_filler;
+static int hf_spnego_krb5_cfx_flags;
+static int hf_spnego_krb5_cfx_flags_01;
+static int hf_spnego_krb5_cfx_flags_02;
+static int hf_spnego_krb5_cfx_flags_04;
+static int hf_spnego_krb5_cfx_ec;
+static int hf_spnego_krb5_cfx_rrc;
+static int hf_spnego_krb5_cfx_seq;
 
-
-/*--- Included file: packet-spnego-hf.c ---*/
-#line 1 "./asn1/spnego/packet-spnego-hf.c"
-static int hf_spnego_negTokenInit = -1;           /* T_negTokenInit */
-static int hf_spnego_negTokenTarg = -1;           /* NegTokenTarg */
-static int hf_spnego_MechTypeList_item = -1;      /* MechType */
-static int hf_spnego_mechTypes = -1;              /* MechTypeList */
-static int hf_spnego_reqFlags = -1;               /* ContextFlags */
-static int hf_spnego_mechToken = -1;              /* T_mechToken */
-static int hf_spnego_mechListMIC = -1;            /* OCTET_STRING */
-static int hf_spnego_hintName = -1;               /* GeneralString */
-static int hf_spnego_hintAddress = -1;            /* OCTET_STRING */
-static int hf_spnego_mechToken_01 = -1;           /* OCTET_STRING */
-static int hf_spnego_negHints = -1;               /* NegHints */
-static int hf_spnego_negResult = -1;              /* T_negResult */
-static int hf_spnego_supportedMech = -1;          /* T_supportedMech */
-static int hf_spnego_responseToken = -1;          /* T_responseToken */
-static int hf_spnego_thisMech = -1;               /* MechType */
-static int hf_spnego_innerContextToken = -1;      /* InnerContextToken */
+static int hf_spnego_negTokenInit;                /* T_negTokenInit */
+static int hf_spnego_negTokenTarg;                /* NegTokenTarg */
+static int hf_spnego_MechTypeList_item;           /* MechType */
+static int hf_spnego_mechTypes;                   /* MechTypeList */
+static int hf_spnego_reqFlags;                    /* ContextFlags */
+static int hf_spnego_mechToken;                   /* T_mechToken */
+static int hf_spnego_mechListMIC;                 /* OCTET_STRING */
+static int hf_spnego_hintName;                    /* GeneralString */
+static int hf_spnego_hintAddress;                 /* OCTET_STRING */
+static int hf_spnego_mechToken_01;                /* OCTET_STRING */
+static int hf_spnego_negHints;                    /* NegHints */
+static int hf_spnego_negResult;                   /* T_negResult */
+static int hf_spnego_supportedMech;               /* T_supportedMech */
+static int hf_spnego_responseToken;               /* T_responseToken */
+static int hf_spnego_mechListMIC_01;              /* T_mechListMIC */
+static int hf_spnego_thisMech;                    /* MechType */
+static int hf_spnego_innerContextToken;           /* InnerContextToken */
+static int hf_spnego_target_realm;                /* T_target_realm */
+static int hf_spnego_cookie;                      /* OCTET_STRING */
+static int hf_spnego_header_flags;                /* HeaderFlags */
 /* named bits */
-static int hf_spnego_ContextFlags_delegFlag = -1;
-static int hf_spnego_ContextFlags_mutualFlag = -1;
-static int hf_spnego_ContextFlags_replayFlag = -1;
-static int hf_spnego_ContextFlags_sequenceFlag = -1;
-static int hf_spnego_ContextFlags_anonFlag = -1;
-static int hf_spnego_ContextFlags_confFlag = -1;
-static int hf_spnego_ContextFlags_integFlag = -1;
-
-/*--- End of included file: packet-spnego-hf.c ---*/
-#line 64 "./asn1/spnego/packet-spnego-template.c"
+static int hf_spnego_ContextFlags_delegFlag;
+static int hf_spnego_ContextFlags_mutualFlag;
+static int hf_spnego_ContextFlags_replayFlag;
+static int hf_spnego_ContextFlags_sequenceFlag;
+static int hf_spnego_ContextFlags_anonFlag;
+static int hf_spnego_ContextFlags_confFlag;
+static int hf_spnego_ContextFlags_integFlag;
+static int hf_spnego_HeaderFlags_unused0;
+static int hf_spnego_HeaderFlags_return_dns_name;
+static int hf_spnego_HeaderFlags_unused2;
+static int hf_spnego_HeaderFlags_unused3;
+static int hf_spnego_HeaderFlags_unused4;
+static int hf_spnego_HeaderFlags_ds_12_required;
+static int hf_spnego_HeaderFlags_ds_13_required;
+static int hf_spnego_HeaderFlags_key_list_support_required;
+static int hf_spnego_HeaderFlags_ds_10_required;
+static int hf_spnego_HeaderFlags_ds_9_required;
+static int hf_spnego_HeaderFlags_ds_8_required;
+static int hf_spnego_HeaderFlags_web_service_required;
+static int hf_spnego_HeaderFlags_ds_6_required;
+static int hf_spnego_HeaderFlags_try_next_closest_site;
+static int hf_spnego_HeaderFlags_is_dns_name;
+static int hf_spnego_HeaderFlags_is_flat_name;
+static int hf_spnego_HeaderFlags_only_ldap_needed;
+static int hf_spnego_HeaderFlags_avoid_self;
+static int hf_spnego_HeaderFlags_good_timeserv_pref;
+static int hf_spnego_HeaderFlags_writable_required;
+static int hf_spnego_HeaderFlags_timeserv_required;
+static int hf_spnego_HeaderFlags_kdc_required;
+static int hf_spnego_HeaderFlags_ip_required;
+static int hf_spnego_HeaderFlags_background_only;
+static int hf_spnego_HeaderFlags_pdc_required;
+static int hf_spnego_HeaderFlags_gc_server_required;
+static int hf_spnego_HeaderFlags_ds_preferred;
+static int hf_spnego_HeaderFlags_ds_required;
+static int hf_spnego_HeaderFlags_unused28;
+static int hf_spnego_HeaderFlags_unused29;
+static int hf_spnego_HeaderFlags_unused30;
+static int hf_spnego_HeaderFlags_force_rediscovery;
 
 /* Global variables */
 static const char *MechType_oid;
 gssapi_oid_value *next_level_value;
-gboolean saw_mechanism = FALSE;
+bool saw_mechanism;
 
 
 /* Initialize the subtree pointers */
-static gint ett_spnego = -1;
-static gint ett_spnego_wraptoken = -1;
-static gint ett_spnego_krb5 = -1;
-static gint ett_spnego_krb5_cfx_flags = -1;
+static int ett_spnego;
+static int ett_spnego_wraptoken;
+static int ett_spnego_krb5;
+static int ett_spnego_krb5_cfx_flags;
 
+static int ett_spnego_NegotiationToken;
+static int ett_spnego_MechTypeList;
+static int ett_spnego_NegTokenInit;
+static int ett_spnego_NegHints;
+static int ett_spnego_NegTokenInit2;
+static int ett_spnego_ContextFlags;
+static int ett_spnego_NegTokenTarg;
+static int ett_spnego_InitialContextToken_U;
+static int ett_spnego_HeaderFlags;
+static int ett_spnego_IAKERB_HEADER;
 
-/*--- Included file: packet-spnego-ett.c ---*/
-#line 1 "./asn1/spnego/packet-spnego-ett.c"
-static gint ett_spnego_NegotiationToken = -1;
-static gint ett_spnego_MechTypeList = -1;
-static gint ett_spnego_NegTokenInit = -1;
-static gint ett_spnego_NegHints = -1;
-static gint ett_spnego_NegTokenInit2 = -1;
-static gint ett_spnego_ContextFlags = -1;
-static gint ett_spnego_NegTokenTarg = -1;
-static gint ett_spnego_InitialContextToken_U = -1;
-
-/*--- End of included file: packet-spnego-ett.c ---*/
-#line 78 "./asn1/spnego/packet-spnego-template.c"
-
-static expert_field ei_spnego_decrypted_keytype = EI_INIT;
-static expert_field ei_spnego_unknown_header = EI_INIT;
+static expert_field ei_spnego_decrypted_keytype;
+static expert_field ei_spnego_unknown_header;
 
 static dissector_handle_t spnego_handle;
 static dissector_handle_t spnego_krb5_handle;
 static dissector_handle_t spnego_krb5_wrap_handle;
 
 /*
- * Unfortunately, we have to have forward declarations of thess,
+ * Unfortunately, we have to have forward declarations of these,
  * as the code generated by asn2wrs includes a call before the
  * definition.
  */
-static int dissect_spnego_NegTokenInit(gboolean implicit_tag, tvbuff_t *tvb,
+static int dissect_spnego_NegTokenInit(bool implicit_tag, tvbuff_t *tvb,
                                        int offset, asn1_ctx_t *actx _U_,
                                        proto_tree *tree, int hf_index);
-static int dissect_spnego_NegTokenInit2(gboolean implicit_tag, tvbuff_t *tvb,
+static int dissect_spnego_NegTokenInit2(bool implicit_tag, tvbuff_t *tvb,
                                         int offset, asn1_ctx_t *actx _U_,
                                         proto_tree *tree, int hf_index);
 
 
-/*--- Included file: packet-spnego-fn.c ---*/
-#line 1 "./asn1/spnego/packet-spnego-fn.c"
-
 
 static int
-dissect_spnego_MechType(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 33 "./asn1/spnego/spnego.cnf"
+dissect_spnego_MechType(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   gssapi_oid_value *value;
 
@@ -175,9 +197,8 @@ dissect_spnego_MechType(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset
   if (!saw_mechanism) {
     if (value)
       next_level_value = value;
-    saw_mechanism = TRUE;
+    saw_mechanism = true;
   }
-
 
 
   return offset;
@@ -189,12 +210,11 @@ static const ber_sequence_t MechTypeList_sequence_of[1] = {
 };
 
 static int
-dissect_spnego_MechTypeList(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 101 "./asn1/spnego/spnego.cnf"
+dissect_spnego_MechTypeList(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   conversation_t *conversation;
 
-  saw_mechanism = FALSE;
+  saw_mechanism = false;
 
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       MechTypeList_sequence_of, hf_index, ett_spnego_MechTypeList);
@@ -210,26 +230,25 @@ dissect_spnego_MechTypeList(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
   }
 
 
-
   return offset;
 }
 
 
-static const asn_namedbit ContextFlags_bits[] = {
-  {  0, &hf_spnego_ContextFlags_delegFlag, -1, -1, "delegFlag", NULL },
-  {  1, &hf_spnego_ContextFlags_mutualFlag, -1, -1, "mutualFlag", NULL },
-  {  2, &hf_spnego_ContextFlags_replayFlag, -1, -1, "replayFlag", NULL },
-  {  3, &hf_spnego_ContextFlags_sequenceFlag, -1, -1, "sequenceFlag", NULL },
-  {  4, &hf_spnego_ContextFlags_anonFlag, -1, -1, "anonFlag", NULL },
-  {  5, &hf_spnego_ContextFlags_confFlag, -1, -1, "confFlag", NULL },
-  {  6, &hf_spnego_ContextFlags_integFlag, -1, -1, "integFlag", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const ContextFlags_bits[] = {
+  &hf_spnego_ContextFlags_delegFlag,
+  &hf_spnego_ContextFlags_mutualFlag,
+  &hf_spnego_ContextFlags_replayFlag,
+  &hf_spnego_ContextFlags_sequenceFlag,
+  &hf_spnego_ContextFlags_anonFlag,
+  &hf_spnego_ContextFlags_confFlag,
+  &hf_spnego_ContextFlags_integFlag,
+  NULL
 };
 
 static int
-dissect_spnego_ContextFlags(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_ContextFlags(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    ContextFlags_bits, hf_index, ett_spnego_ContextFlags,
+                                    ContextFlags_bits, 7, hf_index, ett_spnego_ContextFlags,
                                     NULL);
 
   return offset;
@@ -238,8 +257,7 @@ dissect_spnego_ContextFlags(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 
 static int
-dissect_spnego_T_mechToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 122 "./asn1/spnego/spnego.cnf"
+dissect_spnego_T_mechToken(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   tvbuff_t *mechToken_tvb = NULL;
 
@@ -255,14 +273,13 @@ dissect_spnego_T_mechToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int off
      call_dissector(next_level_value->handle, mechToken_tvb, actx->pinfo, tree);
 
 
-
   return offset;
 }
 
 
 
 static int
-dissect_spnego_OCTET_STRING(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_OCTET_STRING(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
                                        NULL);
 
@@ -279,7 +296,7 @@ static const ber_sequence_t NegTokenInit_sequence[] = {
 };
 
 static int
-dissect_spnego_NegTokenInit(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_NegTokenInit(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    NegTokenInit_sequence, hf_index, ett_spnego_NegTokenInit);
 
@@ -289,9 +306,8 @@ dissect_spnego_NegTokenInit(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 
 static int
-dissect_spnego_T_negTokenInit(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 12 "./asn1/spnego/spnego.cnf"
-  gboolean is_response = actx->pinfo->ptype == PT_TCP &&
+dissect_spnego_T_negTokenInit(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  bool is_response = actx->pinfo->ptype == PT_TCP &&
                          actx->pinfo->srcport < 1024;
 
   /*
@@ -308,7 +324,6 @@ dissect_spnego_T_negTokenInit(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
   }
 
 
-
   return offset;
 }
 
@@ -322,7 +337,7 @@ static const value_string spnego_T_negResult_vals[] = {
 
 
 static int
-dissect_spnego_T_negResult(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_T_negResult(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                   NULL);
 
@@ -332,12 +347,11 @@ dissect_spnego_T_negResult(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int off
 
 
 static int
-dissect_spnego_T_supportedMech(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 135 "./asn1/spnego/spnego.cnf"
+dissect_spnego_T_supportedMech(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   conversation_t *conversation;
 
-  saw_mechanism = FALSE;
+  saw_mechanism = false;
 
   offset = dissect_spnego_MechType(implicit_tag, tvb, offset, actx, tree, hf_index);
 
@@ -354,15 +368,13 @@ dissect_spnego_T_supportedMech(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
 
 
 
-
   return offset;
 }
 
 
 
 static int
-dissect_spnego_T_responseToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 158 "./asn1/spnego/spnego.cnf"
+dissect_spnego_T_responseToken(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   tvbuff_t *responseToken_tvb;
 
@@ -392,16 +404,48 @@ dissect_spnego_T_responseToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
 }
 
 
+
+static int
+dissect_spnego_T_mechListMIC(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+
+  tvbuff_t *mechListMIC_tvb;
+
+
+  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
+                                       &mechListMIC_tvb);
+
+
+
+  /*
+   * Now, we should be able to dispatch, if we've gotten a tvbuff for
+   * the token and we have information on how to dissect its contents.
+   * However, we should make sure that there is something in the
+   * response token ...
+   */
+  if (mechListMIC_tvb && (tvb_reported_length(mechListMIC_tvb) > 0) ){
+    gssapi_oid_value *value=next_level_value;
+
+    if(value){
+      call_dissector(value->handle, mechListMIC_tvb, actx->pinfo, tree);
+    }
+  }
+
+
+
+  return offset;
+}
+
+
 static const ber_sequence_t NegTokenTarg_sequence[] = {
   { &hf_spnego_negResult    , BER_CLASS_CON, 0, BER_FLAGS_OPTIONAL, dissect_spnego_T_negResult },
   { &hf_spnego_supportedMech, BER_CLASS_CON, 1, BER_FLAGS_OPTIONAL, dissect_spnego_T_supportedMech },
   { &hf_spnego_responseToken, BER_CLASS_CON, 2, BER_FLAGS_OPTIONAL, dissect_spnego_T_responseToken },
-  { &hf_spnego_mechListMIC  , BER_CLASS_CON, 3, BER_FLAGS_OPTIONAL, dissect_spnego_OCTET_STRING },
+  { &hf_spnego_mechListMIC_01, BER_CLASS_CON, 3, BER_FLAGS_OPTIONAL, dissect_spnego_T_mechListMIC },
   { NULL, 0, 0, 0, NULL }
 };
 
 static int
-dissect_spnego_NegTokenTarg(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_NegTokenTarg(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    NegTokenTarg_sequence, hf_index, ett_spnego_NegTokenTarg);
 
@@ -416,7 +460,7 @@ static const ber_choice_t NegotiationToken_choice[] = {
 };
 
 static int
-dissect_spnego_NegotiationToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_NegotiationToken(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  NegotiationToken_choice, hf_index, ett_spnego_NegotiationToken,
                                  NULL);
@@ -427,7 +471,7 @@ dissect_spnego_NegotiationToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_spnego_GeneralString(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_GeneralString(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_GeneralString,
                                             actx, tree, tvb, offset, hf_index,
                                             NULL);
@@ -443,7 +487,7 @@ static const ber_sequence_t NegHints_sequence[] = {
 };
 
 static int
-dissect_spnego_NegHints(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_NegHints(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    NegHints_sequence, hf_index, ett_spnego_NegHints);
 
@@ -461,7 +505,7 @@ static const ber_sequence_t NegTokenInit2_sequence[] = {
 };
 
 static int
-dissect_spnego_NegTokenInit2(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_NegTokenInit2(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    NegTokenInit2_sequence, hf_index, ett_spnego_NegTokenInit2);
 
@@ -471,8 +515,7 @@ dissect_spnego_NegTokenInit2(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_spnego_InnerContextToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 58 "./asn1/spnego/spnego.cnf"
+dissect_spnego_InnerContextToken(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
   gssapi_oid_value *next_level_value_lcl;
   proto_item *item;
@@ -516,7 +559,6 @@ dissect_spnego_InnerContextToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, i
     offset = tvb_reported_length(tvb);
 
 
-
   return offset;
 }
 
@@ -528,7 +570,7 @@ static const ber_sequence_t InitialContextToken_U_sequence[] = {
 };
 
 static int
-dissect_spnego_InitialContextToken_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_InitialContextToken_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    InitialContextToken_U_sequence, hf_index, ett_spnego_InitialContextToken_U);
 
@@ -538,16 +580,114 @@ dissect_spnego_InitialContextToken_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U
 
 
 static int
-dissect_spnego_InitialContextToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_spnego_InitialContextToken(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 0, TRUE, dissect_spnego_InitialContextToken_U);
+                                      hf_index, BER_CLASS_APP, 0, true, dissect_spnego_InitialContextToken_U);
 
   return offset;
 }
 
 
-/*--- End of included file: packet-spnego-fn.c ---*/
-#line 99 "./asn1/spnego/packet-spnego-template.c"
+static int * const HeaderFlags_bits[] = {
+  &hf_spnego_HeaderFlags_unused0,
+  &hf_spnego_HeaderFlags_return_dns_name,
+  &hf_spnego_HeaderFlags_unused2,
+  &hf_spnego_HeaderFlags_unused3,
+  &hf_spnego_HeaderFlags_unused4,
+  &hf_spnego_HeaderFlags_ds_12_required,
+  &hf_spnego_HeaderFlags_ds_13_required,
+  &hf_spnego_HeaderFlags_key_list_support_required,
+  &hf_spnego_HeaderFlags_ds_10_required,
+  &hf_spnego_HeaderFlags_ds_9_required,
+  &hf_spnego_HeaderFlags_ds_8_required,
+  &hf_spnego_HeaderFlags_web_service_required,
+  &hf_spnego_HeaderFlags_ds_6_required,
+  &hf_spnego_HeaderFlags_try_next_closest_site,
+  &hf_spnego_HeaderFlags_is_dns_name,
+  &hf_spnego_HeaderFlags_is_flat_name,
+  &hf_spnego_HeaderFlags_only_ldap_needed,
+  &hf_spnego_HeaderFlags_avoid_self,
+  &hf_spnego_HeaderFlags_good_timeserv_pref,
+  &hf_spnego_HeaderFlags_writable_required,
+  &hf_spnego_HeaderFlags_timeserv_required,
+  &hf_spnego_HeaderFlags_kdc_required,
+  &hf_spnego_HeaderFlags_ip_required,
+  &hf_spnego_HeaderFlags_background_only,
+  &hf_spnego_HeaderFlags_pdc_required,
+  &hf_spnego_HeaderFlags_gc_server_required,
+  &hf_spnego_HeaderFlags_ds_preferred,
+  &hf_spnego_HeaderFlags_ds_required,
+  &hf_spnego_HeaderFlags_unused28,
+  &hf_spnego_HeaderFlags_unused29,
+  &hf_spnego_HeaderFlags_unused30,
+  &hf_spnego_HeaderFlags_force_rediscovery,
+  NULL
+};
+
+static int
+dissect_spnego_HeaderFlags(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
+                                    HeaderFlags_bits, 32, hf_index, ett_spnego_HeaderFlags,
+                                    NULL);
+
+  return offset;
+}
+
+
+
+static int
+dissect_spnego_T_target_realm(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+
+  int8_t ber_class;
+  bool pc;
+  int32_t tag;
+
+  /*
+   * MIT Kerberos sends an IAKERB-HEADER like this:
+   *
+   * <30 2B A1 29 04 27 53 32 2D 57 32 30 31 32 2D 4C 34 2E 53 31 2D 57 32 30>
+   * 0  43: SEQUENCE {
+   * <A1 29 04 27 53 32 2D 57 32 30 31 32 2D 4C 34 2E 53 31 2D 57 32 30 31 32>
+   * 2  41:   [1] {
+   * <04 27 53 32 2D 57 32 30 31 32 2D 4C 34 2E 53 31 2D 57 32 30 31 32 2D 4C>
+   * 4  39:     OCTET STRING 'S2-W2012-L4.S1-W2012-L4.W2012R2-L4.BASE'
+   *    :     }
+   *    :   }
+   */
+
+  get_ber_identifier(tvb, offset, &ber_class, &pc, &tag);
+  if (ber_class == BER_CLASS_UNI && pc == false && tag == BER_UNI_TAG_OCTETSTRING) {
+     proto_tree_add_text_internal(tree, tvb, offset, 1,
+                                  "target-realm encoded as OCTET STRING: MIT Kerberos?");
+     offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_OCTETSTRING,
+                                            actx, tree, tvb, offset, hf_index,
+                                            NULL);
+  } else {
+     offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_UTF8String,
+                                            actx, tree, tvb, offset, hf_index,
+                                            NULL);
+  }
+
+
+  return offset;
+}
+
+
+static const ber_sequence_t IAKERB_HEADER_sequence[] = {
+  { &hf_spnego_target_realm , BER_CLASS_CON, 1, 0, dissect_spnego_T_target_realm },
+  { &hf_spnego_cookie       , BER_CLASS_CON, 2, BER_FLAGS_OPTIONAL, dissect_spnego_OCTET_STRING },
+  { &hf_spnego_header_flags , BER_CLASS_CON, 3, BER_FLAGS_OPTIONAL, dissect_spnego_HeaderFlags },
+  { NULL, 0, 0, 0, NULL }
+};
+
+static int
+dissect_spnego_IAKERB_HEADER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
+                                   IAKERB_HEADER_sequence, hf_index, ett_spnego_IAKERB_HEADER);
+
+  return offset;
+}
+
 /*
  * This is the SPNEGO KRB5 dissector. It is not true KRB5, but some ASN.1
  * wrapped blob with an OID, USHORT token ID, and a Ticket, that is also
@@ -560,6 +700,9 @@ dissect_spnego_InitialContextToken(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 #define KRB_TOKEN_GETMIC              0x0101
 #define KRB_TOKEN_WRAP                0x0102
 #define KRB_TOKEN_DELETE_SEC_CONTEXT  0x0201
+#define KRB_TOKEN_TGT_REQ             0x0004
+#define KRB_TOKEN_TGT_REP             0x0104
+#define KRB_TOKEN_IAKERB_PROXY        0x0105
 #define KRB_TOKEN_CFX_GETMIC          0x0404
 #define KRB_TOKEN_CFX_WRAP            0x0405
 
@@ -570,8 +713,11 @@ static const value_string spnego_krb5_tok_id_vals[] = {
   { KRB_TOKEN_GETMIC,             "KRB5_GSS_GetMIC" },
   { KRB_TOKEN_WRAP,               "KRB5_GSS_Wrap" },
   { KRB_TOKEN_DELETE_SEC_CONTEXT, "KRB5_GSS_Delete_sec_context" },
+  { KRB_TOKEN_TGT_REQ,            "KERB_TGT_REQUEST" },
+  { KRB_TOKEN_TGT_REP,            "KERB_TGT_REPLY" },
+  { KRB_TOKEN_IAKERB_PROXY,       "KRB_TOKEN_IAKERB_PROXY" },
   { KRB_TOKEN_CFX_GETMIC,         "KRB_TOKEN_CFX_GetMic" },
-  { KRB_TOKEN_CFX_WRAP,            "KRB_TOKEN_CFX_WRAP" },
+  { KRB_TOKEN_CFX_WRAP,           "KRB_TOKEN_CFX_WRAP" },
   { 0, NULL}
 };
 
@@ -609,11 +755,11 @@ static const value_string spnego_krb5_seal_alg_vals[] = {
 static int
 dissect_spnego_krb5_getmic_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree);
 static int
-dissect_spnego_krb5_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, guint16 token_id, gssapi_encrypt_info_t* gssapi_encrypt);
+dissect_spnego_krb5_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, uint16_t token_id, gssapi_encrypt_info_t* gssapi_encrypt);
 static int
 dissect_spnego_krb5_cfx_getmic_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree);
 static int
-dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, guint16 token_id, gssapi_encrypt_info_t* gssapi_encrypt);
+dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, uint16_t token_id, gssapi_encrypt_info_t* gssapi_encrypt);
 
 static int
 dissect_spnego_krb5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
@@ -621,16 +767,16 @@ dissect_spnego_krb5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
   proto_item *item;
   proto_tree *subtree;
   int offset = 0;
-  guint16 token_id;
+  uint16_t token_id;
   const char *oid;
   tvbuff_t *krb5_tvb;
-  gint8 ber_class;
-  gboolean pc, ind = 0;
-  gint32 tag;
-  guint32 len;
+  int8_t ber_class;
+  bool pc, ind = 0;
+  int32_t tag;
+  uint32_t len;
   gssapi_encrypt_info_t* encrypt_info = (gssapi_encrypt_info_t*)data;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
 
   item = proto_tree_add_item(tree, hf_spnego_krb5, tvb, offset, -1, ENC_NA);
 
@@ -682,7 +828,7 @@ dissect_spnego_krb5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
          */
 
         /* Next, the OID */
-        offset=dissect_ber_object_identifier_str(FALSE, &asn1_ctx, subtree, tvb, offset, hf_spnego_krb5_oid, &oid);
+        offset=dissect_ber_object_identifier_str(false, &asn1_ctx, subtree, tvb, offset, hf_spnego_krb5_oid, &oid);
 
         token_id = tvb_get_letohs(tvb, offset);
         proto_tree_add_uint(subtree, hf_spnego_krb5_tok_id, tvb, offset, 2, token_id);
@@ -697,7 +843,7 @@ dissect_spnego_krb5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
          * No token ID - just dissect as a Kerberos message and
          * return.
          */
-        dissect_kerberos_main(tvb, pinfo, subtree, FALSE, NULL);
+        dissect_kerberos_main(tvb, pinfo, subtree, false, NULL);
         return tvb_captured_length(tvb);
 
       default:
@@ -716,11 +862,18 @@ dissect_spnego_krb5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
 
   switch (token_id) {
 
+    case KRB_TOKEN_TGT_REQ:
+       offset = dissect_kerberos_TGT_REQ(false, tvb, offset, &asn1_ctx, subtree, -1);
+       break;
+    case KRB_TOKEN_TGT_REP:
+       offset = dissect_kerberos_TGT_REP(false, tvb, offset, &asn1_ctx, subtree, -1);
+       break;
+
     case KRB_TOKEN_AP_REQ:
     case KRB_TOKEN_AP_REP:
     case KRB_TOKEN_AP_ERR:
       krb5_tvb = tvb_new_subset_remaining(tvb, offset);
-      offset = dissect_kerberos_main(krb5_tvb, pinfo, subtree, FALSE, NULL);
+      offset += dissect_kerberos_main(krb5_tvb, pinfo, subtree, false, NULL);
       break;
 
     case KRB_TOKEN_GETMIC:
@@ -743,6 +896,15 @@ dissect_spnego_krb5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
       offset = dissect_spnego_krb5_cfx_wrap_base(tvb, offset, pinfo, subtree, token_id, encrypt_info);
       break;
 
+    case KRB_TOKEN_IAKERB_PROXY:
+      offset = dissect_spnego_IAKERB_HEADER(false, tvb, offset, &asn1_ctx, subtree, -1);
+      len = tvb_captured_length_remaining(tvb, offset);
+      if (len == 0) {
+        break;
+      }
+      krb5_tvb = tvb_new_subset_remaining(tvb, offset);
+      offset += dissect_kerberos_main(krb5_tvb, pinfo, subtree, false, NULL);
+      break;
     default:
 
       break;
@@ -766,15 +928,15 @@ dissect_spnego_krb5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
 #endif
 
 static int
-arcfour_mic_key(const guint8 *key_data, size_t key_size, int key_type,
-                const guint8 *cksum_data, size_t cksum_size,
-                guint8 *key6_data)
+arcfour_mic_key(const uint8_t *key_data, size_t key_size, int key_type,
+                const uint8_t *cksum_data, size_t cksum_size,
+                uint8_t *key6_data)
 {
-  guint8 k5_data[HASH_MD5_LENGTH];
-  guint8 T[4] = { 0 };
+  uint8_t k5_data[HASH_MD5_LENGTH];
+  uint8_t T[4] = { 0 };
 
   if (key_type == KEYTYPE_ARCFOUR_56) {
-    guint8 L40[14] = "fortybits";
+    uint8_t L40[14] = "fortybits";
     memcpy(L40 + 10, T, sizeof(T));
     if (ws_hmac_buffer(GCRY_MD_MD5, k5_data, L40, 14, key_data, key_size)) {
       return 0;
@@ -811,19 +973,19 @@ usage2arcfour(int usage)
 }
 
 static int
-arcfour_mic_cksum(guint8 *key_data, int key_length,
+arcfour_mic_cksum(uint8_t *key_data, int key_length,
                   unsigned int usage,
-                  guint8 sgn_cksum[8],
-                  const guint8 *v1, size_t l1,
-                  const guint8 *v2, size_t l2,
-                  const guint8 *v3, size_t l3)
+                  uint8_t sgn_cksum[8],
+                  const uint8_t *v1, size_t l1,
+                  const uint8_t *v2, size_t l2,
+                  const uint8_t *v3, size_t l3)
 {
-  static const guint8 signature[] = "signaturekey";
-  guint8 ksign_c[HASH_MD5_LENGTH];
-  guint8 t[4];
-  guint8 digest[HASH_MD5_LENGTH];
+  static const uint8_t signature[] = "signaturekey";
+  uint8_t ksign_c[HASH_MD5_LENGTH];
+  uint8_t t[4];
+  uint8_t digest[HASH_MD5_LENGTH];
   int rc4_usage;
-  guint8 cksum[HASH_MD5_LENGTH];
+  uint8_t cksum[HASH_MD5_LENGTH];
   gcry_md_hd_t md5_handle;
 
   rc4_usage=usage2arcfour(usage);
@@ -858,11 +1020,11 @@ arcfour_mic_cksum(guint8 *key_data, int key_length,
  * Verify padding of a gss wrapped message and return its length.
  */
 static int
-gssapi_verify_pad(guint8 *wrapped_data, int wrapped_length,
+gssapi_verify_pad(uint8_t *wrapped_data, int wrapped_length,
                   int datalen,
                   int *padlen)
 {
-  guint8 *pad;
+  uint8_t *pad;
   int padlength;
   int i;
 
@@ -882,16 +1044,16 @@ gssapi_verify_pad(guint8 *wrapped_data, int wrapped_length,
 }
 
 static int
-decrypt_arcfour(gssapi_encrypt_info_t* gssapi_encrypt, guint8 *input_message_buffer, guint8 *output_message_buffer,
-                guint8 *key_value, int key_size, int key_type)
+decrypt_arcfour(gssapi_encrypt_info_t* gssapi_encrypt, uint8_t *input_message_buffer, uint8_t *output_message_buffer,
+                uint8_t *key_value, int key_size, int key_type)
 {
-  guint8 Klocaldata[16];
+  uint8_t Klocaldata[16];
   int ret;
   int datalen;
-  guint8 k6_data[16];
-  guint32 SND_SEQ[2];
-  guint8 Confounder[8];
-  guint8 cksum_data[8];
+  uint8_t k6_data[16];
+  uint32_t SND_SEQ[2];
+  uint8_t Confounder[8];
+  uint8_t cksum_data[8];
   int cmp;
   int conf_flag;
   int padlen = 0;
@@ -928,7 +1090,7 @@ decrypt_arcfour(gssapi_encrypt_info_t* gssapi_encrypt, guint8 *input_message_buf
     gcry_cipher_close(rc4_handle);
     return -13;
   }
-  gcry_cipher_decrypt(rc4_handle, (guint8 *)SND_SEQ, 8, NULL, 0);
+  gcry_cipher_decrypt(rc4_handle, (uint8_t *)SND_SEQ, 8, NULL, 0);
   gcry_cipher_close(rc4_handle);
 
   memset(k6_data, 0, sizeof(k6_data));
@@ -941,10 +1103,10 @@ decrypt_arcfour(gssapi_encrypt_info_t* gssapi_encrypt, guint8 *input_message_buf
 
 
   for (i = 0; i < 16; i++)
-    Klocaldata[i] = ((guint8 *)key_value)[i] ^ 0xF0;
+    Klocaldata[i] = ((uint8_t *)key_value)[i] ^ 0xF0;
 
   ret = arcfour_mic_key(Klocaldata,sizeof(Klocaldata),key_type,
-                        (const guint8 *)SND_SEQ, 4,
+                        (const uint8_t *)SND_SEQ, 4,
                         k6_data);
   memset(Klocaldata, 0, sizeof(Klocaldata));
   if (ret) {
@@ -1010,10 +1172,10 @@ decrypt_gssapi_krb_arcfour_wrap(proto_tree *tree _U_, packet_info *pinfo, tvbuff
   int ret;
   enc_key_t *ek;
   int length;
-  const guint8 *original_data;
+  const uint8_t *original_data;
 
-  guint8 *cryptocopy=NULL; /* workaround for pre-0.6.1 heimdal bug */
-  guint8 *output_message_buffer;
+  uint8_t *cryptocopy=NULL; /* workaround for pre-0.6.1 heimdal bug */
+  uint8_t *output_message_buffer;
 
   length=tvb_captured_length(gssapi_encrypt->gssapi_encrypted_tvb);
   original_data=tvb_get_ptr(gssapi_encrypt->gssapi_encrypted_tvb, 0, length);
@@ -1027,8 +1189,8 @@ decrypt_gssapi_krb_arcfour_wrap(proto_tree *tree _U_, packet_info *pinfo, tvbuff
   /* XXX we should only do this for first time, then store somewhere */
   /* XXX We also need to re-read the keytab when the preference changes */
 
-  cryptocopy=(guint8 *)wmem_alloc(wmem_packet_scope(), length);
-  output_message_buffer=(guint8 *)wmem_alloc(pinfo->pool, length);
+  cryptocopy=(uint8_t *)wmem_alloc(pinfo->pool, length);
+  output_message_buffer=(uint8_t *)wmem_alloc(pinfo->pool, length);
 
   for(ek=enc_key_list;ek;ek=ek->next){
     /* shortcircuit and bail out if enctypes are not matching */
@@ -1063,9 +1225,9 @@ decrypt_gssapi_krb_arcfour_wrap(proto_tree *tree _U_, packet_info *pinfo, tvbuff
 
 /* borrowed from heimdal */
 static int
-rrc_rotate(guint8 *data, int len, guint16 rrc, int unrotate)
+rrc_rotate(uint8_t *data, int len, uint16_t rrc, int unrotate)
 {
-  guint8 *tmp, buf[256];
+  uint8_t *tmp, buf[256];
   size_t left;
 
   if (len == 0)
@@ -1081,7 +1243,7 @@ rrc_rotate(guint8 *data, int len, guint16 rrc, int unrotate)
   if (rrc <= sizeof(buf)) {
     tmp = buf;
   } else {
-    tmp = (guint8 *)g_malloc(rrc);
+    tmp = (uint8_t *)g_malloc(rrc);
     if (tmp == NULL)
       return -1;
   }
@@ -1103,23 +1265,18 @@ rrc_rotate(guint8 *data, int len, guint16 rrc, int unrotate)
 }
 
 
-#define KRB5_KU_USAGE_ACCEPTOR_SEAL     22
-#define KRB5_KU_USAGE_ACCEPTOR_SIGN     23
-#define KRB5_KU_USAGE_INITIATOR_SEAL    24
-#define KRB5_KU_USAGE_INITIATOR_SIGN    25
-
 static void
 decrypt_gssapi_krb_cfx_wrap(proto_tree *tree,
                             packet_info *pinfo,
                             tvbuff_t *checksum_tvb,
                             gssapi_encrypt_info_t* gssapi_encrypt,
-                            guint16 ec,
-                            guint16 rrc,
+                            uint16_t ec _U_,
+                            uint16_t rrc,
                             int keytype,
                             unsigned int usage)
 {
-  guint8 *rotated;
-  guint8 *output;
+  uint8_t *rotated;
+  uint8_t *output;
   int datalen;
   tvbuff_t *next_tvb;
 
@@ -1128,19 +1285,30 @@ decrypt_gssapi_krb_cfx_wrap(proto_tree *tree,
     return;
   }
 
+  if (gssapi_encrypt->decrypt_gssapi_tvb==DECRYPT_GSSAPI_DCE) {
+    tvbuff_t *out_tvb = NULL;
+
+    out_tvb = decrypt_krb5_krb_cfx_dce(tree, pinfo, usage, keytype,
+                                       gssapi_encrypt->gssapi_header_tvb,
+                                       gssapi_encrypt->gssapi_encrypted_tvb,
+                                       gssapi_encrypt->gssapi_trailer_tvb,
+                                       checksum_tvb);
+    if (out_tvb) {
+      gssapi_encrypt->gssapi_decrypted_tvb = out_tvb;
+      add_new_data_source(pinfo, gssapi_encrypt->gssapi_decrypted_tvb, "Decrypted GSS-Krb5 CFX DCE");
+    }
+    return;
+  }
+
   datalen = tvb_captured_length(checksum_tvb) + tvb_captured_length(gssapi_encrypt->gssapi_encrypted_tvb);
 
-  rotated = (guint8 *)wmem_alloc(pinfo->pool, datalen);
+  rotated = (uint8_t *)wmem_alloc(pinfo->pool, datalen);
 
   tvb_memcpy(checksum_tvb, rotated, 0, tvb_captured_length(checksum_tvb));
   tvb_memcpy(gssapi_encrypt->gssapi_encrypted_tvb, rotated + tvb_captured_length(checksum_tvb),
              0, tvb_captured_length(gssapi_encrypt->gssapi_encrypted_tvb));
 
-  if (gssapi_encrypt->decrypt_gssapi_tvb==DECRYPT_GSSAPI_DCE) {
-    rrc += ec;
-  }
-
-  rrc_rotate(rotated, datalen, rrc, TRUE);
+  rrc_rotate(rotated, datalen, rrc, true);
 
   next_tvb=tvb_new_child_real_data(gssapi_encrypt->gssapi_encrypted_tvb, rotated,
                                    datalen, datalen);
@@ -1149,9 +1317,9 @@ decrypt_gssapi_krb_cfx_wrap(proto_tree *tree,
   output = decrypt_krb5_data(tree, pinfo, usage, next_tvb, keytype, &datalen);
 
   if (output) {
-    guint8 *outdata;
+    uint8_t *outdata;
 
-    outdata = (guint8 *)wmem_memdup(pinfo->pool, output, tvb_captured_length(gssapi_encrypt->gssapi_encrypted_tvb));
+    outdata = (uint8_t *)wmem_memdup(pinfo->pool, output, tvb_captured_length(gssapi_encrypt->gssapi_encrypted_tvb));
 
     gssapi_encrypt->gssapi_decrypted_tvb=tvb_new_child_real_data(gssapi_encrypt->gssapi_encrypted_tvb,
       outdata,
@@ -1170,20 +1338,14 @@ decrypt_gssapi_krb_cfx_wrap(proto_tree *tree,
  * This is for GSSAPI Wrap tokens ...
  */
 static int
-dissect_spnego_krb5_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo
-#ifndef HAVE_KERBEROS
-  _U_
-#endif
-    , proto_tree *tree, guint16 token_id
-#ifndef HAVE_KERBEROS
-  _U_
-#endif
-  , gssapi_encrypt_info_t* gssapi_encrypt
-  )
+dissect_spnego_krb5_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, uint16_t token_id, gssapi_encrypt_info_t* gssapi_encrypt)
 {
-  guint16 sgn_alg, seal_alg;
+  uint16_t sgn_alg, seal_alg;
 #ifdef HAVE_KERBEROS
   int start_offset=offset;
+#else
+  (void) pinfo;
+  (void) token_id;
 #endif
 
   /*
@@ -1299,7 +1461,7 @@ dissect_spnego_krb5_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo
 static int
 dissect_spnego_krb5_getmic_base(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *tree)
 {
-  guint16 sgn_alg;
+  uint16_t sgn_alg;
 
   /*
    * The KRB5 blob conforms to RFC1964:
@@ -1362,9 +1524,9 @@ dissect_spnego_krb5_getmic_base(tvbuff_t *tvb, int offset, packet_info *pinfo _U
 static int
 dissect_spnego_krb5_cfx_flags(tvbuff_t *tvb, int offset,
                               proto_tree *spnego_krb5_tree,
-                              guint8 cfx_flags _U_)
+                              uint8_t cfx_flags _U_)
 {
-  static const int * flags[] = {
+  static int * const flags[] = {
     &hf_spnego_krb5_cfx_flags_04,
     &hf_spnego_krb5_cfx_flags_02,
     &hf_spnego_krb5_cfx_flags_01,
@@ -1379,18 +1541,14 @@ dissect_spnego_krb5_cfx_flags(tvbuff_t *tvb, int offset,
  * This is for GSSAPI CFX Wrap tokens ...
  */
 static int
-dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo
-#ifndef HAVE_KERBEROS
-  _U_
-#endif
-  , proto_tree *tree, guint16 token_id _U_
-  , gssapi_encrypt_info_t* gssapi_encrypt
-  )
+dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree, uint16_t token_id _U_, gssapi_encrypt_info_t* gssapi_encrypt)
 {
-  guint8 flags;
-  guint16 ec;
+  uint8_t flags;
+  uint16_t ec;
 #if defined(HAVE_HEIMDAL_KERBEROS) || defined(HAVE_MIT_KERBEROS)
-  guint16 rrc;
+  uint16_t rrc;
+#else
+  (void) pinfo;
 #endif
   int checksum_size;
   int start_offset=offset;
@@ -1403,7 +1561,7 @@ dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo
 
   /* Now, the sign and seal algorithms ... */
 
-  flags = tvb_get_guint8(tvb, offset);
+  flags = tvb_get_uint8(tvb, offset);
   offset = dissect_spnego_krb5_cfx_flags(tvb, offset, tree, flags);
 
   if (gssapi_encrypt != NULL)
@@ -1431,7 +1589,7 @@ dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo
   proto_tree_add_item(tree, hf_spnego_krb5_cfx_seq, tvb, offset, 8, ENC_BIG_ENDIAN);
   offset += 8;
 
-  if (gssapi_encrypt == NULL) /* Probably shoudn't happen, but just protect ourselves */
+  if (gssapi_encrypt == NULL) /* Probably shouldn't happen, but just protect ourselves */
     return offset;
 
   /* Checksum of plaintext padded data */
@@ -1472,6 +1630,8 @@ dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo
 
     returned_offset = offset;
     gssapi_encrypt->gssapi_wrap_tvb = tvb_new_subset_length(tvb, offset,
+            inner_token_len);
+    gssapi_encrypt->gssapi_decrypted_tvb = tvb_new_subset_length(tvb, offset,
             inner_token_len);
 
     offset += inner_token_len;
@@ -1559,7 +1719,7 @@ dissect_spnego_krb5_cfx_wrap_base(tvbuff_t *tvb, int offset, packet_info *pinfo
 static int
 dissect_spnego_krb5_cfx_getmic_base(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *tree)
 {
-  guint8 flags;
+  uint8_t flags;
   int checksum_size;
 
   /*
@@ -1568,7 +1728,7 @@ dissect_spnego_krb5_cfx_getmic_base(tvbuff_t *tvb, int offset, packet_info *pinf
    *   and so on }
    */
 
-  flags = tvb_get_guint8(tvb, offset);
+  flags = tvb_get_uint8(tvb, offset);
   offset = dissect_spnego_krb5_cfx_flags(tvb, offset, tree, flags);
 
   /* Skip the filler */
@@ -1611,7 +1771,7 @@ dissect_spnego_krb5_wrap(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
   proto_item *item;
   proto_tree *subtree;
   int offset = 0;
-  guint16 token_id;
+  uint16_t token_id;
   gssapi_encrypt_info_t* encrypt_info = (gssapi_encrypt_info_t*)data;
 
   item = proto_tree_add_item(tree, hf_spnego_krb5, tvb, 0, -1, ENC_NA);
@@ -1672,7 +1832,7 @@ dissect_spnego_wrap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *d
   proto_tree *subtree;
   int offset = 0;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
 
   MechType_oid = NULL;
 
@@ -1694,7 +1854,7 @@ dissect_spnego_wrap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *d
    * ASN1 code addet to spnego.asn to handle this.
    */
 
-  offset = dissect_spnego_InitialContextToken(FALSE, tvb, offset, &asn1_ctx , subtree, -1);
+  offset = dissect_spnego_InitialContextToken(false, tvb, offset, &asn1_ctx , subtree, -1);
 
   return offset;
 }
@@ -1708,7 +1868,7 @@ dissect_spnego(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void*
   int offset = 0;
   conversation_t *conversation;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
 
   /*
    * We need this later, so lets get it now ...
@@ -1716,7 +1876,7 @@ dissect_spnego(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void*
    * negotiation in a conversation.
    */
   next_level_value = (gssapi_oid_value *)p_get_proto_data(wmem_file_scope(), pinfo, proto_spnego, 0);
-  if (!next_level_value && !pinfo->fd->flags.visited) {
+  if (!next_level_value && !pinfo->fd->visited) {
       /*
        * No handle attached to this frame, but it's the first
        * pass, so it'd be attached to the conversation.
@@ -1763,7 +1923,7 @@ dissect_spnego(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void*
    * as well. Naughty, naughty.
    *
    */
-  dissect_spnego_NegotiationToken(FALSE, tvb, offset, &asn1_ctx, subtree, -1);
+  dissect_spnego_NegotiationToken(false, tvb, offset, &asn1_ctx, subtree, -1);
   return tvb_captured_length(tvb);
 }
 
@@ -1825,9 +1985,6 @@ void proto_register_spnego(void) {
       { "krb5_cfx_seq", "spnego.krb5.cfx_seq", FT_UINT64, BASE_DEC,
         NULL, 0, "KRB5 Sequence Number", HFILL}},
 
-
-/*--- Included file: packet-spnego-hfarr.c ---*/
-#line 1 "./asn1/spnego/packet-spnego-hfarr.c"
     { &hf_spnego_negTokenInit,
       { "negTokenInit", "spnego.negTokenInit_element",
         FT_NONE, BASE_NONE, NULL, 0,
@@ -1884,6 +2041,10 @@ void proto_register_spnego(void) {
       { "responseToken", "spnego.responseToken",
         FT_BYTES, BASE_NONE, NULL, 0,
         NULL, HFILL }},
+    { &hf_spnego_mechListMIC_01,
+      { "mechListMIC", "spnego.mechListMIC",
+        FT_BYTES, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
     { &hf_spnego_thisMech,
       { "thisMech", "spnego.thisMech",
         FT_OID, BASE_NONE, NULL, 0,
@@ -1892,49 +2053,183 @@ void proto_register_spnego(void) {
       { "innerContextToken", "spnego.innerContextToken_element",
         FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
+    { &hf_spnego_target_realm,
+      { "target-realm", "spnego.target_realm",
+        FT_STRING, BASE_NONE, NULL, 0,
+        "T_target_realm", HFILL }},
+    { &hf_spnego_cookie,
+      { "cookie", "spnego.cookie",
+        FT_BYTES, BASE_NONE, NULL, 0,
+        "OCTET_STRING", HFILL }},
+    { &hf_spnego_header_flags,
+      { "header-flags", "spnego.header_flags",
+        FT_BYTES, BASE_NONE, NULL, 0,
+        "HeaderFlags", HFILL }},
     { &hf_spnego_ContextFlags_delegFlag,
-      { "delegFlag", "spnego.delegFlag",
+      { "delegFlag", "spnego.ContextFlags.delegFlag",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_spnego_ContextFlags_mutualFlag,
-      { "mutualFlag", "spnego.mutualFlag",
+      { "mutualFlag", "spnego.ContextFlags.mutualFlag",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_spnego_ContextFlags_replayFlag,
-      { "replayFlag", "spnego.replayFlag",
+      { "replayFlag", "spnego.ContextFlags.replayFlag",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_spnego_ContextFlags_sequenceFlag,
-      { "sequenceFlag", "spnego.sequenceFlag",
+      { "sequenceFlag", "spnego.ContextFlags.sequenceFlag",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_spnego_ContextFlags_anonFlag,
-      { "anonFlag", "spnego.anonFlag",
+      { "anonFlag", "spnego.ContextFlags.anonFlag",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_spnego_ContextFlags_confFlag,
-      { "confFlag", "spnego.confFlag",
+      { "confFlag", "spnego.ContextFlags.confFlag",
         FT_BOOLEAN, 8, NULL, 0x04,
         NULL, HFILL }},
     { &hf_spnego_ContextFlags_integFlag,
-      { "integFlag", "spnego.integFlag",
+      { "integFlag", "spnego.ContextFlags.integFlag",
         FT_BOOLEAN, 8, NULL, 0x02,
         NULL, HFILL }},
-
-/*--- End of included file: packet-spnego-hfarr.c ---*/
-#line 1377 "./asn1/spnego/packet-spnego-template.c"
+    { &hf_spnego_HeaderFlags_unused0,
+      { "unused0", "spnego.HeaderFlags.unused0",
+        FT_BOOLEAN, 8, NULL, 0x80,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_return_dns_name,
+      { "return-dns-name", "spnego.HeaderFlags.return.dns.name",
+        FT_BOOLEAN, 8, NULL, 0x40,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_unused2,
+      { "unused2", "spnego.HeaderFlags.unused2",
+        FT_BOOLEAN, 8, NULL, 0x20,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_unused3,
+      { "unused3", "spnego.HeaderFlags.unused3",
+        FT_BOOLEAN, 8, NULL, 0x10,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_unused4,
+      { "unused4", "spnego.HeaderFlags.unused4",
+        FT_BOOLEAN, 8, NULL, 0x08,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_12_required,
+      { "ds-12-required", "spnego.HeaderFlags.ds.12.required",
+        FT_BOOLEAN, 8, NULL, 0x04,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_13_required,
+      { "ds-13-required", "spnego.HeaderFlags.ds.13.required",
+        FT_BOOLEAN, 8, NULL, 0x02,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_key_list_support_required,
+      { "key-list-support-required", "spnego.HeaderFlags.key.list.support.required",
+        FT_BOOLEAN, 8, NULL, 0x01,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_10_required,
+      { "ds-10-required", "spnego.HeaderFlags.ds.10.required",
+        FT_BOOLEAN, 8, NULL, 0x80,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_9_required,
+      { "ds-9-required", "spnego.HeaderFlags.ds.9.required",
+        FT_BOOLEAN, 8, NULL, 0x40,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_8_required,
+      { "ds-8-required", "spnego.HeaderFlags.ds.8.required",
+        FT_BOOLEAN, 8, NULL, 0x20,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_web_service_required,
+      { "web-service-required", "spnego.HeaderFlags.web.service.required",
+        FT_BOOLEAN, 8, NULL, 0x10,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_6_required,
+      { "ds-6-required", "spnego.HeaderFlags.ds.6.required",
+        FT_BOOLEAN, 8, NULL, 0x08,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_try_next_closest_site,
+      { "try-next-closest-site", "spnego.HeaderFlags.try.next.closest.site",
+        FT_BOOLEAN, 8, NULL, 0x04,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_is_dns_name,
+      { "is-dns-name", "spnego.HeaderFlags.is.dns.name",
+        FT_BOOLEAN, 8, NULL, 0x02,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_is_flat_name,
+      { "is-flat-name", "spnego.HeaderFlags.is.flat.name",
+        FT_BOOLEAN, 8, NULL, 0x01,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_only_ldap_needed,
+      { "only-ldap-needed", "spnego.HeaderFlags.only.ldap.needed",
+        FT_BOOLEAN, 8, NULL, 0x80,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_avoid_self,
+      { "avoid-self", "spnego.HeaderFlags.avoid.self",
+        FT_BOOLEAN, 8, NULL, 0x40,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_good_timeserv_pref,
+      { "good-timeserv-pref", "spnego.HeaderFlags.good.timeserv.pref",
+        FT_BOOLEAN, 8, NULL, 0x20,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_writable_required,
+      { "writable-required", "spnego.HeaderFlags.writable.required",
+        FT_BOOLEAN, 8, NULL, 0x10,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_timeserv_required,
+      { "timeserv-required", "spnego.HeaderFlags.timeserv.required",
+        FT_BOOLEAN, 8, NULL, 0x08,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_kdc_required,
+      { "kdc-required", "spnego.HeaderFlags.kdc.required",
+        FT_BOOLEAN, 8, NULL, 0x04,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ip_required,
+      { "ip-required", "spnego.HeaderFlags.ip.required",
+        FT_BOOLEAN, 8, NULL, 0x02,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_background_only,
+      { "background-only", "spnego.HeaderFlags.background.only",
+        FT_BOOLEAN, 8, NULL, 0x01,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_pdc_required,
+      { "pdc-required", "spnego.HeaderFlags.pdc.required",
+        FT_BOOLEAN, 8, NULL, 0x80,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_gc_server_required,
+      { "gc-server-required", "spnego.HeaderFlags.gc.server.required",
+        FT_BOOLEAN, 8, NULL, 0x40,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_preferred,
+      { "ds-preferred", "spnego.HeaderFlags.ds.preferred",
+        FT_BOOLEAN, 8, NULL, 0x20,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_ds_required,
+      { "ds-required", "spnego.HeaderFlags.ds.required",
+        FT_BOOLEAN, 8, NULL, 0x10,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_unused28,
+      { "unused28", "spnego.HeaderFlags.unused28",
+        FT_BOOLEAN, 8, NULL, 0x08,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_unused29,
+      { "unused29", "spnego.HeaderFlags.unused29",
+        FT_BOOLEAN, 8, NULL, 0x04,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_unused30,
+      { "unused30", "spnego.HeaderFlags.unused30",
+        FT_BOOLEAN, 8, NULL, 0x02,
+        NULL, HFILL }},
+    { &hf_spnego_HeaderFlags_force_rediscovery,
+      { "force-rediscovery", "spnego.HeaderFlags.force.rediscovery",
+        FT_BOOLEAN, 8, NULL, 0x01,
+        NULL, HFILL }},
   };
 
   /* List of subtrees */
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_spnego,
     &ett_spnego_wraptoken,
     &ett_spnego_krb5,
     &ett_spnego_krb5_cfx_flags,
 
-
-/*--- Included file: packet-spnego-ettarr.c ---*/
-#line 1 "./asn1/spnego/packet-spnego-ettarr.c"
     &ett_spnego_NegotiationToken,
     &ett_spnego_MechTypeList,
     &ett_spnego_NegTokenInit,
@@ -1943,13 +2238,12 @@ void proto_register_spnego(void) {
     &ett_spnego_ContextFlags,
     &ett_spnego_NegTokenTarg,
     &ett_spnego_InitialContextToken_U,
-
-/*--- End of included file: packet-spnego-ettarr.c ---*/
-#line 1387 "./asn1/spnego/packet-spnego-template.c"
+    &ett_spnego_HeaderFlags,
+    &ett_spnego_IAKERB_HEADER,
   };
 
   static ei_register_info ei[] = {
-    { &ei_spnego_decrypted_keytype, { "spnego.decrypted_keytype", PI_SECURITY, PI_CHAT, "Decryted keytype", EXPFILL }},
+    { &ei_spnego_decrypted_keytype, { "spnego.decrypted_keytype", PI_SECURITY, PI_CHAT, "Decrypted keytype", EXPFILL }},
     { &ei_spnego_unknown_header, { "spnego.unknown_header", PI_PROTOCOL, PI_WARN, "Unknown header", EXPFILL }},
   };
 
@@ -1959,6 +2253,7 @@ void proto_register_spnego(void) {
   proto_spnego = proto_register_protocol(PNAME, PSNAME, PFNAME);
 
   spnego_handle = register_dissector("spnego", dissect_spnego, proto_spnego);
+  spnego_wrap_handle = register_dissector("spnego-wrap", dissect_spnego_wrap, proto_spnego);
 
   proto_spnego_krb5 = proto_register_protocol("SPNEGO-KRB5", "SPNEGO-KRB5", "spnego-krb5");
 
@@ -1976,11 +2271,8 @@ void proto_register_spnego(void) {
 /*--- proto_reg_handoff_spnego ---------------------------------------*/
 void proto_reg_handoff_spnego(void) {
 
-  dissector_handle_t spnego_wrap_handle;
-
   /* Register protocol with GSS-API module */
 
-  spnego_wrap_handle = create_dissector_handle(dissect_spnego_wrap,  proto_spnego);
   gssapi_init_oid("1.3.6.1.5.5.2", proto_spnego, ett_spnego,
                   spnego_handle, spnego_wrap_handle,
                   "SPNEGO - Simple Protected Negotiation");
@@ -2003,7 +2295,9 @@ void proto_reg_handoff_spnego(void) {
   gssapi_init_oid("1.2.840.113554.1.2.2.3", proto_spnego_krb5, ett_spnego_krb5,
                   spnego_krb5_handle, spnego_krb5_wrap_handle,
                   "KRB5 - Kerberos 5 - User to User");
-
+  gssapi_init_oid("1.3.6.1.5.2.5", proto_spnego_krb5, ett_spnego_krb5,
+                  spnego_krb5_handle, spnego_krb5_wrap_handle,
+                  "KRB5 - IAKERB");
 }
 
 /*

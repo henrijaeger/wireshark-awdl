@@ -1,11 +1,8 @@
 /* Do not modify this file. Changes will be overwritten.                      */
 /* Generated automatically by the ASN.1 to Wireshark dissector compiler       */
 /* packet-pkix1implicit.c                                                     */
-/* asn2wrs.py -b -p pkix1implicit -c ./pkix1implicit.cnf -s ./packet-pkix1implicit-template -D . -O ../.. PKIX1IMPLICIT93.asn */
+/* asn2wrs.py -b -q -L -p pkix1implicit -c ./pkix1implicit.cnf -s ./packet-pkix1implicit-template -D . -O ../.. PKIX1IMPLICIT93.asn */
 
-/* Input file: packet-pkix1implicit-template.c */
-
-#line 1 "./asn1/pkix1implicit/packet-pkix1implicit-template.c"
 /* packet-pkix1implicit.c
  * Routines for PKIX1Implitic packet dissection
  *
@@ -19,6 +16,7 @@
 #include "config.h"
 
 #include <epan/packet.h>
+#include <wsutil/array.h>
 
 #include <epan/asn1.h>
 #include "packet-ber.h"
@@ -26,7 +24,7 @@
 #include "packet-pkix1explicit.h"
 #include "packet-x509ce.h"
 
-#define PNAME  "PKIX1Implitit"
+#define PNAME  "PKIX1Implicit"
 #define PSNAME "PKIX1IMPLICIT"
 #define PFNAME "pkix1implicit"
 
@@ -34,64 +32,49 @@ void proto_register_pkix1implicit(void);
 void proto_reg_handoff_pkix1implicit(void);
 
 /* Initialize the protocol and registered fields */
-static int proto_pkix1implicit = -1;
-
-/*--- Included file: packet-pkix1implicit-hf.c ---*/
-#line 1 "./asn1/pkix1implicit/packet-pkix1implicit-hf.c"
-static int hf_pkix1implicit_Dummy_PDU = -1;       /* Dummy */
-static int hf_pkix1implicit_AuthorityInfoAccessSyntax_PDU = -1;  /* AuthorityInfoAccessSyntax */
-static int hf_pkix1implicit_UserNotice_PDU = -1;  /* UserNotice */
-static int hf_pkix1implicit_AuthorityInfoAccessSyntax_item = -1;  /* AccessDescription */
-static int hf_pkix1implicit_accessMethod = -1;    /* OBJECT_IDENTIFIER */
-static int hf_pkix1implicit_accessLocation = -1;  /* GeneralName */
-static int hf_pkix1implicit_noticeRef = -1;       /* NoticeReference */
-static int hf_pkix1implicit_explicitText = -1;    /* DisplayText */
-static int hf_pkix1implicit_organization = -1;    /* DisplayText */
-static int hf_pkix1implicit_noticeNumbers = -1;   /* T_noticeNumbers */
-static int hf_pkix1implicit_noticeNumbers_item = -1;  /* INTEGER */
-static int hf_pkix1implicit_ia5String = -1;       /* IA5String */
-static int hf_pkix1implicit_visibleString = -1;   /* VisibleString */
-static int hf_pkix1implicit_bmpString = -1;       /* BMPString */
-static int hf_pkix1implicit_utf8String = -1;      /* UTF8String */
-
-/*--- End of included file: packet-pkix1implicit-hf.c ---*/
-#line 31 "./asn1/pkix1implicit/packet-pkix1implicit-template.c"
+static int proto_pkix1implicit;
+static int hf_pkix1implicit_Dummy_PDU;            /* Dummy */
+static int hf_pkix1implicit_AuthorityInfoAccessSyntax_PDU;  /* AuthorityInfoAccessSyntax */
+static int hf_pkix1implicit_UserNotice_PDU;       /* UserNotice */
+static int hf_pkix1implicit_AuthorityInfoAccessSyntax_item;  /* AccessDescription */
+static int hf_pkix1implicit_accessMethod;         /* OBJECT_IDENTIFIER */
+static int hf_pkix1implicit_accessLocation;       /* GeneralName */
+static int hf_pkix1implicit_noticeRef;            /* NoticeReference */
+static int hf_pkix1implicit_explicitText;         /* DisplayText */
+static int hf_pkix1implicit_organization;         /* DisplayText */
+static int hf_pkix1implicit_noticeNumbers;        /* T_noticeNumbers */
+static int hf_pkix1implicit_noticeNumbers_item;   /* INTEGER */
+static int hf_pkix1implicit_ia5String;            /* IA5String */
+static int hf_pkix1implicit_visibleString;        /* VisibleString */
+static int hf_pkix1implicit_bmpString;            /* BMPString */
+static int hf_pkix1implicit_utf8String;           /* UTF8String */
 
 /* Initialize the subtree pointers */
-
-/*--- Included file: packet-pkix1implicit-ett.c ---*/
-#line 1 "./asn1/pkix1implicit/packet-pkix1implicit-ett.c"
-static gint ett_pkix1implicit_AuthorityInfoAccessSyntax = -1;
-static gint ett_pkix1implicit_AccessDescription = -1;
-static gint ett_pkix1implicit_UserNotice = -1;
-static gint ett_pkix1implicit_NoticeReference = -1;
-static gint ett_pkix1implicit_T_noticeNumbers = -1;
-static gint ett_pkix1implicit_DisplayText = -1;
-
-/*--- End of included file: packet-pkix1implicit-ett.c ---*/
-#line 34 "./asn1/pkix1implicit/packet-pkix1implicit-template.c"
+static int ett_pkix1implicit_AuthorityInfoAccessSyntax;
+static int ett_pkix1implicit_AccessDescription;
+static int ett_pkix1implicit_UserNotice;
+static int ett_pkix1implicit_NoticeReference;
+static int ett_pkix1implicit_T_noticeNumbers;
+static int ett_pkix1implicit_DisplayText;
 
 
 int
-dissect_pkix1implicit_ReasonFlags(gboolean implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_) {
+dissect_pkix1implicit_ReasonFlags(bool implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_) {
   offset = dissect_x509ce_ReasonFlags(implicit_tag, tvb, offset, actx, tree, hf_index);
 
   return offset;
 }
 int
-dissect_pkix1implicit_GeneralName(gboolean implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_) {
+dissect_pkix1implicit_GeneralName(bool implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_) {
   offset = dissect_x509ce_GeneralName(implicit_tag, tvb, offset, actx, tree, hf_index);
 
   return offset;
 }
 
 
-/*--- Included file: packet-pkix1implicit-fn.c ---*/
-#line 1 "./asn1/pkix1implicit/packet-pkix1implicit-fn.c"
-
 
 int
-dissect_pkix1implicit_KeyIdentifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_KeyIdentifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
                                        NULL);
 
@@ -101,7 +84,7 @@ dissect_pkix1implicit_KeyIdentifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_
 
 
 static int
-dissect_pkix1implicit_Dummy(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_Dummy(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_null(implicit_tag, actx, tree, tvb, offset, hf_index);
 
   return offset;
@@ -110,7 +93,7 @@ dissect_pkix1implicit_Dummy(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 
 static int
-dissect_pkix1implicit_OBJECT_IDENTIFIER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_OBJECT_IDENTIFIER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier(implicit_tag, actx, tree, tvb, offset, hf_index, NULL);
 
   return offset;
@@ -124,7 +107,7 @@ static const ber_sequence_t AccessDescription_sequence[] = {
 };
 
 static int
-dissect_pkix1implicit_AccessDescription(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_AccessDescription(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    AccessDescription_sequence, hf_index, ett_pkix1implicit_AccessDescription);
 
@@ -137,7 +120,7 @@ static const ber_sequence_t AuthorityInfoAccessSyntax_sequence_of[1] = {
 };
 
 int
-dissect_pkix1implicit_AuthorityInfoAccessSyntax(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_AuthorityInfoAccessSyntax(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       AuthorityInfoAccessSyntax_sequence_of, hf_index, ett_pkix1implicit_AuthorityInfoAccessSyntax);
 
@@ -147,7 +130,7 @@ dissect_pkix1implicit_AuthorityInfoAccessSyntax(gboolean implicit_tag _U_, tvbuf
 
 
 static int
-dissect_pkix1implicit_IA5String(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_IA5String(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_IA5String,
                                             actx, tree, tvb, offset, hf_index,
                                             NULL);
@@ -158,7 +141,7 @@ dissect_pkix1implicit_IA5String(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_pkix1implicit_VisibleString(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_VisibleString(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_VisibleString,
                                             actx, tree, tvb, offset, hf_index,
                                             NULL);
@@ -169,7 +152,7 @@ dissect_pkix1implicit_VisibleString(gboolean implicit_tag _U_, tvbuff_t *tvb _U_
 
 
 static int
-dissect_pkix1implicit_BMPString(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_BMPString(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_BMPString,
                                             actx, tree, tvb, offset, hf_index,
                                             NULL);
@@ -180,7 +163,7 @@ dissect_pkix1implicit_BMPString(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_pkix1implicit_UTF8String(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_UTF8String(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_UTF8String,
                                             actx, tree, tvb, offset, hf_index,
                                             NULL);
@@ -206,7 +189,7 @@ static const ber_choice_t DisplayText_choice[] = {
 };
 
 static int
-dissect_pkix1implicit_DisplayText(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_DisplayText(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  DisplayText_choice, hf_index, ett_pkix1implicit_DisplayText,
                                  NULL);
@@ -217,7 +200,7 @@ dissect_pkix1implicit_DisplayText(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, 
 
 
 static int
-dissect_pkix1implicit_INTEGER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_INTEGER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -230,7 +213,7 @@ static const ber_sequence_t T_noticeNumbers_sequence_of[1] = {
 };
 
 static int
-dissect_pkix1implicit_T_noticeNumbers(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_T_noticeNumbers(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       T_noticeNumbers_sequence_of, hf_index, ett_pkix1implicit_T_noticeNumbers);
 
@@ -245,7 +228,7 @@ static const ber_sequence_t NoticeReference_sequence[] = {
 };
 
 static int
-dissect_pkix1implicit_NoticeReference(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_NoticeReference(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    NoticeReference_sequence, hf_index, ett_pkix1implicit_NoticeReference);
 
@@ -260,7 +243,7 @@ static const ber_sequence_t UserNotice_sequence[] = {
 };
 
 int
-dissect_pkix1implicit_UserNotice(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_pkix1implicit_UserNotice(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    UserNotice_sequence, hf_index, ett_pkix1implicit_UserNotice);
 
@@ -272,28 +255,25 @@ dissect_pkix1implicit_UserNotice(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, i
 static int dissect_Dummy_PDU(tvbuff_t *tvb _U_, packet_info *pinfo _U_, proto_tree *tree _U_, void *data _U_) {
   int offset = 0;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
-  offset = dissect_pkix1implicit_Dummy(FALSE, tvb, offset, &asn1_ctx, tree, hf_pkix1implicit_Dummy_PDU);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
+  offset = dissect_pkix1implicit_Dummy(false, tvb, offset, &asn1_ctx, tree, hf_pkix1implicit_Dummy_PDU);
   return offset;
 }
 static int dissect_AuthorityInfoAccessSyntax_PDU(tvbuff_t *tvb _U_, packet_info *pinfo _U_, proto_tree *tree _U_, void *data _U_) {
   int offset = 0;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
-  offset = dissect_pkix1implicit_AuthorityInfoAccessSyntax(FALSE, tvb, offset, &asn1_ctx, tree, hf_pkix1implicit_AuthorityInfoAccessSyntax_PDU);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
+  offset = dissect_pkix1implicit_AuthorityInfoAccessSyntax(false, tvb, offset, &asn1_ctx, tree, hf_pkix1implicit_AuthorityInfoAccessSyntax_PDU);
   return offset;
 }
 static int dissect_UserNotice_PDU(tvbuff_t *tvb _U_, packet_info *pinfo _U_, proto_tree *tree _U_, void *data _U_) {
   int offset = 0;
   asn1_ctx_t asn1_ctx;
-  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
-  offset = dissect_pkix1implicit_UserNotice(FALSE, tvb, offset, &asn1_ctx, tree, hf_pkix1implicit_UserNotice_PDU);
+  asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
+  offset = dissect_pkix1implicit_UserNotice(false, tvb, offset, &asn1_ctx, tree, hf_pkix1implicit_UserNotice_PDU);
   return offset;
 }
 
-
-/*--- End of included file: packet-pkix1implicit-fn.c ---*/
-#line 50 "./asn1/pkix1implicit/packet-pkix1implicit-template.c"
 
 
 /*--- proto_register_pkix1implicit ----------------------------------------------*/
@@ -301,9 +281,6 @@ void proto_register_pkix1implicit(void) {
 
   /* List of fields */
   static hf_register_info hf[] = {
-
-/*--- Included file: packet-pkix1implicit-hfarr.c ---*/
-#line 1 "./asn1/pkix1implicit/packet-pkix1implicit-hfarr.c"
     { &hf_pkix1implicit_Dummy_PDU,
       { "Dummy", "pkix1implicit.Dummy_element",
         FT_NONE, BASE_NONE, NULL, 0,
@@ -364,25 +341,16 @@ void proto_register_pkix1implicit(void) {
       { "utf8String", "pkix1implicit.utf8String",
         FT_STRING, BASE_NONE, NULL, 0,
         NULL, HFILL }},
-
-/*--- End of included file: packet-pkix1implicit-hfarr.c ---*/
-#line 58 "./asn1/pkix1implicit/packet-pkix1implicit-template.c"
   };
 
   /* List of subtrees */
-  static gint *ett[] = {
-
-/*--- Included file: packet-pkix1implicit-ettarr.c ---*/
-#line 1 "./asn1/pkix1implicit/packet-pkix1implicit-ettarr.c"
+  static int *ett[] = {
     &ett_pkix1implicit_AuthorityInfoAccessSyntax,
     &ett_pkix1implicit_AccessDescription,
     &ett_pkix1implicit_UserNotice,
     &ett_pkix1implicit_NoticeReference,
     &ett_pkix1implicit_T_noticeNumbers,
     &ett_pkix1implicit_DisplayText,
-
-/*--- End of included file: packet-pkix1implicit-ettarr.c ---*/
-#line 63 "./asn1/pkix1implicit/packet-pkix1implicit-template.c"
   };
 
   /* Register protocol */
@@ -397,10 +365,9 @@ void proto_register_pkix1implicit(void) {
 
 /*--- proto_reg_handoff_pkix1implicit -------------------------------------------*/
 void proto_reg_handoff_pkix1implicit(void) {
-
-/*--- Included file: packet-pkix1implicit-dis-tab.c ---*/
-#line 1 "./asn1/pkix1implicit/packet-pkix1implicit-dis-tab.c"
-  register_ber_oid_dissector("1.3.6.1.5.5.7.1.1", dissect_AuthorityInfoAccessSyntax_PDU, proto_pkix1implicit, "id-pe-authorityInfoAccessSyntax");
+  register_ber_oid_dissector("1.3.6.1.5.5.7.1.1", dissect_AuthorityInfoAccessSyntax_PDU, proto_pkix1implicit, "id-pe-authorityInfoAccess");
+  register_ber_oid_dissector("1.3.6.1.5.5.7.48.1", dissect_Dummy_PDU, proto_pkix1implicit, "id-ad-ocsp");
+  register_ber_oid_dissector("1.3.6.1.5.5.7.48.2", dissect_Dummy_PDU, proto_pkix1implicit, "id-ad-caIssuers");
   register_ber_oid_dissector("1.3.6.1.5.5.7.3.1", dissect_Dummy_PDU, proto_pkix1implicit, "id-kp-serverAuth");
   register_ber_oid_dissector("1.3.6.1.5.5.7.3.2", dissect_Dummy_PDU, proto_pkix1implicit, "id-kp-clientAuth");
   register_ber_oid_dissector("1.3.6.1.5.5.7.3.3", dissect_Dummy_PDU, proto_pkix1implicit, "id-kp-codeSigning");
@@ -436,8 +403,5 @@ void proto_reg_handoff_pkix1implicit(void) {
   register_ber_oid_dissector("1.3.6.1.5.5.8.2.2", dissect_Dummy_PDU, proto_pkix1implicit, "id-ms-ipsec-kp-ike-intermediate");
   register_ber_oid_dissector("1.3.6.1.5.5.7.2.2", dissect_UserNotice_PDU, proto_pkix1implicit, "id-qt-unotice");
 
-
-/*--- End of included file: packet-pkix1implicit-dis-tab.c ---*/
-#line 78 "./asn1/pkix1implicit/packet-pkix1implicit-template.c"
 }
 

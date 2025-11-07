@@ -14,6 +14,7 @@
 
 #include <epan/packet.h>
 #include <epan/expert.h>
+#include <epan/strutil.h>
 #include <wsutil/pint.h>
 #include <wsutil/strtoi.h>
 
@@ -23,45 +24,46 @@ void proto_reg_handoff_lsd(void);
 #define LSD_MULTICAST_ADDRESS 0xEFC0988F /* 239.192.152.143 */
 #define LSD_PORT 6771
 
-static int proto_lsd = -1;
-static int hf_lsd_header = -1;
-static int hf_lsd_host = -1;
-static int hf_lsd_port = -1;
-static int hf_lsd_infohash = -1;
+static int proto_lsd;
+static int hf_lsd_header;
+static int hf_lsd_host;
+static int hf_lsd_port;
+static int hf_lsd_infohash;
+static int hf_lsd_cookie;
 
-static gint ett_lsd = -1;
+static int ett_lsd;
 
-static expert_field ei_lsd_field = EI_INIT;
+static expert_field ei_lsd_field;
 
-static gboolean
+static bool
 parse_string_field(proto_tree *tree, int hf, packet_info *pinfo, tvbuff_t *tvb, int offset, int* next_offset, int* linelen)
 {
-  guint8 *str;
+  uint8_t *str;
   header_field_info* hf_info = proto_registrar_get_nth(hf);
-  gchar **field_and_value;
+  char **field_and_value;
   proto_item* ti;
-  gchar *p;
+  char *p;
 
-  *linelen = tvb_find_line_end(tvb, offset, -1, next_offset, FALSE);
+  *linelen = tvb_find_line_end(tvb, offset, -1, next_offset, false);
   if (*linelen < 0)
-    return FALSE;
+    return false;
 
-  str = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, *linelen, ENC_ASCII);
+  str = tvb_get_string_enc(pinfo->pool, tvb, offset, *linelen, ENC_ASCII);
   if (g_ascii_strncasecmp(str, hf_info->name, strlen(hf_info->name)) == 0)
   {
-      field_and_value = wmem_strsplit(wmem_packet_scope(), str, ":", 1);
+      field_and_value = wmem_strsplit(pinfo->pool, str, ":", 2);
       p = field_and_value[1];
       if (p) {
         while(g_ascii_isspace(*p))
           p++;
         proto_tree_add_string(tree, hf, tvb, offset, *linelen, p);
-        return TRUE;
+        return true;
       }
   }
   ti = proto_tree_add_string_format(tree, hf, tvb, offset, *linelen, str, "%s", str);
   expert_add_info_format(pinfo, ti, &ei_lsd_field, "%s field malformed", hf_info->name);
 
-  return TRUE;
+  return true;
 }
 
 static int
@@ -70,12 +72,12 @@ dissect_lsd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
   proto_item *ti = NULL;
   proto_tree *lsd_tree;
   int offset = 0, next_offset = 0, linelen;
-  guint8 *str;
-  gchar **field_and_value;
-  guint16 port;
-  gboolean valid;
+  uint8_t *str;
+  char **field_and_value;
+  uint16_t port;
+  bool valid;
 
-  linelen = tvb_find_line_end(tvb, offset, -1, &next_offset, FALSE);
+  linelen = tvb_find_line_end(tvb, offset, -1, &next_offset, false);
   if (linelen < 0)
       return 0;
 
@@ -86,20 +88,20 @@ dissect_lsd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
   ti = proto_tree_add_item(tree, proto_lsd, tvb, 0, -1, ENC_NA);
   lsd_tree = proto_item_add_subtree(ti, ett_lsd);
 
-  proto_tree_add_item(lsd_tree, hf_lsd_header, tvb, offset, linelen, ENC_ASCII|ENC_NA);
+  proto_tree_add_item(lsd_tree, hf_lsd_header, tvb, offset, linelen, ENC_ASCII);
 
   offset = next_offset;
   if (!parse_string_field(lsd_tree, hf_lsd_host, pinfo, tvb, offset, &next_offset, &linelen))
       return offset+linelen;
 
   offset = next_offset;
-  linelen = tvb_find_line_end(tvb, offset, -1, &next_offset, FALSE);
+  linelen = tvb_find_line_end(tvb, offset, -1, &next_offset, false);
   if (linelen < 0)
       return offset+linelen;
-  str = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, linelen, ENC_ASCII);
+  str = tvb_get_string_enc(pinfo->pool, tvb, offset, linelen, ENC_ASCII);
   if (g_ascii_strncasecmp(str, "Port", strlen("Port")) == 0)
   {
-    field_and_value = wmem_strsplit(wmem_packet_scope(), str, ":", 1);
+    field_and_value = wmem_strsplit(pinfo->pool, str, ":", 2);
     valid = ws_strtou16(field_and_value[1], NULL, &port);
     ti = proto_tree_add_uint(lsd_tree, hf_lsd_port, tvb, offset, linelen, port);
     if (!valid)
@@ -118,22 +120,30 @@ dissect_lsd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
   if (!parse_string_field(lsd_tree, hf_lsd_infohash, pinfo, tvb, offset, &next_offset, &linelen))
       return offset+linelen;
 
+  offset = next_offset;
+  linelen = tvb_find_line_end(tvb, offset, -1, &next_offset, false);
+  if (linelen < 0)
+      return offset+linelen;
+  /* Cookie is optional */
+  if (tvb_strncaseeql(tvb, offset, "cookie", strlen("cookie")) == 0)
+  {
+    if (!parse_string_field(lsd_tree, hf_lsd_cookie, pinfo, tvb, offset, &next_offset, &linelen))
+      return offset+linelen;
+  }
+
   return tvb_captured_length(tvb);
 }
 
-static gboolean
-dissect_lsd_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+static bool
+dissect_lsd_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-  if (pinfo->dst.type != AT_IPv4)
-      return FALSE;
+  if (pinfo->dst.type == AT_IPv4 && pntoh32(pinfo->dst.data) == LSD_MULTICAST_ADDRESS && pinfo->destport == LSD_PORT)
+      return (dissect_lsd(tvb, pinfo, tree, data) != 0);
 
-  if (pntoh32(pinfo->dst.data) != LSD_MULTICAST_ADDRESS)
-      return FALSE;
+  if (pinfo->dst.type == AT_IPv6 && pinfo->destport == LSD_PORT)
+      return (dissect_lsd(tvb, pinfo, tree, data) != 0);
 
-  if (pinfo->destport != LSD_PORT)
-      return FALSE;
-
-  return (dissect_lsd(tvb, pinfo, tree, data) != 0);
+  return false;
 }
 
 void
@@ -156,9 +166,13 @@ proto_register_lsd(void)
       { "Infohash", "lsd.infohash",
         FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }
     },
+    { &hf_lsd_cookie,
+      { "cookie", "lsd.cookie",
+        FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL }
+    },
   };
 
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_lsd,
   };
 
@@ -183,7 +197,7 @@ proto_reg_handoff_lsd(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

@@ -22,6 +22,7 @@
 
 #include <epan/packet.h>
 #include <epan/expert.h>
+#include <wsutil/array.h>
 
 #include "packet-gmr1_common.h"
 
@@ -30,15 +31,15 @@
 void proto_register_gmr1_rr(void);
 
 /* GMR-1 RR and CCCH proto */
-static int proto_gmr1_rr = -1;
-static int proto_gmr1_ccch = -1;
+static int proto_gmr1_rr;
+static int proto_gmr1_ccch;
 
 /* Fallback CCCH sub tree */
-static gint ett_msg_ccch = -1;
+static int ett_msg_ccch;
 
-static gint ett_rr_pd = -1;
+static int ett_rr_pd;
 
-static expert_field ei_gmr1_missing_mandatory_element = EI_INIT;
+static expert_field ei_gmr1_missing_mandatory_element;
 
 
 /* ------------------------------------------------------------------------ */
@@ -150,107 +151,107 @@ static const value_string gmr1_ie_rr_strings[] = {
 };
 value_string_ext gmr1_ie_rr_strings_ext = VALUE_STRING_EXT_INIT(gmr1_ie_rr_strings);
 
-gint ett_gmr1_ie_rr[NUM_GMR1_IE_RR];
+int ett_gmr1_ie_rr[NUM_GMR1_IE_RR];
 
 
 /* Fields */
-static int hf_rr_msg_type = -1;
-static int hf_rr_chan_desc_kab_loc = -1;
-static int hf_rr_chan_desc_rx_tn = -1;
-static int hf_rr_chan_desc_arfcn = -1;
-static int hf_rr_chan_desc_tx_tn = -1;
-static int hf_rr_chan_desc_chan_type = -1;
-static int hf_rr_chan_mode = -1;
-static int hf_rr_ciph_mode_setting_sc = -1;
-static int hf_rr_ciph_mode_setting_algo = -1;
-static int hf_rr_ciph_resp_cr = -1;
-static int hf_rr_ciph_resp_spare = -1;
-static int hf_rr_l2_pseudo_len = -1;
-static int hf_rr_page_mode = -1;
-static int hf_rr_page_mode_spare = -1;
-static int hf_rr_req_ref_est_cause = -1;
-static int hf_rr_req_ref_ra = -1;
-static int hf_rr_req_ref_fn = -1;
-static int hf_rr_cause = -1;
-static int hf_rr_timing_ofs_ti = -1;
-static int hf_rr_timing_ofs_value = -1;
-static int hf_rr_tmsi_ptmsi = -1;
-static int hf_rr_wait_ind_timeout = -1;
-static int hf_rr_mif_mes1_ab = -1;
-static int hf_rr_mif_mes1_i = -1;
-static int hf_rr_mif_mes1_d = -1;
-static int hf_rr_mif_mes2 = -1;
-static int hf_rr_mif_mes3 = -1;
-static int hf_rr_mif_mes4 = -1;
-static int hf_rr_mif_pv = -1;
-static int hf_rr_freq_ofs_fi = -1;
-static int hf_rr_freq_ofs_value = -1;
-static int hf_rr_freq_ofs_spare = -1;
-static int hf_rr_page_info_msc_id = -1;
-static int hf_rr_page_info_chan_needed = -1;
-static int hf_rr_pos_display_flag = -1;
-static int hf_rr_pos_display_text = -1;
-static int hf_rr_pos_upd_info_v = -1;
-static int hf_rr_pos_upd_info_dist = -1;
-static int hf_rr_pos_upd_info_time = -1;
-static int hf_rr_bcch_carrier_arfcn = -1;
-static int hf_rr_bcch_carrier_si = -1;
-static int hf_rr_bcch_carrier_ri = -1;
-static int hf_rr_bcch_carrier_spare = -1;
-static int hf_rr_reject_cause = -1;
-static int hf_rr_reject_cause_b = -1;
-static int hf_rr_gps_timestamp = -1;
-static int hf_rr_gps_power_control_params = -1;
-static int hf_rr_tmsi_avail_msk_tmsi[4] = { -1, -1, -1, -1 };
-static int hf_rr_gps_almanac_pn = -1;
-static int hf_rr_gps_almanac_wn = -1;
-static int hf_rr_gps_almanac_word = -1;
-static int hf_rr_gps_almanac_sfn = -1;
-static int hf_rr_gps_almanac_co = -1;
-static int hf_rr_gps_almanac_spare = -1;
-static int hf_rr_msc_id = -1;
-static int hf_rr_msc_id_spare = -1;
-static int hf_rr_gps_discr = -1;
-static int hf_rr_pkt_imm_ass_3_prm_rlc_mode = -1;
-static int hf_rr_pkt_imm_ass_3_prm_spare = -1;
-static int hf_rr_pkt_imm_ass_3_prm_dl_tfi = -1;
-static int hf_rr_pkt_imm_ass_3_prm_start_fn = -1;
-static int hf_rr_pkt_imm_ass_3_prm_mac_slot_alloc = -1;
-static int hf_rr_pkt_freq_prm_arfcn = -1;
-static int hf_rr_pkt_freq_prm_dl_freq_plan_id = -1;
-static int hf_rr_pkt_freq_prm_dl_bw = -1;
-static int hf_rr_pkt_freq_prm_ul_freq_dist = -1;
-static int hf_rr_pkt_freq_prm_ul_bw = -1;
-static int hf_rr_pkt_freq_prm_spare = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_spare1 = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_final_alloc = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_usf_granularity = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_dl_ctl_mac_slot = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_mac_mode = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_start_fn = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_rlc_dblk_gnt = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_mcs = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_tfi = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_spare2 = -1;
-static int hf_rr_pkt_imm_ass_2_prm_ac_mac_slot_alloc = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_chan_mcs_cmd = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_chan_mcs_cmd_pnb512 = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_spare1 = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_rlc_dblk_gnt = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_spare2 = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_tfi = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_usf_granularity = -1;
-static int hf_rr_pkt_imm_ass_2_prm_d_mac_slot_alloc = -1;
-static int hf_rr_usf_value = -1;
-static int hf_rr_usf_spare = -1;
-static int hf_rr_timing_adv_idx_value = -1;
-static int hf_rr_timing_adv_idx_spare = -1;
-static int hf_rr_tlli = -1;
-static int hf_rr_pkt_pwr_ctrl_prm_par = -1;
-static int hf_rr_pkt_pwr_ctrl_prm_spare = -1;
-static int hf_rr_persistence_lvl[4] = { -1, -1, -1, -1 };
-static int hf_rr_protocol_discriminator = -1;
-static int hf_rr_message_elements = -1;
+static int hf_rr_msg_type;
+static int hf_rr_chan_desc_kab_loc;
+static int hf_rr_chan_desc_rx_tn;
+static int hf_rr_chan_desc_arfcn;
+static int hf_rr_chan_desc_tx_tn;
+static int hf_rr_chan_desc_chan_type;
+static int hf_rr_chan_mode;
+static int hf_rr_ciph_mode_setting_sc;
+static int hf_rr_ciph_mode_setting_algo;
+static int hf_rr_ciph_resp_cr;
+static int hf_rr_ciph_resp_spare;
+static int hf_rr_l2_pseudo_len;
+static int hf_rr_page_mode;
+static int hf_rr_page_mode_spare;
+static int hf_rr_req_ref_est_cause;
+static int hf_rr_req_ref_ra;
+static int hf_rr_req_ref_fn;
+static int hf_rr_cause;
+static int hf_rr_timing_ofs_ti;
+static int hf_rr_timing_ofs_value;
+static int hf_rr_tmsi_ptmsi;
+static int hf_rr_wait_ind_timeout;
+static int hf_rr_mif_mes1_ab;
+static int hf_rr_mif_mes1_i;
+static int hf_rr_mif_mes1_d;
+static int hf_rr_mif_mes2;
+static int hf_rr_mif_mes3;
+static int hf_rr_mif_mes4;
+static int hf_rr_mif_pv;
+static int hf_rr_freq_ofs_fi;
+static int hf_rr_freq_ofs_value;
+static int hf_rr_freq_ofs_spare;
+static int hf_rr_page_info_msc_id;
+static int hf_rr_page_info_chan_needed;
+static int hf_rr_pos_display_flag;
+static int hf_rr_pos_display_text;
+static int hf_rr_pos_upd_info_v;
+static int hf_rr_pos_upd_info_dist;
+static int hf_rr_pos_upd_info_time;
+static int hf_rr_bcch_carrier_arfcn;
+static int hf_rr_bcch_carrier_si;
+static int hf_rr_bcch_carrier_ri;
+static int hf_rr_bcch_carrier_spare;
+static int hf_rr_reject_cause;
+static int hf_rr_reject_cause_b;
+static int hf_rr_gps_timestamp;
+static int hf_rr_gps_power_control_params;
+static int hf_rr_tmsi_avail_msk_tmsi[4];
+static int hf_rr_gps_almanac_pn;
+static int hf_rr_gps_almanac_wn;
+static int hf_rr_gps_almanac_word;
+static int hf_rr_gps_almanac_sfn;
+static int hf_rr_gps_almanac_co;
+static int hf_rr_gps_almanac_spare;
+static int hf_rr_msc_id;
+static int hf_rr_msc_id_spare;
+static int hf_rr_gps_discr;
+static int hf_rr_pkt_imm_ass_3_prm_rlc_mode;
+static int hf_rr_pkt_imm_ass_3_prm_spare;
+static int hf_rr_pkt_imm_ass_3_prm_dl_tfi;
+static int hf_rr_pkt_imm_ass_3_prm_start_fn;
+static int hf_rr_pkt_imm_ass_3_prm_mac_slot_alloc;
+static int hf_rr_pkt_freq_prm_arfcn;
+static int hf_rr_pkt_freq_prm_dl_freq_plan_id;
+static int hf_rr_pkt_freq_prm_dl_bw;
+static int hf_rr_pkt_freq_prm_ul_freq_dist;
+static int hf_rr_pkt_freq_prm_ul_bw;
+static int hf_rr_pkt_freq_prm_spare;
+static int hf_rr_pkt_imm_ass_2_prm_ac_spare1;
+static int hf_rr_pkt_imm_ass_2_prm_ac_final_alloc;
+static int hf_rr_pkt_imm_ass_2_prm_ac_usf_granularity;
+static int hf_rr_pkt_imm_ass_2_prm_ac_dl_ctl_mac_slot;
+static int hf_rr_pkt_imm_ass_2_prm_ac_mac_mode;
+static int hf_rr_pkt_imm_ass_2_prm_ac_start_fn;
+static int hf_rr_pkt_imm_ass_2_prm_ac_rlc_dblk_gnt;
+static int hf_rr_pkt_imm_ass_2_prm_ac_mcs;
+static int hf_rr_pkt_imm_ass_2_prm_ac_tfi;
+static int hf_rr_pkt_imm_ass_2_prm_ac_spare2;
+static int hf_rr_pkt_imm_ass_2_prm_ac_mac_slot_alloc;
+static int hf_rr_pkt_imm_ass_2_prm_d_chan_mcs_cmd;
+static int hf_rr_pkt_imm_ass_2_prm_d_chan_mcs_cmd_pnb512;
+static int hf_rr_pkt_imm_ass_2_prm_d_spare1;
+static int hf_rr_pkt_imm_ass_2_prm_d_rlc_dblk_gnt;
+static int hf_rr_pkt_imm_ass_2_prm_d_spare2;
+static int hf_rr_pkt_imm_ass_2_prm_d_tfi;
+static int hf_rr_pkt_imm_ass_2_prm_d_usf_granularity;
+static int hf_rr_pkt_imm_ass_2_prm_d_mac_slot_alloc;
+static int hf_rr_usf_value;
+static int hf_rr_usf_spare;
+static int hf_rr_timing_adv_idx_value;
+static int hf_rr_timing_adv_idx_spare;
+static int hf_rr_tlli;
+static int hf_rr_pkt_pwr_ctrl_prm_par;
+static int hf_rr_pkt_pwr_ctrl_prm_spare;
+static int hf_rr_persistence_lvl[4];
+static int hf_rr_protocol_discriminator;
+static int hf_rr_message_elements;
 
 /* Generic display vals/func */
 static const value_string rr_gen_ie_presence_vals[] = {
@@ -260,9 +261,9 @@ static const value_string rr_gen_ie_presence_vals[] = {
 };
 
 static void
-rr_gen_ie_seconds_fmt(gchar *s, guint32 v)
+rr_gen_ie_seconds_fmt(char *s, uint32_t v)
 {
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%u seconds", v);
+	snprintf(s, ITEM_LABEL_LENGTH, "%u seconds", v);
 }
 
 
@@ -284,7 +285,7 @@ static const value_string rr_chan_desc_chan_type_vals[] = {
 
 GMR1_IE_FUNC(gmr1_ie_rr_chan_desc)
 {
-	gint bit_offset;
+	int bit_offset;
 
 	bit_offset = offset << 3;
 
@@ -349,7 +350,7 @@ static const value_string rr_ciph_mode_setting_algo_vals[] = {
 	{ 4, "A5/5" },
 	{ 5, "A5/6" },
 	{ 6, "A5/7" },
-	{ 7, "Reverved" },
+	{ 7, "Reserved" },
 	{ 0, NULL }
 };
 
@@ -426,7 +427,7 @@ static const value_string rr_req_ref_est_cause_vals[] = {
 
 GMR1_IE_FUNC(gmr1_ie_rr_req_ref)
 {
-	/* Establishement Cause + RA */
+	/* Establishment Cause + RA */
 	proto_tree_add_item(tree, hf_rr_req_ref_est_cause, tvb, offset, 1, ENC_BIG_ENDIAN);
 	proto_tree_add_item(tree, hf_rr_req_ref_ra, tvb, offset, 1, ENC_BIG_ENDIAN);
 	offset++;
@@ -473,17 +474,17 @@ static const value_string rr_timing_ofs_ti_vals[] = {
 };
 
 static void
-rr_timing_ofs_value_fmt(gchar *s, guint32 v)
+rr_timing_ofs_value_fmt(char *s, uint32_t v)
 {
-	gint32 sv = (signed)v;
+	int32_t sv = (signed)v;
 
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%.3f symbols ( ~ %.3f ms )",
+	snprintf(s, ITEM_LABEL_LENGTH, "%.3f symbols ( ~ %.3f ms )",
 		sv / 40.0f, (sv / 40.0f) * (10.0f / 234.0f));
 }
 
 GMR1_IE_FUNC(gmr1_ie_rr_timing_ofs)
 {
-	gint bit_offset;
+	int bit_offset;
 
 	bit_offset = offset << 3;
 
@@ -573,16 +574,16 @@ static const value_string rr_freq_ofs_fi_vals[] = {
 };
 
 static void
-rr_freq_ofs_value_fmt(gchar *s, guint32 v)
+rr_freq_ofs_value_fmt(char *s, uint32_t v)
 {
-	gint32 sv = (signed)v;
+	int32_t sv = (signed)v;
 
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%d Hz", sv);
+	snprintf(s, ITEM_LABEL_LENGTH, "%d Hz", sv);
 }
 
 GMR1_IE_FUNC(gmr1_ie_rr_freq_ofs)
 {
-	gint bit_offset;
+	int bit_offset;
 
 	bit_offset = offset << 3;
 
@@ -615,7 +616,7 @@ static const value_string rr_page_info_chan_needed_vals[] = {
 
 GMR1_IE_FUNC(gmr1_ie_rr_page_info)
 {
-	/* MSC ID & Channe needed */
+	/* MSC ID & Channel needed */
 	proto_tree_add_item(tree, hf_rr_page_info_msc_id,
 	                    tvb, offset, 1, ENC_BIG_ENDIAN);
 	proto_tree_add_item(tree, hf_rr_page_info_chan_needed,
@@ -635,7 +636,7 @@ static const value_string rr_pos_display_flag_vals[] = {
 GMR1_IE_FUNC(gmr1_ie_rr_pos_display)
 {
 	const unsigned char *txt_raw;
-	gchar *txt_packed, *txt_unpacked;
+	char *txt_packed, *txt_unpacked;
 	tvbuff_t *txt_packed_tvb;
 	int i;
 
@@ -644,15 +645,17 @@ GMR1_IE_FUNC(gmr1_ie_rr_pos_display)
 	                    tvb, offset, 1, ENC_BIG_ENDIAN);
 
 	/* Get text in an aligned tvbuff */
+	/* Do not use tvb_new_octet_aligned(), GSM 7bit packing bit parsing
+	   goes from LSB to MSB so a trick is applied here for the last byte */
 	txt_raw = tvb_get_ptr(tvb, offset, 11);
-	txt_packed = (gchar*)wmem_alloc(wmem_packet_scope(), 11);
+	txt_packed = (char*)wmem_alloc(pinfo->pool, 11);
 	for (i=0; i<10; i++)
 		txt_packed[i] = (txt_raw[i] << 4) | (txt_raw[i+1] >> 4);
 	txt_packed[10] = txt_raw[10];
 	txt_packed_tvb = tvb_new_real_data(txt_packed, 11, 11);
 
 	/* Unpack text */
-	txt_unpacked = tvb_get_ts_23_038_7bits_string(wmem_packet_scope(), txt_packed_tvb, 0, 12);
+	txt_unpacked = tvb_get_ts_23_038_7bits_string_packed(pinfo->pool, txt_packed_tvb, 0, 12);
 	tvb_free(txt_packed_tvb);
 
 	/* Display it */
@@ -670,20 +673,20 @@ static const value_string rr_pos_upd_info_v_vals[] = {
 };
 
 static void
-rr_pos_upd_info_dist_fmt(gchar *s, guint32 v)
+rr_pos_upd_info_dist_fmt(char *s, uint32_t v)
 {
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%d km", v);
+	snprintf(s, ITEM_LABEL_LENGTH, "%d km", v);
 }
 
 static void
-rr_pos_upd_info_time_fmt(gchar *s, guint32 v)
+rr_pos_upd_info_time_fmt(char *s, uint32_t v)
 {
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%d minutes", v);
+	snprintf(s, ITEM_LABEL_LENGTH, "%d minutes", v);
 }
 
 GMR1_IE_FUNC(gmr1_ie_rr_pos_upd_info)
 {
-	gint curr_offset = offset;
+	int curr_offset = offset;
 
 	/* Valid & GPS Update Distance */
 	proto_tree_add_item(tree, hf_rr_pos_upd_info_v,
@@ -715,7 +718,7 @@ static const value_string rr_bcch_carrier_ri_vals[] = {
 
 GMR1_IE_FUNC(gmr1_ie_rr_bcch_carrier)
 {
-	gint bit_offset;
+	int bit_offset;
 
 	bit_offset = offset << 3;
 
@@ -770,12 +773,12 @@ GMR1_IE_FUNC(gmr1_ie_rr_reject_cause)
 
 /* [1] 11.5.2.57 - GPS timestamp */
 static void
-rr_gps_timestamp_fmt(gchar *s, guint32 v)
+rr_gps_timestamp_fmt(char *s, uint32_t v)
 {
 	if (v == 0xffff)
-		g_snprintf(s, ITEM_LABEL_LENGTH, "> 65535 minutes or N/A");
+		snprintf(s, ITEM_LABEL_LENGTH, "> 65535 minutes or N/A");
 	else
-		g_snprintf(s, ITEM_LABEL_LENGTH, "%d minutes", v);
+		snprintf(s, ITEM_LABEL_LENGTH, "%d minutes", v);
 }
 
 GMR1_IE_FUNC(gmr1_ie_rr_gps_timestamp)
@@ -812,9 +815,9 @@ GMR1_IE_FUNC(gmr1_ie_rr_tmsi_avail_msk)
 
 /* [1] 11.5.2.63 - GPS Almanac Data */
 static void
-rr_gps_almanac_pn_fmt(gchar *s, guint32 v)
+rr_gps_almanac_pn_fmt(char *s, uint32_t v)
 {
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%d", v+1);
+	snprintf(s, ITEM_LABEL_LENGTH, "%d", v+1);
 }
 
 static const value_string rr_gps_almanac_sfn_vals[] = {
@@ -826,7 +829,7 @@ static const value_string rr_gps_almanac_sfn_vals[] = {
 
 GMR1_IE_FUNC(gmr1_ie_rr_gps_almanac)
 {
-	gint curr_offset = offset;
+	int curr_offset = offset;
 
 	/* Page Number & Word Number */
 	proto_tree_add_item(tree, hf_rr_gps_almanac_pn,
@@ -898,7 +901,7 @@ GMR1_IE_FUNC(gmr1_ie_rr_pkt_imm_ass_3_prm)
 	proto_tree_add_item(tree, hf_rr_pkt_imm_ass_3_prm_spare,
 	                    tvb, offset, 1, ENC_BIG_ENDIAN);
 
-	/* Downlink Tempory Flow Identifier (TFI) */
+	/* Downlink Temporary Flow Identifier (TFI) */
 	proto_tree_add_split_bits_item_ret_val(
 		tree, hf_rr_pkt_imm_ass_3_prm_dl_tfi,
 		tvb, offset << 3,
@@ -936,9 +939,9 @@ static const crumb_spec_t rr_pkt_freq_prm_ul_freq_dist_crumbs[] = {
 };
 
 static void
-rr_pkt_freq_prm_xx_bw_fmt(gchar *s, guint32 v)
+rr_pkt_freq_prm_xx_bw_fmt(char *s, uint32_t v)
 {
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%d * 31.25 kHz = %.2f kHz (%d)", v, 31.25f*v, v);
+	snprintf(s, ITEM_LABEL_LENGTH, "%d * 31.25 kHz = %.2f kHz (%d)", v, 31.25f*v, v);
 }
 
 GMR1_IE_FUNC(gmr1_ie_rr_pkt_freq_prm)
@@ -979,9 +982,9 @@ GMR1_IE_FUNC(gmr1_ie_rr_pkt_freq_prm)
 /* [3] 11.5.2.107 - Packet Imm. Ass. Type 2 Params */
 static const value_string rr_pkt_imm_ass_2_prm_ac_mac_mode_vals[] = {
 	{ 0, "Dynamic allocation" },
-	{ 1, "Reverved" },
-	{ 2, "Reverved" },
-	{ 3, "Reverved" },
+	{ 1, "Reserved" },
+	{ 2, "Reserved" },
+	{ 3, "Reserved" },
 	{ 0, NULL }
 };
 
@@ -1130,14 +1133,14 @@ GMR1_IE_FUNC(gmr1_ie_rr_tlli)
 
 /* [3] 10.1.18.3.3 & [5] 10.4.10a & [6] 5.3.3 - Packet Power Control Params */
 static void
-rr_pkt_pwr_ctrl_prm_par_fmt(gchar *s, guint32 v)
+rr_pkt_pwr_ctrl_prm_par_fmt(char *s, uint32_t v)
 {
 	if (v >= 61) {
-		g_snprintf(s, ITEM_LABEL_LENGTH, "Escape %d (%d)", v-60, v);
+		snprintf(s, ITEM_LABEL_LENGTH, "Escape %d (%d)", v-60, v);
 		return;
 	}
 
-	g_snprintf(s, ITEM_LABEL_LENGTH, "%.1f dB (%d)", v*0.4f, v);
+	snprintf(s, ITEM_LABEL_LENGTH, "%.1f dB (%d)", v*0.4f, v);
 }
 
 GMR1_IE_FUNC(gmr1_ie_rr_pkt_pwr_ctrl_prm)
@@ -1209,12 +1212,12 @@ elem_fcn gmr1_ie_rr_func[NUM_GMR1_IE_RR] = {
 /* [1] 10.1.18 - Immediate Assignment */
 GMR1_MSG_FUNC(gmr1_rr_msg_imm_ass)
 {
-	guint8 mif;
+	uint8_t mif;
 
 	GMR1_MSG_FUNC_BEGIN
 
 	/* MES Information Flag			[1] 11.5.2.44	- M V 1 */
-	mif = tvb_get_guint8(tvb, curr_offset);
+	mif = tvb_get_uint8(tvb, curr_offset);
 
 	ELEM_MAND_V(GMR1_IE_RR, GMR1_IE_RR_MES_INFO_FLG, NULL, ei_gmr1_missing_mandatory_element);
 
@@ -1275,7 +1278,7 @@ GMR1_MSG_FUNC(gmr1_rr_msg_imm_ass)
 /* [1] 10.1.20.1 - Immediate Assignment Reject Type 1 */
 GMR1_MSG_FUNC(gmr1_rr_msg_imm_ass_rej_1)
 {
-	guint8 rej_cause;
+	uint8_t rej_cause;
 
 	GMR1_MSG_FUNC_BEGIN
 
@@ -1286,7 +1289,7 @@ GMR1_MSG_FUNC(gmr1_rr_msg_imm_ass_rej_1)
 	ELEM_MAND_V(GMR1_IE_RR, GMR1_IE_RR_GPS_DISCR, NULL, ei_gmr1_missing_mandatory_element);
 
 	/* Reject Cause				[1] 11.5.2.56	- M V 1 */
-	rej_cause = tvb_get_guint8(tvb, curr_offset);
+	rej_cause = tvb_get_uint8(tvb, curr_offset);
 
 	ELEM_MAND_V(GMR1_IE_RR, GMR1_IE_RR_REJECT_CAUSE, NULL, ei_gmr1_missing_mandatory_element);
 
@@ -1491,13 +1494,13 @@ GMR1_MSG_FUNC(gmr1_rr_msg_chan_release)
 /* [1] 10.1.24 - Paging Request Type 3 */
 GMR1_MSG_FUNC(gmr1_rr_msg_pag_req_3)
 {
-	guint8 tam;
+	uint8_t tam;
 
 	GMR1_MSG_FUNC_BEGIN
 
 	/* Page Mode				[1] 11.5.2.26	- M V 1/2 */
 	/* TMSI Availability Mask		[1] 11.5.2.62	- M V 1/2 */
-	tam = (tvb_get_guint8(tvb, curr_offset) & 0xf0) >> 4;
+	tam = (tvb_get_uint8(tvb, curr_offset) & 0xf0) >> 4;
 
 	ELEM_MAND_VV_SHORT(GMR1_IE_RR, GMR1_IE_RR_PAGE_MODE,
 	                   GMR1_IE_RR, GMR1_IE_RR_TMSI_AVAIL_MSK, ei_gmr1_missing_mandatory_element);
@@ -1619,8 +1622,69 @@ static const value_string gmr1_msg_rr_strings[] = {
 	{ 0x3f, "Immediate Assignment" },
 	{ 0x3a, "Immediate Assignment Reject Type 1" },
 	{ 0x3b, "Immediate Assignment Reject Type 2" },
-	{ 0x13e, "Extended Immediate Assignment" },	/* Conflict ... add 0x100 */
-	{ 0x13b, "Extended Imm. Assignment Reject" },	/* Conflict ... add 0x100 */
+	/*
+	 * XXX - [3] 11.4.1 - Table 11.1 ([3] is ETSI TS 101 376-4-8
+	 * V3.1.1, which is GMR-1 3G 44.008) has 0x3e meaning both
+	 * "Extended Immediate Assignment" and "Immediate Assignment Type 2"
+	 * and has 0x3b meaning both "Immediate Asignment Reject Type 2"
+	 * and "Extended Imm. Assignment Reject".
+	 *
+	 * [3] makes some references to [1] ([1] is ETSI TS 101 376-4-8
+	 * V1.3.1, which is GMR-1 04.008, not to be confused with GMR-1
+	 * 3G 44.008), saying some messages are the same as in GMR-1
+	 * 04.008.  [1]:
+	 *
+	 *    says, in 10.1.18.2, that "Extended immediate assignment"
+	 *    "is sent on the main signalling link by the network to
+	 *    the MES in response to an EXTENDED CHANNEL REQUEST message
+	 *    by the MES";
+	 *
+	 *    says, in 10.1.20.2, that "Immediate assignment reject type 2"
+	 *    "may be sent to the MES by the network on the CCCH to indicate
+	 *    that no channel is available for assignment or that the MES
+	 *    cannot be allowed access";
+	 *
+	 *    says, in 10.1.20.3, that "Extended immediate assignment
+	 *    reject" "message is sent by the network on the DCCH to
+	 *    indicate that no channel is available for assignment or
+	 *    that the MES cannot be allowed access";
+	 *
+	 *    does not mention "Immediate assignment type 2" anywhere
+	 *    that I can see.
+	 *
+	 * [3]:
+	 *
+	 *    says, in 10.1.18.2, that "Extended immediate assignment
+	 *    (A/Gb mode only)" is "Same as clause 10.1.18.2 of
+	 *    GMR-1 04.008";
+	 *
+	 *    says, in 10.1.18.3, that "Intermediate assignment Type
+	 *    2 (A/Gb mode only)" "is sent on the CCCH by the network
+	 *    to the MES to change the channel configuration to a
+	 *    dedicated configuration while staying in the same cell";
+	 *
+	 *    says, in 10.1.20.2, that "Immediate assignment reject
+	 *    type 2" is "Same as clause 10.1.20.2 of GMR-1 04.008";
+	 *
+	 *    says, in 10.1.20.3, that "Extended immediate assignment
+	 *    reject" is "Same as clause 10.1.20.3 of GMR-1 04.008".
+	 *
+	 * This is currently handled by ORing 0x100 into the values
+	 * for the DCCH, and, in gmr1_get_msg_rr_params(), if the dcch
+	 * parameter is set (which it is if called from gmr1_get_msg_params()
+	 * in packet-gmr1_common.c), 0x100 is ORed into the value
+	 * passed to try_val_to_str_idx().  If that returns NULL, or
+	 * isn't called in the first placee, it calls try_val_to_str_idx()
+	 * without ORing in 0x100.
+	 *
+	 * So that's why a 1-byte field has, in a value_string used with
+	 * it, two values that don't fit into 1 byte.
+	 *
+	 * It Would Be Nice if this could be done in a somewhat less
+	 * hackish and opaque fashion.
+	 */
+	{ 0x13e, "Extended Immediate Assignment" },
+	{ 0x13b, "Extended Imm. Assignment Reject" },
 	{ 0x39, "Position Verification Notify" },
 	{ 0x3c, "Immediate Assignment Reject Type 3" },
 	{ 0x3e, "Immediate Assignment Type 2" },
@@ -1677,8 +1741,8 @@ static const value_string gmr1_msg_rr_strings[] = {
 };
 
 
-#define NUM_GMR1_MSG_RR (sizeof(gmr1_msg_rr_strings) / sizeof(value_string))
-static gint ett_msg_rr[NUM_GMR1_MSG_RR];
+#define NUM_GMR1_MSG_RR array_length(gmr1_msg_rr_strings)
+static int ett_msg_rr[NUM_GMR1_MSG_RR];
 
 	/* same order as gmr1_msg_rr_strings */
 static const gmr1_msg_func_t gmr1_msg_rr_func[NUM_GMR1_MSG_RR] = {
@@ -1744,17 +1808,21 @@ static const gmr1_msg_func_t gmr1_msg_rr_func[NUM_GMR1_MSG_RR] = {
 
 
 void
-gmr1_get_msg_rr_params(guint8 oct, int dcch, const gchar **msg_str,
+gmr1_get_msg_rr_params(uint8_t oct, int dcch, const char **msg_str,
 		       int *ett_tree, int *hf_idx, gmr1_msg_func_t *msg_func_p)
 {
-	const gchar *m = NULL;
-	gint idx;
+	const char *m = NULL;
+	int idx;
 
+	/*
+	 * See the large comment in gmr1_msg_rr_strings[] for an
+	 * explanation of why we're doing this.
+	 */
 	if (dcch)
-		m = try_val_to_str_idx((guint32)oct | 0x100, gmr1_msg_rr_strings, &idx);
+		m = try_val_to_str_idx((uint32_t)oct | 0x100, gmr1_msg_rr_strings, &idx);
 
 	if (!m)
-		m = try_val_to_str_idx((guint32)oct, gmr1_msg_rr_strings, &idx);
+		m = try_val_to_str_idx((uint32_t)oct, gmr1_msg_rr_strings, &idx);
 
 	*msg_str = m;
 	*hf_idx = hf_rr_msg_type;
@@ -1775,16 +1843,16 @@ gmr1_get_msg_rr_params(guint8 oct, int dcch, const gchar **msg_str,
 static int
 dissect_gmr1_ccch(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
-	guint32 len, offset;
+	uint32_t len, offset;
 	gmr1_msg_func_t msg_func;
-	const gchar *msg_str;
-	gint ett_tree;
+	const char *msg_str;
+	int ett_tree;
 	int hf_idx;
 	proto_item *ccch_item = NULL, *pd_item = NULL;
 	proto_tree *ccch_tree = NULL, *pd_tree = NULL;
-	guint32 oct[3];
-	guint8 pd;
-	gint ti = -1;
+	uint32_t oct[3];
+	uint8_t pd;
+	int ti = -1;
 
 	/* Scan init */
 	len = tvb_reported_length(tvb);
@@ -1798,11 +1866,11 @@ dissect_gmr1_ccch(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* dat
 
 	col_append_str(pinfo->cinfo, COL_INFO, "(CCCH) ");
 
-	/* First octed with pseudo len */
-	oct[0] = tvb_get_guint8(tvb, offset++);
+	/* First octet with pseudo len */
+	oct[0] = tvb_get_uint8(tvb, offset++);
 
 	/* Check protocol descriptor */
-	oct[1] = tvb_get_guint8(tvb, offset++);
+	oct[1] = tvb_get_uint8(tvb, offset++);
 
 	if ((oct[1] & GMR1_PD_EXT_MSK) == GMR1_PD_EXT_VAL)
 		pd = oct[1] & 0xff;
@@ -1816,7 +1884,7 @@ dissect_gmr1_ccch(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* dat
 		goto err;	/* CCCH is only RR */
 
 	/* Get message parameters */
-	oct[2] = tvb_get_guint8(tvb, offset);
+	oct[2] = tvb_get_uint8(tvb, offset);
 
 	gmr1_get_msg_rr_params(oct[2], 0, &msg_str, &ett_tree, &hf_idx, &msg_func);
 
@@ -2068,7 +2136,7 @@ proto_register_gmr1_rr(void)
 		},
 		{ &hf_rr_pos_display_text,
 		  { "Country and Region name", "gmr1.rr.pos_display.text",
-		    FT_STRING, STR_UNICODE, NULL, 0x00,
+		    FT_STRING, BASE_NONE, NULL, 0x00,
 		    NULL, HFILL }
 		},
 		{ &hf_rr_pos_upd_info_v,
@@ -2415,7 +2483,7 @@ proto_register_gmr1_rr(void)
 	expert_module_t* expert_gmr1_rr;
 
 #define NUM_INDIVIDUAL_ELEMS 2
-	static gint *ett[NUM_INDIVIDUAL_ELEMS +
+	static int *ett[NUM_INDIVIDUAL_ELEMS +
 	                 NUM_GMR1_IE_RR +
 	                 NUM_GMR1_MSG_RR];
 
@@ -2428,12 +2496,10 @@ proto_register_gmr1_rr(void)
 	last_offset = NUM_INDIVIDUAL_ELEMS;
 
 	for (i=0; i<NUM_GMR1_IE_RR; i++,last_offset++) {
-		ett_gmr1_ie_rr[i] = -1;
 		ett[last_offset] = &ett_gmr1_ie_rr[i];
 	}
 
 	for (i=0; i<NUM_GMR1_MSG_RR; i++,last_offset++) {
-		ett_msg_rr[i] = -1;
 		ett[last_offset] = &ett_msg_rr[i];
 	}
 
@@ -2455,7 +2521,7 @@ proto_register_gmr1_rr(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

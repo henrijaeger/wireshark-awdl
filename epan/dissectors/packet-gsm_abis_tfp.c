@@ -29,24 +29,25 @@ enum {
 	SUB_MAX
 };
 
+static dissector_handle_t tfp_handle;
 static dissector_handle_t sub_handles[SUB_MAX];
 
 /* initialize the protocol and registered fields */
-static int proto_abis_tfp = -1;
+static int proto_abis_tfp;
 
 /* TFP header */
-static int hf_tfp_hdr_atsr = -1;
-static int hf_tfp_hdr_slot_rate = -1;
-static int hf_tfp_hdr_seq_nr = -1;
-static int hf_tfp_hdr_delay_info = -1;
-static int hf_tfp_hdr_p = -1;
-static int hf_tfp_hdr_s = -1;
-static int hf_tfp_hdr_m = -1;
-static int hf_tfp_hdr_frame_type = -1;
-static int hf_tfp_amr_rate = -1;
+static int hf_tfp_hdr_atsr;
+static int hf_tfp_hdr_slot_rate;
+static int hf_tfp_hdr_seq_nr;
+static int hf_tfp_hdr_delay_info;
+static int hf_tfp_hdr_p;
+static int hf_tfp_hdr_s;
+static int hf_tfp_hdr_m;
+static int hf_tfp_hdr_frame_type;
+static int hf_tfp_amr_rate;
 
 /* initialize the subtree pointers */
-static int ett_tfp = -1;
+static int ett_tfp;
 
 static const value_string tfp_slot_rate_vals[] = {
 	{ 0,	"Full Rate (16kbps)" },
@@ -99,10 +100,10 @@ dissect_abis_tfp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
 	proto_item *ti;
 	proto_tree *tfp_tree;
 	int offset = 0;
-	guint32 slot_rate, frame_bits, atsr, seq_nr;
-	guint8 ftype;
+	uint32_t slot_rate, frame_bits, atsr, seq_nr;
+	uint8_t ftype;
 	tvbuff_t *next_tvb;
-	gint len_remain;
+	int len_remain;
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "TFP");
 
@@ -117,7 +118,7 @@ dissect_abis_tfp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
 	proto_tree_add_item(tfp_tree, hf_tfp_hdr_s, tvb, offset+2, 1, ENC_NA);
 	proto_tree_add_item(tfp_tree, hf_tfp_hdr_m, tvb, offset+2, 1, ENC_NA);
 	/* Frame Type depends on Slot Rate */
-	ftype = tvb_get_guint8(tvb, offset+2) & 0x1E;
+	ftype = tvb_get_uint8(tvb, offset+2) & 0x1E;
 	if (slot_rate == 0)
 		ftype |= 0x80;
 	proto_tree_add_uint_format_value(tfp_tree, hf_tfp_hdr_frame_type, tvb, offset+2, 1, ftype, "%s",
@@ -129,7 +130,7 @@ dissect_abis_tfp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
 			val_to_str(ftype, tfp_frame_type_vals, "Unknown (%u)"));
 
 	/* check for Tail bit == 1, iterate over further octests */
-	while ((tvb_get_guint8(tvb, offset) & 0x01) == 0)
+	while ((tvb_get_uint8(tvb, offset) & 0x01) == 0)
 		offset++;
 	offset++;
 
@@ -209,7 +210,7 @@ proto_register_abis_tfp(void)
 			  NULL, HFILL }
 		},
 	};
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_tfp,
 	};
 
@@ -219,7 +220,7 @@ proto_register_abis_tfp(void)
 
 	proto_register_field_array(proto_abis_tfp, hf, array_length(hf));
 	proto_register_subtree_array(ett, array_length(ett));
-	register_dissector("gsm_abis_tfp", dissect_abis_tfp, proto_abis_tfp);
+	tfp_handle = register_dissector("gsm_abis_tfp", dissect_abis_tfp, proto_abis_tfp);
 }
 
 /* This function is called once at startup and every time the user hits
@@ -227,11 +228,15 @@ proto_register_abis_tfp(void)
 void
 proto_reg_handoff_abis_tfp(void)
 {
+	/* Those two SAPI values 10/11 are non-standard values, not specified by
+	 * ETSI/3GPP, just like this very same protocol. */
+	dissector_add_uint("lapd.gsm.sapi", 10, tfp_handle);
+	dissector_add_uint("lapd.gsm.sapi", 11, tfp_handle);
 	sub_handles[SUB_DATA] = find_dissector("data");
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

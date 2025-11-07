@@ -66,7 +66,7 @@
 #define CMD_SET_TIME            0x0b    /* set time */
 
 /* SD-type specific commands: should start at 0x40, global uniqueness  */
-/* is prefered, but not mandatory. */
+/* is preferred, but not mandatory. */
 
 /* SD_CARD command types: */
 
@@ -155,7 +155,7 @@
 
 /* Program loader (SD_PGM) commands: */
 
-#define CMD_PGM_DESC            (SD_PGM * 256 + 0x90)    /* Describe a program to to uploaded */
+#define CMD_PGM_DESC            (SD_PGM * 256 + 0x90)    /* Describe a program to be uploaded */
 #define CMD_PGM_UPLOAD          (SD_PGM * 256 + 0x91)    /* Upload a program to the Gryphon */
 #define CMD_PGM_DELETE          (SD_PGM * 256 + 0x92)    /* Delete an uploaded program */
 #define CMD_PGM_LIST            (SD_PGM * 256 + 0x93)    /* Get a list of uploaded programs */
@@ -170,7 +170,6 @@
 
 #define CMD_SCHED_TX            (SD_SCHED * 256 + 0x70)    /* schedule transmission list */
 #define CMD_SCHED_KILL_TX       (SD_SCHED * 256 + 0x71)    /* stop and destroy job */
-#define CMD_SCHED_STOP_TX       (SD_SCHED * 256 + 0x71)    /* deprecated */
 #define CMD_SCHED_MSG_REPLACE   (SD_SCHED * 256 + 0x72)    /* replace a scheduled message */
 
 /* USDT (SD_USDT) target commands: */
@@ -564,30 +563,23 @@
 #define GDGLIN08        0x01    /* DG HC08 SUBTYPE */
 #define GDGLIN_BEACON   0x03    /* DG BEACON LIN SUBTYPE */
 
-#define MEMCPY(dest, src, size)             \
-    memcpy (dest, src, size);                \
-    *((dest)+size) = 0;
+typedef struct {
+    uint32_t cmd;
+    uint32_t cmd_context;    //typically just uint8_t, but let's room for expansion/improvement
+    uint32_t ioctl_command;  //should be more generic, but IOCTL is currently the only user
+    uint32_t req_frame_num;
+    uint32_t rsp_frame_num;
+    nstime_t req_time;
+} gryphon_pkt_info_t;
 
+/* List contains request data  */
+typedef struct {
+    wmem_list_t *request_frame_data;
+} gryphon_conversation;
 
-typedef struct val_str_dsp {
-    int        value;
-    const char    *strptr;
-    int        (*cmd_fnct)(tvbuff_t *, int, proto_tree*);
-    int        (*rsp_fnct)(tvbuff_t *, int, proto_tree*);
-} val_str_dsp;
-
-typedef struct val_str_dsp_with_context {
-    int value;
-    const char *strptr;
-    int (*cmd_fnct)(tvbuff_t *, int, proto_tree*, guint32 ulCommand);
-    int (*rsp_fnct)(tvbuff_t *, int, proto_tree*, guint32 ulCommand);
-    unsigned char ucContext;
-    unsigned short usRsvd;
-    unsigned char ucRsvd;
-} val_str_dsp_with_context;
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

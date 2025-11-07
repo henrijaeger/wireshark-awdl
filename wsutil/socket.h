@@ -1,4 +1,4 @@
-/* socket.h
+/** @file
  * Socket wrappers
  *
  * Copyright 2016, Dario Lombardo
@@ -11,6 +11,8 @@
  */
 #ifndef __SOCKET_H__
 #define __SOCKET_H__
+
+#include <wireshark.h>
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
 	#include <windows.h>
@@ -36,12 +38,47 @@
 
 	#define closesocket(socket)	close(socket)
 	#define socket_handle_t		int
+#ifndef INVALID_SOCKET
 	#define INVALID_SOCKET		(-1)
+#endif
 	#define SOCKET_ERROR		(-1)
 #endif
 
 #ifdef HAVE_ARPA_INET_H
 	#include <arpa/inet.h>
+#endif
+
+#ifdef HAVE_NETINET_IN_H
+	#include <netinet/in.h>
+#endif
+
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
+/*
+ * Initialize sockets.
+ *
+ * Returns NULL on success, a g_malloc()ed error message on failure.
+ */
+WS_DLL_PUBLIC char *ws_init_sockets(void);
+
+/*
+ * Clean up sockets.
+ */
+WS_DLL_PUBLIC void ws_cleanup_sockets(void);
+
+/*
+ * Convert the strings ipv4_address:port or [ipv6_address]:port to a
+ * sockaddr object. Ports are optional. Receives default port
+ * in host byte order.
+ */
+WS_DLL_PUBLIC int
+ws_socket_ptoa(struct sockaddr_storage *dst, const char *src,
+			uint16_t def_port);
+
+#ifdef	__cplusplus
+}
 #endif
 
 #endif /* __SOCKET_H__ */

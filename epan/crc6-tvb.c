@@ -15,19 +15,19 @@
 #include <wsutil/crc6.h>
 #include <epan/crc6-tvb.h>
 
-guint16
+uint16_t
 crc6_compute_tvb(tvbuff_t *tvb, int len)
 {
-    const guint8 *buf;
+    const uint8_t *buf;
 
     tvb_ensure_bytes_exist(tvb, 0, len);  /* len == -1 not allowed */
     buf = tvb_get_ptr(tvb, 0, len);
 
-    return crc6_compute(buf, len);
+    return crc6_0X6F(0, buf, len);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

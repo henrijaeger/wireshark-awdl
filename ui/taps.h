@@ -1,5 +1,6 @@
-/* dissectors.h
- * Definitions for protocol registration
+/** @file
+ *
+ * Definitions for tap registration
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -8,39 +9,23 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#ifndef __TAP_REGISTER_H__
-#define __TAP_REGISTER_H__
+#ifndef __TAPS_H__
+#define __TAPS_H__
+
+#include <glib.h>
+
+#include <epan/tap.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-#include <glib.h>
+extern tap_reg_t const tap_reg_listener[];
 
-typedef struct _tap_reg {
-    const char *cb_name;
-    void (*cb_func)(void);
-} tap_reg_t;
-
-extern tap_reg_t tap_reg_listener[];
-
-extern const gulong tap_reg_listener_count;
+extern const unsigned long tap_reg_listener_count;
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#endif /* __TAP_REGISTER_H__ */
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+#endif /* __TAPS_H__ */

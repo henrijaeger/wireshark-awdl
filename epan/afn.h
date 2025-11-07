@@ -1,4 +1,5 @@
-/* afn.h
+/** @file
+ *
  * RFC 1700 address family numbers
  *
  * Wireshark - Network traffic analyzer
@@ -74,7 +75,7 @@ extern const value_string afn_vals[];
 #endif /* __AFN_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

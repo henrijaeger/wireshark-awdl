@@ -7,7 +7,7 @@
  * Copyright 1998 Gerald Combs
  *
  * Chargen specs taken from RFC 864
- * http://tools.ietf.org/html/rfc864
+ * https://tools.ietf.org/html/rfc864
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -21,11 +21,13 @@
 void proto_register_chargen(void);
 void proto_reg_handoff_chargen(void);
 
-static int proto_chargen = -1;
+static dissector_handle_t chargen_handle;
 
-static int hf_chargen_data = -1;
+static int proto_chargen;
 
-static gint ett_chargen = -1;
+static int hf_chargen_data;
+
+static int ett_chargen;
 
 /* dissect_chargen - dissects chargen packet data
  * tvb - tvbuff for packet data (IN)
@@ -37,8 +39,8 @@ dissect_chargen(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* disse
 {
 	proto_tree* chargen_tree;
 	proto_item* ti;
-	guint8* data;
-	guint32 len;
+	uint8_t* data;
+	uint32_t len;
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "Chargen");
 	col_set_str(pinfo->cinfo, COL_INFO, "Chargen");
@@ -47,12 +49,12 @@ dissect_chargen(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* disse
 	chargen_tree = proto_item_add_subtree(ti, ett_chargen);
 
 	len = tvb_reported_length(tvb);
-	data = tvb_get_string_enc(wmem_packet_scope(), tvb, 0, len, ENC_ASCII);
+	data = tvb_get_string_enc(pinfo->pool, tvb, 0, len, ENC_ASCII);
 
 	proto_tree_add_string_format(chargen_tree, hf_chargen_data, tvb, 0,
 		len, "Data", "Data (%u): %s", len, data);
 
-/*	proto_tree_add_item(chargen_tree, hf_chargen_data, tvb, 0, -1, ENC_ASCII|ENC_NA); */
+/*	proto_tree_add_item(chargen_tree, hf_chargen_data, tvb, 0, -1, ENC_ASCII); */
 	return tvb_captured_length(tvb);
 }
 
@@ -65,7 +67,7 @@ proto_register_chargen(void)
 			NULL, 0, NULL, HFILL }}
 		};
 
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_chargen,
 	};
 
@@ -73,20 +75,19 @@ proto_register_chargen(void)
 	    "chargen");
 	proto_register_field_array(proto_chargen, hf, array_length(hf));
 	proto_register_subtree_array(ett, array_length(ett));
+
+	chargen_handle = register_dissector("chargen", dissect_chargen, proto_chargen);
 }
 
 void
 proto_reg_handoff_chargen(void)
 {
-	dissector_handle_t chargen_handle;
-
-	chargen_handle = create_dissector_handle(dissect_chargen, proto_chargen);
 	dissector_add_uint_with_preference("udp.port", CHARGEN_PORT_UDP, chargen_handle);
 	dissector_add_uint_with_preference("tcp.port", CHARGEN_PORT_TCP, chargen_handle);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

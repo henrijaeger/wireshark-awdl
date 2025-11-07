@@ -1,5 +1,5 @@
--- 3GPP TS 36.331 V15.0.1 (2018-01)
---
+-- 3GPP TS 36.331 V18.4.0 (2024-12)
+
 EUTRA-Sidelink-Preconf DEFINITIONS AUTOMATIC TAGS ::=
 
 BEGIN
@@ -24,6 +24,7 @@ IMPORTS
 	maxSL-V2X-TxConfig2-r14,
 	maxSL-V2X-TxConfig2-1-r14,
 	maxSL-V2X-TxPoolPreconf-r14,
+	MCS-PSSCH-Range-r15,
 	P-Max,
 	ReselectionInfoRelay-r13,
 	SL-AnchorCarrierFreqList-V2X-r14,
@@ -32,11 +33,13 @@ IMPORTS
 	SL-CommTxPoolSensingConfig-r14,
 	SL-CP-Len-r12,
 	SL-HoppingConfigComm-r12,
+	SL-NR-AnchorCarrierFreqList-r16,
 	SL-OffsetIndicator-r12,
 	SL-OffsetIndicatorSync-r12,
 	SL-OffsetIndicatorSync-v1430,
 	SL-PeriodComm-r12,
 	RSRP-RangeSL3-r12,
+	SL-MinT2ValueList-r15,
 	SL-PriorityList-r13,
 	SL-TF-ResourceConfig-r12,
 	SL-TRPT-Subset-r12,
@@ -49,7 +52,10 @@ IMPORTS
 	SL-RestrictResourceReservationPeriodList-r14,
 	SL-SyncAllowed-r14,
 	SL-OffsetIndicatorSync-r14,
-	SL-Priority-r13
+	SL-Priority-r13,
+	SL-V2X-FreqSelectionConfigList-r15,
+	SL-V2X-PacketDuplicationConfig-r15,
+	SL-V2X-SyncFreqList-r15
 FROM EUTRA-RRC-Definitions;
 
 
@@ -138,7 +144,7 @@ SL-PreconfigDiscPool-r13 ::=		SEQUENCE {
 -- This IE is same as SL-DiscResourcePool with rxParameters absent
 	cp-Len-r13						SL-CP-Len-r12,
 	discPeriod-r13				ENUMERATED {rf4, rf6, rf7, rf8, rf12, rf14, rf16, rf24, rf28,
-										 rf32, rf64, rf128, rf256, rf512, rf1024, spare},
+										rf32, rf64, rf128, rf256, rf512, rf1024, spare},
 	numRetx-r13					INTEGER (0..3),
 	numRepetition-r13				INTEGER (1..50),
 	tf-ResourceConfig-r13			SL-TF-ResourceConfig-r12,
@@ -158,7 +164,14 @@ SL-V2X-Preconfiguration-r14 ::=	SEQUENCE {
 	v2x-PreconfigFreqList-r14		SL-V2X-PreconfigFreqList-r14,
 	anchorCarrierFreqList-r14		SL-AnchorCarrierFreqList-V2X-r14				OPTIONAL,
 	cbr-PreconfigList-r14			SL-CBR-PreconfigTxConfigList-r14				OPTIONAL,
-	...
+	...,
+	[[	v2x-PacketDuplicationConfig-r15	SL-V2X-PacketDuplicationConfig-r15			OPTIONAL,
+		syncFreqList-r15			SL-V2X-SyncFreqList-r15						OPTIONAL,
+		slss-TxMultiFreq-r15		ENUMERATED {true}							OPTIONAL,
+		v2x-TxProfileList-r15		SL-V2X-TxProfileList-r15					OPTIONAL
+	]],
+	[[	anchorCarrierFreqListNR-r16		SL-NR-AnchorCarrierFreqList-r16			OPTIONAL
+	]]
 }
 
 SL-CBR-PreconfigTxConfigList-r14 ::=	SEQUENCE {
@@ -177,9 +190,11 @@ SL-V2X-PreconfigFreqInfo-r14 ::=		SEQUENCE {
 	v2x-ResourceSelectionConfig-r14			SL-CommTxPoolSensingConfig-r14			OPTIONAL,
 	zoneConfig-r14						SL-ZoneConfig-r14						OPTIONAL,
 	syncPriority-r14					ENUMERATED {gnss, enb},
-	thresSL-TxPrioritization-r14		SL-Priority-r13 						OPTIONAL,
-	offsetDFN-r14						INTEGER (0..1000) 					OPTIONAL,
-	...
+	thresSL-TxPrioritization-r14		SL-Priority-r13						OPTIONAL,
+	offsetDFN-r14						INTEGER (0..1000)					OPTIONAL,
+	...,
+	[[	v2x-FreqSelectionConfigList-r15	SL-V2X-FreqSelectionConfigList-r15	OPTIONAL
+	]]
 }
 
 SL-PreconfigV2X-RxPoolList-r14 ::=	SEQUENCE (SIZE (1..maxSL-V2X-RxPoolPreconf-r14)) OF SL-V2X-PreconfigCommPool-r14
@@ -200,13 +215,16 @@ SL-V2X-PreconfigCommPool-r14 ::=		SEQUENCE {
 	startRB-Subchannel-r14				INTEGER (0..99),
 	startRB-PSCCH-Pool-r14				INTEGER (0..99)				OPTIONAL,
 	dataTxParameters-r14				P0-SL-r12,
-	zoneID-r14							INTEGER (0..7) 				OPTIONAL,
+	zoneID-r14							INTEGER (0..7)				OPTIONAL,
 	threshS-RSSI-CBR-r14					INTEGER (0..45)				OPTIONAL,
 	cbr-pssch-TxConfigList-r14			SL-CBR-PPPP-TxPreconfigList-r14	OPTIONAL,
 	resourceSelectionConfigP2X-r14		SL-P2X-ResourceSelectionConfig-r14	OPTIONAL,
 	syncAllowed-r14						SL-SyncAllowed-r14				OPTIONAL,
-	restrictResourceReservationPeriod-r14	SL-RestrictResourceReservationPeriodList-r14	OPTIONAL,	-- Need OR
-	...
+	restrictResourceReservationPeriod-r14	SL-RestrictResourceReservationPeriodList-r14	OPTIONAL,
+	...,
+	[[	sl-MinT2ValueList-r15			SL-MinT2ValueList-r15			OPTIONAL,
+		cbr-pssch-TxConfigList-v1530	SL-CBR-PPPP-TxPreconfigList-v1530	OPTIONAL
+	]]
 }
 
 SL-PreconfigV2X-Sync-r14 ::=	SEQUENCE {
@@ -216,7 +234,9 @@ SL-PreconfigV2X-Sync-r14 ::=	SEQUENCE {
 	filterCoefficient-r14				FilterCoefficient,
 	syncRefMinHyst-r14					ENUMERATED {dB0, dB3, dB6, dB9, dB12},
 	syncRefDiffHyst-r14					ENUMERATED {dB0, dB3, dB6, dB9, dB12, dBinf},
-	...
+	...,
+	[[	slss-TxDisabled-r15				ENUMERATED {true}				OPTIONAL
+	]]
 }
 
 SL-V2X-SyncOffsetIndicators-r14 ::=	SEQUENCE {
@@ -235,5 +255,17 @@ SL-PPPP-TxPreconfigIndex-r14 ::=	SEQUENCE {
 }
 
 Tx-PreconfigIndex-r14 ::=			INTEGER(0..maxSL-V2X-TxConfig2-1-r14)
+
+SL-CBR-PPPP-TxPreconfigList-v1530 ::=	SEQUENCE (SIZE (1..8)) OF SL-PPPP-TxPreconfigIndex-v1530
+
+SL-PPPP-TxPreconfigIndex-v1530 ::=		SEQUENCE {
+	mcs-PSSCH-Range-r15				SEQUENCE (SIZE (1..maxCBR-Level-r14)) OF MCS-PSSCH-Range-r15						OPTIONAL
+}
+
+SL-V2X-TxProfileList-r15 ::=	SEQUENCE (SIZE (1..256)) OF SL-V2X-TxProfile-r15
+
+SL-V2X-TxProfile-r15 ::=		ENUMERATED {
+									rel14, rel15, spare6, spare5, spare4,
+									spare3, spare2, spare1, ...}
 
 END

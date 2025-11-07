@@ -3,12 +3,12 @@
 # Copyright 2013 Michael Mann (see AUTHORS file)
 #
 # A program to help convert proto_tree_add_text calls into filterable "items" that
-# use proto_tree_add_item.  The program requires 2 passes.  "Pass 1" (generate) collects 
+# use proto_tree_add_item.  The program requires 2 passes.  "Pass 1" (generate) collects
 # the eligible proto_tree_add_text calls and outputs the necessary data into a delimited
 # file.  "Pass 2" (fix-all) takes the data from the delimited file and replaces the
-# proto_tree_add_text calls with proto_tree_add_item or "expert info" calls as well as 
+# proto_tree_add_text calls with proto_tree_add_item or "expert info" calls as well as
 # generating separate files for the hf and/or ei variable declarations and hf and/or ei array data.
-# The hf "files" can be copy/pasted into the dissector where appropriate (until such time as 
+# The hf "files" can be copy/pasted into the dissector where appropriate (until such time as
 # its done automatically)
 #
 # Note that the output from "Pass 1" won't always be a perfect conversion for "Pass 2", so
@@ -59,7 +59,7 @@ my %DISPLAY_BASE = ('BASE_NONE' => "BASE_NONE",
 
 my %ENCODINGS = ('ENC_BIG_ENDIAN' => "ENC_BIG_ENDIAN",
 					   'ENC_LITTLE_ENDIAN' => "ENC_LITTLE_ENDIAN",
-					   'ENC_TIME_TIMESPEC' => "ENC_TIME_TIMESPEC",
+					   'ENC_TIME_SECS_NSECS' => "ENC_TIME_SECS_NSECS",
 					   'ENC_TIME_NTP' => "ENC_TIME_NTP",
 					   'ENC_ASCII' => "ENC_ASCII",
 					   'ENC_UTF_8' => "ENC_UTF_8",
@@ -76,7 +76,7 @@ my %FIELD_TYPE = ('FT_NONE' => "FT_NONE", 'FT_PROTOCOL' => "FT_PROTOCOL", 'FT_BO
 				   'FT_STRING' => "FT_STRING", 'FT_STRINGZ' => "FT_STRINGZ", 'FT_UINT_STRING' => "FT_UINT_STRING",
 				   'FT_ETHER' => "FT_ETHER", 'FT_BYTES' => "FT_BYTES", 'FT_UINT_BYTES' => "FT_UINT_BYTES",
 				   'FT_IPv4' => "FT_IPv4", 'FT_IPv6' => "FT_IPv6", 'FT_IPXNET' => "FT_IPXNET", 'FT_AX25' => "FT_AX25", 'FT_VINES' => "FT_VINES",
-				   'FT_FRAMENUM' => "FT_FRAMENUM", 'FT_PCRE' => "FT_PCRE", 'FT_GUID' => "FT_GUID", 'FT_OID' => "FT_OID", 'FT_REL_OID' => "FT_REL_OID", 'FT_EUI64' => "FT_EUI64");
+				   'FT_FRAMENUM' => "FT_FRAMENUM", 'FT_GUID' => "FT_GUID", 'FT_OID' => "FT_OID", 'FT_REL_OID' => "FT_REL_OID", 'FT_EUI64' => "FT_EUI64");
 
 my %EXPERT_SEVERITY = ('PI_COMMENT' => "PI_COMMENT",
 					   'PI_CHAT' => "PI_CHAT",
@@ -94,7 +94,13 @@ my %EXPERT_GROUPS = ('PI_CHECKSUM' => "PI_CHECKSUM",
 					   'PI_DEBUG' => "PI_DEBUG",
 					   'PI_PROTOCOL' => "PI_PROTOCOL",
 					   'PI_SECURITY' => "PI_SECURITY",
-					   'PI_COMMENTS_GROUP' => "PI_COMMENTS_GROUP");
+					   'PI_COMMENTS_GROUP' => "PI_COMMENTS_GROUP",
+   					   'PI_DECRYPTION' => "PI_DECRYPTION",
+   					   'PI_ASSUMPTION' => "PI_ASSUMPTION",
+					   'PI_DEPRECATED' => "PI_DEPRECATED",
+					   'PI_RECEIVE' => "PI_RECEIVE",
+					   'PI_INTERFACE' => "PI_INTERFACE",
+					   'PI_DISSECTOR_BUG' => "PI_DISSECTOR_BUG");
 
 my @proto_tree_list;
 my @expert_list;
@@ -376,7 +382,7 @@ sub generate_hfs {
 		#encoding
 		if (scalar @args > 5) {
 			if (($proto_tree_item[6] eq "1") ||
-				($args[5] =~ /tvb_get_guint8/) ||
+				($args[5] =~ /tvb_get_g?uint8/) ||
 				($args[5] =~ /tvb_bytes_to_str/) ||
 				($args[5] =~ /tvb_ether_to_str/))  {
 				$proto_tree_item[7] = "ENC_NA";
@@ -384,7 +390,7 @@ sub generate_hfs {
 				$proto_tree_item[7] = "ENC_BIG_ENDIAN";
 			} elsif ($args[5] =~ /tvb_get_letoh/) {
 				$proto_tree_item[7] = "ENC_LITTLE_ENDIAN";
-			} elsif (($args[5] =~ /tvb_get_ephemeral_string/) || 
+			} elsif (($args[5] =~ /tvb_get_ephemeral_string/) ||
 					 ($args[5] =~ /tvb_format_text/)){
 				$proto_tree_item[7] = "ENC_NA|ENC_ASCII";
 			} elsif ($encoding ne "") {
@@ -431,7 +437,7 @@ sub generate_hfs {
 
 		#field type
 		if (scalar @args > 5) {
-			if ($args[5] =~ /tvb_get_guint8/) {
+			if ($args[5] =~ /tvb_get_g?uint8/) {
 				if ($args[4] =~ /%[0-9]*[i]/) {
 					$proto_tree_item[9] = "FT_INT8";
 				} else {
@@ -476,7 +482,7 @@ sub generate_hfs {
 				$proto_tree_item[9] = "FT_GUID";
 			} elsif ($args[5] =~ /tvb_get_ephemeral_stringz/) {
 				$proto_tree_item[9] = "FT_STRINGZ";
-			} elsif (($args[5] =~ /tvb_get_ephemeral_string/) || 
+			} elsif (($args[5] =~ /tvb_get_ephemeral_string/) ||
 					 ($args[5] =~ /tvb_format_text/)){
 				$proto_tree_item[9] = "FT_STRING";
 			} elsif (($args[5] =~ /tvb_bytes_to_str/)) {

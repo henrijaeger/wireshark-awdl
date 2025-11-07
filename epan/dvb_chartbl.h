@@ -1,4 +1,4 @@
-/* dvb_chartbl.h
+/** @file
  * Routines for handling DVB-SI character tables (as defined in EN 300 468)
  *
  * Wireshark - Network traffic analyzer
@@ -52,15 +52,15 @@ typedef enum {
 } dvb_encoding_e;
 
 WS_DLL_PUBLIC
-guint dvb_analyze_string_charset(tvbuff_t *tvb, int offset, int length,
+unsigned dvb_analyze_string_charset(tvbuff_t *tvb, int offset, int length,
       dvb_encoding_e *encoding);
 
 WS_DLL_PUBLIC
-guint dvb_enc_to_item_enc(dvb_encoding_e encoding);
+unsigned dvb_enc_to_item_enc(dvb_encoding_e encoding);
 
 WS_DLL_PUBLIC
 void dvb_add_chartbl(proto_tree *tree, int hf,
-        tvbuff_t *tvb, gint offset, gint length,
+        tvbuff_t *tvb, int offset, int length,
         dvb_encoding_e  encoding);
 
 #ifdef __cplusplus
@@ -70,7 +70,7 @@ void dvb_add_chartbl(proto_tree *tree, int hf,
 #endif /* __DVB_CHARTBL_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

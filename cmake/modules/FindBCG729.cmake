@@ -9,9 +9,9 @@
 include( FindWSWinLibs )
 FindWSWinLibs( "bcg729-.*" "BCG729_HINTS" )
 
-if (NOT WIN32)
-  find_package(PkgConfig)
-  pkg_search_module(BCG729 bcg729)
+if (NOT USE_REPOSITORY)
+  find_package(PkgConfig QUIET)
+  pkg_search_module(BCG729 QUIET bcg729)
 endif()
 
 find_path( BCG729_INCLUDE_DIR
@@ -31,7 +31,7 @@ find_library( BCG729_LIBRARY
 )
 
 include( FindPackageHandleStandardArgs )
-find_package_handle_standard_args( bcg729 DEFAULT_MSG BCG729_INCLUDE_DIR BCG729_LIBRARY )
+find_package_handle_standard_args( BCG729 DEFAULT_MSG BCG729_LIBRARY BCG729_INCLUDE_DIR )
 
 if( BCG729_FOUND )
   set( BCG729_INCLUDE_DIRS ${BCG729_INCLUDE_DIR} )

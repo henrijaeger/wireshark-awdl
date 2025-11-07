@@ -1,4 +1,4 @@
-/* proto_node.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -12,7 +12,10 @@
 
 #include <config.h>
 
-#include <ui/qt/utils/field_information.h>
+#include <epan/proto.h>
+
+#include <QObject>
+#include <QVector>
 
 class ProtoNode
 {
@@ -32,16 +35,18 @@ public:
         NodePtr node;
     };
 
-    explicit ProtoNode(proto_node * node = NULL);
+    explicit ProtoNode(proto_node * node = NULL, ProtoNode *parent = nullptr);
+    ~ProtoNode();
 
     bool isValid() const;
     bool isChild() const;
     bool isExpanded() const;
 
     proto_node *protoNode() const;
+    ProtoNode *child(int row);
     int childrenCount() const;
     int row();
-    ProtoNode parentNode();
+    ProtoNode *parentNode();
 
     QString labelText() const;
 
@@ -49,21 +54,10 @@ public:
 
 private:
     proto_node * node_;
+    QVector<ProtoNode*>m_children;
+    ProtoNode *parent_;
     static bool isHidden(proto_node * node);
 };
 
 
 #endif // PROTO_NODE_H_
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

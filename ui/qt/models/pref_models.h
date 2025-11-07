@@ -1,4 +1,4 @@
-/* pref_models.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -19,33 +19,7 @@
 #include <QSortFilterProxyModel>
 #include <QTreeView>
 
-class PrefsItem : public ModelHelperTreeItem<PrefsItem>
-{
-public:
-    PrefsItem(module_t *module, pref_t *pref, PrefsItem* parent);
-    PrefsItem(const QString name, PrefsItem* parent);
-    virtual ~PrefsItem();
-
-    QString getName() const {return name_;}
-    pref_t* getPref() const {return pref_;}
-    int getPrefType() const;
-    int getPrefGUIType() const;
-    bool isPrefDefault() const;
-    QString getPrefTypeName() const;
-    module_t* getModule() const {return module_;}
-    QString getModuleName() const;
-    QString getModuleTitle() const;
-    void setChanged(bool changed = true);
-
-private:
-    pref_t *pref_;
-    module_t *module_;
-    QString name_;
-    //set to true if changed during module manipulation
-    //Used to determine proper "default" for comparison
-    bool changed_;
-};
-
+class PrefsItem;
 
 class PrefsModel : public QAbstractItemModel
 {
@@ -55,16 +29,17 @@ public:
     explicit PrefsModel(QObject * parent = Q_NULLPTR);
     virtual ~PrefsModel();
 
-    //Names of special preferences handled by the GUI
-    //Names used as keys to determine correct pan displayed
-    static const char* ADVANCED_PREFERENCE_TREE_NAME;
-    static const char* APPEARANCE_PREFERENCE_TREE_NAME;
-    static const char* LAYOUT_PREFERENCE_TREE_NAME;
-    static const char* COLUMNS_PREFERENCE_TREE_NAME;
-    static const char* FONT_AND_COLORS_PREFERENCE_TREE_NAME;
-    static const char* CAPTURE_PREFERENCE_TREE_NAME;
-    static const char* EXPERT_PREFERENCE_TREE_NAME;
-    static const char* FILTER_BUTTONS_PREFERENCE_TREE_NAME;
+    enum PrefsModelType {
+        Advanced = Qt::UserRole,
+        Appearance,
+        Layout,
+        Columns,
+        FontAndColors,
+        Capture,
+        Expert,
+        FilterButtons,
+        RSAKeys
+    };
 
     enum PrefsModelColumn {
         colName = 0,
@@ -82,17 +57,49 @@ public:
     int rowCount(const QModelIndex &parent = QModelIndex()) const;
     int columnCount(const QModelIndex &parent = QModelIndex()) const;
 
+    static QString typeToString(int type);
+    static QString typeToHelp(int type);
+
 private:
     void populate();
 
     PrefsItem* root_;
 };
 
+class PrefsItem : public ModelHelperTreeItem<PrefsItem>
+{
+public:
+    PrefsItem(module_t *module, pref_t *pref, PrefsItem* parent);
+    PrefsItem(const QString name, PrefsItem* parent);
+    PrefsItem(PrefsModel::PrefsModelType type, PrefsItem* parent);
+    virtual ~PrefsItem();
+
+    QString getName() const {return name_;}
+    pref_t* getPref() const {return pref_;}
+    int getPrefType() const;
+    bool isPrefDefault() const;
+    QString getPrefTypeName() const;
+    module_t* getModule() const {return module_;}
+    QString getModuleName() const;
+    QString getModuleTitle() const;
+    QString getModuleHelp() const;
+    void setChanged(bool changed = true);
+
+private:
+    pref_t *pref_;
+    module_t *module_;
+    QString name_;
+    QString help_;
+    //set to true if changed during module manipulation
+    //Used to determine proper "default" for comparison
+    bool changed_;
+};
+
 class AdvancedPrefsModel : public QSortFilterProxyModel
 {
     Q_OBJECT
-public:
 
+public:
     explicit AdvancedPrefsModel(QObject * parent = Q_NULLPTR);
 
     enum AdvancedPrefsModelColumn {
@@ -106,6 +113,7 @@ public:
     virtual bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const;
 
     void setFilter(const QString& filter);
+    void setShowChangedValues(bool show_changed_values);
 
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role = Qt::DisplayRole) const;
@@ -124,11 +132,12 @@ protected:
 private:
 
     QString filter_;
+    bool show_changed_values_;
+    const QChar passwordChar_;
 };
 
 class ModulePrefsModel : public QSortFilterProxyModel
 {
-    Q_OBJECT
 public:
 
     explicit ModulePrefsModel(QObject * parent = Q_NULLPTR);
@@ -139,7 +148,8 @@ public:
     };
 
     enum ModulePrefsRoles {
-        ModuleName = Qt::UserRole + 1
+        ModuleName = Qt::UserRole + 1,
+        ModuleHelp = Qt::UserRole + 2
     };
 
     QVariant data(const QModelIndex &index, int role) const;
@@ -159,16 +169,3 @@ private:
 extern pref_t *prefFromPrefPtr(void *pref_ptr);
 
 #endif // PREF_MODELS_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

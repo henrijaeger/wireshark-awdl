@@ -1,11 +1,8 @@
 /* Do not modify this file. Changes will be overwritten.                      */
 /* Generated automatically by the ASN.1 to Wireshark dissector compiler       */
 /* packet-ansi_map.h                                                          */
-/* asn2wrs.py -b -p ansi_map -c ./ansi_map.cnf -s ./packet-ansi_map-template -D . -O ../.. ansi_map.asn */
+/* asn2wrs.py -b -q -L -p ansi_map -c ./ansi_map.cnf -s ./packet-ansi_map-template -D . -O ../.. ansi_map.asn */
 
-/* Input file: packet-ansi_map-template.h */
-
-#line 1 "./asn1/ansi_map/packet-ansi_map-template.h"
 /* packet-ansi_map.h
  * Routines for ansi_map packet dissection
  * Copyright 2005, Anders Broman <anders.broman@ericsson.com>
@@ -25,8 +22,8 @@
 #define	ANSI_MAP_MAX_NUM_MESSAGE_TYPES	256
 
 typedef struct _ansi_map_tap_rec_t {
-    guint8		message_type;
-    guint16		size;
+    uint8_t		message_type;
+    uint16_t		size;
 } ansi_map_tap_rec_t;
 
 

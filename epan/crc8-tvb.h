@@ -1,4 +1,4 @@
-/* crc8.h
+/** @file
  *
  * Checks the checksum (FCS) of the 3G TS 27.010 Multiplexing protocol.
  * The algorithm to check the FCS is described in "3G TS 27.010 V2.0.0 (1999-06)"
@@ -27,13 +27,13 @@
  * \param len Number of bytes in the message.
  * \param offset Offset in the message.
  * \param received_fcs The received FCS.
- * \return     Returns TRUE if the checksum is correct, FALSE if it is not correct
+ * \return     Returns true if the checksum is correct, false if it is not correct
  *****************************************************************************/
 
 #ifndef __CRC8_TVB_H__
 #define __CRC8_TVB_H__
 
-extern gboolean check_fcs(tvbuff_t *p, guint8 len, guint8 offset, guint8 received_fcs);
-extern guint8 get_crc8_ieee8023_epon(tvbuff_t *p, guint8 len, guint8 offset);
+extern bool check_fcs(tvbuff_t *p, uint8_t len, uint8_t offset, uint8_t received_fcs);
+extern uint8_t get_crc8_ieee8023_epon(tvbuff_t *p, uint8_t len, uint8_t offset);
 
 #endif /* __CRC8_TVB_H__ */

@@ -14,6 +14,7 @@
 #include <epan/packet.h>
 #include <epan/oids.h>
 #include <epan/asn1.h>
+#include <wsutil/array.h>
 
 #include "packet-per.h"
 #include "packet-h225.h"
@@ -27,17 +28,17 @@ void proto_register_h323(void);
 void proto_reg_handoff_h323(void);
 
 /* Generic Extensible Framework */
-gef_ctx_t* gef_ctx_alloc(gef_ctx_t *parent, const gchar *type) {
+gef_ctx_t* gef_ctx_alloc(wmem_allocator_t *pool, gef_ctx_t *parent, const char *type) {
   gef_ctx_t *gefx;
 
-  gefx = wmem_new0(wmem_packet_scope(), gef_ctx_t);
+  gefx = wmem_new0(pool, gef_ctx_t);
   gefx->signature = GEF_CTX_SIGNATURE;
   gefx->parent = parent;
   gefx->type = type;
   return gefx;
 }
 
-gboolean gef_ctx_check_signature(gef_ctx_t *gefx) {
+bool gef_ctx_check_signature(gef_ctx_t *gefx) {
   return gefx && (gefx->signature == GEF_CTX_SIGNATURE);
 }
 
@@ -57,12 +58,12 @@ gef_ctx_t* gef_ctx_get(void *ptr) {
   return gefx;
 }
 
-void gef_ctx_update_key(gef_ctx_t *gefx) {
-  const gchar *parent_key;
+void gef_ctx_update_key(wmem_allocator_t *pool, gef_ctx_t *gefx) {
+  const char *parent_key;
 
   if (!gefx) return;
   parent_key = (gefx->parent) ? gefx->parent->key : NULL;
-  gefx->key = wmem_strdup_printf(wmem_packet_scope(),
+  gefx->key = wmem_strdup_printf(pool,
     "%s%s"    /* parent prefix */
     "%s%s%s"  /* type, id */
     "%s%s"    /* subid */,
@@ -73,7 +74,7 @@ void gef_ctx_update_key(gef_ctx_t *gefx) {
 }
 
 /* Initialize the protocol and registered fields */
-static int proto_h323 = -1;
+static int proto_h323;
 #include "packet-h323-hf.c"
 
 /* Initialize the subtree pointers */
@@ -90,7 +91,7 @@ void proto_register_h323(void) {
   };
 
   /* List of subtrees */
-  static gint *ett[] = {
+  static int *ett[] = {
 #include "packet-h323-ettarr.c"
   };
 

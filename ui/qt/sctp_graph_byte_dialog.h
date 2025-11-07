@@ -1,16 +1,16 @@
-/* sctp_graph_byte_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef SCTP_GRAPH_BYTE_DIALOG_H
 #define SCTP_GRAPH_BYTE_DIALOG_H
 
 #include <config.h>
-#include <glib.h>
 
 #include "cfile.h"
 
@@ -39,34 +39,21 @@ public slots:
 private slots:
     void on_pushButton_4_clicked();
 
-    void graphClicked(QCPAbstractPlottable* plottable, QMouseEvent* event);
+    void graphClicked(QCPAbstractPlottable* plottable, int, QMouseEvent* event);
 
     void on_saveButton_clicked();
 
 private:
     Ui::SCTPGraphByteDialog *ui;
-    guint16 selected_assoc_id;
+    uint16_t selected_assoc_id;
     capture_file *cap_file_;
     int frame_num;
     int direction;
     QVector<double> xb, yb;
-    QVector<guint32> fb;
+    QVector<uint32_t> fb;
 
     void drawGraph();
     void drawBytesGraph(const _sctp_assoc_info *selected_assoc);
 };
 
 #endif // SCTP_GRAPH_DIALOG_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

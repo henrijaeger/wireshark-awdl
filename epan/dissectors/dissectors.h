@@ -11,24 +11,23 @@
 #ifndef __DISSECTOR_REGISTER_H__
 #define __DISSECTOR_REGISTER_H__
 
-#include "ws_symbol_export.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-#include <glib.h>
-
+#ifndef NULL
+#define NULL ((void*)0)
+#endif
 typedef struct _dissector_reg {
     const char *cb_name;
     void (*cb_func)(void);
 } dissector_reg_t;
 
-WS_DLL_PUBLIC dissector_reg_t dissector_reg_proto[];
-WS_DLL_PUBLIC dissector_reg_t dissector_reg_handoff[];
+extern dissector_reg_t const dissector_reg_proto[];
+extern dissector_reg_t const dissector_reg_handoff[];
 
-WS_DLL_PUBLIC const gulong dissector_reg_proto_count;
-WS_DLL_PUBLIC const gulong dissector_reg_handoff_count;
+extern const unsigned long dissector_reg_proto_count;
+extern const unsigned long dissector_reg_handoff_count;
 
 #ifdef __cplusplus
 }
@@ -37,7 +36,7 @@ WS_DLL_PUBLIC const gulong dissector_reg_handoff_count;
 #endif /* __DISSECTOR_REGISTER_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 4

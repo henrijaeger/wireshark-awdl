@@ -4,7 +4,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "capture_file.h"
 
@@ -18,7 +19,6 @@
 capture_file cfile;
 
 #include "file.h"
-#include "log.h"
 
 #include "epan/epan_dissect.h"
 
@@ -33,7 +33,6 @@ CaptureEvent::CaptureEvent(Context ctx, EventType evt) :
     _evt(evt),
     _session(Q_NULLPTR)
 {
-    qDebug() << "CaptureEvent [" << ctx <<"]: " << evt;
 }
 
 CaptureEvent::CaptureEvent(Context ctx, EventType evt, QString file) :
@@ -42,7 +41,6 @@ CaptureEvent::CaptureEvent(Context ctx, EventType evt, QString file) :
     _filePath(file),
     _session(Q_NULLPTR)
 {
-    qDebug() << "CaptureEvent [" << ctx <<"]: " << evt << " :: File: " << file;
 }
 
 CaptureEvent::CaptureEvent(Context ctx, EventType evt, capture_session * session) :
@@ -50,15 +48,14 @@ CaptureEvent::CaptureEvent(Context ctx, EventType evt, capture_session * session
     _evt(evt),
     _session(session)
 {
-    qDebug() << "CaptureEvent [" << ctx <<"]: " << evt << " with session";
 }
 
-CaptureEvent::CaptureEvent(const CaptureEvent &ce)
+CaptureEvent::CaptureEvent(const CaptureEvent &ce) :
+    _ctx(ce._ctx),
+    _evt(ce._evt),
+    _filePath(ce._filePath),
+    _session(ce._session)
 {
-    _ctx = ce._ctx;
-    _evt = ce._evt;
-    _session = ce._session;
-    _filePath = ce._filePath;
 }
 
 CaptureEvent::Context CaptureEvent::captureContext() const
@@ -88,9 +85,9 @@ CaptureFile::CaptureFile(QObject *parent, capture_file *cap_file) :
     file_state_(QString())
 {
 #ifdef HAVE_LIBPCAP
-    capture_callback_add(captureCallback, (gpointer) this);
+    capture_callback_add(captureCallback, (void *) this);
 #endif
-    cf_callback_add(captureFileCallback, (gpointer) this);
+    cf_callback_add(captureFileCallback, (void *) this);
 }
 
 CaptureFile::~CaptureFile()
@@ -100,17 +97,10 @@ CaptureFile::~CaptureFile()
 
 bool CaptureFile::isValid() const
 {
-    if (cap_file_ && cap_file_->state != FILE_CLOSED) { // XXX FILE_READ_IN_PROGRESS as well?
+    if (cap_file_ && cap_file_->state != FILE_CLOSED && cap_file_->state != FILE_READ_PENDING) { // XXX FILE_READ_IN_PROGRESS as well?
         return true;
     }
     return false;
-}
-
-int CaptureFile::currentRow()
-{
-    if (isValid())
-        return cap_file_->current_row;
-    return -1;
 }
 
 const QString CaptureFile::filePath()
@@ -237,12 +227,19 @@ void CaptureFile::stopLoading()
     setCaptureStopFlag(true);
 }
 
+QString CaptureFile::displayFilter() const
+{
+    if (isValid())
+        return QString(cap_file_->dfilter);
+    return QString();
+}
+
 capture_file *CaptureFile::globalCapFile()
 {
     return &cfile;
 }
 
-gpointer CaptureFile::window()
+void *CaptureFile::window()
 {
     if (cap_file_) return cap_file_->window;
     return NULL;
@@ -253,7 +250,7 @@ void CaptureFile::setCaptureStopFlag(bool stop_flag)
     if (cap_file_) cap_file_->stop_flag = stop_flag;
 }
 
-void CaptureFile::captureFileCallback(gint event, gpointer data, gpointer user_data)
+void CaptureFile::captureFileCallback(int event, void *data, void *user_data)
 {
     CaptureFile *capture_file = static_cast<CaptureFile *>(user_data);
     if (!capture_file) return;
@@ -262,7 +259,7 @@ void CaptureFile::captureFileCallback(gint event, gpointer data, gpointer user_d
 }
 
 #ifdef HAVE_LIBPCAP
-void CaptureFile::captureCallback(gint event, capture_session *cap_session, gpointer user_data)
+void CaptureFile::captureCallback(int event, capture_session *cap_session, void *user_data)
 {
     CaptureFile *capture_file = static_cast<CaptureFile *>(user_data);
     if (!capture_file) return;
@@ -271,7 +268,7 @@ void CaptureFile::captureCallback(gint event, capture_session *cap_session, gpoi
 }
 #endif
 
-void CaptureFile::captureFileEvent(int event, gpointer data)
+void CaptureFile::captureFileEvent(int event, void *data)
 {
     switch(event) {
     case(cf_cb_file_opened):
@@ -326,12 +323,6 @@ void CaptureFile::captureFileEvent(int event, gpointer data)
         // the equivalent?
         break;
 
-    case(cf_cb_packet_selected):
-    case(cf_cb_packet_unselected):
-    case(cf_cb_field_unselected):
-        // GTK+ only. Handled in Qt via signals and slots.
-        break;
-
     case(cf_cb_file_save_started):
     {
         emit captureEvent(CaptureEvent(CaptureEvent::Save, CaptureEvent::Started, QString((const char *)data)));
@@ -347,13 +338,6 @@ void CaptureFile::captureFileEvent(int event, gpointer data)
         emit captureEvent(CaptureEvent(CaptureEvent::Save, CaptureEvent::Stopped));
         break;
 
-    case cf_cb_file_export_specified_packets_started:
-    case cf_cb_file_export_specified_packets_finished:
-    case cf_cb_file_export_specified_packets_failed:
-    case cf_cb_file_export_specified_packets_stopped:
-        // GTK+ only.
-        break;
-
     default:
         qWarning() << "CaptureFile::captureFileCallback: event " << event << " unknown";
         Q_ASSERT(false);
@@ -361,12 +345,9 @@ void CaptureFile::captureFileEvent(int event, gpointer data)
     }
 }
 
+#ifdef HAVE_LIBPCAP
 void CaptureFile::captureSessionEvent(int event, capture_session *cap_session)
 {
-#ifndef HAVE_LIBPCAP
-    Q_UNUSED(event)
-    Q_UNUSED(cap_session)
-#else
     switch(event) {
     case(capture_cb_capture_prepared):
         emit captureEvent(CaptureEvent(CaptureEvent::Capture, CaptureEvent::Prepared, cap_session));
@@ -401,18 +382,5 @@ void CaptureFile::captureSessionEvent(int event, capture_session *cap_session)
     default:
         qWarning() << "main_capture_callback: event " << event << " unknown";
     }
-#endif // HAVE_LIBPCAP
 }
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */
+#endif // HAVE_LIBPCAP

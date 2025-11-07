@@ -1,10 +1,11 @@
-/* rpc_service_response_time_dialog.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __RPC_SERVICE_RESPONSE_TIME_DIALOG_H__
 #define __RPC_SERVICE_RESPONSE_TIME_DIALOG_H__
@@ -34,9 +35,9 @@ public:
 
     void addDceRpcProgram(_guid_key *key, struct _dcerpc_uuid_value *value);
     void addDceRpcProgramVersion(_guid_key *key);
-    void addOncRpcProgram(guint32 program, struct _rpc_prog_info_value *value);
-    void addOncRpcProgramVersion(guint32 program, guint32 version);
-    void updateOncRpcProcedureCount(guint32 program, guint32 version, int procedure);
+    void addOncRpcProgram(uint32_t program, struct _rpc_prog_info_value *value);
+    void addOncRpcProgramVersion(uint32_t program, uint32_t version);
+    void updateOncRpcProcedureCount(uint32_t program, uint32_t version, int procedure);
 
     void setDceRpcUuidAndVersion(struct _e_guid_t *uuid, int version);
     void setOncRpcProgramAndVersion(int program, int version);
@@ -59,7 +60,7 @@ private:
     QMap<QString, struct _guid_key *> dce_name_to_uuid_key_;
 
     // ONC-RPC
-    QMap<QString, guint32> onc_name_to_program_;
+    QMap<QString, uint32_t> onc_name_to_program_;
     int onc_rpc_num_procedures_;
 
     void clearVersionCombo();
@@ -68,16 +69,3 @@ private:
 };
 
 #endif // __RPC_SERVICE_RESPONSE_TIME_DIALOG_H__
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

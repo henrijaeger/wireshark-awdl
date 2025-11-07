@@ -1,4 +1,4 @@
-/* lbm_stream_dialog.h
+/** @file
  *
  * Copyright (c) 2005-2014 Informatica Corporation. All Rights Reserved.
  *
@@ -6,17 +6,17 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef LBM_STREAM_DIALOG_H
 #define LBM_STREAM_DIALOG_H
 
 #include <config.h>
 
-#include <glib.h>
-
 #include "cfile.h"
 #include <epan/packet_info.h>
+#include <epan/tap.h>
 #include <QDialog>
 
 namespace Ui
@@ -48,25 +48,11 @@ class LBMStreamDialog : public QDialog
 
         void fillTree(void);
         static void resetTap(void * tap_data);
-        static gboolean tapPacket(void * tap_data, packet_info * pinfo, epan_dissect_t * edt, const void * stream_info);
+        static tap_packet_status tapPacket(void * tap_data, packet_info * pinfo, epan_dissect_t * edt, const void * stream_info, tap_flags_t flags);
         static void drawTreeItems(void * tap_data);
 
     private slots:
-        void closeDialog(void);
         void on_applyFilterButton_clicked(void);
 };
 
 #endif
-
-/*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
- *
- * Local variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * vi: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

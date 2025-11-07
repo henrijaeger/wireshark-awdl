@@ -12,12 +12,12 @@
 
 extern int
 bacnet_dissect_sec_wrapper(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
-    gint offset, gboolean *pis_net_msg_flg);
+    int offset, bool *pis_net_msg_flg);
 
 #endif /* __PACKET_BACNET_H__ */
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

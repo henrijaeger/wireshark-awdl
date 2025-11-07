@@ -6,7 +6,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #include "config.h"
 
@@ -23,10 +24,11 @@
 #include "epan/timestats.h"
 #include "epan/stat_tap_ui.h"
 
+#include <wsutil/cmdarg_err.h>
 
 void register_tap_listener_camelsrt(void);
 
-/* Save the the first NUM_RAS_STATS stats in the array to calculate percentile */
+/* Save the first NUM_RAS_STATS stats in the array to calculate percentile */
 #define NUM_RAS_STATS 500000
 
 /* Number of couple message Request/Response to analyze*/
@@ -35,7 +37,7 @@ void register_tap_listener_camelsrt(void);
 /* used to keep track of the statistics for an entire program interface */
 struct camelsrt_t {
   char *filter;
-  guint32 count[NB_CAMELSRT_CATEGORY];
+  uint32_t count[NB_CAMELSRT_CATEGORY];
   timestat_t stats[NB_CAMELSRT_CATEGORY];
   nstime_t delta_time[NB_CAMELSRT_CATEGORY][NUM_RAS_STATS];
 };
@@ -48,10 +50,10 @@ static void camelsrt_reset(void *phs)
 }
 
 
-static int camelsrt_packet(void *phs,
-                           packet_info *pinfo _U_,
-                           epan_dissect_t *edt _U_,
-                           const void *phi)
+static tap_packet_status camelsrt_packet(void *phs,
+                                         packet_info *pinfo _U_,
+                                         epan_dissect_t *edt _U_,
+                                         const void *phi, tap_flags_t flags _U_)
 {
   struct camelsrt_t *hs = (struct camelsrt_t *)phs;
   const struct camelsrt_info_t * pi = (const struct camelsrt_info_t *)phi;
@@ -73,21 +75,21 @@ static int camelsrt_packet(void *phs,
       }
     }
   }
-  return 1;
+  return TAP_PACKET_REDRAW;
 }
 
 
 static void camelsrt_draw(void *phs)
 {
   struct camelsrt_t *hs = (struct camelsrt_t *)phs;
-  guint j, z;
-  guint32 li;
+  unsigned j, z;
+  uint32_t li;
   int somme, iteration = 0;
   timestat_t *rtd_temp;
   double x, delay, delay_max, delay_min, delta;
   double criteria[NB_CRITERIA] = { 5.0, 10.0, 75.0, 90.0, 95.0, 99.0, 99.90 };
   double delay_criteria[NB_CRITERIA];
-  gchar* tmp_str;
+  char* tmp_str;
 
   printf("\n");
   printf("Camel Service Response Time (SRT) Statistics:\n");
@@ -200,12 +202,13 @@ static void camelsrt_init(const char *opt_arg, void *userdata _U_)
   GString *error_string;
 
   p_camelsrt = g_new(struct camelsrt_t, 1);
-  if (!strncmp(opt_arg, "camel,srt,", 9)) {
-    p_camelsrt->filter = g_strdup(opt_arg+9);
+  camelsrt_reset(p_camelsrt);
+
+  if (!strncmp(opt_arg, "camel,srt,", 10)) {
+    p_camelsrt->filter = g_strdup(opt_arg+10);
   } else {
     p_camelsrt->filter = NULL;
   }
-  camelsrt_reset(p_camelsrt);
 
   error_string = register_tap_listener("CAMEL",
                                      p_camelsrt,
@@ -213,15 +216,15 @@ static void camelsrt_init(const char *opt_arg, void *userdata _U_)
                                      0,
                                      NULL,
                                      camelsrt_packet,
-                                     camelsrt_draw);
+                                     camelsrt_draw,
+                                     NULL);
 
   if (error_string) {
     /* error, we failed to attach to the tap. clean up */
     g_free(p_camelsrt->filter);
     g_free(p_camelsrt);
 
-    fprintf(stderr, "tshark: Couldn't register camel,srt tap: %s\n",
-            error_string->str);
+    cmdarg_err("Couldn't register camel,srt tap: %s", error_string->str);
     g_string_free(error_string, TRUE);
     exit(1);
   }
@@ -232,8 +235,8 @@ static void camelsrt_init(const char *opt_arg, void *userdata _U_)
    * Whereas, with wireshark, it is not possible to have the correct display, if the stats are
    * not saved along the analyze
    */
-  gtcap_StatSRT = TRUE;
-  gcamel_StatSRT = TRUE;
+  gtcap_StatSRT = true;
+  gcamel_StatSRT = true;
 }
 
 static stat_tap_ui camelsrt_ui = {
@@ -252,7 +255,7 @@ register_tap_listener_camelsrt(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

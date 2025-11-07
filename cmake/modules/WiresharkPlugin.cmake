@@ -28,38 +28,48 @@ macro(SET_MODULE_INFO _plugin _ver_major _ver_minor _ver_micro _ver_extra)
 	add_definitions(-DPLUGIN_VERSION=\"${PLUGIN_VERSION}\")
 endmacro()
 
-macro(ADD_PLUGIN_LIBRARY _plugin _subfolder)
+macro(ADD_WIRESHARK_PLUGIN_LIBRARY _plugin _subfolder)
 	add_library(${_plugin} MODULE
 		${PLUGIN_FILES}
 		${PLUGIN_RC_FILE}
 	)
+
+	target_include_directories(${_plugin} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 	set_target_properties(${_plugin} PROPERTIES
 		PREFIX ""
 		LINK_FLAGS "${WS_LINK_FLAGS}"
 		FOLDER "Plugins"
 	)
+	if(MSVC)
+		set_target_properties(${_plugin} PROPERTIES LINK_FLAGS_DEBUG "${WS_MSVC_DEBUG_LINK_FLAGS}")
+	endif()
 
 	set_target_properties(${_plugin} PROPERTIES
 		LIBRARY_OUTPUT_DIRECTORY ${PLUGIN_DIR}/${_subfolder}
+		INSTALL_RPATH ""
 	)
-
-	# Try to force output to ${PLUGIN_DIR} without the configuration
-	# type appended. Needed on Windows.
-	foreach(_config_type ${CMAKE_CONFIGURATION_TYPES})
-		string(TOUPPER ${_config_type} _config_upper)
-		set_target_properties(${_plugin} PROPERTIES
-			LIBRARY_OUTPUT_DIRECTORY_${_config_upper} ${CMAKE_BINARY_DIR}/run/${_config_type}/${PLUGIN_VERSION_DIR}/${_subfolder}
-		)
-	endforeach()
 
 	add_dependencies(plugins ${_plugin})
 endmacro()
 
+macro(ADD_PLUGIN_LIBRARY _plugin _subfolder)
+	message(WARNING "${CMAKE_PARENT_LIST_FILE}: add_plugin_library is deprecated. Use add_wireshark_plugin_library instead.")
+	ADD_WIRESHARK_PLUGIN_LIBRARY(${_plugin} ${_subfolder})
+endmacro()
+
+macro(ADD_STRATOSHARK_PLUGIN_LIBRARY _plugin _subfolder)
+	ADD_WIRESHARK_PLUGIN_LIBRARY(${_plugin} ${_subfolder})
+
+	set_target_properties(${_plugin} PROPERTIES
+		LIBRARY_OUTPUT_DIRECTORY ${STRATOSHARK_PLUGIN_DIR}/${_subfolder}
+	)
+endmacro()
+
 macro(INSTALL_PLUGIN _plugin _subfolder)
 	install(TARGETS ${_plugin}
-		LIBRARY DESTINATION ${PLUGIN_INSTALL_LIBDIR}/${_subfolder} NAMELINK_SKIP
-		RUNTIME DESTINATION ${PLUGIN_INSTALL_LIBDIR}
-		ARCHIVE DESTINATION ${PLUGIN_INSTALL_LIBDIR}
+		LIBRARY DESTINATION ${PLUGIN_INSTALL_VERSION_LIBDIR}/${_subfolder} NAMELINK_SKIP
+		RUNTIME DESTINATION ${PLUGIN_INSTALL_VERSION_LIBDIR}
+		ARCHIVE DESTINATION ${PLUGIN_INSTALL_VERSION_LIBDIR}
 )
 endmacro()

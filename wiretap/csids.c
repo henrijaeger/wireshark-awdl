@@ -7,8 +7,8 @@
  */
 
 #include "config.h"
-#include "wtap-int.h"
 #include "csids.h"
+#include "wtap-int.h"
 #include "file_wrappers.h"
 
 #include <stdlib.h>
@@ -27,23 +27,27 @@
  */
 
 typedef struct {
-  gboolean byteswapped;
+  bool byteswapped;
 } csids_t;
 
-static gboolean csids_read(wtap *wth, int *err, gchar **err_info,
-        gint64 *data_offset);
-static gboolean csids_seek_read(wtap *wth, gint64 seek_off,
-        wtap_rec *rec, Buffer *buf, int *err, gchar **err_info);
-static gboolean csids_read_packet(FILE_T fh, csids_t *csids,
-        wtap_rec *rec, Buffer *buf, int *err, gchar **err_info);
+static bool csids_read(wtap *wth, wtap_rec *rec,
+        int *err, char **err_info, int64_t *data_offset);
+static bool csids_seek_read(wtap *wth, int64_t seek_off,
+        wtap_rec *rec, int *err, char **err_info);
+static bool csids_read_packet(FILE_T fh, csids_t *csids,
+        wtap_rec *rec, int *err, char **err_info);
 
 struct csids_header {
-  guint32 seconds; /* seconds since epoch */
-  guint16 zeropad; /* 2 byte zero'ed pads */
-  guint16 caplen;  /* the capture length  */
+  uint32_t seconds; /* seconds since epoch */
+  uint16_t zeropad; /* 2 byte zero'ed pads */
+  uint16_t caplen;  /* the capture length  */
 };
 
-wtap_open_return_val csids_open(wtap *wth, int *err, gchar **err_info)
+static int csids_file_type_subtype = -1;
+
+void register_csids(void);
+
+wtap_open_return_val csids_open(wtap *wth, int *err, char **err_info)
 {
   /* There is no file header. There is only a header for each packet
    * so we read a packet header and compare the caplen with iplen. They
@@ -55,7 +59,7 @@ wtap_open_return_val csids_open(wtap *wth, int *err, gchar **err_info)
 
   int tmp,iplen;
 
-  gboolean byteswap = FALSE;
+  bool byteswap = false;
   struct csids_header hdr;
   csids_t *csids;
 
@@ -96,75 +100,81 @@ wtap_open_return_val csids_open(wtap *wth, int *err, gchar **err_info)
     iplen = GUINT16_SWAP_LE_BE(iplen);
     if( iplen <= hdr.caplen ) {
       /* we know this format */
-      byteswap = TRUE;
+      byteswap = true;
     } else {
       /* don't know this one */
       return WTAP_OPEN_NOT_MINE;
     }
   } else {
-    byteswap = FALSE;
+    byteswap = false;
   }
 
   /* no file header. So reset the fh to 0 so we can read the first packet */
   if (file_seek(wth->fh, 0, SEEK_SET, err) == -1)
     return WTAP_OPEN_ERROR;
 
-  csids = (csids_t *)g_malloc(sizeof(csids_t));
+  csids = g_new(csids_t, 1);
   wth->priv = (void *)csids;
   csids->byteswapped = byteswap;
   wth->file_encap = WTAP_ENCAP_RAW_IP;
-  wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_CSIDS;
+  wth->file_type_subtype = csids_file_type_subtype;
   wth->snapshot_length = 0; /* not known */
   wth->subtype_read = csids_read;
   wth->subtype_seek_read = csids_seek_read;
   wth->file_tsprec = WTAP_TSPREC_SEC;
 
+  /*
+   * Add an IDB; we don't know how many interfaces were
+   * involved, so we just say one interface, about which
+   * we only know the link-layer type, snapshot length,
+   * and time stamp resolution.
+   */
+  wtap_add_generated_idb(wth);
+
   return WTAP_OPEN_MINE;
 }
 
 /* Find the next packet and parse it; called from wtap_read(). */
-static gboolean csids_read(wtap *wth, int *err, gchar **err_info,
-    gint64 *data_offset)
+static bool csids_read(wtap *wth, wtap_rec *rec,
+    int *err, char **err_info, int64_t *data_offset)
 {
   csids_t *csids = (csids_t *)wth->priv;
 
   *data_offset = file_tell(wth->fh);
 
-  return csids_read_packet( wth->fh, csids, &wth->rec, wth->rec_data,
-                            err, err_info );
+  return csids_read_packet( wth->fh, csids, rec, err, err_info );
 }
 
 /* Used to read packets in random-access fashion */
-static gboolean
+static bool
 csids_seek_read(wtap *wth,
-                gint64 seek_off,
+                int64_t seek_off,
                 wtap_rec *rec,
-                Buffer *buf,
                 int *err,
-                gchar **err_info)
+                char **err_info)
 {
   csids_t *csids = (csids_t *)wth->priv;
 
   if( file_seek( wth->random_fh, seek_off, SEEK_SET, err ) == -1 )
-    return FALSE;
+    return false;
 
-  if( !csids_read_packet( wth->random_fh, csids, rec, buf, err, err_info ) ) {
+  if( !csids_read_packet( wth->random_fh, csids, rec, err, err_info ) ) {
     if( *err == 0 )
       *err = WTAP_ERR_SHORT_READ;
-    return FALSE;
+    return false;
   }
-  return TRUE;
+  return true;
 }
 
-static gboolean
+static bool
 csids_read_packet(FILE_T fh, csids_t *csids, wtap_rec *rec,
-                  Buffer *buf, int *err, gchar **err_info)
+                  int *err, char **err_info)
 {
   struct csids_header hdr;
-  guint8 *pd;
+  uint8_t *pd;
 
   if( !wtap_read_bytes_or_eof( fh, &hdr, sizeof( struct csids_header), err, err_info ) )
-    return FALSE;
+    return false;
   hdr.seconds = pntoh32(&hdr.seconds);
   hdr.caplen = pntoh16(&hdr.caplen);
   /*
@@ -174,16 +184,17 @@ csids_read_packet(FILE_T fh, csids_t *csids, wtap_rec *rec,
    */
 
   rec->rec_type = REC_TYPE_PACKET;
+  rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
   rec->presence_flags = WTAP_HAS_TS;
   rec->rec_header.packet_header.len = hdr.caplen;
   rec->rec_header.packet_header.caplen = hdr.caplen;
   rec->ts.secs = hdr.seconds;
   rec->ts.nsecs = 0;
 
-  if( !wtap_read_packet_bytes( fh, buf, rec->rec_header.packet_header.caplen, err, err_info ) )
-    return FALSE;
+  if( !wtap_read_bytes_buffer( fh, &rec->data, rec->rec_header.packet_header.caplen, err, err_info ) )
+    return false;
 
-  pd = ws_buffer_start_ptr( buf );
+  pd = ws_buffer_start_ptr( &rec->data );
   if( csids->byteswapped ) {
     if( rec->rec_header.packet_header.caplen >= 2 ) {
       PBSWAP16(pd);   /* the ip len */
@@ -195,11 +206,36 @@ csids_read_packet(FILE_T fh, csids_t *csids, wtap_rec *rec,
     }
   }
 
-  return TRUE;
+  return true;
+}
+
+static const struct supported_block_type csids_blocks_supported[] = {
+  /*
+   * We support packet blocks, with no comments or other options.
+   */
+  { WTAP_BLOCK_PACKET, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED }
+};
+
+static const struct file_type_subtype_info csids_info = {
+  "CSIDS IPLog", "csids", NULL, NULL,
+  false, BLOCKS_SUPPORTED(csids_blocks_supported),
+  NULL, NULL, NULL
+};
+
+void register_csids(void)
+{
+  csids_file_type_subtype = wtap_register_file_type_subtype(&csids_info);
+
+  /*
+   * Register name for backwards compatibility with the
+   * wtap_filetypes table in Lua.
+   */
+  wtap_register_backwards_compatibility_lua_name("CSIDS",
+                                                 csids_file_type_subtype);
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local Variables:
  * c-basic-offset: 2

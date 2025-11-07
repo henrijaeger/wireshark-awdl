@@ -1,4 +1,4 @@
-/* mplog.h
+/** @file
  *
  * File format support for Micropross mplog files
  * Copyright (c) 2016 by Martin Kaiser <martin@kaiser.cx>
@@ -16,6 +16,6 @@
 #include <glib.h>
 #include <wiretap/wtap.h>
 
-wtap_open_return_val mplog_open(wtap *wth, int *err, gchar **err_info);
+wtap_open_return_val mplog_open(wtap *wth, int *err, char **err_info);
 
 #endif /* _MPLOG_H */

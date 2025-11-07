@@ -1,16 +1,16 @@
-/* voip_calls_info_model.h
+/** @file
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef VOIP_CALLS_INFO_MODEL_H
 #define VOIP_CALLS_INFO_MODEL_H
 
 #include <config.h>
-#include <glib.h>
 
 #include "ui/voip_calls.h"
 #include <ui/qt/utils/variant_pointer.h>
@@ -30,7 +30,9 @@ public:
     int rowCount(const QModelIndex &parent = QModelIndex()) const;
     int columnCount(const QModelIndex &parent = QModelIndex()) const;
     void setTimeOfDay(bool timeOfDay);
+    bool timeOfDay() const;
     void updateCalls(GQueue *callsinfos);
+    void removeAllCalls();
 
     static voip_calls_info_t *indexToCallInfo(const QModelIndex &index);
 
@@ -58,8 +60,6 @@ private:
 
 class VoipCallsInfoSortedModel : public QSortFilterProxyModel
 {
-    Q_OBJECT
-
 public:
     VoipCallsInfoSortedModel(QObject *parent = 0);
 
@@ -68,16 +68,3 @@ protected:
 };
 
 #endif // VOIP_CALLS_INFO_MODEL_H
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

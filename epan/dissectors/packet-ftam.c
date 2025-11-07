@@ -1,11 +1,8 @@
 /* Do not modify this file. Changes will be overwritten.                      */
 /* Generated automatically by the ASN.1 to Wireshark dissector compiler       */
 /* packet-ftam.c                                                              */
-/* asn2wrs.py -b -p ftam -c ./ftam.cnf -s ./packet-ftam-template -D . -O ../.. ISO8571-FTAM.asn */
+/* asn2wrs.py -b -q -L -p ftam -c ./ftam.cnf -s ./packet-ftam-template -D . -O ../.. ISO8571-FTAM.asn */
 
-/* Input file: packet-ftam-template.c */
-
-#line 1 "./asn1/ftam/packet-ftam-template.c"
 /* packet-ftam_asn1.c
  * Routine to dissect OSI ISO 8571 FTAM Protocol packets
  * based on the ASN.1 specification from http://www.itu.int/ITU-T/asn1/database/iso/8571-4/1988/
@@ -28,6 +25,7 @@
 #include <epan/expert.h>
 #include <epan/oids.h>
 #include <epan/asn1.h>
+#include <wsutil/array.h>
 
 #include "packet-ber.h"
 #include "packet-acse.h"
@@ -41,622 +39,610 @@ void proto_register_ftam(void);
 void proto_reg_handoff_ftam(void);
 
 /* Initialize the protocol and registered fields */
-static int proto_ftam = -1;
+static int proto_ftam;
 
 /* Declare the function to avoid a compiler warning */
-static int dissect_ftam_OR_Set(gboolean implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_);
+static int dissect_ftam_OR_Set(bool implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index _U_);
 
-static int hf_ftam_unstructured_text = -1;              /* ISO FTAM unstructured text */
-static int hf_ftam_unstructured_binary = -1;            /* ISO FTAM unstructured binary */
-
-/*--- Included file: packet-ftam-hf.c ---*/
-#line 1 "./asn1/ftam/packet-ftam-hf.c"
-static int hf_ftam_fTAM_Regime_PDU = -1;          /* FTAM_Regime_PDU */
-static int hf_ftam_file_PDU = -1;                 /* File_PDU */
-static int hf_ftam_bulk_Data_PDU = -1;            /* Bulk_Data_PDU */
-static int hf_ftam_fSM_PDU = -1;                  /* FSM_PDU */
-static int hf_ftam_f_initialize_request = -1;     /* F_INITIALIZE_request */
-static int hf_ftam_f_initialize_response = -1;    /* F_INITIALIZE_response */
-static int hf_ftam_f_terminate_request = -1;      /* F_TERMINATE_request */
-static int hf_ftam_f_terminate_response = -1;     /* F_TERMINATE_response */
-static int hf_ftam_f_u_abort_request = -1;        /* F_U_ABORT_request */
-static int hf_ftam_f_p_abort_request = -1;        /* F_P_ABORT_request */
-static int hf_ftam_protocol_Version = -1;         /* Protocol_Version */
-static int hf_ftam_implementation_information = -1;  /* Implementation_Information */
-static int hf_ftam_presentation_tontext_management = -1;  /* BOOLEAN */
-static int hf_ftam_service_class = -1;            /* Service_Class */
-static int hf_ftam_functional_units = -1;         /* Functional_Units */
-static int hf_ftam_attribute_groups = -1;         /* Attribute_Groups */
-static int hf_ftam_shared_ASE_information = -1;   /* Shared_ASE_Information */
-static int hf_ftam_ftam_quality_of_Service = -1;  /* FTAM_Quality_of_Service */
-static int hf_ftam_contents_type_list = -1;       /* Contents_Type_List */
-static int hf_ftam_initiator_identity = -1;       /* User_Identity */
-static int hf_ftam_account = -1;                  /* Account */
-static int hf_ftam_filestore_password = -1;       /* Password */
-static int hf_ftam_checkpoint_window = -1;        /* INTEGER */
-static int hf_ftam_state_result = -1;             /* State_Result */
-static int hf_ftam_action_result = -1;            /* Action_Result */
-static int hf_ftam_diagnostic = -1;               /* Diagnostic */
-static int hf_ftam__untag_item = -1;              /* Contents_Type_List_item */
-static int hf_ftam_document_type_name = -1;       /* Document_Type_Name */
-static int hf_ftam_abstract_Syntax_name = -1;     /* Abstract_Syntax_Name */
-static int hf_ftam_charging = -1;                 /* Charging */
-static int hf_ftam_f_select_request = -1;         /* F_SELECT_request */
-static int hf_ftam_f_select_response = -1;        /* F_SELECT_response */
-static int hf_ftam_f_deselect_request = -1;       /* F_DESELECT_request */
-static int hf_ftam_f_deselect_response = -1;      /* F_DESELECT_response */
-static int hf_ftam_f_create_request = -1;         /* F_CREATE_request */
-static int hf_ftam_f_create_response = -1;        /* F_CREATE_response */
-static int hf_ftam_f_delete_request = -1;         /* F_DELETE_request */
-static int hf_ftam_f_delete_response = -1;        /* F_DELETE_response */
-static int hf_ftam_f_read_attrib_request = -1;    /* F_READ_ATTRIB_request */
-static int hf_ftam_f_read_attrib_response = -1;   /* F_READ_ATTRIB_response */
-static int hf_ftam_f_Change_attrib_reques = -1;   /* F_CHANGE_ATTRIB_request */
-static int hf_ftam_f_Change_attrib_respon = -1;   /* F_CHANGE_ATTRIB_response */
-static int hf_ftam_f_open_request = -1;           /* F_OPEN_request */
-static int hf_ftam_f_open_response = -1;          /* F_OPEN_response */
-static int hf_ftam_f_close_request = -1;          /* F_CLOSE_request */
-static int hf_ftam_f_close_response = -1;         /* F_CLOSE_response */
-static int hf_ftam_f_begin_group_request = -1;    /* F_BEGIN_GROUP_request */
-static int hf_ftam_f_begin_group_response = -1;   /* F_BEGIN_GROUP_response */
-static int hf_ftam_f_end_group_request = -1;      /* F_END_GROUP_request */
-static int hf_ftam_f_end_group_response = -1;     /* F_END_GROUP_response */
-static int hf_ftam_f_recover_request = -1;        /* F_RECOVER_request */
-static int hf_ftam_f_recover_response = -1;       /* F_RECOVER_response */
-static int hf_ftam_f_locate_request = -1;         /* F_LOCATE_request */
-static int hf_ftam_f_locate_response = -1;        /* F_LOCATE_response */
-static int hf_ftam_f_erase_request = -1;          /* F_ERASE_request */
-static int hf_ftam_f_erase_response = -1;         /* F_ERASE_response */
-static int hf_ftam_select_attributes = -1;        /* Select_Attributes */
-static int hf_ftam_requested_access = -1;         /* Access_Request */
-static int hf_ftam_access_passwords = -1;         /* Access_Passwords */
-static int hf_ftam_path_access_passwords = -1;    /* Path_Access_Passwords */
-static int hf_ftam_concurrency_control = -1;      /* Concurrency_Control */
-static int hf_ftam_referent_indicator = -1;       /* Referent_Indicator */
-static int hf_ftam_override = -1;                 /* Override */
-static int hf_ftam_initial_attributes = -1;       /* Create_Attributes */
-static int hf_ftam_create_password = -1;          /* Password */
-static int hf_ftam_attribute_names = -1;          /* Attribute_Names */
-static int hf_ftam_attribute_extension_names = -1;  /* Attribute_Extension_Names */
-static int hf_ftam_read_attributes = -1;          /* Read_Attributes */
-static int hf_ftam_attributes = -1;               /* Change_Attributes */
-static int hf_ftam_processing_mode = -1;          /* T_processing_mode */
-static int hf_ftam_open_contents_type = -1;       /* T_open_contents_type */
-static int hf_ftam_unknown = -1;                  /* NULL */
-static int hf_ftam_proposed = -1;                 /* Contents_Type_Attribute */
-static int hf_ftam_enable_fadu_locking = -1;      /* BOOLEAN */
-static int hf_ftam_activity_identifier = -1;      /* Activity_Identifier */
-static int hf_ftam_request_recovery_mode = -1;    /* T_request_recovery_mode */
-static int hf_ftam_remove_contexts = -1;          /* SET_OF_Abstract_Syntax_Name */
-static int hf_ftam_remove_contexts_item = -1;     /* Abstract_Syntax_Name */
-static int hf_ftam_define_contexts = -1;          /* SET_OF_Abstract_Syntax_Name */
-static int hf_ftam_define_contexts_item = -1;     /* Abstract_Syntax_Name */
-static int hf_ftam_degree_of_overlap = -1;        /* Degree_Of_Overlap */
-static int hf_ftam_transfer_window = -1;          /* INTEGER */
-static int hf_ftam_contents_type = -1;            /* Contents_Type_Attribute */
-static int hf_ftam_response_recovery_mode = -1;   /* T_response_recovery_mode */
-static int hf_ftam_presentation_action = -1;      /* BOOLEAN */
-static int hf_ftam_threshold = -1;                /* INTEGER */
-static int hf_ftam_bulk_transfer_number = -1;     /* INTEGER */
-static int hf_ftam_recovefy_Point = -1;           /* INTEGER */
-static int hf_ftam_concurrent_bulk_transfer_number = -1;  /* INTEGER */
-static int hf_ftam_concurrent_recovery_point = -1;  /* INTEGER */
-static int hf_ftam_last_transfer_end_read_response = -1;  /* INTEGER */
-static int hf_ftam_last_transfer_end_write_response = -1;  /* INTEGER */
-static int hf_ftam_recovety_Point = -1;           /* INTEGER */
-static int hf_ftam_last_transfer_end_read_request = -1;  /* INTEGER */
-static int hf_ftam_last_transfer_end_write_request = -1;  /* INTEGER */
-static int hf_ftam_file_access_data_unit_identity = -1;  /* FADU_Identity */
-static int hf_ftam_fadu_lock = -1;                /* FADU_Lock */
-static int hf_ftam_f_read_request = -1;           /* F_READ_request */
-static int hf_ftam_f_write_request = -1;          /* F_WRITE_request */
-static int hf_ftam_f_data_end_request = -1;       /* F_DATA_END_request */
-static int hf_ftam_f_transfer_end_request = -1;   /* F_TRANSFER_END_request */
-static int hf_ftam_f_transfer_end_response = -1;  /* F_TRANSFER_END_response */
-static int hf_ftam_f_cancel_request = -1;         /* F_CANCEL_request */
-static int hf_ftam_f_cancel_response = -1;        /* F_CANCEL_response */
-static int hf_ftam_f_restart_request = -1;        /* F_RESTART_request */
-static int hf_ftam_f_restart_response = -1;       /* F_RESTART_response */
-static int hf_ftam_read_access_context = -1;      /* Access_Context */
-static int hf_ftam_transfer_number = -1;          /* INTEGER */
-static int hf_ftam_file_access_data_unit_Operation = -1;  /* T_file_access_data_unit_Operation */
-static int hf_ftam_request_type = -1;             /* Request_Type */
-static int hf_ftam_checkpoint_identifier = -1;    /* INTEGER */
-static int hf_ftam_access_context = -1;           /* T_access_context */
-static int hf_ftam_level_number = -1;             /* INTEGER */
-static int hf_ftam_read_password = -1;            /* Password */
-static int hf_ftam_insert_password = -1;          /* Password */
-static int hf_ftam_replace_password = -1;         /* Password */
-static int hf_ftam_extend_password = -1;          /* Password */
-static int hf_ftam_erase_password = -1;           /* Password */
-static int hf_ftam_read_attribute_password = -1;  /* Password */
-static int hf_ftam_change_attribute_password = -1;  /* Password */
-static int hf_ftam_delete_password = -1;          /* Password */
-static int hf_ftam_pass_passwords = -1;           /* Pass_Passwords */
-static int hf_ftam_link_password = -1;            /* Password */
-static int hf_ftam_pathname = -1;                 /* Pathname_Attribute */
-static int hf_ftam_storage_account = -1;          /* Account_Attribute */
-static int hf_ftam_object_availability = -1;      /* Object_Availability_Attribute */
-static int hf_ftam_future_Object_size = -1;       /* Object_Size_Attribute */
-static int hf_ftam_change_attributes_access_control = -1;  /* Access_Control_Change_Attribute */
-static int hf_ftam_change_path_access_control = -1;  /* Access_Control_Change_Attribute */
-static int hf_ftam_legal_qualification = -1;      /* Legal_Qualification_Attribute */
-static int hf_ftam_private_use = -1;              /* Private_Use_Attribute */
-static int hf_ftam_attribute_extensions = -1;     /* Attribute_Extensions */
-static int hf_ftam__untag_item_01 = -1;           /* Charging_item */
-static int hf_ftam_resource_identifier = -1;      /* GraphicString */
-static int hf_ftam_charging_unit = -1;            /* GraphicString */
-static int hf_ftam_charging_value = -1;           /* INTEGER */
-static int hf_ftam_read = -1;                     /* Lock */
-static int hf_ftam_insert = -1;                   /* Lock */
-static int hf_ftam_replace = -1;                  /* Lock */
-static int hf_ftam_extend = -1;                   /* Lock */
-static int hf_ftam_erase = -1;                    /* Lock */
-static int hf_ftam_read_attribute = -1;           /* Lock */
-static int hf_ftam_change_attribute = -1;         /* Lock */
-static int hf_ftam_delete_Object = -1;            /* Lock */
-static int hf_ftam_object_type = -1;              /* Object_Type_Attribute */
-static int hf_ftam_permitted_actions = -1;        /* Permitted_Actions_Attribute */
-static int hf_ftam_access_control = -1;           /* Access_Control_Attribute */
-static int hf_ftam_path_access_control = -1;      /* Access_Control_Attribute */
-static int hf_ftam__untag_item_02 = -1;           /* Diagnostic_item */
-static int hf_ftam_diagnostic_type = -1;          /* T_diagnostic_type */
-static int hf_ftam_error_identifier = -1;         /* INTEGER */
-static int hf_ftam_error_observer = -1;           /* Entity_Reference */
-static int hf_ftam_error_Source = -1;             /* Entity_Reference */
-static int hf_ftam_suggested_delay = -1;          /* INTEGER */
-static int hf_ftam_further_details = -1;          /* GraphicString */
-static int hf_ftam_first_last = -1;               /* T_first_last */
-static int hf_ftam_relative = -1;                 /* T_relative */
-static int hf_ftam_begin_end = -1;                /* T_begin_end */
-static int hf_ftam_single_name = -1;              /* Node_Name */
-static int hf_ftam_name_list = -1;                /* SEQUENCE_OF_Node_Name */
-static int hf_ftam_name_list_item = -1;           /* Node_Name */
-static int hf_ftam_fadu_number = -1;              /* INTEGER */
-static int hf_ftam_graphicString = -1;            /* GraphicString */
-static int hf_ftam_octetString = -1;              /* OCTET_STRING */
-static int hf_ftam_linked_Object = -1;            /* Pathname_Attribute */
-static int hf_ftam_child_objects = -1;            /* Child_Objects_Attribute */
-static int hf_ftam_primaty_pathname = -1;         /* Pathname_Attribute */
-static int hf_ftam_date_and_time_of_creation = -1;  /* Date_and_Time_Attribute */
-static int hf_ftam_date_and_time_of_last_modification = -1;  /* Date_and_Time_Attribute */
-static int hf_ftam_date_and_time_of_last_read_access = -1;  /* Date_and_Time_Attribute */
-static int hf_ftam_date_and_time_of_last_attribute_modification = -1;  /* Date_and_Time_Attribute */
-static int hf_ftam_identity_of_creator = -1;      /* User_Identity_Attribute */
-static int hf_ftam_identity_of_last_modifier = -1;  /* User_Identity_Attribute */
-static int hf_ftam_identity_of_last_reader = -1;  /* User_Identity_Attribute */
-static int hf_ftam_identity_last_attribute_modifier = -1;  /* User_Identity_Attribute */
-static int hf_ftam_object_size = -1;              /* Object_Size_Attribute */
-static int hf_ftam_no_value_available = -1;       /* NULL */
-static int hf_ftam_actual_values3 = -1;           /* SET_OF_Access_Control_Element */
-static int hf_ftam_actual_values3_item = -1;      /* Access_Control_Element */
-static int hf_ftam_actual_values1 = -1;           /* T_actual_values1 */
-static int hf_ftam_insert_values = -1;            /* SET_OF_Access_Control_Element */
-static int hf_ftam_insert_values_item = -1;       /* Access_Control_Element */
-static int hf_ftam_delete_values = -1;            /* SET_OF_Access_Control_Element */
-static int hf_ftam_delete_values_item = -1;       /* Access_Control_Element */
-static int hf_ftam_action_list = -1;              /* Access_Request */
-static int hf_ftam_concurrency_access = -1;       /* Concurrency_Access */
-static int hf_ftam_identity = -1;                 /* User_Identity */
-static int hf_ftam_passwords = -1;                /* Access_Passwords */
-static int hf_ftam_location = -1;                 /* Application_Entity_Title */
-static int hf_ftam_read_key = -1;                 /* Concurrency_Key */
-static int hf_ftam_insert_key = -1;               /* Concurrency_Key */
-static int hf_ftam_replace_key = -1;              /* Concurrency_Key */
-static int hf_ftam_extend_key = -1;               /* Concurrency_Key */
-static int hf_ftam_erase_key = -1;                /* Concurrency_Key */
-static int hf_ftam_read_attribute_key = -1;       /* Concurrency_Key */
-static int hf_ftam_change_attribute_key = -1;     /* Concurrency_Key */
-static int hf_ftam_delete_Object_key = -1;        /* Concurrency_Key */
-static int hf_ftam_actual_values2 = -1;           /* Account */
-static int hf_ftam_document_type = -1;            /* T_document_type */
-static int hf_ftam_parameter = -1;                /* T_parameter */
-static int hf_ftam_constraint_set_and_abstract_Syntax = -1;  /* T_constraint_set_and_abstract_Syntax */
-static int hf_ftam_constraint_set_name = -1;      /* Constraint_Set_Name */
-static int hf_ftam_actual_values5 = -1;           /* GeneralizedTime */
-static int hf_ftam_actual_values8 = -1;           /* T_actual_values8 */
-static int hf_ftam_incomplete_pathname = -1;      /* Pathname */
-static int hf_ftam_complete_pathname = -1;        /* Pathname */
-static int hf_ftam_actual_values7 = -1;           /* INTEGER */
-static int hf_ftam_actual_values9 = -1;           /* GraphicString */
-static int hf_ftam_abstract_Syntax_not_supported = -1;  /* NULL */
-static int hf_ftam_actual_values4 = -1;           /* EXTERNAL */
-static int hf_ftam_actual_values6 = -1;           /* User_Identity */
-static int hf_ftam_Child_Objects_Attribute_item = -1;  /* GraphicString */
-static int hf_ftam_f_Change_prefix_request = -1;  /* F_CHANGE_PREFIX_request */
-static int hf_ftam_f_Change_prefix_response = -1;  /* F_CHANGE_PREFIX_response */
-static int hf_ftam_f_list_request = -1;           /* F_LIST_request */
-static int hf_ftam_f_list_response = -1;          /* F_LIST_response */
-static int hf_ftam_f_group_select_request = -1;   /* F_GROUP_SELECT_request */
-static int hf_ftam_f_group_select_response = -1;  /* F_GROUP_SELECT_response */
-static int hf_ftam_f_group_delete_request = -1;   /* F_GROUP_DELETE_request */
-static int hf_ftam_f_group_delete_response = -1;  /* F_GROUP_DELETE_response */
-static int hf_ftam_f_group_move_request = -1;     /* F_GROUP_MOVE_request */
-static int hf_ftam_f_group_move_response = -1;    /* F_GROUP_MOVE_response */
-static int hf_ftam_f_group_copy_request = -1;     /* F_GROUP_COPY_request */
-static int hf_ftam_f_group_copy_response = -1;    /* F_GROUP_COPY_response */
-static int hf_ftam_f_group_list_request = -1;     /* F_GROUP_LIST_request */
-static int hf_ftam_f_group_list_response = -1;    /* F_GROUP_LIST_response */
-static int hf_ftam_f_group_Change_attrib_request = -1;  /* F_GROUP_CHANGE_ATTRIB_request */
-static int hf_ftam_f_group_Change_attrib_response = -1;  /* F_GROUP_CHANGE_ATTRIB_response */
-static int hf_ftam_f_select_another_request = -1;  /* F_SELECT_ANOTHER_request */
-static int hf_ftam_f_select_another_response = -1;  /* F_SELECT_ANOTHER_response */
-static int hf_ftam_f_create_directory_request = -1;  /* F_CREATE_DIRECTORY_request */
-static int hf_ftam_f_create_directory_response = -1;  /* F_CREATE_DIRECTORY_response */
-static int hf_ftam_f_link_request = -1;           /* F_LINK_request */
-static int hf_ftam_f_link_response = -1;          /* F_LINK_response */
-static int hf_ftam_f_unlink_request = -1;         /* F_UNLINK_request */
-static int hf_ftam_f_unlink_response = -1;        /* F_UNLINK_response */
-static int hf_ftam_f_read_link_attrib_request = -1;  /* F_READ_LINK_ATTRIB_request */
-static int hf_ftam_f_read_link_attrib_response = -1;  /* F_READ_LINK_ATTRIB_response */
-static int hf_ftam_f_Change_link_attrib_request = -1;  /* F_CHANGE_LINK_ATTRIB_request */
-static int hf_ftam_f_Change_Iink_attrib_response = -1;  /* F_CHANGE_LINK_ATTRIB_response */
-static int hf_ftam_f_move_request = -1;           /* F_MOVE_request */
-static int hf_ftam_f_move_response = -1;          /* F_MOVE_response */
-static int hf_ftam_f_copy_request = -1;           /* F_COPY_request */
-static int hf_ftam_f_copy_response = -1;          /* F_COPY_response */
-static int hf_ftam_reset = -1;                    /* BOOLEAN */
-static int hf_ftam_destination_file_directory = -1;  /* Destination_File_Directory */
-static int hf_ftam_attribute_value_asset_tions = -1;  /* Attribute_Value_Assertions */
-static int hf_ftam_scope = -1;                    /* Scope */
-static int hf_ftam_objects_attributes_list = -1;  /* Objects_Attributes_List */
-static int hf_ftam_attribute_value_assertions = -1;  /* Attribute_Value_Assertions */
-static int hf_ftam_maximum_set_size = -1;         /* INTEGER */
-static int hf_ftam_request_Operation_result = -1;  /* Request_Operation_Result */
-static int hf_ftam_operation_result = -1;         /* Operation_Result */
-static int hf_ftam_error_action = -1;             /* Error_Action */
-static int hf_ftam_last_member_indicator = -1;    /* BOOLEAN */
-static int hf_ftam_shared_ASE_infonnation = -1;   /* Shared_ASE_Information */
-static int hf_ftam_target_object = -1;            /* Pathname_Attribute */
-static int hf_ftam_target_Object = -1;            /* Pathname_Attribute */
-static int hf_ftam_read_link_attributes = -1;     /* Read_Attributes */
-static int hf_ftam_Attribute_Extension_Names_item = -1;  /* Attribute_Extension_Set_Name */
-static int hf_ftam_extension_set_identifier = -1;  /* Extension_Set_Identifier */
-static int hf_ftam_extension_attribute_names = -1;  /* SEQUENCE_OF_Extension_Attribute_identifier */
-static int hf_ftam_extension_attribute_names_item = -1;  /* Extension_Attribute_identifier */
-static int hf_ftam_Attribute_Extensions_item = -1;  /* Attribute_Extension_Set */
-static int hf_ftam_extension_set_attributes = -1;  /* SEQUENCE_OF_Extension_Attribute */
-static int hf_ftam_extension_set_attributes_item = -1;  /* Extension_Attribute */
-static int hf_ftam_extension_attribute_identifier = -1;  /* T_extension_attribute_identifier */
-static int hf_ftam_extension_attribute = -1;      /* T_extension_attribute */
-static int hf_ftam__untag_item_03 = -1;           /* T__untag_item */
-static int hf_ftam_root_directory = -1;           /* Pathname_Attribute */
-static int hf_ftam_retrieval_scope = -1;          /* T_retrieval_scope */
-static int hf_ftam_OR_Set_item = -1;              /* AND_Set */
-static int hf_ftam_AND_Set_item = -1;             /* AND_Set_item */
-static int hf_ftam_pathname_Pattern = -1;         /* Pathname_Pattern */
-static int hf_ftam_object_type_Pattern = -1;      /* Integer_Pattern */
-static int hf_ftam_permitted_actions_Pattern = -1;  /* Bitstring_Pattern */
-static int hf_ftam_contents_type_Pattern = -1;    /* Contents_Type_Pattern */
-static int hf_ftam_linked_Object_Pattern = -1;    /* Pathname_Pattern */
-static int hf_ftam_child_objects_Pattern = -1;    /* Pathname_Pattern */
-static int hf_ftam_primaty_pathname_Pattern = -1;  /* Pathname_Pattern */
-static int hf_ftam_storage_account_Pattern = -1;  /* String_Pattern */
-static int hf_ftam_date_and_time_of_creation_Pattern = -1;  /* Date_and_Time_Pattern */
-static int hf_ftam_date_and_time_of_last_modification_Pattern = -1;  /* Date_and_Time_Pattern */
-static int hf_ftam_date_and_time_of_last_read_access_Pattern = -1;  /* Date_and_Time_Pattern */
-static int hf_ftam_date_and_time_of_last_attribute_modification_Pattern = -1;  /* Date_and_Time_Pattern */
-static int hf_ftam_identity_of_creator_Pattern = -1;  /* User_Identity_Pattern */
-static int hf_ftam_identity_of_last_modifier_Pattern = -1;  /* User_Identity_Pattern */
-static int hf_ftam_identity_of_last_reader_Pattern = -1;  /* User_Identity_Pattern */
-static int hf_ftam_identity_of_last_attribute_modifier_Pattern = -1;  /* User_Identity_Pattern */
-static int hf_ftam_object_availabiiity_Pattern = -1;  /* Boolean_Pattern */
-static int hf_ftam_object_size_Pattern = -1;      /* Integer_Pattern */
-static int hf_ftam_future_object_size_Pattern = -1;  /* Integer_Pattern */
-static int hf_ftam_legal_quailfication_Pattern = -1;  /* String_Pattern */
-static int hf_ftam_attribute_extensions_pattern = -1;  /* Attribute_Extensions_Pattern */
-static int hf_ftam_equality_comparision = -1;     /* Equality_Comparision */
-static int hf_ftam_pathname_value = -1;           /* T_pathname_value */
-static int hf_ftam_pathname_value_item = -1;      /* T_pathname_value_item */
-static int hf_ftam_string_match = -1;             /* String_Pattern */
-static int hf_ftam_any_match = -1;                /* NULL */
-static int hf_ftam_string_value = -1;             /* T_string_value */
-static int hf_ftam_string_value_item = -1;        /* T_string_value_item */
-static int hf_ftam_substring_match = -1;          /* GraphicString */
-static int hf_ftam_number_of_characters_match = -1;  /* INTEGER */
-static int hf_ftam_match_bitstring = -1;          /* BIT_STRING */
-static int hf_ftam_significance_bitstring = -1;   /* BIT_STRING */
-static int hf_ftam_relational_camparision = -1;   /* Equality_Comparision */
-static int hf_ftam_time_and_date_value = -1;      /* GeneralizedTime */
-static int hf_ftam_relational_comparision = -1;   /* Relational_Comparision */
-static int hf_ftam_integer_value = -1;            /* INTEGER */
-static int hf_ftam_object_identifier_value = -1;  /* OBJECT_IDENTIFIER */
-static int hf_ftam_boolean_value = -1;            /* BOOLEAN */
-static int hf_ftam_document_type_Pattern = -1;    /* Object_Identifier_Pattern */
-static int hf_ftam_constraint_set_abstract_Syntax_Pattern = -1;  /* T_constraint_set_abstract_Syntax_Pattern */
-static int hf_ftam_constraint_Set_Pattern = -1;   /* Object_Identifier_Pattern */
-static int hf_ftam_abstract_Syntax_Pattern = -1;  /* Object_Identifier_Pattern */
-static int hf_ftam_Attribute_Extensions_Pattern_item = -1;  /* Attribute_Extensions_Pattern_item */
-static int hf_ftam_extension_set_attribute_Patterns = -1;  /* T_extension_set_attribute_Patterns */
-static int hf_ftam_extension_set_attribute_Patterns_item = -1;  /* T_extension_set_attribute_Patterns_item */
-static int hf_ftam_attribute_extension_attribute_identifier = -1;  /* T_attribute_extension_attribute_identifier */
-static int hf_ftam_extension_attribute_Pattern = -1;  /* T_extension_attribute_Pattern */
-static int hf_ftam__untag_item_04 = -1;           /* Read_Attributes */
-static int hf_ftam_success_Object_count = -1;     /* INTEGER */
-static int hf_ftam_success_Object_names = -1;     /* SEQUENCE_OF_Pathname */
-static int hf_ftam_success_Object_names_item = -1;  /* Pathname */
-static int hf_ftam_Pathname_item = -1;            /* GraphicString */
-static int hf_ftam_Pass_Passwords_item = -1;      /* Password */
-static int hf_ftam__untag_item_05 = -1;           /* Path_Access_Passwords_item */
-static int hf_ftam_ap = -1;                       /* AP_title */
-static int hf_ftam_ae = -1;                       /* AE_qualifier */
+static int hf_ftam_unstructured_text;              /* ISO FTAM unstructured text */
+static int hf_ftam_unstructured_binary;            /* ISO FTAM unstructured binary */
+static int hf_ftam_fTAM_Regime_PDU;               /* FTAM_Regime_PDU */
+static int hf_ftam_file_PDU;                      /* File_PDU */
+static int hf_ftam_bulk_Data_PDU;                 /* Bulk_Data_PDU */
+static int hf_ftam_fSM_PDU;                       /* FSM_PDU */
+static int hf_ftam_f_initialize_request;          /* F_INITIALIZE_request */
+static int hf_ftam_f_initialize_response;         /* F_INITIALIZE_response */
+static int hf_ftam_f_terminate_request;           /* F_TERMINATE_request */
+static int hf_ftam_f_terminate_response;          /* F_TERMINATE_response */
+static int hf_ftam_f_u_abort_request;             /* F_U_ABORT_request */
+static int hf_ftam_f_p_abort_request;             /* F_P_ABORT_request */
+static int hf_ftam_protocol_Version;              /* Protocol_Version */
+static int hf_ftam_implementation_information;    /* Implementation_Information */
+static int hf_ftam_presentation_tontext_management;  /* BOOLEAN */
+static int hf_ftam_service_class;                 /* Service_Class */
+static int hf_ftam_functional_units;              /* Functional_Units */
+static int hf_ftam_attribute_groups;              /* Attribute_Groups */
+static int hf_ftam_shared_ASE_information;        /* Shared_ASE_Information */
+static int hf_ftam_ftam_quality_of_Service;       /* FTAM_Quality_of_Service */
+static int hf_ftam_contents_type_list;            /* Contents_Type_List */
+static int hf_ftam_initiator_identity;            /* User_Identity */
+static int hf_ftam_account;                       /* Account */
+static int hf_ftam_filestore_password;            /* Password */
+static int hf_ftam_checkpoint_window;             /* INTEGER */
+static int hf_ftam_state_result;                  /* State_Result */
+static int hf_ftam_action_result;                 /* Action_Result */
+static int hf_ftam_diagnostic;                    /* Diagnostic */
+static int hf_ftam__untag_item;                   /* Contents_Type_List_item */
+static int hf_ftam_document_type_name;            /* Document_Type_Name */
+static int hf_ftam_abstract_Syntax_name;          /* Abstract_Syntax_Name */
+static int hf_ftam_charging;                      /* Charging */
+static int hf_ftam_f_select_request;              /* F_SELECT_request */
+static int hf_ftam_f_select_response;             /* F_SELECT_response */
+static int hf_ftam_f_deselect_request;            /* F_DESELECT_request */
+static int hf_ftam_f_deselect_response;           /* F_DESELECT_response */
+static int hf_ftam_f_create_request;              /* F_CREATE_request */
+static int hf_ftam_f_create_response;             /* F_CREATE_response */
+static int hf_ftam_f_delete_request;              /* F_DELETE_request */
+static int hf_ftam_f_delete_response;             /* F_DELETE_response */
+static int hf_ftam_f_read_attrib_request;         /* F_READ_ATTRIB_request */
+static int hf_ftam_f_read_attrib_response;        /* F_READ_ATTRIB_response */
+static int hf_ftam_f_Change_attrib_reques;        /* F_CHANGE_ATTRIB_request */
+static int hf_ftam_f_Change_attrib_respon;        /* F_CHANGE_ATTRIB_response */
+static int hf_ftam_f_open_request;                /* F_OPEN_request */
+static int hf_ftam_f_open_response;               /* F_OPEN_response */
+static int hf_ftam_f_close_request;               /* F_CLOSE_request */
+static int hf_ftam_f_close_response;              /* F_CLOSE_response */
+static int hf_ftam_f_begin_group_request;         /* F_BEGIN_GROUP_request */
+static int hf_ftam_f_begin_group_response;        /* F_BEGIN_GROUP_response */
+static int hf_ftam_f_end_group_request;           /* F_END_GROUP_request */
+static int hf_ftam_f_end_group_response;          /* F_END_GROUP_response */
+static int hf_ftam_f_recover_request;             /* F_RECOVER_request */
+static int hf_ftam_f_recover_response;            /* F_RECOVER_response */
+static int hf_ftam_f_locate_request;              /* F_LOCATE_request */
+static int hf_ftam_f_locate_response;             /* F_LOCATE_response */
+static int hf_ftam_f_erase_request;               /* F_ERASE_request */
+static int hf_ftam_f_erase_response;              /* F_ERASE_response */
+static int hf_ftam_select_attributes;             /* Select_Attributes */
+static int hf_ftam_requested_access;              /* Access_Request */
+static int hf_ftam_access_passwords;              /* Access_Passwords */
+static int hf_ftam_path_access_passwords;         /* Path_Access_Passwords */
+static int hf_ftam_concurrency_control;           /* Concurrency_Control */
+static int hf_ftam_referent_indicator;            /* Referent_Indicator */
+static int hf_ftam_override;                      /* Override */
+static int hf_ftam_initial_attributes;            /* Create_Attributes */
+static int hf_ftam_create_password;               /* Password */
+static int hf_ftam_attribute_names;               /* Attribute_Names */
+static int hf_ftam_attribute_extension_names;     /* Attribute_Extension_Names */
+static int hf_ftam_read_attributes;               /* Read_Attributes */
+static int hf_ftam_attributes;                    /* Change_Attributes */
+static int hf_ftam_processing_mode;               /* T_processing_mode */
+static int hf_ftam_open_contents_type;            /* T_open_contents_type */
+static int hf_ftam_unknown;                       /* NULL */
+static int hf_ftam_proposed;                      /* Contents_Type_Attribute */
+static int hf_ftam_enable_fadu_locking;           /* BOOLEAN */
+static int hf_ftam_activity_identifier;           /* Activity_Identifier */
+static int hf_ftam_request_recovery_mode;         /* T_request_recovery_mode */
+static int hf_ftam_remove_contexts;               /* SET_OF_Abstract_Syntax_Name */
+static int hf_ftam_remove_contexts_item;          /* Abstract_Syntax_Name */
+static int hf_ftam_define_contexts;               /* SET_OF_Abstract_Syntax_Name */
+static int hf_ftam_define_contexts_item;          /* Abstract_Syntax_Name */
+static int hf_ftam_degree_of_overlap;             /* Degree_Of_Overlap */
+static int hf_ftam_transfer_window;               /* INTEGER */
+static int hf_ftam_contents_type;                 /* Contents_Type_Attribute */
+static int hf_ftam_response_recovery_mode;        /* T_response_recovery_mode */
+static int hf_ftam_presentation_action;           /* BOOLEAN */
+static int hf_ftam_threshold;                     /* INTEGER */
+static int hf_ftam_bulk_transfer_number;          /* INTEGER */
+static int hf_ftam_recovefy_Point;                /* INTEGER */
+static int hf_ftam_concurrent_bulk_transfer_number;  /* INTEGER */
+static int hf_ftam_concurrent_recovery_point;     /* INTEGER */
+static int hf_ftam_last_transfer_end_read_response;  /* INTEGER */
+static int hf_ftam_last_transfer_end_write_response;  /* INTEGER */
+static int hf_ftam_recovety_Point;                /* INTEGER */
+static int hf_ftam_last_transfer_end_read_request;  /* INTEGER */
+static int hf_ftam_last_transfer_end_write_request;  /* INTEGER */
+static int hf_ftam_file_access_data_unit_identity;  /* FADU_Identity */
+static int hf_ftam_fadu_lock;                     /* FADU_Lock */
+static int hf_ftam_f_read_request;                /* F_READ_request */
+static int hf_ftam_f_write_request;               /* F_WRITE_request */
+static int hf_ftam_f_data_end_request;            /* F_DATA_END_request */
+static int hf_ftam_f_transfer_end_request;        /* F_TRANSFER_END_request */
+static int hf_ftam_f_transfer_end_response;       /* F_TRANSFER_END_response */
+static int hf_ftam_f_cancel_request;              /* F_CANCEL_request */
+static int hf_ftam_f_cancel_response;             /* F_CANCEL_response */
+static int hf_ftam_f_restart_request;             /* F_RESTART_request */
+static int hf_ftam_f_restart_response;            /* F_RESTART_response */
+static int hf_ftam_read_access_context;           /* Access_Context */
+static int hf_ftam_transfer_number;               /* INTEGER */
+static int hf_ftam_file_access_data_unit_Operation;  /* T_file_access_data_unit_Operation */
+static int hf_ftam_request_type;                  /* Request_Type */
+static int hf_ftam_checkpoint_identifier;         /* INTEGER */
+static int hf_ftam_access_context;                /* T_access_context */
+static int hf_ftam_level_number;                  /* INTEGER */
+static int hf_ftam_read_password;                 /* Password */
+static int hf_ftam_insert_password;               /* Password */
+static int hf_ftam_replace_password;              /* Password */
+static int hf_ftam_extend_password;               /* Password */
+static int hf_ftam_erase_password;                /* Password */
+static int hf_ftam_read_attribute_password;       /* Password */
+static int hf_ftam_change_attribute_password;     /* Password */
+static int hf_ftam_delete_password;               /* Password */
+static int hf_ftam_pass_passwords;                /* Pass_Passwords */
+static int hf_ftam_link_password;                 /* Password */
+static int hf_ftam_pathname;                      /* Pathname_Attribute */
+static int hf_ftam_storage_account;               /* Account_Attribute */
+static int hf_ftam_object_availability;           /* Object_Availability_Attribute */
+static int hf_ftam_future_Object_size;            /* Object_Size_Attribute */
+static int hf_ftam_change_attributes_access_control;  /* Access_Control_Change_Attribute */
+static int hf_ftam_change_path_access_control;    /* Access_Control_Change_Attribute */
+static int hf_ftam_legal_qualification;           /* Legal_Qualification_Attribute */
+static int hf_ftam_private_use;                   /* Private_Use_Attribute */
+static int hf_ftam_attribute_extensions;          /* Attribute_Extensions */
+static int hf_ftam__untag_item_01;                /* Charging_item */
+static int hf_ftam_resource_identifier;           /* GraphicString */
+static int hf_ftam_charging_unit;                 /* GraphicString */
+static int hf_ftam_charging_value;                /* INTEGER */
+static int hf_ftam_read;                          /* Lock */
+static int hf_ftam_insert;                        /* Lock */
+static int hf_ftam_replace;                       /* Lock */
+static int hf_ftam_extend;                        /* Lock */
+static int hf_ftam_erase;                         /* Lock */
+static int hf_ftam_read_attribute;                /* Lock */
+static int hf_ftam_change_attribute;              /* Lock */
+static int hf_ftam_delete_Object;                 /* Lock */
+static int hf_ftam_object_type;                   /* Object_Type_Attribute */
+static int hf_ftam_permitted_actions;             /* Permitted_Actions_Attribute */
+static int hf_ftam_access_control;                /* Access_Control_Attribute */
+static int hf_ftam_path_access_control;           /* Access_Control_Attribute */
+static int hf_ftam__untag_item_02;                /* Diagnostic_item */
+static int hf_ftam_diagnostic_type;               /* T_diagnostic_type */
+static int hf_ftam_error_identifier;              /* INTEGER */
+static int hf_ftam_error_observer;                /* Entity_Reference */
+static int hf_ftam_error_Source;                  /* Entity_Reference */
+static int hf_ftam_suggested_delay;               /* INTEGER */
+static int hf_ftam_further_details;               /* GraphicString */
+static int hf_ftam_first_last;                    /* T_first_last */
+static int hf_ftam_relative;                      /* T_relative */
+static int hf_ftam_begin_end;                     /* T_begin_end */
+static int hf_ftam_single_name;                   /* Node_Name */
+static int hf_ftam_name_list;                     /* SEQUENCE_OF_Node_Name */
+static int hf_ftam_name_list_item;                /* Node_Name */
+static int hf_ftam_fadu_number;                   /* INTEGER */
+static int hf_ftam_graphicString;                 /* GraphicString */
+static int hf_ftam_octetString;                   /* OCTET_STRING */
+static int hf_ftam_linked_Object;                 /* Pathname_Attribute */
+static int hf_ftam_child_objects;                 /* Child_Objects_Attribute */
+static int hf_ftam_primaty_pathname;              /* Pathname_Attribute */
+static int hf_ftam_date_and_time_of_creation;     /* Date_and_Time_Attribute */
+static int hf_ftam_date_and_time_of_last_modification;  /* Date_and_Time_Attribute */
+static int hf_ftam_date_and_time_of_last_read_access;  /* Date_and_Time_Attribute */
+static int hf_ftam_date_and_time_of_last_attribute_modification;  /* Date_and_Time_Attribute */
+static int hf_ftam_identity_of_creator;           /* User_Identity_Attribute */
+static int hf_ftam_identity_of_last_modifier;     /* User_Identity_Attribute */
+static int hf_ftam_identity_of_last_reader;       /* User_Identity_Attribute */
+static int hf_ftam_identity_last_attribute_modifier;  /* User_Identity_Attribute */
+static int hf_ftam_object_size;                   /* Object_Size_Attribute */
+static int hf_ftam_no_value_available;            /* NULL */
+static int hf_ftam_actual_values3;                /* SET_OF_Access_Control_Element */
+static int hf_ftam_actual_values3_item;           /* Access_Control_Element */
+static int hf_ftam_actual_values1;                /* T_actual_values1 */
+static int hf_ftam_insert_values;                 /* SET_OF_Access_Control_Element */
+static int hf_ftam_insert_values_item;            /* Access_Control_Element */
+static int hf_ftam_delete_values;                 /* SET_OF_Access_Control_Element */
+static int hf_ftam_delete_values_item;            /* Access_Control_Element */
+static int hf_ftam_action_list;                   /* Access_Request */
+static int hf_ftam_concurrency_access;            /* Concurrency_Access */
+static int hf_ftam_identity;                      /* User_Identity */
+static int hf_ftam_passwords;                     /* Access_Passwords */
+static int hf_ftam_location;                      /* Application_Entity_Title */
+static int hf_ftam_read_key;                      /* Concurrency_Key */
+static int hf_ftam_insert_key;                    /* Concurrency_Key */
+static int hf_ftam_replace_key;                   /* Concurrency_Key */
+static int hf_ftam_extend_key;                    /* Concurrency_Key */
+static int hf_ftam_erase_key;                     /* Concurrency_Key */
+static int hf_ftam_read_attribute_key;            /* Concurrency_Key */
+static int hf_ftam_change_attribute_key;          /* Concurrency_Key */
+static int hf_ftam_delete_Object_key;             /* Concurrency_Key */
+static int hf_ftam_actual_values2;                /* Account */
+static int hf_ftam_document_type;                 /* T_document_type */
+static int hf_ftam_parameter;                     /* T_parameter */
+static int hf_ftam_constraint_set_and_abstract_Syntax;  /* T_constraint_set_and_abstract_Syntax */
+static int hf_ftam_constraint_set_name;           /* Constraint_Set_Name */
+static int hf_ftam_actual_values5;                /* GeneralizedTime */
+static int hf_ftam_actual_values8;                /* T_actual_values8 */
+static int hf_ftam_incomplete_pathname;           /* Pathname */
+static int hf_ftam_complete_pathname;             /* Pathname */
+static int hf_ftam_actual_values7;                /* INTEGER */
+static int hf_ftam_actual_values9;                /* GraphicString */
+static int hf_ftam_abstract_Syntax_not_supported;  /* NULL */
+static int hf_ftam_actual_values4;                /* EXTERNAL */
+static int hf_ftam_actual_values6;                /* User_Identity */
+static int hf_ftam_Child_Objects_Attribute_item;  /* GraphicString */
+static int hf_ftam_f_Change_prefix_request;       /* F_CHANGE_PREFIX_request */
+static int hf_ftam_f_Change_prefix_response;      /* F_CHANGE_PREFIX_response */
+static int hf_ftam_f_list_request;                /* F_LIST_request */
+static int hf_ftam_f_list_response;               /* F_LIST_response */
+static int hf_ftam_f_group_select_request;        /* F_GROUP_SELECT_request */
+static int hf_ftam_f_group_select_response;       /* F_GROUP_SELECT_response */
+static int hf_ftam_f_group_delete_request;        /* F_GROUP_DELETE_request */
+static int hf_ftam_f_group_delete_response;       /* F_GROUP_DELETE_response */
+static int hf_ftam_f_group_move_request;          /* F_GROUP_MOVE_request */
+static int hf_ftam_f_group_move_response;         /* F_GROUP_MOVE_response */
+static int hf_ftam_f_group_copy_request;          /* F_GROUP_COPY_request */
+static int hf_ftam_f_group_copy_response;         /* F_GROUP_COPY_response */
+static int hf_ftam_f_group_list_request;          /* F_GROUP_LIST_request */
+static int hf_ftam_f_group_list_response;         /* F_GROUP_LIST_response */
+static int hf_ftam_f_group_Change_attrib_request;  /* F_GROUP_CHANGE_ATTRIB_request */
+static int hf_ftam_f_group_Change_attrib_response;  /* F_GROUP_CHANGE_ATTRIB_response */
+static int hf_ftam_f_select_another_request;      /* F_SELECT_ANOTHER_request */
+static int hf_ftam_f_select_another_response;     /* F_SELECT_ANOTHER_response */
+static int hf_ftam_f_create_directory_request;    /* F_CREATE_DIRECTORY_request */
+static int hf_ftam_f_create_directory_response;   /* F_CREATE_DIRECTORY_response */
+static int hf_ftam_f_link_request;                /* F_LINK_request */
+static int hf_ftam_f_link_response;               /* F_LINK_response */
+static int hf_ftam_f_unlink_request;              /* F_UNLINK_request */
+static int hf_ftam_f_unlink_response;             /* F_UNLINK_response */
+static int hf_ftam_f_read_link_attrib_request;    /* F_READ_LINK_ATTRIB_request */
+static int hf_ftam_f_read_link_attrib_response;   /* F_READ_LINK_ATTRIB_response */
+static int hf_ftam_f_Change_link_attrib_request;  /* F_CHANGE_LINK_ATTRIB_request */
+static int hf_ftam_f_Change_Iink_attrib_response;  /* F_CHANGE_LINK_ATTRIB_response */
+static int hf_ftam_f_move_request;                /* F_MOVE_request */
+static int hf_ftam_f_move_response;               /* F_MOVE_response */
+static int hf_ftam_f_copy_request;                /* F_COPY_request */
+static int hf_ftam_f_copy_response;               /* F_COPY_response */
+static int hf_ftam_reset;                         /* BOOLEAN */
+static int hf_ftam_destination_file_directory;    /* Destination_File_Directory */
+static int hf_ftam_attribute_value_asset_tions;   /* Attribute_Value_Assertions */
+static int hf_ftam_scope;                         /* Scope */
+static int hf_ftam_objects_attributes_list;       /* Objects_Attributes_List */
+static int hf_ftam_attribute_value_assertions;    /* Attribute_Value_Assertions */
+static int hf_ftam_maximum_set_size;              /* INTEGER */
+static int hf_ftam_request_Operation_result;      /* Request_Operation_Result */
+static int hf_ftam_operation_result;              /* Operation_Result */
+static int hf_ftam_error_action;                  /* Error_Action */
+static int hf_ftam_last_member_indicator;         /* BOOLEAN */
+static int hf_ftam_shared_ASE_infonnation;        /* Shared_ASE_Information */
+static int hf_ftam_target_object;                 /* Pathname_Attribute */
+static int hf_ftam_target_Object;                 /* Pathname_Attribute */
+static int hf_ftam_read_link_attributes;          /* Read_Attributes */
+static int hf_ftam_Attribute_Extension_Names_item;  /* Attribute_Extension_Set_Name */
+static int hf_ftam_extension_set_identifier;      /* Extension_Set_Identifier */
+static int hf_ftam_extension_attribute_names;     /* SEQUENCE_OF_Extension_Attribute_identifier */
+static int hf_ftam_extension_attribute_names_item;  /* Extension_Attribute_identifier */
+static int hf_ftam_Attribute_Extensions_item;     /* Attribute_Extension_Set */
+static int hf_ftam_extension_set_attributes;      /* SEQUENCE_OF_Extension_Attribute */
+static int hf_ftam_extension_set_attributes_item;  /* Extension_Attribute */
+static int hf_ftam_extension_attribute_identifier;  /* T_extension_attribute_identifier */
+static int hf_ftam_extension_attribute;           /* T_extension_attribute */
+static int hf_ftam__untag_item_03;                /* T__untag_item */
+static int hf_ftam_root_directory;                /* Pathname_Attribute */
+static int hf_ftam_retrieval_scope;               /* T_retrieval_scope */
+static int hf_ftam_OR_Set_item;                   /* AND_Set */
+static int hf_ftam_AND_Set_item;                  /* AND_Set_item */
+static int hf_ftam_pathname_Pattern;              /* Pathname_Pattern */
+static int hf_ftam_object_type_Pattern;           /* Integer_Pattern */
+static int hf_ftam_permitted_actions_Pattern;     /* Bitstring_Pattern */
+static int hf_ftam_contents_type_Pattern;         /* Contents_Type_Pattern */
+static int hf_ftam_linked_Object_Pattern;         /* Pathname_Pattern */
+static int hf_ftam_child_objects_Pattern;         /* Pathname_Pattern */
+static int hf_ftam_primaty_pathname_Pattern;      /* Pathname_Pattern */
+static int hf_ftam_storage_account_Pattern;       /* String_Pattern */
+static int hf_ftam_date_and_time_of_creation_Pattern;  /* Date_and_Time_Pattern */
+static int hf_ftam_date_and_time_of_last_modification_Pattern;  /* Date_and_Time_Pattern */
+static int hf_ftam_date_and_time_of_last_read_access_Pattern;  /* Date_and_Time_Pattern */
+static int hf_ftam_date_and_time_of_last_attribute_modification_Pattern;  /* Date_and_Time_Pattern */
+static int hf_ftam_identity_of_creator_Pattern;   /* User_Identity_Pattern */
+static int hf_ftam_identity_of_last_modifier_Pattern;  /* User_Identity_Pattern */
+static int hf_ftam_identity_of_last_reader_Pattern;  /* User_Identity_Pattern */
+static int hf_ftam_identity_of_last_attribute_modifier_Pattern;  /* User_Identity_Pattern */
+static int hf_ftam_object_availabiiity_Pattern;   /* Boolean_Pattern */
+static int hf_ftam_object_size_Pattern;           /* Integer_Pattern */
+static int hf_ftam_future_object_size_Pattern;    /* Integer_Pattern */
+static int hf_ftam_legal_quailfication_Pattern;   /* String_Pattern */
+static int hf_ftam_attribute_extensions_pattern;  /* Attribute_Extensions_Pattern */
+static int hf_ftam_equality_comparision;          /* Equality_Comparision */
+static int hf_ftam_pathname_value;                /* T_pathname_value */
+static int hf_ftam_pathname_value_item;           /* T_pathname_value_item */
+static int hf_ftam_string_match;                  /* String_Pattern */
+static int hf_ftam_any_match;                     /* NULL */
+static int hf_ftam_string_value;                  /* T_string_value */
+static int hf_ftam_string_value_item;             /* T_string_value_item */
+static int hf_ftam_substring_match;               /* GraphicString */
+static int hf_ftam_number_of_characters_match;    /* INTEGER */
+static int hf_ftam_match_bitstring;               /* BIT_STRING */
+static int hf_ftam_significance_bitstring;        /* BIT_STRING */
+static int hf_ftam_relational_camparision;        /* Equality_Comparision */
+static int hf_ftam_time_and_date_value;           /* GeneralizedTime */
+static int hf_ftam_relational_comparision;        /* Relational_Comparision */
+static int hf_ftam_integer_value;                 /* INTEGER */
+static int hf_ftam_object_identifier_value;       /* OBJECT_IDENTIFIER */
+static int hf_ftam_boolean_value;                 /* BOOLEAN */
+static int hf_ftam_document_type_Pattern;         /* Object_Identifier_Pattern */
+static int hf_ftam_constraint_set_abstract_Syntax_Pattern;  /* T_constraint_set_abstract_Syntax_Pattern */
+static int hf_ftam_constraint_Set_Pattern;        /* Object_Identifier_Pattern */
+static int hf_ftam_abstract_Syntax_Pattern;       /* Object_Identifier_Pattern */
+static int hf_ftam_Attribute_Extensions_Pattern_item;  /* Attribute_Extensions_Pattern_item */
+static int hf_ftam_extension_set_attribute_Patterns;  /* T_extension_set_attribute_Patterns */
+static int hf_ftam_extension_set_attribute_Patterns_item;  /* T_extension_set_attribute_Patterns_item */
+static int hf_ftam_attribute_extension_attribute_identifier;  /* T_attribute_extension_attribute_identifier */
+static int hf_ftam_extension_attribute_Pattern;   /* T_extension_attribute_Pattern */
+static int hf_ftam__untag_item_04;                /* Read_Attributes */
+static int hf_ftam_success_Object_count;          /* INTEGER */
+static int hf_ftam_success_Object_names;          /* SEQUENCE_OF_Pathname */
+static int hf_ftam_success_Object_names_item;     /* Pathname */
+static int hf_ftam_Pathname_item;                 /* GraphicString */
+static int hf_ftam_Pass_Passwords_item;           /* Password */
+static int hf_ftam__untag_item_05;                /* Path_Access_Passwords_item */
+static int hf_ftam_ap;                            /* AP_title */
+static int hf_ftam_ae;                            /* AE_qualifier */
 /* named bits */
-static int hf_ftam_Protocol_Version_U_version_1 = -1;
-static int hf_ftam_Protocol_Version_U_version_2 = -1;
-static int hf_ftam_Service_Class_U_unconstrained_class = -1;
-static int hf_ftam_Service_Class_U_management_class = -1;
-static int hf_ftam_Service_Class_U_transfer_class = -1;
-static int hf_ftam_Service_Class_U_transfer_and_management_class = -1;
-static int hf_ftam_Service_Class_U_access_class = -1;
-static int hf_ftam_Functional_Units_U_read = -1;
-static int hf_ftam_Functional_Units_U_write = -1;
-static int hf_ftam_Functional_Units_U_file_access = -1;
-static int hf_ftam_Functional_Units_U_limited_file_management = -1;
-static int hf_ftam_Functional_Units_U_enhanced_file_management = -1;
-static int hf_ftam_Functional_Units_U_grouping = -1;
-static int hf_ftam_Functional_Units_U_fadu_locking = -1;
-static int hf_ftam_Functional_Units_U_recovery = -1;
-static int hf_ftam_Functional_Units_U_restart_data_transfer = -1;
-static int hf_ftam_Functional_Units_U_limited_filestore_management = -1;
-static int hf_ftam_Functional_Units_U_enhanced_filestore_management = -1;
-static int hf_ftam_Functional_Units_U_object_manipulation = -1;
-static int hf_ftam_Functional_Units_U_group_manipulation = -1;
-static int hf_ftam_Functional_Units_U_consecutive_access = -1;
-static int hf_ftam_Functional_Units_U_concurrent_access = -1;
-static int hf_ftam_Attribute_Groups_U_storage = -1;
-static int hf_ftam_Attribute_Groups_U_security = -1;
-static int hf_ftam_Attribute_Groups_U_private = -1;
-static int hf_ftam_Attribute_Groups_U_extension = -1;
-static int hf_ftam_T_processing_mode_f_read = -1;
-static int hf_ftam_T_processing_mode_f_insert = -1;
-static int hf_ftam_T_processing_mode_f_replace = -1;
-static int hf_ftam_T_processing_mode_f_extend = -1;
-static int hf_ftam_T_processing_mode_f_erase = -1;
-static int hf_ftam_Access_Request_U_read = -1;
-static int hf_ftam_Access_Request_U_insert = -1;
-static int hf_ftam_Access_Request_U_replace = -1;
-static int hf_ftam_Access_Request_U_extend = -1;
-static int hf_ftam_Access_Request_U_erase = -1;
-static int hf_ftam_Access_Request_U_read_attribute = -1;
-static int hf_ftam_Access_Request_U_change_attribute = -1;
-static int hf_ftam_Access_Request_U_delete_Object = -1;
-static int hf_ftam_Concurrency_Key_not_required = -1;
-static int hf_ftam_Concurrency_Key_shared = -1;
-static int hf_ftam_Concurrency_Key_exclusive = -1;
-static int hf_ftam_Concurrency_Key_no_access = -1;
-static int hf_ftam_Permitted_Actions_Attribute_read = -1;
-static int hf_ftam_Permitted_Actions_Attribute_insert = -1;
-static int hf_ftam_Permitted_Actions_Attribute_replace = -1;
-static int hf_ftam_Permitted_Actions_Attribute_extend = -1;
-static int hf_ftam_Permitted_Actions_Attribute_erase = -1;
-static int hf_ftam_Permitted_Actions_Attribute_read_attribute = -1;
-static int hf_ftam_Permitted_Actions_Attribute_change_attribute = -1;
-static int hf_ftam_Permitted_Actions_Attribute_delete_Object = -1;
-static int hf_ftam_Permitted_Actions_Attribute_pass = -1;
-static int hf_ftam_Permitted_Actions_Attribute_link = -1;
-static int hf_ftam_Permitted_Actions_Attribute_traversal = -1;
-static int hf_ftam_Permitted_Actions_Attribute_reverse_traversal = -1;
-static int hf_ftam_Permitted_Actions_Attribute_random_Order = -1;
-static int hf_ftam_Equality_Comparision_no_value_available_matches = -1;
-static int hf_ftam_Equality_Comparision_equals_matches = -1;
-static int hf_ftam_Relational_Comparision_no_value_available_matches = -1;
-static int hf_ftam_Relational_Comparision_equals_matches = -1;
-static int hf_ftam_Relational_Comparision_less_than_matches = -1;
-static int hf_ftam_Relational_Comparision_greater_than_matches = -1;
-static int hf_ftam_Attribute_Names_read_pathname = -1;
-static int hf_ftam_Attribute_Names_read_Object_type = -1;
-static int hf_ftam_Attribute_Names_read_permitted_actions = -1;
-static int hf_ftam_Attribute_Names_read_contents_type = -1;
-static int hf_ftam_Attribute_Names_read_linked_Object = -1;
-static int hf_ftam_Attribute_Names_read_Child_objects = -1;
-static int hf_ftam_Attribute_Names_read_primary_pathname = -1;
-static int hf_ftam_Attribute_Names_read_storage_account = -1;
-static int hf_ftam_Attribute_Names_read_date_and_time_of_creation = -1;
-static int hf_ftam_Attribute_Names_read_date_and_time_of_last_modification = -1;
-static int hf_ftam_Attribute_Names_read_date_and_time_of_last_read_access = -1;
-static int hf_ftam_Attribute_Names_read_date_and_time_of_last_attribute_modification = -1;
-static int hf_ftam_Attribute_Names_read_identity_of_creator = -1;
-static int hf_ftam_Attribute_Names_read_identity_of_last_modifier = -1;
-static int hf_ftam_Attribute_Names_read_identity_of_last_reader = -1;
-static int hf_ftam_Attribute_Names_read_identity_of_last_attribute_modifier = -1;
-static int hf_ftam_Attribute_Names_read_Object_availability = -1;
-static int hf_ftam_Attribute_Names_read_Object_size = -1;
-static int hf_ftam_Attribute_Names_read_future_Object_size = -1;
-static int hf_ftam_Attribute_Names_read_access_control = -1;
-static int hf_ftam_Attribute_Names_read_path_access_control = -1;
-static int hf_ftam_Attribute_Names_read_l8gal_qualifiCatiOnS = -1;
-static int hf_ftam_Attribute_Names_read_private_use = -1;
-
-/*--- End of included file: packet-ftam-hf.c ---*/
-#line 44 "./asn1/ftam/packet-ftam-template.c"
+static int hf_ftam_Protocol_Version_U_version_1;
+static int hf_ftam_Protocol_Version_U_version_2;
+static int hf_ftam_Service_Class_U_unconstrained_class;
+static int hf_ftam_Service_Class_U_management_class;
+static int hf_ftam_Service_Class_U_transfer_class;
+static int hf_ftam_Service_Class_U_transfer_and_management_class;
+static int hf_ftam_Service_Class_U_access_class;
+static int hf_ftam_Functional_Units_U_spare_bit0;
+static int hf_ftam_Functional_Units_U_spare_bit1;
+static int hf_ftam_Functional_Units_U_read;
+static int hf_ftam_Functional_Units_U_write;
+static int hf_ftam_Functional_Units_U_file_access;
+static int hf_ftam_Functional_Units_U_limited_file_management;
+static int hf_ftam_Functional_Units_U_enhanced_file_management;
+static int hf_ftam_Functional_Units_U_grouping;
+static int hf_ftam_Functional_Units_U_fadu_locking;
+static int hf_ftam_Functional_Units_U_recovery;
+static int hf_ftam_Functional_Units_U_restart_data_transfer;
+static int hf_ftam_Functional_Units_U_limited_filestore_management;
+static int hf_ftam_Functional_Units_U_enhanced_filestore_management;
+static int hf_ftam_Functional_Units_U_object_manipulation;
+static int hf_ftam_Functional_Units_U_group_manipulation;
+static int hf_ftam_Functional_Units_U_consecutive_access;
+static int hf_ftam_Functional_Units_U_concurrent_access;
+static int hf_ftam_Attribute_Groups_U_storage;
+static int hf_ftam_Attribute_Groups_U_security;
+static int hf_ftam_Attribute_Groups_U_private;
+static int hf_ftam_Attribute_Groups_U_extension;
+static int hf_ftam_T_processing_mode_f_read;
+static int hf_ftam_T_processing_mode_f_insert;
+static int hf_ftam_T_processing_mode_f_replace;
+static int hf_ftam_T_processing_mode_f_extend;
+static int hf_ftam_T_processing_mode_f_erase;
+static int hf_ftam_Access_Request_U_read;
+static int hf_ftam_Access_Request_U_insert;
+static int hf_ftam_Access_Request_U_replace;
+static int hf_ftam_Access_Request_U_extend;
+static int hf_ftam_Access_Request_U_erase;
+static int hf_ftam_Access_Request_U_read_attribute;
+static int hf_ftam_Access_Request_U_change_attribute;
+static int hf_ftam_Access_Request_U_delete_Object;
+static int hf_ftam_Concurrency_Key_not_required;
+static int hf_ftam_Concurrency_Key_shared;
+static int hf_ftam_Concurrency_Key_exclusive;
+static int hf_ftam_Concurrency_Key_no_access;
+static int hf_ftam_Permitted_Actions_Attribute_read;
+static int hf_ftam_Permitted_Actions_Attribute_insert;
+static int hf_ftam_Permitted_Actions_Attribute_replace;
+static int hf_ftam_Permitted_Actions_Attribute_extend;
+static int hf_ftam_Permitted_Actions_Attribute_erase;
+static int hf_ftam_Permitted_Actions_Attribute_read_attribute;
+static int hf_ftam_Permitted_Actions_Attribute_change_attribute;
+static int hf_ftam_Permitted_Actions_Attribute_delete_Object;
+static int hf_ftam_Permitted_Actions_Attribute_traversal;
+static int hf_ftam_Permitted_Actions_Attribute_reverse_traversal;
+static int hf_ftam_Permitted_Actions_Attribute_random_Order;
+static int hf_ftam_Permitted_Actions_Attribute_pass;
+static int hf_ftam_Permitted_Actions_Attribute_link;
+static int hf_ftam_Equality_Comparision_no_value_available_matches;
+static int hf_ftam_Equality_Comparision_equals_matches;
+static int hf_ftam_Relational_Comparision_no_value_available_matches;
+static int hf_ftam_Relational_Comparision_equals_matches;
+static int hf_ftam_Relational_Comparision_less_than_matches;
+static int hf_ftam_Relational_Comparision_greater_than_matches;
+static int hf_ftam_Attribute_Names_read_pathname;
+static int hf_ftam_Attribute_Names_read_permitted_actions;
+static int hf_ftam_Attribute_Names_read_contents_type;
+static int hf_ftam_Attribute_Names_read_storage_account;
+static int hf_ftam_Attribute_Names_read_date_and_time_of_creation;
+static int hf_ftam_Attribute_Names_read_date_and_time_of_last_modification;
+static int hf_ftam_Attribute_Names_read_date_and_time_of_last_read_access;
+static int hf_ftam_Attribute_Names_read_date_and_time_of_last_attribute_modification;
+static int hf_ftam_Attribute_Names_read_identity_of_creator;
+static int hf_ftam_Attribute_Names_read_identity_of_last_modifier;
+static int hf_ftam_Attribute_Names_read_identity_of_last_reader;
+static int hf_ftam_Attribute_Names_read_identity_of_last_attribute_modifier;
+static int hf_ftam_Attribute_Names_read_Object_availability;
+static int hf_ftam_Attribute_Names_read_Object_size;
+static int hf_ftam_Attribute_Names_read_future_Object_size;
+static int hf_ftam_Attribute_Names_read_access_control;
+static int hf_ftam_Attribute_Names_read_l8gal_qualifiCatiOnS;
+static int hf_ftam_Attribute_Names_read_private_use;
+static int hf_ftam_Attribute_Names_read_Object_type;
+static int hf_ftam_Attribute_Names_read_linked_Object;
+static int hf_ftam_Attribute_Names_read_primary_pathname;
+static int hf_ftam_Attribute_Names_read_path_access_control;
+static int hf_ftam_Attribute_Names_spare_bit22;
+static int hf_ftam_Attribute_Names_read_Child_objects;
 
 /* Initialize the subtree pointers */
-static gint ett_ftam = -1;
+static int ett_ftam;
+static int ett_ftam_PDU;
+static int ett_ftam_FTAM_Regime_PDU;
+static int ett_ftam_F_INITIALIZE_request;
+static int ett_ftam_F_INITIALIZE_response;
+static int ett_ftam_Protocol_Version_U;
+static int ett_ftam_Service_Class_U;
+static int ett_ftam_Functional_Units_U;
+static int ett_ftam_Attribute_Groups_U;
+static int ett_ftam_Contents_Type_List_U;
+static int ett_ftam_Contents_Type_List_item;
+static int ett_ftam_F_TERMINATE_request;
+static int ett_ftam_F_TERMINATE_response;
+static int ett_ftam_F_U_ABORT_request;
+static int ett_ftam_F_P_ABORT_request;
+static int ett_ftam_File_PDU;
+static int ett_ftam_F_SELECT_request;
+static int ett_ftam_F_SELECT_response;
+static int ett_ftam_F_DESELECT_request;
+static int ett_ftam_F_DESELECT_response;
+static int ett_ftam_F_CREATE_request;
+static int ett_ftam_F_CREATE_response;
+static int ett_ftam_F_DELETE_request;
+static int ett_ftam_F_DELETE_response;
+static int ett_ftam_F_READ_ATTRIB_request;
+static int ett_ftam_F_READ_ATTRIB_response;
+static int ett_ftam_F_CHANGE_ATTRIB_request;
+static int ett_ftam_F_CHANGE_ATTRIB_response;
+static int ett_ftam_F_OPEN_request;
+static int ett_ftam_T_processing_mode;
+static int ett_ftam_T_open_contents_type;
+static int ett_ftam_SET_OF_Abstract_Syntax_Name;
+static int ett_ftam_F_OPEN_response;
+static int ett_ftam_F_CLOSE_request;
+static int ett_ftam_F_CLOSE_response;
+static int ett_ftam_F_BEGIN_GROUP_request;
+static int ett_ftam_F_BEGIN_GROUP_response;
+static int ett_ftam_F_END_GROUP_request;
+static int ett_ftam_F_END_GROUP_response;
+static int ett_ftam_F_RECOVER_request;
+static int ett_ftam_F_RECOVER_response;
+static int ett_ftam_F_LOCATE_request;
+static int ett_ftam_F_LOCATE_response;
+static int ett_ftam_F_ERASE_request;
+static int ett_ftam_F_ERASE_response;
+static int ett_ftam_Bulk_Data_PDU;
+static int ett_ftam_F_READ_request;
+static int ett_ftam_F_WRITE_request;
+static int ett_ftam_F_DATA_END_request;
+static int ett_ftam_F_TRANSFER_END_request;
+static int ett_ftam_F_TRANSFER_END_response;
+static int ett_ftam_F_CANCEL_request;
+static int ett_ftam_F_CANCEL_response;
+static int ett_ftam_F_RESTART_request;
+static int ett_ftam_F_RESTART_response;
+static int ett_ftam_Access_Context_U;
+static int ett_ftam_Access_Passwords_U;
+static int ett_ftam_Access_Request_U;
+static int ett_ftam_Change_Attributes_U;
+static int ett_ftam_Charging_U;
+static int ett_ftam_Charging_item;
+static int ett_ftam_Concurrency_Control_U;
+static int ett_ftam_Create_Attributes_U;
+static int ett_ftam_Diagnostic_U;
+static int ett_ftam_Diagnostic_item;
+static int ett_ftam_FADU_Identity_U;
+static int ett_ftam_SEQUENCE_OF_Node_Name;
+static int ett_ftam_Password_U;
+static int ett_ftam_Read_Attributes_U;
+static int ett_ftam_Select_Attributes_U;
+static int ett_ftam_Access_Control_Attribute;
+static int ett_ftam_SET_OF_Access_Control_Element;
+static int ett_ftam_Access_Control_Change_Attribute;
+static int ett_ftam_T_actual_values1;
+static int ett_ftam_Access_Control_Element;
+static int ett_ftam_Concurrency_Access;
+static int ett_ftam_Concurrency_Key;
+static int ett_ftam_Account_Attribute;
+static int ett_ftam_Contents_Type_Attribute;
+static int ett_ftam_T_document_type;
+static int ett_ftam_T_constraint_set_and_abstract_Syntax;
+static int ett_ftam_Date_and_Time_Attribute;
+static int ett_ftam_Object_Availability_Attribute;
+static int ett_ftam_Pathname_Attribute;
+static int ett_ftam_Object_Size_Attribute;
+static int ett_ftam_Legal_Qualification_Attribute;
+static int ett_ftam_Permitted_Actions_Attribute;
+static int ett_ftam_Private_Use_Attribute;
+static int ett_ftam_User_Identity_Attribute;
+static int ett_ftam_Child_Objects_Attribute;
+static int ett_ftam_FSM_PDU;
+static int ett_ftam_F_CHANGE_PREFIX_request;
+static int ett_ftam_F_CHANGE_PREFIX_response;
+static int ett_ftam_F_LIST_request;
+static int ett_ftam_F_LIST_response;
+static int ett_ftam_F_GROUP_SELECT_request;
+static int ett_ftam_F_GROUP_SELECT_response;
+static int ett_ftam_F_GROUP_DELETE_request;
+static int ett_ftam_F_GROUP_DELETE_response;
+static int ett_ftam_F_GROUP_MOVE_request;
+static int ett_ftam_F_GROUP_MOVE_response;
+static int ett_ftam_F_GROUP_COPY_request;
+static int ett_ftam_F_GROUP_COPY_response;
+static int ett_ftam_F_GROUP_LIST_request;
+static int ett_ftam_F_GROUP_LIST_response;
+static int ett_ftam_F_GROUP_CHANGE_ATTRIB_request;
+static int ett_ftam_F_GROUP_CHANGE_ATTRIB_response;
+static int ett_ftam_F_SELECT_ANOTHER_request;
+static int ett_ftam_F_SELECT_ANOTHER_response;
+static int ett_ftam_F_CREATE_DIRECTORY_request;
+static int ett_ftam_F_CREATE_DIRECTORY_response;
+static int ett_ftam_F_LINK_request;
+static int ett_ftam_F_LINK_response;
+static int ett_ftam_F_UNLINK_request;
+static int ett_ftam_F_UNLINK_response;
+static int ett_ftam_F_READ_LINK_ATTRIB_request;
+static int ett_ftam_F_READ_LINK_ATTRIB_response;
+static int ett_ftam_F_CHANGE_LINK_ATTRIB_request;
+static int ett_ftam_F_CHANGE_LINK_ATTRIB_response;
+static int ett_ftam_F_MOVE_request;
+static int ett_ftam_F_MOVE_response;
+static int ett_ftam_F_COPY_request;
+static int ett_ftam_F_COPY_response;
+static int ett_ftam_Attribute_Extension_Names;
+static int ett_ftam_Attribute_Extension_Set_Name;
+static int ett_ftam_SEQUENCE_OF_Extension_Attribute_identifier;
+static int ett_ftam_Attribute_Extensions;
+static int ett_ftam_Attribute_Extension_Set;
+static int ett_ftam_SEQUENCE_OF_Extension_Attribute;
+static int ett_ftam_Extension_Attribute;
+static int ett_ftam_Scope_U;
+static int ett_ftam_T__untag_item;
+static int ett_ftam_OR_Set;
+static int ett_ftam_AND_Set;
+static int ett_ftam_AND_Set_item;
+static int ett_ftam_Equality_Comparision;
+static int ett_ftam_Relational_Comparision;
+static int ett_ftam_Pathname_Pattern;
+static int ett_ftam_T_pathname_value;
+static int ett_ftam_T_pathname_value_item;
+static int ett_ftam_String_Pattern;
+static int ett_ftam_T_string_value;
+static int ett_ftam_T_string_value_item;
+static int ett_ftam_Bitstring_Pattern;
+static int ett_ftam_Date_and_Time_Pattern;
+static int ett_ftam_Integer_Pattern;
+static int ett_ftam_Object_Identifier_Pattern;
+static int ett_ftam_Boolean_Pattern;
+static int ett_ftam_Contents_Type_Pattern;
+static int ett_ftam_T_constraint_set_abstract_Syntax_Pattern;
+static int ett_ftam_Attribute_Extensions_Pattern;
+static int ett_ftam_Attribute_Extensions_Pattern_item;
+static int ett_ftam_T_extension_set_attribute_Patterns;
+static int ett_ftam_T_extension_set_attribute_Patterns_item;
+static int ett_ftam_SEQUENCE_OF_Read_Attributes;
+static int ett_ftam_Operation_Result_U;
+static int ett_ftam_SEQUENCE_OF_Pathname;
+static int ett_ftam_Pathname;
+static int ett_ftam_Pass_Passwords;
+static int ett_ftam_Path_Access_Passwords_U;
+static int ett_ftam_Path_Access_Passwords_item;
+static int ett_ftam_Attribute_Names;
+static int ett_ftam_AE_title;
 
-/*--- Included file: packet-ftam-ett.c ---*/
-#line 1 "./asn1/ftam/packet-ftam-ett.c"
-static gint ett_ftam_PDU = -1;
-static gint ett_ftam_FTAM_Regime_PDU = -1;
-static gint ett_ftam_F_INITIALIZE_request = -1;
-static gint ett_ftam_F_INITIALIZE_response = -1;
-static gint ett_ftam_Protocol_Version_U = -1;
-static gint ett_ftam_Service_Class_U = -1;
-static gint ett_ftam_Functional_Units_U = -1;
-static gint ett_ftam_Attribute_Groups_U = -1;
-static gint ett_ftam_Contents_Type_List_U = -1;
-static gint ett_ftam_Contents_Type_List_item = -1;
-static gint ett_ftam_F_TERMINATE_request = -1;
-static gint ett_ftam_F_TERMINATE_response = -1;
-static gint ett_ftam_F_U_ABORT_request = -1;
-static gint ett_ftam_F_P_ABORT_request = -1;
-static gint ett_ftam_File_PDU = -1;
-static gint ett_ftam_F_SELECT_request = -1;
-static gint ett_ftam_F_SELECT_response = -1;
-static gint ett_ftam_F_DESELECT_request = -1;
-static gint ett_ftam_F_DESELECT_response = -1;
-static gint ett_ftam_F_CREATE_request = -1;
-static gint ett_ftam_F_CREATE_response = -1;
-static gint ett_ftam_F_DELETE_request = -1;
-static gint ett_ftam_F_DELETE_response = -1;
-static gint ett_ftam_F_READ_ATTRIB_request = -1;
-static gint ett_ftam_F_READ_ATTRIB_response = -1;
-static gint ett_ftam_F_CHANGE_ATTRIB_request = -1;
-static gint ett_ftam_F_CHANGE_ATTRIB_response = -1;
-static gint ett_ftam_F_OPEN_request = -1;
-static gint ett_ftam_T_processing_mode = -1;
-static gint ett_ftam_T_open_contents_type = -1;
-static gint ett_ftam_SET_OF_Abstract_Syntax_Name = -1;
-static gint ett_ftam_F_OPEN_response = -1;
-static gint ett_ftam_F_CLOSE_request = -1;
-static gint ett_ftam_F_CLOSE_response = -1;
-static gint ett_ftam_F_BEGIN_GROUP_request = -1;
-static gint ett_ftam_F_BEGIN_GROUP_response = -1;
-static gint ett_ftam_F_END_GROUP_request = -1;
-static gint ett_ftam_F_END_GROUP_response = -1;
-static gint ett_ftam_F_RECOVER_request = -1;
-static gint ett_ftam_F_RECOVER_response = -1;
-static gint ett_ftam_F_LOCATE_request = -1;
-static gint ett_ftam_F_LOCATE_response = -1;
-static gint ett_ftam_F_ERASE_request = -1;
-static gint ett_ftam_F_ERASE_response = -1;
-static gint ett_ftam_Bulk_Data_PDU = -1;
-static gint ett_ftam_F_READ_request = -1;
-static gint ett_ftam_F_WRITE_request = -1;
-static gint ett_ftam_F_DATA_END_request = -1;
-static gint ett_ftam_F_TRANSFER_END_request = -1;
-static gint ett_ftam_F_TRANSFER_END_response = -1;
-static gint ett_ftam_F_CANCEL_request = -1;
-static gint ett_ftam_F_CANCEL_response = -1;
-static gint ett_ftam_F_RESTART_request = -1;
-static gint ett_ftam_F_RESTART_response = -1;
-static gint ett_ftam_Access_Context_U = -1;
-static gint ett_ftam_Access_Passwords_U = -1;
-static gint ett_ftam_Access_Request_U = -1;
-static gint ett_ftam_Change_Attributes_U = -1;
-static gint ett_ftam_Charging_U = -1;
-static gint ett_ftam_Charging_item = -1;
-static gint ett_ftam_Concurrency_Control_U = -1;
-static gint ett_ftam_Create_Attributes_U = -1;
-static gint ett_ftam_Diagnostic_U = -1;
-static gint ett_ftam_Diagnostic_item = -1;
-static gint ett_ftam_FADU_Identity_U = -1;
-static gint ett_ftam_SEQUENCE_OF_Node_Name = -1;
-static gint ett_ftam_Password_U = -1;
-static gint ett_ftam_Read_Attributes_U = -1;
-static gint ett_ftam_Select_Attributes_U = -1;
-static gint ett_ftam_Access_Control_Attribute = -1;
-static gint ett_ftam_SET_OF_Access_Control_Element = -1;
-static gint ett_ftam_Access_Control_Change_Attribute = -1;
-static gint ett_ftam_T_actual_values1 = -1;
-static gint ett_ftam_Access_Control_Element = -1;
-static gint ett_ftam_Concurrency_Access = -1;
-static gint ett_ftam_Concurrency_Key = -1;
-static gint ett_ftam_Account_Attribute = -1;
-static gint ett_ftam_Contents_Type_Attribute = -1;
-static gint ett_ftam_T_document_type = -1;
-static gint ett_ftam_T_constraint_set_and_abstract_Syntax = -1;
-static gint ett_ftam_Date_and_Time_Attribute = -1;
-static gint ett_ftam_Object_Availability_Attribute = -1;
-static gint ett_ftam_Pathname_Attribute = -1;
-static gint ett_ftam_Object_Size_Attribute = -1;
-static gint ett_ftam_Legal_Qualification_Attribute = -1;
-static gint ett_ftam_Permitted_Actions_Attribute = -1;
-static gint ett_ftam_Private_Use_Attribute = -1;
-static gint ett_ftam_User_Identity_Attribute = -1;
-static gint ett_ftam_Child_Objects_Attribute = -1;
-static gint ett_ftam_FSM_PDU = -1;
-static gint ett_ftam_F_CHANGE_PREFIX_request = -1;
-static gint ett_ftam_F_CHANGE_PREFIX_response = -1;
-static gint ett_ftam_F_LIST_request = -1;
-static gint ett_ftam_F_LIST_response = -1;
-static gint ett_ftam_F_GROUP_SELECT_request = -1;
-static gint ett_ftam_F_GROUP_SELECT_response = -1;
-static gint ett_ftam_F_GROUP_DELETE_request = -1;
-static gint ett_ftam_F_GROUP_DELETE_response = -1;
-static gint ett_ftam_F_GROUP_MOVE_request = -1;
-static gint ett_ftam_F_GROUP_MOVE_response = -1;
-static gint ett_ftam_F_GROUP_COPY_request = -1;
-static gint ett_ftam_F_GROUP_COPY_response = -1;
-static gint ett_ftam_F_GROUP_LIST_request = -1;
-static gint ett_ftam_F_GROUP_LIST_response = -1;
-static gint ett_ftam_F_GROUP_CHANGE_ATTRIB_request = -1;
-static gint ett_ftam_F_GROUP_CHANGE_ATTRIB_response = -1;
-static gint ett_ftam_F_SELECT_ANOTHER_request = -1;
-static gint ett_ftam_F_SELECT_ANOTHER_response = -1;
-static gint ett_ftam_F_CREATE_DIRECTORY_request = -1;
-static gint ett_ftam_F_CREATE_DIRECTORY_response = -1;
-static gint ett_ftam_F_LINK_request = -1;
-static gint ett_ftam_F_LINK_response = -1;
-static gint ett_ftam_F_UNLINK_request = -1;
-static gint ett_ftam_F_UNLINK_response = -1;
-static gint ett_ftam_F_READ_LINK_ATTRIB_request = -1;
-static gint ett_ftam_F_READ_LINK_ATTRIB_response = -1;
-static gint ett_ftam_F_CHANGE_LINK_ATTRIB_request = -1;
-static gint ett_ftam_F_CHANGE_LINK_ATTRIB_response = -1;
-static gint ett_ftam_F_MOVE_request = -1;
-static gint ett_ftam_F_MOVE_response = -1;
-static gint ett_ftam_F_COPY_request = -1;
-static gint ett_ftam_F_COPY_response = -1;
-static gint ett_ftam_Attribute_Extension_Names = -1;
-static gint ett_ftam_Attribute_Extension_Set_Name = -1;
-static gint ett_ftam_SEQUENCE_OF_Extension_Attribute_identifier = -1;
-static gint ett_ftam_Attribute_Extensions = -1;
-static gint ett_ftam_Attribute_Extension_Set = -1;
-static gint ett_ftam_SEQUENCE_OF_Extension_Attribute = -1;
-static gint ett_ftam_Extension_Attribute = -1;
-static gint ett_ftam_Scope_U = -1;
-static gint ett_ftam_T__untag_item = -1;
-static gint ett_ftam_OR_Set = -1;
-static gint ett_ftam_AND_Set = -1;
-static gint ett_ftam_AND_Set_item = -1;
-static gint ett_ftam_Equality_Comparision = -1;
-static gint ett_ftam_Relational_Comparision = -1;
-static gint ett_ftam_Pathname_Pattern = -1;
-static gint ett_ftam_T_pathname_value = -1;
-static gint ett_ftam_T_pathname_value_item = -1;
-static gint ett_ftam_String_Pattern = -1;
-static gint ett_ftam_T_string_value = -1;
-static gint ett_ftam_T_string_value_item = -1;
-static gint ett_ftam_Bitstring_Pattern = -1;
-static gint ett_ftam_Date_and_Time_Pattern = -1;
-static gint ett_ftam_Integer_Pattern = -1;
-static gint ett_ftam_Object_Identifier_Pattern = -1;
-static gint ett_ftam_Boolean_Pattern = -1;
-static gint ett_ftam_Contents_Type_Pattern = -1;
-static gint ett_ftam_T_constraint_set_abstract_Syntax_Pattern = -1;
-static gint ett_ftam_Attribute_Extensions_Pattern = -1;
-static gint ett_ftam_Attribute_Extensions_Pattern_item = -1;
-static gint ett_ftam_T_extension_set_attribute_Patterns = -1;
-static gint ett_ftam_T_extension_set_attribute_Patterns_item = -1;
-static gint ett_ftam_SEQUENCE_OF_Read_Attributes = -1;
-static gint ett_ftam_Operation_Result_U = -1;
-static gint ett_ftam_SEQUENCE_OF_Pathname = -1;
-static gint ett_ftam_Pathname = -1;
-static gint ett_ftam_Pass_Passwords = -1;
-static gint ett_ftam_Path_Access_Passwords_U = -1;
-static gint ett_ftam_Path_Access_Passwords_item = -1;
-static gint ett_ftam_Attribute_Names = -1;
-static gint ett_ftam_AE_title = -1;
-
-/*--- End of included file: packet-ftam-ett.c ---*/
-#line 48 "./asn1/ftam/packet-ftam-template.c"
-
-static expert_field ei_ftam_zero_pdu = EI_INIT;
+static expert_field ei_ftam_zero_pdu;
 
 
-/*--- Included file: packet-ftam-fn.c ---*/
-#line 1 "./asn1/ftam/packet-ftam-fn.c"
-
-static const asn_namedbit Protocol_Version_U_bits[] = {
-  {  0, &hf_ftam_Protocol_Version_U_version_1, -1, -1, "version-1", NULL },
-  {  1, &hf_ftam_Protocol_Version_U_version_2, -1, -1, "version-2", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Protocol_Version_U_bits[] = {
+  &hf_ftam_Protocol_Version_U_version_1,
+  &hf_ftam_Protocol_Version_U_version_2,
+  NULL
 };
 
 static int
-dissect_ftam_Protocol_Version_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Protocol_Version_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Protocol_Version_U_bits, hf_index, ett_ftam_Protocol_Version_U,
+                                    Protocol_Version_U_bits, 2, hf_index, ett_ftam_Protocol_Version_U,
                                     NULL);
 
   return offset;
@@ -665,9 +651,9 @@ dissect_ftam_Protocol_Version_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_Protocol_Version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Protocol_Version(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_CON, 0, TRUE, dissect_ftam_Protocol_Version_U);
+                                      hf_index, BER_CLASS_CON, 0, true, dissect_ftam_Protocol_Version_U);
 
   return offset;
 }
@@ -675,7 +661,7 @@ dissect_ftam_Protocol_Version(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
 
 
 static int
-dissect_ftam_GraphicString(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_GraphicString(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_restricted_string(implicit_tag, BER_UNI_TAG_GraphicString,
                                             actx, tree, tvb, offset, hf_index,
                                             NULL);
@@ -686,9 +672,9 @@ dissect_ftam_GraphicString(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int off
 
 
 static int
-dissect_ftam_Implementation_Information(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Implementation_Information(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_CON, 1, TRUE, dissect_ftam_GraphicString);
+                                      hf_index, BER_CLASS_CON, 1, true, dissect_ftam_GraphicString);
 
   return offset;
 }
@@ -696,26 +682,26 @@ dissect_ftam_Implementation_Information(gboolean implicit_tag _U_, tvbuff_t *tvb
 
 
 static int
-dissect_ftam_BOOLEAN(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_BOOLEAN(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_boolean(implicit_tag, actx, tree, tvb, offset, hf_index, NULL);
 
   return offset;
 }
 
 
-static const asn_namedbit Service_Class_U_bits[] = {
-  {  0, &hf_ftam_Service_Class_U_unconstrained_class, -1, -1, "unconstrained-class", NULL },
-  {  1, &hf_ftam_Service_Class_U_management_class, -1, -1, "management-class", NULL },
-  {  2, &hf_ftam_Service_Class_U_transfer_class, -1, -1, "transfer-class", NULL },
-  {  3, &hf_ftam_Service_Class_U_transfer_and_management_class, -1, -1, "transfer-and-management-class", NULL },
-  {  4, &hf_ftam_Service_Class_U_access_class, -1, -1, "access-class", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Service_Class_U_bits[] = {
+  &hf_ftam_Service_Class_U_unconstrained_class,
+  &hf_ftam_Service_Class_U_management_class,
+  &hf_ftam_Service_Class_U_transfer_class,
+  &hf_ftam_Service_Class_U_transfer_and_management_class,
+  &hf_ftam_Service_Class_U_access_class,
+  NULL
 };
 
 static int
-dissect_ftam_Service_Class_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Service_Class_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Service_Class_U_bits, hf_index, ett_ftam_Service_Class_U,
+                                    Service_Class_U_bits, 5, hf_index, ett_ftam_Service_Class_U,
                                     NULL);
 
   return offset;
@@ -724,37 +710,39 @@ dissect_ftam_Service_Class_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_ftam_Service_Class(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Service_Class(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_CON, 3, TRUE, dissect_ftam_Service_Class_U);
+                                      hf_index, BER_CLASS_CON, 3, true, dissect_ftam_Service_Class_U);
 
   return offset;
 }
 
 
-static const asn_namedbit Functional_Units_U_bits[] = {
-  {  2, &hf_ftam_Functional_Units_U_read, -1, -1, "read", NULL },
-  {  3, &hf_ftam_Functional_Units_U_write, -1, -1, "write", NULL },
-  {  4, &hf_ftam_Functional_Units_U_file_access, -1, -1, "file-access", NULL },
-  {  5, &hf_ftam_Functional_Units_U_limited_file_management, -1, -1, "limited-file-management", NULL },
-  {  6, &hf_ftam_Functional_Units_U_enhanced_file_management, -1, -1, "enhanced-file-management", NULL },
-  {  7, &hf_ftam_Functional_Units_U_grouping, -1, -1, "grouping", NULL },
-  {  8, &hf_ftam_Functional_Units_U_fadu_locking, -1, -1, "fadu-locking", NULL },
-  {  9, &hf_ftam_Functional_Units_U_recovery, -1, -1, "recovery", NULL },
-  { 10, &hf_ftam_Functional_Units_U_restart_data_transfer, -1, -1, "restart-data-transfer", NULL },
-  { 11, &hf_ftam_Functional_Units_U_limited_filestore_management, -1, -1, "limited-filestore-management", NULL },
-  { 12, &hf_ftam_Functional_Units_U_enhanced_filestore_management, -1, -1, "enhanced-filestore-management", NULL },
-  { 13, &hf_ftam_Functional_Units_U_object_manipulation, -1, -1, "object-manipulation", NULL },
-  { 14, &hf_ftam_Functional_Units_U_group_manipulation, -1, -1, "group-manipulation", NULL },
-  { 15, &hf_ftam_Functional_Units_U_consecutive_access, -1, -1, "consecutive-access", NULL },
-  { 16, &hf_ftam_Functional_Units_U_concurrent_access, -1, -1, "concurrent-access", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Functional_Units_U_bits[] = {
+  &hf_ftam_Functional_Units_U_spare_bit0,
+  &hf_ftam_Functional_Units_U_spare_bit1,
+  &hf_ftam_Functional_Units_U_read,
+  &hf_ftam_Functional_Units_U_write,
+  &hf_ftam_Functional_Units_U_file_access,
+  &hf_ftam_Functional_Units_U_limited_file_management,
+  &hf_ftam_Functional_Units_U_enhanced_file_management,
+  &hf_ftam_Functional_Units_U_grouping,
+  &hf_ftam_Functional_Units_U_fadu_locking,
+  &hf_ftam_Functional_Units_U_recovery,
+  &hf_ftam_Functional_Units_U_restart_data_transfer,
+  &hf_ftam_Functional_Units_U_limited_filestore_management,
+  &hf_ftam_Functional_Units_U_enhanced_filestore_management,
+  &hf_ftam_Functional_Units_U_object_manipulation,
+  &hf_ftam_Functional_Units_U_group_manipulation,
+  &hf_ftam_Functional_Units_U_consecutive_access,
+  &hf_ftam_Functional_Units_U_concurrent_access,
+  NULL
 };
 
 static int
-dissect_ftam_Functional_Units_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Functional_Units_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Functional_Units_U_bits, hf_index, ett_ftam_Functional_Units_U,
+                                    Functional_Units_U_bits, 17, hf_index, ett_ftam_Functional_Units_U,
                                     NULL);
 
   return offset;
@@ -763,26 +751,26 @@ dissect_ftam_Functional_Units_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_Functional_Units(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Functional_Units(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_CON, 4, TRUE, dissect_ftam_Functional_Units_U);
+                                      hf_index, BER_CLASS_CON, 4, true, dissect_ftam_Functional_Units_U);
 
   return offset;
 }
 
 
-static const asn_namedbit Attribute_Groups_U_bits[] = {
-  {  0, &hf_ftam_Attribute_Groups_U_storage, -1, -1, "storage", NULL },
-  {  1, &hf_ftam_Attribute_Groups_U_security, -1, -1, "security", NULL },
-  {  2, &hf_ftam_Attribute_Groups_U_private, -1, -1, "private", NULL },
-  {  3, &hf_ftam_Attribute_Groups_U_extension, -1, -1, "extension", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Attribute_Groups_U_bits[] = {
+  &hf_ftam_Attribute_Groups_U_storage,
+  &hf_ftam_Attribute_Groups_U_security,
+  &hf_ftam_Attribute_Groups_U_private,
+  &hf_ftam_Attribute_Groups_U_extension,
+  NULL
 };
 
 static int
-dissect_ftam_Attribute_Groups_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Groups_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Attribute_Groups_U_bits, hf_index, ett_ftam_Attribute_Groups_U,
+                                    Attribute_Groups_U_bits, 4, hf_index, ett_ftam_Attribute_Groups_U,
                                     NULL);
 
   return offset;
@@ -791,9 +779,9 @@ dissect_ftam_Attribute_Groups_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_Attribute_Groups(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Groups(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_CON, 5, TRUE, dissect_ftam_Attribute_Groups_U);
+                                      hf_index, BER_CLASS_CON, 5, true, dissect_ftam_Attribute_Groups_U);
 
   return offset;
 }
@@ -801,7 +789,7 @@ dissect_ftam_Attribute_Groups(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
 
 
 static int
-dissect_ftam_EXTERNAL(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_EXTERNAL(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_external_type(implicit_tag, tree, tvb, offset, actx, hf_index, NULL);
 
   return offset;
@@ -810,9 +798,9 @@ dissect_ftam_EXTERNAL(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _
 
 
 static int
-dissect_ftam_Shared_ASE_Information(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Shared_ASE_Information(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 20, TRUE, dissect_ftam_EXTERNAL);
+                                      hf_index, BER_CLASS_APP, 20, true, dissect_ftam_EXTERNAL);
 
   return offset;
 }
@@ -828,7 +816,7 @@ static const value_string ftam_FTAM_Quality_of_Service_U_vals[] = {
 
 
 static int
-dissect_ftam_FTAM_Quality_of_Service_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_FTAM_Quality_of_Service_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -838,9 +826,9 @@ dissect_ftam_FTAM_Quality_of_Service_U(gboolean implicit_tag _U_, tvbuff_t *tvb 
 
 
 static int
-dissect_ftam_FTAM_Quality_of_Service(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_FTAM_Quality_of_Service(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_CON, 6, TRUE, dissect_ftam_FTAM_Quality_of_Service_U);
+                                      hf_index, BER_CLASS_CON, 6, true, dissect_ftam_FTAM_Quality_of_Service_U);
 
   return offset;
 }
@@ -848,7 +836,7 @@ dissect_ftam_FTAM_Quality_of_Service(gboolean implicit_tag _U_, tvbuff_t *tvb _U
 
 
 static int
-dissect_ftam_OBJECT_IDENTIFIER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_OBJECT_IDENTIFIER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier_str(implicit_tag, actx, tree, tvb, offset, hf_index, &actx->external.direct_reference);
 
   return offset;
@@ -857,9 +845,9 @@ dissect_ftam_OBJECT_IDENTIFIER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
 
 
 static int
-dissect_ftam_Document_Type_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Document_Type_Name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 14, TRUE, dissect_ftam_OBJECT_IDENTIFIER);
+                                      hf_index, BER_CLASS_APP, 14, true, dissect_ftam_OBJECT_IDENTIFIER);
 
   return offset;
 }
@@ -867,9 +855,9 @@ dissect_ftam_Document_Type_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_Abstract_Syntax_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Abstract_Syntax_Name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 0, TRUE, dissect_ftam_OBJECT_IDENTIFIER);
+                                      hf_index, BER_CLASS_APP, 0, true, dissect_ftam_OBJECT_IDENTIFIER);
 
   return offset;
 }
@@ -888,7 +876,7 @@ static const ber_choice_t Contents_Type_List_item_choice[] = {
 };
 
 static int
-dissect_ftam_Contents_Type_List_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Contents_Type_List_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Contents_Type_List_item_choice, hf_index, ett_ftam_Contents_Type_List_item,
                                  NULL);
@@ -902,7 +890,7 @@ static const ber_sequence_t Contents_Type_List_U_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Contents_Type_List_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Contents_Type_List_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Contents_Type_List_U_sequence_of, hf_index, ett_ftam_Contents_Type_List_U);
 
@@ -912,9 +900,9 @@ dissect_ftam_Contents_Type_List_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, 
 
 
 static int
-dissect_ftam_Contents_Type_List(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Contents_Type_List(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_CON, 7, TRUE, dissect_ftam_Contents_Type_List_U);
+                                      hf_index, BER_CLASS_CON, 7, true, dissect_ftam_Contents_Type_List_U);
 
   return offset;
 }
@@ -922,9 +910,9 @@ dissect_ftam_Contents_Type_List(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_User_Identity(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_User_Identity(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 22, TRUE, dissect_ftam_GraphicString);
+                                      hf_index, BER_CLASS_APP, 22, true, dissect_ftam_GraphicString);
 
   return offset;
 }
@@ -932,9 +920,9 @@ dissect_ftam_User_Identity(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int off
 
 
 static int
-dissect_ftam_Account(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Account(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 4, TRUE, dissect_ftam_GraphicString);
+                                      hf_index, BER_CLASS_APP, 4, true, dissect_ftam_GraphicString);
 
   return offset;
 }
@@ -942,7 +930,7 @@ dissect_ftam_Account(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U
 
 
 static int
-dissect_ftam_OCTET_STRING(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_OCTET_STRING(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
                                        NULL);
 
@@ -963,7 +951,7 @@ static const ber_choice_t Password_U_choice[] = {
 };
 
 static int
-dissect_ftam_Password_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Password_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Password_U_choice, hf_index, ett_ftam_Password_U,
                                  NULL);
@@ -974,9 +962,9 @@ dissect_ftam_Password_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset
 
 
 static int
-dissect_ftam_Password(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Password(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 17, FALSE, dissect_ftam_Password_U);
+                                      hf_index, BER_CLASS_APP, 17, false, dissect_ftam_Password_U);
 
   return offset;
 }
@@ -984,7 +972,7 @@ dissect_ftam_Password(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _
 
 
 static int
-dissect_ftam_INTEGER(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_INTEGER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1010,7 +998,7 @@ static const ber_sequence_t F_INITIALIZE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_INITIALIZE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_INITIALIZE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_INITIALIZE_request_sequence, hf_index, ett_ftam_F_INITIALIZE_request);
 
@@ -1026,7 +1014,7 @@ static const value_string ftam_State_Result_U_vals[] = {
 
 
 static int
-dissect_ftam_State_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_State_Result_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1036,9 +1024,9 @@ dissect_ftam_State_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 
 static int
-dissect_ftam_State_Result(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_State_Result(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 21, TRUE, dissect_ftam_State_Result_U);
+                                      hf_index, BER_CLASS_APP, 21, true, dissect_ftam_State_Result_U);
 
   return offset;
 }
@@ -1053,7 +1041,7 @@ static const value_string ftam_Action_Result_U_vals[] = {
 
 
 static int
-dissect_ftam_Action_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Action_Result_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1063,9 +1051,9 @@ dissect_ftam_Action_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_ftam_Action_Result(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Action_Result(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 5, TRUE, dissect_ftam_Action_Result_U);
+                                      hf_index, BER_CLASS_APP, 5, true, dissect_ftam_Action_Result_U);
 
   return offset;
 }
@@ -1080,7 +1068,7 @@ static const value_string ftam_T_diagnostic_type_vals[] = {
 
 
 static int
-dissect_ftam_T_diagnostic_type(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_diagnostic_type(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1100,7 +1088,7 @@ static const value_string ftam_Entity_Reference_vals[] = {
 
 
 static int
-dissect_ftam_Entity_Reference(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Entity_Reference(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1119,7 +1107,7 @@ static const ber_sequence_t Diagnostic_item_sequence[] = {
 };
 
 static int
-dissect_ftam_Diagnostic_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Diagnostic_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Diagnostic_item_sequence, hf_index, ett_ftam_Diagnostic_item);
 
@@ -1132,7 +1120,7 @@ static const ber_sequence_t Diagnostic_U_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Diagnostic_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Diagnostic_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Diagnostic_U_sequence_of, hf_index, ett_ftam_Diagnostic_U);
 
@@ -1142,9 +1130,9 @@ dissect_ftam_Diagnostic_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offs
 
 
 static int
-dissect_ftam_Diagnostic(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Diagnostic(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 13, TRUE, dissect_ftam_Diagnostic_U);
+                                      hf_index, BER_CLASS_APP, 13, true, dissect_ftam_Diagnostic_U);
 
   return offset;
 }
@@ -1168,7 +1156,7 @@ static const ber_sequence_t F_INITIALIZE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_INITIALIZE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_INITIALIZE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_INITIALIZE_response_sequence, hf_index, ett_ftam_F_INITIALIZE_response);
 
@@ -1182,7 +1170,7 @@ static const ber_sequence_t F_TERMINATE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_TERMINATE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_TERMINATE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_TERMINATE_request_sequence, hf_index, ett_ftam_F_TERMINATE_request);
 
@@ -1198,7 +1186,7 @@ static const ber_sequence_t Charging_item_sequence[] = {
 };
 
 static int
-dissect_ftam_Charging_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Charging_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Charging_item_sequence, hf_index, ett_ftam_Charging_item);
 
@@ -1211,7 +1199,7 @@ static const ber_sequence_t Charging_U_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Charging_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Charging_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Charging_U_sequence_of, hf_index, ett_ftam_Charging_U);
 
@@ -1221,9 +1209,9 @@ dissect_ftam_Charging_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset
 
 
 static int
-dissect_ftam_Charging(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Charging(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 9, TRUE, dissect_ftam_Charging_U);
+                                      hf_index, BER_CLASS_APP, 9, true, dissect_ftam_Charging_U);
 
   return offset;
 }
@@ -1236,7 +1224,7 @@ static const ber_sequence_t F_TERMINATE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_TERMINATE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_TERMINATE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_TERMINATE_response_sequence, hf_index, ett_ftam_F_TERMINATE_response);
 
@@ -1251,7 +1239,7 @@ static const ber_sequence_t F_U_ABORT_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_U_ABORT_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_U_ABORT_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_U_ABORT_request_sequence, hf_index, ett_ftam_F_U_ABORT_request);
 
@@ -1266,7 +1254,7 @@ static const ber_sequence_t F_P_ABORT_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_P_ABORT_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_P_ABORT_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_P_ABORT_request_sequence, hf_index, ett_ftam_F_P_ABORT_request);
 
@@ -1295,9 +1283,8 @@ static const ber_choice_t FTAM_Regime_PDU_choice[] = {
 };
 
 static int
-dissect_ftam_FTAM_Regime_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 98 "./asn1/ftam/ftam.cnf"
-  gint branch_taken;
+dissect_ftam_FTAM_Regime_PDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  int branch_taken;
 
     offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  FTAM_Regime_PDU_choice, hf_index, ett_ftam_FTAM_Regime_PDU,
@@ -1305,9 +1292,8 @@ dissect_ftam_FTAM_Regime_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
   if( (branch_taken!=-1) && ftam_FTAM_Regime_PDU_vals[branch_taken].strptr ){
-	col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_FTAM_Regime_PDU_vals[branch_taken].strptr);
+    col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_FTAM_Regime_PDU_vals[branch_taken].strptr);
   }
-
 
 
   return offset;
@@ -1319,7 +1305,7 @@ static const ber_sequence_t Pathname_sequence_of[1] = {
 };
 
 int
-dissect_ftam_Pathname(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Pathname(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Pathname_sequence_of, hf_index, ett_ftam_Pathname);
 
@@ -1340,7 +1326,7 @@ static const ber_choice_t Pathname_Attribute_choice[] = {
 };
 
 static int
-dissect_ftam_Pathname_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Pathname_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Pathname_Attribute_choice, hf_index, ett_ftam_Pathname_Attribute,
                                  NULL);
@@ -1355,7 +1341,7 @@ static const ber_sequence_t Select_Attributes_U_sequence[] = {
 };
 
 static int
-dissect_ftam_Select_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Select_Attributes_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Select_Attributes_U_sequence, hf_index, ett_ftam_Select_Attributes_U);
 
@@ -1365,30 +1351,30 @@ dissect_ftam_Select_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, i
 
 
 static int
-dissect_ftam_Select_Attributes(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Select_Attributes(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 19, TRUE, dissect_ftam_Select_Attributes_U);
+                                      hf_index, BER_CLASS_APP, 19, true, dissect_ftam_Select_Attributes_U);
 
   return offset;
 }
 
 
-static const asn_namedbit Access_Request_U_bits[] = {
-  {  0, &hf_ftam_Access_Request_U_read, -1, -1, "read", NULL },
-  {  1, &hf_ftam_Access_Request_U_insert, -1, -1, "insert", NULL },
-  {  2, &hf_ftam_Access_Request_U_replace, -1, -1, "replace", NULL },
-  {  3, &hf_ftam_Access_Request_U_extend, -1, -1, "extend", NULL },
-  {  4, &hf_ftam_Access_Request_U_erase, -1, -1, "erase", NULL },
-  {  5, &hf_ftam_Access_Request_U_read_attribute, -1, -1, "read-attribute", NULL },
-  {  6, &hf_ftam_Access_Request_U_change_attribute, -1, -1, "change-attribute", NULL },
-  {  7, &hf_ftam_Access_Request_U_delete_Object, -1, -1, "delete-Object", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Access_Request_U_bits[] = {
+  &hf_ftam_Access_Request_U_read,
+  &hf_ftam_Access_Request_U_insert,
+  &hf_ftam_Access_Request_U_replace,
+  &hf_ftam_Access_Request_U_extend,
+  &hf_ftam_Access_Request_U_erase,
+  &hf_ftam_Access_Request_U_read_attribute,
+  &hf_ftam_Access_Request_U_change_attribute,
+  &hf_ftam_Access_Request_U_delete_Object,
+  NULL
 };
 
 static int
-dissect_ftam_Access_Request_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Request_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Access_Request_U_bits, hf_index, ett_ftam_Access_Request_U,
+                                    Access_Request_U_bits, 8, hf_index, ett_ftam_Access_Request_U,
                                     NULL);
 
   return offset;
@@ -1397,9 +1383,9 @@ dissect_ftam_Access_Request_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
 
 
 static int
-dissect_ftam_Access_Request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 3, TRUE, dissect_ftam_Access_Request_U);
+                                      hf_index, BER_CLASS_APP, 3, true, dissect_ftam_Access_Request_U);
 
   return offset;
 }
@@ -1410,7 +1396,7 @@ static const ber_sequence_t Pass_Passwords_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Pass_Passwords(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Pass_Passwords(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Pass_Passwords_sequence_of, hf_index, ett_ftam_Pass_Passwords);
 
@@ -1433,7 +1419,7 @@ static const ber_sequence_t Access_Passwords_U_sequence[] = {
 };
 
 static int
-dissect_ftam_Access_Passwords_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Passwords_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Access_Passwords_U_sequence, hf_index, ett_ftam_Access_Passwords_U);
 
@@ -1443,9 +1429,9 @@ dissect_ftam_Access_Passwords_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_Access_Passwords(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Passwords(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 2, TRUE, dissect_ftam_Access_Passwords_U);
+                                      hf_index, BER_CLASS_APP, 2, true, dissect_ftam_Access_Passwords_U);
 
   return offset;
 }
@@ -1466,7 +1452,7 @@ static const ber_sequence_t Path_Access_Passwords_item_sequence[] = {
 };
 
 static int
-dissect_ftam_Path_Access_Passwords_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Path_Access_Passwords_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Path_Access_Passwords_item_sequence, hf_index, ett_ftam_Path_Access_Passwords_item);
 
@@ -1479,7 +1465,7 @@ static const ber_sequence_t Path_Access_Passwords_U_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Path_Access_Passwords_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Path_Access_Passwords_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Path_Access_Passwords_U_sequence_of, hf_index, ett_ftam_Path_Access_Passwords_U);
 
@@ -1489,9 +1475,9 @@ dissect_ftam_Path_Access_Passwords_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U
 
 
 static int
-dissect_ftam_Path_Access_Passwords(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Path_Access_Passwords(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 27, TRUE, dissect_ftam_Path_Access_Passwords_U);
+                                      hf_index, BER_CLASS_APP, 27, true, dissect_ftam_Path_Access_Passwords_U);
 
   return offset;
 }
@@ -1507,7 +1493,7 @@ static const value_string ftam_Lock_vals[] = {
 
 
 static int
-dissect_ftam_Lock(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Lock(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1528,7 +1514,7 @@ static const ber_sequence_t Concurrency_Control_U_sequence[] = {
 };
 
 static int
-dissect_ftam_Concurrency_Control_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Concurrency_Control_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Concurrency_Control_U_sequence, hf_index, ett_ftam_Concurrency_Control_U);
 
@@ -1538,9 +1524,9 @@ dissect_ftam_Concurrency_Control_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 
 
 static int
-dissect_ftam_Concurrency_Control(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Concurrency_Control(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 10, TRUE, dissect_ftam_Concurrency_Control_U);
+                                      hf_index, BER_CLASS_APP, 10, true, dissect_ftam_Concurrency_Control_U);
 
   return offset;
 }
@@ -1558,7 +1544,7 @@ static const ber_sequence_t F_SELECT_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_SELECT_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_SELECT_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_SELECT_request_sequence, hf_index, ett_ftam_F_SELECT_request);
 
@@ -1568,9 +1554,9 @@ dissect_ftam_F_SELECT_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
 
 
 static int
-dissect_ftam_Referent_Indicator(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Referent_Indicator(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 29, TRUE, dissect_ftam_BOOLEAN);
+                                      hf_index, BER_CLASS_APP, 29, true, dissect_ftam_BOOLEAN);
 
   return offset;
 }
@@ -1587,7 +1573,7 @@ static const ber_sequence_t F_SELECT_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_SELECT_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_SELECT_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_SELECT_response_sequence, hf_index, ett_ftam_F_SELECT_response);
 
@@ -1601,7 +1587,7 @@ static const ber_sequence_t F_DESELECT_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_DESELECT_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_DESELECT_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_DESELECT_request_sequence, hf_index, ett_ftam_F_DESELECT_request);
 
@@ -1618,7 +1604,7 @@ static const ber_sequence_t F_DESELECT_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_DESELECT_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_DESELECT_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_DESELECT_response_sequence, hf_index, ett_ftam_F_DESELECT_response);
 
@@ -1636,7 +1622,7 @@ static const value_string ftam_Override_vals[] = {
 
 
 static int
-dissect_ftam_Override(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Override(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1653,7 +1639,7 @@ static const value_string ftam_Object_Type_Attribute_vals[] = {
 
 
 static int
-dissect_ftam_Object_Type_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Object_Type_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1661,27 +1647,27 @@ dissect_ftam_Object_Type_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 }
 
 
-static const asn_namedbit Permitted_Actions_Attribute_bits[] = {
-  {  0, &hf_ftam_Permitted_Actions_Attribute_read, -1, -1, "read", NULL },
-  {  1, &hf_ftam_Permitted_Actions_Attribute_insert, -1, -1, "insert", NULL },
-  {  2, &hf_ftam_Permitted_Actions_Attribute_replace, -1, -1, "replace", NULL },
-  {  3, &hf_ftam_Permitted_Actions_Attribute_extend, -1, -1, "extend", NULL },
-  {  4, &hf_ftam_Permitted_Actions_Attribute_erase, -1, -1, "erase", NULL },
-  {  5, &hf_ftam_Permitted_Actions_Attribute_read_attribute, -1, -1, "read-attribute", NULL },
-  {  6, &hf_ftam_Permitted_Actions_Attribute_change_attribute, -1, -1, "change-attribute", NULL },
-  {  7, &hf_ftam_Permitted_Actions_Attribute_delete_Object, -1, -1, "delete-Object", NULL },
-  { 11, &hf_ftam_Permitted_Actions_Attribute_pass, -1, -1, "pass", NULL },
-  { 12, &hf_ftam_Permitted_Actions_Attribute_link, -1, -1, "link", NULL },
-  {  8, &hf_ftam_Permitted_Actions_Attribute_traversal, -1, -1, "traversal", NULL },
-  {  9, &hf_ftam_Permitted_Actions_Attribute_reverse_traversal, -1, -1, "reverse-traversal", NULL },
-  { 10, &hf_ftam_Permitted_Actions_Attribute_random_Order, -1, -1, "random-Order", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Permitted_Actions_Attribute_bits[] = {
+  &hf_ftam_Permitted_Actions_Attribute_read,
+  &hf_ftam_Permitted_Actions_Attribute_insert,
+  &hf_ftam_Permitted_Actions_Attribute_replace,
+  &hf_ftam_Permitted_Actions_Attribute_extend,
+  &hf_ftam_Permitted_Actions_Attribute_erase,
+  &hf_ftam_Permitted_Actions_Attribute_read_attribute,
+  &hf_ftam_Permitted_Actions_Attribute_change_attribute,
+  &hf_ftam_Permitted_Actions_Attribute_delete_Object,
+  &hf_ftam_Permitted_Actions_Attribute_traversal,
+  &hf_ftam_Permitted_Actions_Attribute_reverse_traversal,
+  &hf_ftam_Permitted_Actions_Attribute_random_Order,
+  &hf_ftam_Permitted_Actions_Attribute_pass,
+  &hf_ftam_Permitted_Actions_Attribute_link,
+  NULL
 };
 
 int
-dissect_ftam_Permitted_Actions_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Permitted_Actions_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Permitted_Actions_Attribute_bits, hf_index, ett_ftam_Permitted_Actions_Attribute,
+                                    Permitted_Actions_Attribute_bits, 13, hf_index, ett_ftam_Permitted_Actions_Attribute,
                                     NULL);
 
   return offset;
@@ -1690,12 +1676,10 @@ dissect_ftam_Permitted_Actions_Attribute(gboolean implicit_tag _U_, tvbuff_t *tv
 
 
 static int
-dissect_ftam_T_parameter(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 75 "./asn1/ftam/ftam.cnf"
+dissect_ftam_T_parameter(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   if (actx->external.direct_reference) {
     offset=call_ber_oid_callback(actx->external.direct_reference, tvb, offset, actx->pinfo, tree, NULL);
   }
-
 
 
   return offset;
@@ -1709,7 +1693,7 @@ static const ber_sequence_t T_document_type_sequence[] = {
 };
 
 static int
-dissect_ftam_T_document_type(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_document_type(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    T_document_type_sequence, hf_index, ett_ftam_T_document_type);
 
@@ -1719,9 +1703,9 @@ dissect_ftam_T_document_type(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_ftam_Constraint_Set_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Constraint_Set_Name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 11, TRUE, dissect_ftam_OBJECT_IDENTIFIER);
+                                      hf_index, BER_CLASS_APP, 11, true, dissect_ftam_OBJECT_IDENTIFIER);
 
   return offset;
 }
@@ -1734,7 +1718,7 @@ static const ber_sequence_t T_constraint_set_and_abstract_Syntax_sequence[] = {
 };
 
 static int
-dissect_ftam_T_constraint_set_and_abstract_Syntax(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_constraint_set_and_abstract_Syntax(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    T_constraint_set_and_abstract_Syntax_sequence, hf_index, ett_ftam_T_constraint_set_and_abstract_Syntax);
 
@@ -1755,7 +1739,7 @@ static const ber_choice_t Contents_Type_Attribute_choice[] = {
 };
 
 static int
-dissect_ftam_Contents_Type_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Contents_Type_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Contents_Type_Attribute_choice, hf_index, ett_ftam_Contents_Type_Attribute,
                                  NULL);
@@ -1766,7 +1750,7 @@ dissect_ftam_Contents_Type_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U
 
 
 static int
-dissect_ftam_NULL(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_NULL(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_null(implicit_tag, actx, tree, tvb, offset, hf_index);
 
   return offset;
@@ -1786,7 +1770,7 @@ static const ber_choice_t Account_Attribute_choice[] = {
 };
 
 static int
-dissect_ftam_Account_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Account_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Account_Attribute_choice, hf_index, ett_ftam_Account_Attribute,
                                  NULL);
@@ -1803,7 +1787,7 @@ static const value_string ftam_T_actual_values8_vals[] = {
 
 
 static int
-dissect_ftam_T_actual_values8(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_actual_values8(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -1824,7 +1808,7 @@ static const ber_choice_t Object_Availability_Attribute_choice[] = {
 };
 
 int
-dissect_ftam_Object_Availability_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Object_Availability_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Object_Availability_Attribute_choice, hf_index, ett_ftam_Object_Availability_Attribute,
                                  NULL);
@@ -1846,7 +1830,7 @@ static const ber_choice_t Object_Size_Attribute_choice[] = {
 };
 
 int
-dissect_ftam_Object_Size_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Object_Size_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Object_Size_Attribute_choice, hf_index, ett_ftam_Object_Size_Attribute,
                                  NULL);
@@ -1855,18 +1839,18 @@ dissect_ftam_Object_Size_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 }
 
 
-static const asn_namedbit Concurrency_Key_bits[] = {
-  {  0, &hf_ftam_Concurrency_Key_not_required, -1, -1, "not-required", NULL },
-  {  1, &hf_ftam_Concurrency_Key_shared, -1, -1, "shared", NULL },
-  {  2, &hf_ftam_Concurrency_Key_exclusive, -1, -1, "exclusive", NULL },
-  {  3, &hf_ftam_Concurrency_Key_no_access, -1, -1, "no-access", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Concurrency_Key_bits[] = {
+  &hf_ftam_Concurrency_Key_not_required,
+  &hf_ftam_Concurrency_Key_shared,
+  &hf_ftam_Concurrency_Key_exclusive,
+  &hf_ftam_Concurrency_Key_no_access,
+  NULL
 };
 
 static int
-dissect_ftam_Concurrency_Key(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Concurrency_Key(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Concurrency_Key_bits, hf_index, ett_ftam_Concurrency_Key,
+                                    Concurrency_Key_bits, 4, hf_index, ett_ftam_Concurrency_Key,
                                     NULL);
 
   return offset;
@@ -1886,7 +1870,7 @@ static const ber_sequence_t Concurrency_Access_sequence[] = {
 };
 
 int
-dissect_ftam_Concurrency_Access(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Concurrency_Access(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Concurrency_Access_sequence, hf_index, ett_ftam_Concurrency_Access);
 
@@ -1896,10 +1880,8 @@ dissect_ftam_Concurrency_Access(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_AP_title(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 93 "./asn1/ftam/ftam.cnf"
-	/* XXX have no idea about this one */
-
+dissect_ftam_AP_title(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  /* XXX have no idea about this one */
 
   return offset;
 }
@@ -1907,10 +1889,8 @@ dissect_ftam_AP_title(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _
 
 
 static int
-dissect_ftam_AE_qualifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 95 "./asn1/ftam/ftam.cnf"
-	/* XXX have no idea about this one */
-
+dissect_ftam_AE_qualifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  /* XXX have no idea about this one */
 
 
   return offset;
@@ -1924,7 +1904,7 @@ static const ber_sequence_t AE_title_sequence[] = {
 };
 
 static int
-dissect_ftam_AE_title(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_AE_title(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    AE_title_sequence, hf_index, ett_ftam_AE_title);
 
@@ -1934,9 +1914,9 @@ dissect_ftam_AE_title(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _
 
 
 static int
-dissect_ftam_Application_Entity_Title(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Application_Entity_Title(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 7, FALSE, dissect_ftam_AE_title);
+                                      hf_index, BER_CLASS_APP, 7, false, dissect_ftam_AE_title);
 
   return offset;
 }
@@ -1952,7 +1932,7 @@ static const ber_sequence_t Access_Control_Element_sequence[] = {
 };
 
 static int
-dissect_ftam_Access_Control_Element(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Control_Element(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Access_Control_Element_sequence, hf_index, ett_ftam_Access_Control_Element);
 
@@ -1965,7 +1945,7 @@ static const ber_sequence_t SET_OF_Access_Control_Element_set_of[1] = {
 };
 
 static int
-dissect_ftam_SET_OF_Access_Control_Element(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_SET_OF_Access_Control_Element(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_set_of(implicit_tag, actx, tree, tvb, offset,
                                  SET_OF_Access_Control_Element_set_of, hf_index, ett_ftam_SET_OF_Access_Control_Element);
 
@@ -1986,7 +1966,7 @@ static const ber_choice_t Access_Control_Attribute_choice[] = {
 };
 
 static int
-dissect_ftam_Access_Control_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Control_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Access_Control_Attribute_choice, hf_index, ett_ftam_Access_Control_Attribute,
                                  NULL);
@@ -2008,7 +1988,7 @@ static const ber_choice_t Legal_Qualification_Attribute_choice[] = {
 };
 
 int
-dissect_ftam_Legal_Qualification_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Legal_Qualification_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Legal_Qualification_Attribute_choice, hf_index, ett_ftam_Legal_Qualification_Attribute,
                                  NULL);
@@ -2032,7 +2012,7 @@ static const ber_choice_t Private_Use_Attribute_choice[] = {
 };
 
 int
-dissect_ftam_Private_Use_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Private_Use_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Private_Use_Attribute_choice, hf_index, ett_ftam_Private_Use_Attribute,
                                  NULL);
@@ -2043,7 +2023,7 @@ dissect_ftam_Private_Use_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 
 
 static int
-dissect_ftam_Extension_Set_Identifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Extension_Set_Identifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier(implicit_tag, actx, tree, tvb, offset, hf_index, NULL);
 
   return offset;
@@ -2052,7 +2032,7 @@ dissect_ftam_Extension_Set_Identifier(gboolean implicit_tag _U_, tvbuff_t *tvb _
 
 
 static int
-dissect_ftam_T_extension_attribute_identifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_extension_attribute_identifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier_str(implicit_tag, actx, tree, tvb, offset, hf_index, &actx->external.direct_reference);
 
   return offset;
@@ -2061,12 +2041,10 @@ dissect_ftam_T_extension_attribute_identifier(gboolean implicit_tag _U_, tvbuff_
 
 
 static int
-dissect_ftam_T_extension_attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 80 "./asn1/ftam/ftam.cnf"
+dissect_ftam_T_extension_attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   if (actx->external.direct_reference) {
     offset=call_ber_oid_callback(actx->external.direct_reference, tvb, offset, actx->pinfo, tree, NULL);
   }
-
 
 
   return offset;
@@ -2080,7 +2058,7 @@ static const ber_sequence_t Extension_Attribute_sequence[] = {
 };
 
 static int
-dissect_ftam_Extension_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Extension_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Extension_Attribute_sequence, hf_index, ett_ftam_Extension_Attribute);
 
@@ -2093,7 +2071,7 @@ static const ber_sequence_t SEQUENCE_OF_Extension_Attribute_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_SEQUENCE_OF_Extension_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_SEQUENCE_OF_Extension_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_OF_Extension_Attribute_sequence_of, hf_index, ett_ftam_SEQUENCE_OF_Extension_Attribute);
 
@@ -2108,7 +2086,7 @@ static const ber_sequence_t Attribute_Extension_Set_sequence[] = {
 };
 
 static int
-dissect_ftam_Attribute_Extension_Set(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Extension_Set(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Attribute_Extension_Set_sequence, hf_index, ett_ftam_Attribute_Extension_Set);
 
@@ -2121,7 +2099,7 @@ static const ber_sequence_t Attribute_Extensions_sequence_of[1] = {
 };
 
 int
-dissect_ftam_Attribute_Extensions(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Extensions(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Attribute_Extensions_sequence_of, hf_index, ett_ftam_Attribute_Extensions);
 
@@ -2146,7 +2124,7 @@ static const ber_sequence_t Create_Attributes_U_sequence[] = {
 };
 
 static int
-dissect_ftam_Create_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Create_Attributes_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Create_Attributes_U_sequence, hf_index, ett_ftam_Create_Attributes_U);
 
@@ -2156,9 +2134,9 @@ dissect_ftam_Create_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, i
 
 
 static int
-dissect_ftam_Create_Attributes(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Create_Attributes(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 12, TRUE, dissect_ftam_Create_Attributes_U);
+                                      hf_index, BER_CLASS_APP, 12, true, dissect_ftam_Create_Attributes_U);
 
   return offset;
 }
@@ -2178,7 +2156,7 @@ static const ber_sequence_t F_CREATE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CREATE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CREATE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CREATE_request_sequence, hf_index, ett_ftam_F_CREATE_request);
 
@@ -2196,7 +2174,7 @@ static const ber_sequence_t F_CREATE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CREATE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CREATE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CREATE_response_sequence, hf_index, ett_ftam_F_CREATE_response);
 
@@ -2210,7 +2188,7 @@ static const ber_sequence_t F_DELETE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_DELETE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_DELETE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_DELETE_request_sequence, hf_index, ett_ftam_F_DELETE_request);
 
@@ -2227,7 +2205,7 @@ static const ber_sequence_t F_DELETE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_DELETE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_DELETE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_DELETE_response_sequence, hf_index, ett_ftam_F_DELETE_response);
 
@@ -2235,37 +2213,38 @@ dissect_ftam_F_DELETE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
 }
 
 
-static const asn_namedbit Attribute_Names_bits[] = {
-  {  0, &hf_ftam_Attribute_Names_read_pathname, -1, -1, "read-pathname", NULL },
-  { 18, &hf_ftam_Attribute_Names_read_Object_type, -1, -1, "read-Object-type", NULL },
-  {  1, &hf_ftam_Attribute_Names_read_permitted_actions, -1, -1, "read-permitted-actions", NULL },
-  {  2, &hf_ftam_Attribute_Names_read_contents_type, -1, -1, "read-contents-type", NULL },
-  { 19, &hf_ftam_Attribute_Names_read_linked_Object, -1, -1, "read-linked-Object", NULL },
-  { 23, &hf_ftam_Attribute_Names_read_Child_objects, -1, -1, "read-Child-objects", NULL },
-  { 20, &hf_ftam_Attribute_Names_read_primary_pathname, -1, -1, "read-primary-pathname", NULL },
-  {  3, &hf_ftam_Attribute_Names_read_storage_account, -1, -1, "read-storage-account", NULL },
-  {  4, &hf_ftam_Attribute_Names_read_date_and_time_of_creation, -1, -1, "read-date-and-time-of-creation", NULL },
-  {  5, &hf_ftam_Attribute_Names_read_date_and_time_of_last_modification, -1, -1, "read-date-and-time-of-last-modification", NULL },
-  {  6, &hf_ftam_Attribute_Names_read_date_and_time_of_last_read_access, -1, -1, "read-date-and-time-of-last-read-access", NULL },
-  {  7, &hf_ftam_Attribute_Names_read_date_and_time_of_last_attribute_modification, -1, -1, "read-date-and-time-of-last-attribute-modification", NULL },
-  {  8, &hf_ftam_Attribute_Names_read_identity_of_creator, -1, -1, "read-identity-of-creator", NULL },
-  {  9, &hf_ftam_Attribute_Names_read_identity_of_last_modifier, -1, -1, "read-identity-of-last-modifier", NULL },
-  { 10, &hf_ftam_Attribute_Names_read_identity_of_last_reader, -1, -1, "read-identity-of-last-reader", NULL },
-  { 11, &hf_ftam_Attribute_Names_read_identity_of_last_attribute_modifier, -1, -1, "read-identity-of-last-attribute-modifier", NULL },
-  { 12, &hf_ftam_Attribute_Names_read_Object_availability, -1, -1, "read-Object-availability", NULL },
-  { 13, &hf_ftam_Attribute_Names_read_Object_size, -1, -1, "read-Object-size", NULL },
-  { 14, &hf_ftam_Attribute_Names_read_future_Object_size, -1, -1, "read-future-Object-size", NULL },
-  { 15, &hf_ftam_Attribute_Names_read_access_control, -1, -1, "read-access-control", NULL },
-  { 21, &hf_ftam_Attribute_Names_read_path_access_control, -1, -1, "read-path-access-control", NULL },
-  { 16, &hf_ftam_Attribute_Names_read_l8gal_qualifiCatiOnS, -1, -1, "read-l8gal-qualifiCatiOnS", NULL },
-  { 17, &hf_ftam_Attribute_Names_read_private_use, -1, -1, "read-private-use", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Attribute_Names_bits[] = {
+  &hf_ftam_Attribute_Names_read_pathname,
+  &hf_ftam_Attribute_Names_read_permitted_actions,
+  &hf_ftam_Attribute_Names_read_contents_type,
+  &hf_ftam_Attribute_Names_read_storage_account,
+  &hf_ftam_Attribute_Names_read_date_and_time_of_creation,
+  &hf_ftam_Attribute_Names_read_date_and_time_of_last_modification,
+  &hf_ftam_Attribute_Names_read_date_and_time_of_last_read_access,
+  &hf_ftam_Attribute_Names_read_date_and_time_of_last_attribute_modification,
+  &hf_ftam_Attribute_Names_read_identity_of_creator,
+  &hf_ftam_Attribute_Names_read_identity_of_last_modifier,
+  &hf_ftam_Attribute_Names_read_identity_of_last_reader,
+  &hf_ftam_Attribute_Names_read_identity_of_last_attribute_modifier,
+  &hf_ftam_Attribute_Names_read_Object_availability,
+  &hf_ftam_Attribute_Names_read_Object_size,
+  &hf_ftam_Attribute_Names_read_future_Object_size,
+  &hf_ftam_Attribute_Names_read_access_control,
+  &hf_ftam_Attribute_Names_read_l8gal_qualifiCatiOnS,
+  &hf_ftam_Attribute_Names_read_private_use,
+  &hf_ftam_Attribute_Names_read_Object_type,
+  &hf_ftam_Attribute_Names_read_linked_Object,
+  &hf_ftam_Attribute_Names_read_primary_pathname,
+  &hf_ftam_Attribute_Names_read_path_access_control,
+  &hf_ftam_Attribute_Names_spare_bit22,
+  &hf_ftam_Attribute_Names_read_Child_objects,
+  NULL
 };
 
 static int
-dissect_ftam_Attribute_Names(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Names(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Attribute_Names_bits, hf_index, ett_ftam_Attribute_Names,
+                                    Attribute_Names_bits, 24, hf_index, ett_ftam_Attribute_Names,
                                     NULL);
 
   return offset;
@@ -2274,7 +2253,7 @@ dissect_ftam_Attribute_Names(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_ftam_Extension_Attribute_identifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Extension_Attribute_identifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier(implicit_tag, actx, tree, tvb, offset, hf_index, NULL);
 
   return offset;
@@ -2286,7 +2265,7 @@ static const ber_sequence_t SEQUENCE_OF_Extension_Attribute_identifier_sequence_
 };
 
 static int
-dissect_ftam_SEQUENCE_OF_Extension_Attribute_identifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_SEQUENCE_OF_Extension_Attribute_identifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_OF_Extension_Attribute_identifier_sequence_of, hf_index, ett_ftam_SEQUENCE_OF_Extension_Attribute_identifier);
 
@@ -2301,7 +2280,7 @@ static const ber_sequence_t Attribute_Extension_Set_Name_sequence[] = {
 };
 
 static int
-dissect_ftam_Attribute_Extension_Set_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Extension_Set_Name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Attribute_Extension_Set_Name_sequence, hf_index, ett_ftam_Attribute_Extension_Set_Name);
 
@@ -2314,7 +2293,7 @@ static const ber_sequence_t Attribute_Extension_Names_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Attribute_Extension_Names(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Extension_Names(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Attribute_Extension_Names_sequence_of, hf_index, ett_ftam_Attribute_Extension_Names);
 
@@ -2329,7 +2308,7 @@ static const ber_sequence_t F_READ_ATTRIB_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_READ_ATTRIB_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_READ_ATTRIB_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_READ_ATTRIB_request_sequence, hf_index, ett_ftam_F_READ_ATTRIB_request);
 
@@ -2342,7 +2321,7 @@ static const ber_sequence_t Child_Objects_Attribute_set_of[1] = {
 };
 
 static int
-dissect_ftam_Child_Objects_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Child_Objects_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_set_of(implicit_tag, actx, tree, tvb, offset,
                                  Child_Objects_Attribute_set_of, hf_index, ett_ftam_Child_Objects_Attribute);
 
@@ -2352,7 +2331,7 @@ dissect_ftam_Child_Objects_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U
 
 
 static int
-dissect_ftam_GeneralizedTime(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_GeneralizedTime(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_GeneralizedTime(implicit_tag, actx, tree, tvb, offset, hf_index);
 
   return offset;
@@ -2372,7 +2351,7 @@ static const ber_choice_t Date_and_Time_Attribute_choice[] = {
 };
 
 int
-dissect_ftam_Date_and_Time_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Date_and_Time_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Date_and_Time_Attribute_choice, hf_index, ett_ftam_Date_and_Time_Attribute,
                                  NULL);
@@ -2394,7 +2373,7 @@ static const ber_choice_t User_Identity_Attribute_choice[] = {
 };
 
 static int
-dissect_ftam_User_Identity_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_User_Identity_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  User_Identity_Attribute_choice, hf_index, ett_ftam_User_Identity_Attribute,
                                  NULL);
@@ -2432,7 +2411,7 @@ static const ber_sequence_t Read_Attributes_U_sequence[] = {
 };
 
 static int
-dissect_ftam_Read_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Read_Attributes_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Read_Attributes_U_sequence, hf_index, ett_ftam_Read_Attributes_U);
 
@@ -2442,9 +2421,9 @@ dissect_ftam_Read_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int
 
 
 static int
-dissect_ftam_Read_Attributes(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Read_Attributes(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 18, TRUE, dissect_ftam_Read_Attributes_U);
+                                      hf_index, BER_CLASS_APP, 18, true, dissect_ftam_Read_Attributes_U);
 
   return offset;
 }
@@ -2458,7 +2437,7 @@ static const ber_sequence_t F_READ_ATTRIB_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_READ_ATTRIB_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_READ_ATTRIB_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_READ_ATTRIB_response_sequence, hf_index, ett_ftam_F_READ_ATTRIB_response);
 
@@ -2473,7 +2452,7 @@ static const ber_sequence_t T_actual_values1_sequence[] = {
 };
 
 static int
-dissect_ftam_T_actual_values1(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_actual_values1(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    T_actual_values1_sequence, hf_index, ett_ftam_T_actual_values1);
 
@@ -2494,7 +2473,7 @@ static const ber_choice_t Access_Control_Change_Attribute_choice[] = {
 };
 
 static int
-dissect_ftam_Access_Control_Change_Attribute(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Control_Change_Attribute(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Access_Control_Change_Attribute_choice, hf_index, ett_ftam_Access_Control_Change_Attribute,
                                  NULL);
@@ -2517,7 +2496,7 @@ static const ber_sequence_t Change_Attributes_U_sequence[] = {
 };
 
 static int
-dissect_ftam_Change_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Change_Attributes_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Change_Attributes_U_sequence, hf_index, ett_ftam_Change_Attributes_U);
 
@@ -2527,9 +2506,9 @@ dissect_ftam_Change_Attributes_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, i
 
 
 static int
-dissect_ftam_Change_Attributes(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Change_Attributes(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 8, TRUE, dissect_ftam_Change_Attributes_U);
+                                      hf_index, BER_CLASS_APP, 8, true, dissect_ftam_Change_Attributes_U);
 
   return offset;
 }
@@ -2541,7 +2520,7 @@ static const ber_sequence_t F_CHANGE_ATTRIB_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CHANGE_ATTRIB_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CHANGE_ATTRIB_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CHANGE_ATTRIB_request_sequence, hf_index, ett_ftam_F_CHANGE_ATTRIB_request);
 
@@ -2557,7 +2536,7 @@ static const ber_sequence_t F_CHANGE_ATTRIB_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CHANGE_ATTRIB_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CHANGE_ATTRIB_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CHANGE_ATTRIB_response_sequence, hf_index, ett_ftam_F_CHANGE_ATTRIB_response);
 
@@ -2565,19 +2544,19 @@ dissect_ftam_F_CHANGE_ATTRIB_response(gboolean implicit_tag _U_, tvbuff_t *tvb _
 }
 
 
-static const asn_namedbit T_processing_mode_bits[] = {
-  {  0, &hf_ftam_T_processing_mode_f_read, -1, -1, "f-read", NULL },
-  {  1, &hf_ftam_T_processing_mode_f_insert, -1, -1, "f-insert", NULL },
-  {  2, &hf_ftam_T_processing_mode_f_replace, -1, -1, "f-replace", NULL },
-  {  3, &hf_ftam_T_processing_mode_f_extend, -1, -1, "f-extend", NULL },
-  {  4, &hf_ftam_T_processing_mode_f_erase, -1, -1, "f-erase", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const T_processing_mode_bits[] = {
+  &hf_ftam_T_processing_mode_f_read,
+  &hf_ftam_T_processing_mode_f_insert,
+  &hf_ftam_T_processing_mode_f_replace,
+  &hf_ftam_T_processing_mode_f_extend,
+  &hf_ftam_T_processing_mode_f_erase,
+  NULL
 };
 
 static int
-dissect_ftam_T_processing_mode(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_processing_mode(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    T_processing_mode_bits, hf_index, ett_ftam_T_processing_mode,
+                                    T_processing_mode_bits, 5, hf_index, ett_ftam_T_processing_mode,
                                     NULL);
 
   return offset;
@@ -2597,7 +2576,7 @@ static const ber_choice_t T_open_contents_type_choice[] = {
 };
 
 static int
-dissect_ftam_T_open_contents_type(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_open_contents_type(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  T_open_contents_type_choice, hf_index, ett_ftam_T_open_contents_type,
                                  NULL);
@@ -2608,9 +2587,9 @@ dissect_ftam_T_open_contents_type(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, 
 
 
 static int
-dissect_ftam_Activity_Identifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Activity_Identifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 6, TRUE, dissect_ftam_INTEGER);
+                                      hf_index, BER_CLASS_APP, 6, true, dissect_ftam_INTEGER);
 
   return offset;
 }
@@ -2625,7 +2604,7 @@ static const value_string ftam_T_request_recovery_mode_vals[] = {
 
 
 static int
-dissect_ftam_T_request_recovery_mode(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_request_recovery_mode(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -2638,7 +2617,7 @@ static const ber_sequence_t SET_OF_Abstract_Syntax_Name_set_of[1] = {
 };
 
 static int
-dissect_ftam_SET_OF_Abstract_Syntax_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_SET_OF_Abstract_Syntax_Name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_set_of(implicit_tag, actx, tree, tvb, offset,
                                  SET_OF_Abstract_Syntax_Name_set_of, hf_index, ett_ftam_SET_OF_Abstract_Syntax_Name);
 
@@ -2655,7 +2634,7 @@ static const value_string ftam_Degree_Of_Overlap_U_vals[] = {
 
 
 static int
-dissect_ftam_Degree_Of_Overlap_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Degree_Of_Overlap_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -2665,9 +2644,9 @@ dissect_ftam_Degree_Of_Overlap_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, i
 
 
 static int
-dissect_ftam_Degree_Of_Overlap(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Degree_Of_Overlap(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 30, TRUE, dissect_ftam_Degree_Of_Overlap_U);
+                                      hf_index, BER_CLASS_APP, 30, true, dissect_ftam_Degree_Of_Overlap_U);
 
   return offset;
 }
@@ -2689,7 +2668,7 @@ static const ber_sequence_t F_OPEN_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_OPEN_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_OPEN_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_OPEN_request_sequence, hf_index, ett_ftam_F_OPEN_request);
 
@@ -2706,7 +2685,7 @@ static const value_string ftam_T_response_recovery_mode_vals[] = {
 
 
 static int
-dissect_ftam_T_response_recovery_mode(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_response_recovery_mode(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -2729,7 +2708,7 @@ static const ber_sequence_t F_OPEN_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_OPEN_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_OPEN_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_OPEN_response_sequence, hf_index, ett_ftam_F_OPEN_response);
 
@@ -2745,7 +2724,7 @@ static const ber_sequence_t F_CLOSE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CLOSE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CLOSE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CLOSE_request_sequence, hf_index, ett_ftam_F_CLOSE_request);
 
@@ -2761,7 +2740,7 @@ static const ber_sequence_t F_CLOSE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CLOSE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CLOSE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CLOSE_response_sequence, hf_index, ett_ftam_F_CLOSE_response);
 
@@ -2775,7 +2754,7 @@ static const ber_sequence_t F_BEGIN_GROUP_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_BEGIN_GROUP_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_BEGIN_GROUP_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_BEGIN_GROUP_request_sequence, hf_index, ett_ftam_F_BEGIN_GROUP_request);
 
@@ -2788,7 +2767,7 @@ static const ber_sequence_t F_BEGIN_GROUP_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_BEGIN_GROUP_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_BEGIN_GROUP_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_BEGIN_GROUP_response_sequence, hf_index, ett_ftam_F_BEGIN_GROUP_response);
 
@@ -2801,7 +2780,7 @@ static const ber_sequence_t F_END_GROUP_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_END_GROUP_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_END_GROUP_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_END_GROUP_request_sequence, hf_index, ett_ftam_F_END_GROUP_request);
 
@@ -2814,7 +2793,7 @@ static const ber_sequence_t F_END_GROUP_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_END_GROUP_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_END_GROUP_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_END_GROUP_response_sequence, hf_index, ett_ftam_F_END_GROUP_response);
 
@@ -2838,7 +2817,7 @@ static const ber_sequence_t F_RECOVER_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_RECOVER_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_RECOVER_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_RECOVER_request_sequence, hf_index, ett_ftam_F_RECOVER_request);
 
@@ -2860,7 +2839,7 @@ static const ber_sequence_t F_RECOVER_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_RECOVER_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_RECOVER_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_RECOVER_response_sequence, hf_index, ett_ftam_F_RECOVER_response);
 
@@ -2876,7 +2855,7 @@ static const value_string ftam_T_first_last_vals[] = {
 
 
 static int
-dissect_ftam_T_first_last(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_first_last(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -2893,7 +2872,7 @@ static const value_string ftam_T_relative_vals[] = {
 
 
 static int
-dissect_ftam_T_relative(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_relative(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -2909,7 +2888,7 @@ static const value_string ftam_T_begin_end_vals[] = {
 
 
 static int
-dissect_ftam_T_begin_end(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_begin_end(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -2919,7 +2898,7 @@ dissect_ftam_T_begin_end(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 
 
 static int
-dissect_ftam_Node_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Node_Name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_external_type(implicit_tag, tree, tvb, offset, actx, hf_index, NULL);
 
   return offset;
@@ -2931,7 +2910,7 @@ static const ber_sequence_t SEQUENCE_OF_Node_Name_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_SEQUENCE_OF_Node_Name(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_SEQUENCE_OF_Node_Name(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_OF_Node_Name_sequence_of, hf_index, ett_ftam_SEQUENCE_OF_Node_Name);
 
@@ -2960,7 +2939,7 @@ static const ber_choice_t FADU_Identity_U_choice[] = {
 };
 
 static int
-dissect_ftam_FADU_Identity_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_FADU_Identity_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  FADU_Identity_U_choice, hf_index, ett_ftam_FADU_Identity_U,
                                  NULL);
@@ -2971,9 +2950,9 @@ dissect_ftam_FADU_Identity_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_ftam_FADU_Identity(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_FADU_Identity(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 15, FALSE, dissect_ftam_FADU_Identity_U);
+                                      hf_index, BER_CLASS_APP, 15, false, dissect_ftam_FADU_Identity_U);
 
   return offset;
 }
@@ -2987,7 +2966,7 @@ static const value_string ftam_FADU_Lock_U_vals[] = {
 
 
 static int
-dissect_ftam_FADU_Lock_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_FADU_Lock_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -2997,9 +2976,9 @@ dissect_ftam_FADU_Lock_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 
 
 static int
-dissect_ftam_FADU_Lock(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_FADU_Lock(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 16, TRUE, dissect_ftam_FADU_Lock_U);
+                                      hf_index, BER_CLASS_APP, 16, true, dissect_ftam_FADU_Lock_U);
 
   return offset;
 }
@@ -3012,7 +2991,7 @@ static const ber_sequence_t F_LOCATE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_LOCATE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_LOCATE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_LOCATE_request_sequence, hf_index, ett_ftam_F_LOCATE_request);
 
@@ -3028,7 +3007,7 @@ static const ber_sequence_t F_LOCATE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_LOCATE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_LOCATE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_LOCATE_response_sequence, hf_index, ett_ftam_F_LOCATE_response);
 
@@ -3042,7 +3021,7 @@ static const ber_sequence_t F_ERASE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_ERASE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_ERASE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_ERASE_request_sequence, hf_index, ett_ftam_F_ERASE_request);
 
@@ -3057,7 +3036,7 @@ static const ber_sequence_t F_ERASE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_ERASE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_ERASE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_ERASE_response_sequence, hf_index, ett_ftam_F_ERASE_response);
 
@@ -3126,9 +3105,8 @@ static const ber_choice_t File_PDU_choice[] = {
 };
 
 static int
-dissect_ftam_File_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 107 "./asn1/ftam/ftam.cnf"
-  gint branch_taken;
+dissect_ftam_File_PDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  int branch_taken;
 
     offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  File_PDU_choice, hf_index, ett_ftam_File_PDU,
@@ -3136,9 +3114,8 @@ dissect_ftam_File_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _
 
 
   if( (branch_taken!=-1) && ftam_File_PDU_vals[branch_taken].strptr ){
-	col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_File_PDU_vals[branch_taken].strptr);
+    col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_File_PDU_vals[branch_taken].strptr);
   }
-
 
 
   return offset;
@@ -3158,7 +3135,7 @@ static const value_string ftam_T_access_context_vals[] = {
 
 
 static int
-dissect_ftam_T_access_context(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_access_context(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -3173,7 +3150,7 @@ static const ber_sequence_t Access_Context_U_sequence[] = {
 };
 
 static int
-dissect_ftam_Access_Context_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Context_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Access_Context_U_sequence, hf_index, ett_ftam_Access_Context_U);
 
@@ -3183,9 +3160,9 @@ dissect_ftam_Access_Context_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
 
 
 static int
-dissect_ftam_Access_Context(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Access_Context(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 1, TRUE, dissect_ftam_Access_Context_U);
+                                      hf_index, BER_CLASS_APP, 1, true, dissect_ftam_Access_Context_U);
 
   return offset;
 }
@@ -3200,7 +3177,7 @@ static const ber_sequence_t F_READ_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_READ_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_READ_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_READ_request_sequence, hf_index, ett_ftam_F_READ_request);
 
@@ -3217,7 +3194,7 @@ static const value_string ftam_T_file_access_data_unit_Operation_vals[] = {
 
 
 static int
-dissect_ftam_T_file_access_data_unit_Operation(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_file_access_data_unit_Operation(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -3234,7 +3211,7 @@ static const ber_sequence_t F_WRITE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_WRITE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_WRITE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_WRITE_request_sequence, hf_index, ett_ftam_F_WRITE_request);
 
@@ -3249,7 +3226,7 @@ static const ber_sequence_t F_DATA_END_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_DATA_END_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_DATA_END_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_DATA_END_request_sequence, hf_index, ett_ftam_F_DATA_END_request);
 
@@ -3265,7 +3242,7 @@ static const value_string ftam_Request_Type_U_vals[] = {
 
 
 static int
-dissect_ftam_Request_Type_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Request_Type_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -3275,9 +3252,9 @@ dissect_ftam_Request_Type_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 
 static int
-dissect_ftam_Request_Type(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Request_Type(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 31, TRUE, dissect_ftam_Request_Type_U);
+                                      hf_index, BER_CLASS_APP, 31, true, dissect_ftam_Request_Type_U);
 
   return offset;
 }
@@ -3293,7 +3270,7 @@ static const ber_sequence_t F_TRANSFER_END_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_TRANSFER_END_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_TRANSFER_END_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_TRANSFER_END_request_sequence, hf_index, ett_ftam_F_TRANSFER_END_request);
 
@@ -3311,7 +3288,7 @@ static const ber_sequence_t F_TRANSFER_END_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_TRANSFER_END_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_TRANSFER_END_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_TRANSFER_END_response_sequence, hf_index, ett_ftam_F_TRANSFER_END_response);
 
@@ -3333,7 +3310,7 @@ static const ber_sequence_t F_CANCEL_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CANCEL_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CANCEL_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CANCEL_request_sequence, hf_index, ett_ftam_F_CANCEL_request);
 
@@ -3355,7 +3332,7 @@ static const ber_sequence_t F_CANCEL_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CANCEL_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CANCEL_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CANCEL_response_sequence, hf_index, ett_ftam_F_CANCEL_response);
 
@@ -3375,7 +3352,7 @@ static const ber_sequence_t F_RESTART_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_RESTART_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_RESTART_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_RESTART_request_sequence, hf_index, ett_ftam_F_RESTART_request);
 
@@ -3395,7 +3372,7 @@ static const ber_sequence_t F_RESTART_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_RESTART_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_RESTART_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_RESTART_response_sequence, hf_index, ett_ftam_F_RESTART_response);
 
@@ -3430,9 +3407,8 @@ static const ber_choice_t Bulk_Data_PDU_choice[] = {
 };
 
 static int
-dissect_ftam_Bulk_Data_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 116 "./asn1/ftam/ftam.cnf"
-  gint branch_taken;
+dissect_ftam_Bulk_Data_PDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  int branch_taken;
 
     offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Bulk_Data_PDU_choice, hf_index, ett_ftam_Bulk_Data_PDU,
@@ -3440,9 +3416,8 @@ dissect_ftam_Bulk_Data_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int off
 
 
   if( (branch_taken!=-1) && ftam_Bulk_Data_PDU_vals[branch_taken].strptr ){
-	col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_Bulk_Data_PDU_vals[branch_taken].strptr);
+    col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_Bulk_Data_PDU_vals[branch_taken].strptr);
   }
-
 
 
   return offset;
@@ -3451,9 +3426,9 @@ dissect_ftam_Bulk_Data_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int off
 
 
 static int
-dissect_ftam_Destination_File_Directory(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Destination_File_Directory(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 24, FALSE, dissect_ftam_Pathname_Attribute);
+                                      hf_index, BER_CLASS_APP, 24, false, dissect_ftam_Pathname_Attribute);
 
   return offset;
 }
@@ -3468,7 +3443,7 @@ static const ber_sequence_t F_CHANGE_PREFIX_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CHANGE_PREFIX_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CHANGE_PREFIX_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CHANGE_PREFIX_request_sequence, hf_index, ett_ftam_F_CHANGE_PREFIX_request);
 
@@ -3484,7 +3459,7 @@ static const ber_sequence_t F_CHANGE_PREFIX_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CHANGE_PREFIX_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CHANGE_PREFIX_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CHANGE_PREFIX_response_sequence, hf_index, ett_ftam_F_CHANGE_PREFIX_response);
 
@@ -3492,16 +3467,16 @@ dissect_ftam_F_CHANGE_PREFIX_response(gboolean implicit_tag _U_, tvbuff_t *tvb _
 }
 
 
-static const asn_namedbit Equality_Comparision_bits[] = {
-  {  0, &hf_ftam_Equality_Comparision_no_value_available_matches, -1, -1, "no-value-available-matches", NULL },
-  {  1, &hf_ftam_Equality_Comparision_equals_matches, -1, -1, "equals-matches", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Equality_Comparision_bits[] = {
+  &hf_ftam_Equality_Comparision_no_value_available_matches,
+  &hf_ftam_Equality_Comparision_equals_matches,
+  NULL
 };
 
 static int
-dissect_ftam_Equality_Comparision(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Equality_Comparision(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Equality_Comparision_bits, hf_index, ett_ftam_Equality_Comparision,
+                                    Equality_Comparision_bits, 2, hf_index, ett_ftam_Equality_Comparision,
                                     NULL);
 
   return offset;
@@ -3523,7 +3498,7 @@ static const ber_choice_t T_string_value_item_choice[] = {
 };
 
 static int
-dissect_ftam_T_string_value_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_string_value_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  T_string_value_item_choice, hf_index, ett_ftam_T_string_value_item,
                                  NULL);
@@ -3537,7 +3512,7 @@ static const ber_sequence_t T_string_value_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_T_string_value(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_string_value(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       T_string_value_sequence_of, hf_index, ett_ftam_T_string_value);
 
@@ -3552,7 +3527,7 @@ static const ber_sequence_t String_Pattern_sequence[] = {
 };
 
 static int
-dissect_ftam_String_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_String_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    String_Pattern_sequence, hf_index, ett_ftam_String_Pattern);
 
@@ -3573,7 +3548,7 @@ static const ber_choice_t T_pathname_value_item_choice[] = {
 };
 
 static int
-dissect_ftam_T_pathname_value_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_pathname_value_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  T_pathname_value_item_choice, hf_index, ett_ftam_T_pathname_value_item,
                                  NULL);
@@ -3587,7 +3562,7 @@ static const ber_sequence_t T_pathname_value_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_T_pathname_value(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_pathname_value(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       T_pathname_value_sequence_of, hf_index, ett_ftam_T_pathname_value);
 
@@ -3602,7 +3577,7 @@ static const ber_sequence_t Pathname_Pattern_sequence[] = {
 };
 
 static int
-dissect_ftam_Pathname_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Pathname_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Pathname_Pattern_sequence, hf_index, ett_ftam_Pathname_Pattern);
 
@@ -3610,18 +3585,18 @@ dissect_ftam_Pathname_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int 
 }
 
 
-static const asn_namedbit Relational_Comparision_bits[] = {
-  {  0, &hf_ftam_Relational_Comparision_no_value_available_matches, -1, -1, "no-value-available-matches", NULL },
-  {  1, &hf_ftam_Relational_Comparision_equals_matches, -1, -1, "equals-matches", NULL },
-  {  2, &hf_ftam_Relational_Comparision_less_than_matches, -1, -1, "less-than-matches", NULL },
-  {  3, &hf_ftam_Relational_Comparision_greater_than_matches, -1, -1, "greater-than-matches", NULL },
-  { 0, NULL, 0, 0, NULL, NULL }
+static int * const Relational_Comparision_bits[] = {
+  &hf_ftam_Relational_Comparision_no_value_available_matches,
+  &hf_ftam_Relational_Comparision_equals_matches,
+  &hf_ftam_Relational_Comparision_less_than_matches,
+  &hf_ftam_Relational_Comparision_greater_than_matches,
+  NULL
 };
 
 static int
-dissect_ftam_Relational_Comparision(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Relational_Comparision(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    Relational_Comparision_bits, hf_index, ett_ftam_Relational_Comparision,
+                                    Relational_Comparision_bits, 4, hf_index, ett_ftam_Relational_Comparision,
                                     NULL);
 
   return offset;
@@ -3635,7 +3610,7 @@ static const ber_sequence_t Integer_Pattern_sequence[] = {
 };
 
 static int
-dissect_ftam_Integer_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Integer_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Integer_Pattern_sequence, hf_index, ett_ftam_Integer_Pattern);
 
@@ -3645,9 +3620,9 @@ dissect_ftam_Integer_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_ftam_BIT_STRING(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_BIT_STRING(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    NULL, hf_index, -1,
+                                    NULL, 0, hf_index, -1,
                                     NULL);
 
   return offset;
@@ -3662,7 +3637,7 @@ static const ber_sequence_t Bitstring_Pattern_sequence[] = {
 };
 
 static int
-dissect_ftam_Bitstring_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Bitstring_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Bitstring_Pattern_sequence, hf_index, ett_ftam_Bitstring_Pattern);
 
@@ -3677,7 +3652,7 @@ static const ber_sequence_t Object_Identifier_Pattern_sequence[] = {
 };
 
 static int
-dissect_ftam_Object_Identifier_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Object_Identifier_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Object_Identifier_Pattern_sequence, hf_index, ett_ftam_Object_Identifier_Pattern);
 
@@ -3692,7 +3667,7 @@ static const ber_sequence_t T_constraint_set_abstract_Syntax_Pattern_sequence[] 
 };
 
 static int
-dissect_ftam_T_constraint_set_abstract_Syntax_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_constraint_set_abstract_Syntax_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    T_constraint_set_abstract_Syntax_Pattern_sequence, hf_index, ett_ftam_T_constraint_set_abstract_Syntax_Pattern);
 
@@ -3713,7 +3688,7 @@ static const ber_choice_t Contents_Type_Pattern_choice[] = {
 };
 
 static int
-dissect_ftam_Contents_Type_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Contents_Type_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Contents_Type_Pattern_choice, hf_index, ett_ftam_Contents_Type_Pattern,
                                  NULL);
@@ -3729,7 +3704,7 @@ static const ber_sequence_t Date_and_Time_Pattern_sequence[] = {
 };
 
 static int
-dissect_ftam_Date_and_Time_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Date_and_Time_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Date_and_Time_Pattern_sequence, hf_index, ett_ftam_Date_and_Time_Pattern);
 
@@ -3739,7 +3714,7 @@ dissect_ftam_Date_and_Time_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_,
 
 
 static int
-dissect_ftam_User_Identity_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_User_Identity_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ftam_String_Pattern(implicit_tag, tvb, offset, actx, tree, hf_index);
 
   return offset;
@@ -3753,7 +3728,7 @@ static const ber_sequence_t Boolean_Pattern_sequence[] = {
 };
 
 static int
-dissect_ftam_Boolean_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Boolean_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Boolean_Pattern_sequence, hf_index, ett_ftam_Boolean_Pattern);
 
@@ -3763,7 +3738,7 @@ dissect_ftam_Boolean_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int o
 
 
 static int
-dissect_ftam_T_attribute_extension_attribute_identifier(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_attribute_extension_attribute_identifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_object_identifier_str(implicit_tag, actx, tree, tvb, offset, hf_index, &actx->external.direct_reference);
 
   return offset;
@@ -3772,12 +3747,10 @@ dissect_ftam_T_attribute_extension_attribute_identifier(gboolean implicit_tag _U
 
 
 static int
-dissect_ftam_T_extension_attribute_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 88 "./asn1/ftam/ftam.cnf"
+dissect_ftam_T_extension_attribute_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   if (actx->external.direct_reference) {
     offset=call_ber_oid_callback(actx->external.direct_reference, tvb, offset, actx->pinfo, tree, NULL);
   }
-
 
 
   return offset;
@@ -3791,7 +3764,7 @@ static const ber_sequence_t T_extension_set_attribute_Patterns_item_sequence[] =
 };
 
 static int
-dissect_ftam_T_extension_set_attribute_Patterns_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_extension_set_attribute_Patterns_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    T_extension_set_attribute_Patterns_item_sequence, hf_index, ett_ftam_T_extension_set_attribute_Patterns_item);
 
@@ -3804,7 +3777,7 @@ static const ber_sequence_t T_extension_set_attribute_Patterns_sequence_of[1] = 
 };
 
 static int
-dissect_ftam_T_extension_set_attribute_Patterns(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_extension_set_attribute_Patterns(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       T_extension_set_attribute_Patterns_sequence_of, hf_index, ett_ftam_T_extension_set_attribute_Patterns);
 
@@ -3819,7 +3792,7 @@ static const ber_sequence_t Attribute_Extensions_Pattern_item_sequence[] = {
 };
 
 static int
-dissect_ftam_Attribute_Extensions_Pattern_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Extensions_Pattern_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    Attribute_Extensions_Pattern_item_sequence, hf_index, ett_ftam_Attribute_Extensions_Pattern_item);
 
@@ -3832,7 +3805,7 @@ static const ber_sequence_t Attribute_Extensions_Pattern_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Attribute_Extensions_Pattern(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Extensions_Pattern(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Attribute_Extensions_Pattern_sequence_of, hf_index, ett_ftam_Attribute_Extensions_Pattern);
 
@@ -3891,7 +3864,7 @@ static const ber_choice_t AND_Set_item_choice[] = {
 };
 
 static int
-dissect_ftam_AND_Set_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_AND_Set_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  AND_Set_item_choice, hf_index, ett_ftam_AND_Set_item,
                                  NULL);
@@ -3905,7 +3878,7 @@ static const ber_sequence_t AND_Set_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_AND_Set(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_AND_Set(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       AND_Set_sequence_of, hf_index, ett_ftam_AND_Set);
 
@@ -3918,7 +3891,7 @@ static const ber_sequence_t OR_Set_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_OR_Set(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_OR_Set(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       OR_Set_sequence_of, hf_index, ett_ftam_OR_Set);
 
@@ -3928,9 +3901,9 @@ dissect_ftam_OR_Set(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_
 
 
 static int
-dissect_ftam_Attribute_Value_Assertions(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Attribute_Value_Assertions(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 26, TRUE, dissect_ftam_OR_Set);
+                                      hf_index, BER_CLASS_APP, 26, true, dissect_ftam_OR_Set);
 
   return offset;
 }
@@ -3944,7 +3917,7 @@ static const value_string ftam_T_retrieval_scope_vals[] = {
 
 
 static int
-dissect_ftam_T_retrieval_scope(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T_retrieval_scope(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -3959,7 +3932,7 @@ static const ber_sequence_t T__untag_item_sequence[] = {
 };
 
 static int
-dissect_ftam_T__untag_item(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_T__untag_item(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    T__untag_item_sequence, hf_index, ett_ftam_T__untag_item);
 
@@ -3972,7 +3945,7 @@ static const ber_sequence_t Scope_U_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_Scope_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Scope_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       Scope_U_sequence_of, hf_index, ett_ftam_Scope_U);
 
@@ -3982,9 +3955,9 @@ dissect_ftam_Scope_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U
 
 
 static int
-dissect_ftam_Scope(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Scope(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 28, TRUE, dissect_ftam_Scope_U);
+                                      hf_index, BER_CLASS_APP, 28, true, dissect_ftam_Scope_U);
 
   return offset;
 }
@@ -4001,7 +3974,7 @@ static const ber_sequence_t F_LIST_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_LIST_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_LIST_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_LIST_request_sequence, hf_index, ett_ftam_F_LIST_request);
 
@@ -4014,7 +3987,7 @@ static const ber_sequence_t SEQUENCE_OF_Read_Attributes_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_SEQUENCE_OF_Read_Attributes(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_SEQUENCE_OF_Read_Attributes(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_OF_Read_Attributes_sequence_of, hf_index, ett_ftam_SEQUENCE_OF_Read_Attributes);
 
@@ -4024,9 +3997,9 @@ dissect_ftam_SEQUENCE_OF_Read_Attributes(gboolean implicit_tag _U_, tvbuff_t *tv
 
 
 static int
-dissect_ftam_Objects_Attributes_List(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Objects_Attributes_List(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 25, TRUE, dissect_ftam_SEQUENCE_OF_Read_Attributes);
+                                      hf_index, BER_CLASS_APP, 25, true, dissect_ftam_SEQUENCE_OF_Read_Attributes);
 
   return offset;
 }
@@ -4040,7 +4013,7 @@ static const ber_sequence_t F_LIST_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_LIST_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_LIST_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_LIST_response_sequence, hf_index, ett_ftam_F_LIST_response);
 
@@ -4062,7 +4035,7 @@ static const ber_sequence_t F_GROUP_SELECT_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_SELECT_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_SELECT_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_SELECT_request_sequence, hf_index, ett_ftam_F_GROUP_SELECT_request);
 
@@ -4078,7 +4051,7 @@ static const ber_sequence_t F_GROUP_SELECT_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_SELECT_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_SELECT_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_SELECT_response_sequence, hf_index, ett_ftam_F_GROUP_SELECT_response);
 
@@ -4094,7 +4067,7 @@ static const value_string ftam_Request_Operation_Result_U_vals[] = {
 
 
 static int
-dissect_ftam_Request_Operation_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Request_Operation_Result_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -4104,9 +4077,9 @@ dissect_ftam_Request_Operation_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb
 
 
 static int
-dissect_ftam_Request_Operation_Result(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Request_Operation_Result(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 31, TRUE, dissect_ftam_Request_Operation_Result_U);
+                                      hf_index, BER_CLASS_APP, 31, true, dissect_ftam_Request_Operation_Result_U);
 
   return offset;
 }
@@ -4119,7 +4092,7 @@ static const ber_sequence_t F_GROUP_DELETE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_DELETE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_DELETE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_DELETE_request_sequence, hf_index, ett_ftam_F_GROUP_DELETE_request);
 
@@ -4132,7 +4105,7 @@ static const ber_sequence_t SEQUENCE_OF_Pathname_sequence_of[1] = {
 };
 
 static int
-dissect_ftam_SEQUENCE_OF_Pathname(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_SEQUENCE_OF_Pathname(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence_of(implicit_tag, actx, tree, tvb, offset,
                                       SEQUENCE_OF_Pathname_sequence_of, hf_index, ett_ftam_SEQUENCE_OF_Pathname);
 
@@ -4153,7 +4126,7 @@ static const ber_choice_t Operation_Result_U_choice[] = {
 };
 
 static int
-dissect_ftam_Operation_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Operation_Result_U(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  Operation_Result_U_choice, hf_index, ett_ftam_Operation_Result_U,
                                  NULL);
@@ -4164,9 +4137,9 @@ dissect_ftam_Operation_Result_U(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, in
 
 
 static int
-dissect_ftam_Operation_Result(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Operation_Result(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_tagged_type(implicit_tag, actx, tree, tvb, offset,
-                                      hf_index, BER_CLASS_APP, 30, FALSE, dissect_ftam_Operation_Result_U);
+                                      hf_index, BER_CLASS_APP, 30, false, dissect_ftam_Operation_Result_U);
 
   return offset;
 }
@@ -4182,7 +4155,7 @@ static const ber_sequence_t F_GROUP_DELETE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_DELETE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_DELETE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_DELETE_response_sequence, hf_index, ett_ftam_F_GROUP_DELETE_response);
 
@@ -4198,7 +4171,7 @@ static const value_string ftam_Error_Action_vals[] = {
 
 
 static int
-dissect_ftam_Error_Action(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_Error_Action(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 NULL);
 
@@ -4219,7 +4192,7 @@ static const ber_sequence_t F_GROUP_MOVE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_MOVE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_MOVE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_MOVE_request_sequence, hf_index, ett_ftam_F_GROUP_MOVE_request);
 
@@ -4236,7 +4209,7 @@ static const ber_sequence_t F_GROUP_MOVE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_MOVE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_MOVE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_MOVE_response_sequence, hf_index, ett_ftam_F_GROUP_MOVE_response);
 
@@ -4257,7 +4230,7 @@ static const ber_sequence_t F_GROUP_COPY_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_COPY_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_COPY_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_COPY_request_sequence, hf_index, ett_ftam_F_GROUP_COPY_request);
 
@@ -4274,7 +4247,7 @@ static const ber_sequence_t F_GROUP_COPY_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_COPY_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_COPY_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_COPY_response_sequence, hf_index, ett_ftam_F_GROUP_COPY_response);
 
@@ -4289,7 +4262,7 @@ static const ber_sequence_t F_GROUP_LIST_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_LIST_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_LIST_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_LIST_request_sequence, hf_index, ett_ftam_F_GROUP_LIST_request);
 
@@ -4305,7 +4278,7 @@ static const ber_sequence_t F_GROUP_LIST_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_LIST_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_LIST_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_LIST_response_sequence, hf_index, ett_ftam_F_GROUP_LIST_response);
 
@@ -4322,7 +4295,7 @@ static const ber_sequence_t F_GROUP_CHANGE_ATTRIB_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_CHANGE_ATTRIB_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_CHANGE_ATTRIB_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_CHANGE_ATTRIB_request_sequence, hf_index, ett_ftam_F_GROUP_CHANGE_ATTRIB_request);
 
@@ -4339,7 +4312,7 @@ static const ber_sequence_t F_GROUP_CHANGE_ATTRIB_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_GROUP_CHANGE_ATTRIB_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_GROUP_CHANGE_ATTRIB_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_GROUP_CHANGE_ATTRIB_response_sequence, hf_index, ett_ftam_F_GROUP_CHANGE_ATTRIB_response);
 
@@ -4353,7 +4326,7 @@ static const ber_sequence_t F_SELECT_ANOTHER_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_SELECT_ANOTHER_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_SELECT_ANOTHER_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_SELECT_ANOTHER_request_sequence, hf_index, ett_ftam_F_SELECT_ANOTHER_request);
 
@@ -4372,7 +4345,7 @@ static const ber_sequence_t F_SELECT_ANOTHER_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_SELECT_ANOTHER_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_SELECT_ANOTHER_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_SELECT_ANOTHER_response_sequence, hf_index, ett_ftam_F_SELECT_ANOTHER_response);
 
@@ -4390,7 +4363,7 @@ static const ber_sequence_t F_CREATE_DIRECTORY_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CREATE_DIRECTORY_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CREATE_DIRECTORY_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CREATE_DIRECTORY_request_sequence, hf_index, ett_ftam_F_CREATE_DIRECTORY_request);
 
@@ -4408,7 +4381,7 @@ static const ber_sequence_t F_CREATE_DIRECTORY_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CREATE_DIRECTORY_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CREATE_DIRECTORY_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CREATE_DIRECTORY_response_sequence, hf_index, ett_ftam_F_CREATE_DIRECTORY_response);
 
@@ -4430,7 +4403,7 @@ static const ber_sequence_t F_LINK_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_LINK_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_LINK_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_LINK_request_sequence, hf_index, ett_ftam_F_LINK_request);
 
@@ -4449,7 +4422,7 @@ static const ber_sequence_t F_LINK_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_LINK_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_LINK_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_LINK_response_sequence, hf_index, ett_ftam_F_LINK_response);
 
@@ -4463,7 +4436,7 @@ static const ber_sequence_t F_UNLINK_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_UNLINK_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_UNLINK_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_UNLINK_request_sequence, hf_index, ett_ftam_F_UNLINK_request);
 
@@ -4480,7 +4453,7 @@ static const ber_sequence_t F_UNLINK_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_UNLINK_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_UNLINK_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_UNLINK_response_sequence, hf_index, ett_ftam_F_UNLINK_response);
 
@@ -4495,7 +4468,7 @@ static const ber_sequence_t F_READ_LINK_ATTRIB_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_READ_LINK_ATTRIB_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_READ_LINK_ATTRIB_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_READ_LINK_ATTRIB_request_sequence, hf_index, ett_ftam_F_READ_LINK_ATTRIB_request);
 
@@ -4511,7 +4484,7 @@ static const ber_sequence_t F_READ_LINK_ATTRIB_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_READ_LINK_ATTRIB_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_READ_LINK_ATTRIB_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_READ_LINK_ATTRIB_response_sequence, hf_index, ett_ftam_F_READ_LINK_ATTRIB_response);
 
@@ -4525,7 +4498,7 @@ static const ber_sequence_t F_CHANGE_LINK_ATTRIB_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CHANGE_LINK_ATTRIB_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CHANGE_LINK_ATTRIB_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CHANGE_LINK_ATTRIB_request_sequence, hf_index, ett_ftam_F_CHANGE_LINK_ATTRIB_request);
 
@@ -4541,7 +4514,7 @@ static const ber_sequence_t F_CHANGE_LINK_ATTRIB_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_CHANGE_LINK_ATTRIB_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_CHANGE_LINK_ATTRIB_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_CHANGE_LINK_ATTRIB_response_sequence, hf_index, ett_ftam_F_CHANGE_LINK_ATTRIB_response);
 
@@ -4560,7 +4533,7 @@ static const ber_sequence_t F_MOVE_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_MOVE_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_MOVE_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_MOVE_request_sequence, hf_index, ett_ftam_F_MOVE_request);
 
@@ -4577,7 +4550,7 @@ static const ber_sequence_t F_MOVE_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_MOVE_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_MOVE_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_MOVE_response_sequence, hf_index, ett_ftam_F_MOVE_response);
 
@@ -4596,7 +4569,7 @@ static const ber_sequence_t F_COPY_request_sequence[] = {
 };
 
 static int
-dissect_ftam_F_COPY_request(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_COPY_request(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_COPY_request_sequence, hf_index, ett_ftam_F_COPY_request);
 
@@ -4613,7 +4586,7 @@ static const ber_sequence_t F_COPY_response_sequence[] = {
 };
 
 static int
-dissect_ftam_F_COPY_response(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_F_COPY_response(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    F_COPY_response_sequence, hf_index, ett_ftam_F_COPY_response);
 
@@ -4694,9 +4667,8 @@ static const ber_choice_t FSM_PDU_choice[] = {
 };
 
 static int
-dissect_ftam_FSM_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-#line 125 "./asn1/ftam/ftam.cnf"
-  gint branch_taken;
+dissect_ftam_FSM_PDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  int branch_taken;
 
     offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  FSM_PDU_choice, hf_index, ett_ftam_FSM_PDU,
@@ -4704,8 +4676,9 @@ dissect_ftam_FSM_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U
 
 
   if( (branch_taken!=-1) && ftam_FSM_PDU_vals[branch_taken].strptr ){
-	col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_FSM_PDU_vals[branch_taken].strptr);
+    col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %s:", ftam_FSM_PDU_vals[branch_taken].strptr);
   }
+
 
 
   return offset;
@@ -4713,15 +4686,15 @@ dissect_ftam_FSM_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U
 
 
 static const ber_choice_t PDU_choice[] = {
-  { -1/*choice*/, &hf_ftam_fTAM_Regime_PDU, BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_FTAM_Regime_PDU },
-  { -1/*choice*/, &hf_ftam_file_PDU       , BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_File_PDU },
-  { -1/*choice*/, &hf_ftam_bulk_Data_PDU  , BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_Bulk_Data_PDU },
-  { -1/*choice*/, &hf_ftam_fSM_PDU        , BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_FSM_PDU },
+  {   0, &hf_ftam_fTAM_Regime_PDU, BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_FTAM_Regime_PDU },
+  {   1, &hf_ftam_file_PDU       , BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_File_PDU },
+  {   2, &hf_ftam_bulk_Data_PDU  , BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_Bulk_Data_PDU },
+  {   3, &hf_ftam_fSM_PDU        , BER_CLASS_ANY/*choice*/, -1/*choice*/, BER_FLAGS_NOOWNTAG, dissect_ftam_FSM_PDU },
   { 0, NULL, 0, 0, 0, NULL }
 };
 
 static int
-dissect_ftam_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+dissect_ftam_PDU(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  PDU_choice, hf_index, ett_ftam_PDU,
                                  NULL);
@@ -4730,16 +4703,13 @@ dissect_ftam_PDU(gboolean implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, a
 }
 
 
-/*--- End of included file: packet-ftam-fn.c ---*/
-#line 52 "./asn1/ftam/packet-ftam-template.c"
-
 /*
 * Dissect FTAM unstructured text
 */
 static int
 dissect_ftam_unstructured_text(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *parent_tree, void* data _U_)
 {
-	proto_tree_add_item (parent_tree, hf_ftam_unstructured_text, tvb, 0, tvb_reported_length_remaining(tvb, 0), ENC_ASCII|ENC_NA);
+	proto_tree_add_item (parent_tree, hf_ftam_unstructured_text, tvb, 0, tvb_reported_length_remaining(tvb, 0), ENC_ASCII);
 	return tvb_captured_length(tvb);
 }
 
@@ -4765,7 +4735,7 @@ dissect_ftam(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* d
 	proto_tree *tree=NULL;
 	asn1_ctx_t asn1_ctx;
 
-	asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, TRUE, pinfo);
+	asn1_ctx_init(&asn1_ctx, ASN1_ENC_BER, true, pinfo);
 
 	if(parent_tree){
 		item = proto_tree_add_item(parent_tree, proto_ftam, tvb, 0, -1, ENC_NA);
@@ -4776,7 +4746,7 @@ dissect_ftam(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* d
 
 	while (tvb_reported_length_remaining(tvb, offset) > 0){
 		old_offset=offset;
-		offset=dissect_ftam_PDU(FALSE, tvb, offset, &asn1_ctx, tree, -1);
+		offset=dissect_ftam_PDU(false, tvb, offset, &asn1_ctx, tree, -1);
 		if(offset == old_offset){
 			proto_tree_add_expert(tree, pinfo, &ei_ftam_zero_pdu, tvb, offset, -1);
 			break;
@@ -4798,9 +4768,6 @@ void proto_register_ftam(void) {
      { &hf_ftam_unstructured_binary,
        { "ISO FTAM unstructured binary", "ftam.unstructured_binary", FT_BYTES,
           BASE_NONE, NULL, 0x0, NULL, HFILL } },
-
-/*--- Included file: packet-ftam-hfarr.c ---*/
-#line 1 "./asn1/ftam/packet-ftam-hfarr.c"
     { &hf_ftam_fTAM_Regime_PDU,
       { "fTAM-Regime-PDU", "ftam.fTAM_Regime_PDU",
         FT_UINT32, BASE_DEC, VALS(ftam_FTAM_Regime_PDU_vals), 0,
@@ -5026,7 +4993,7 @@ void proto_register_ftam(void) {
         FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_select_attributes,
-      { "attributes", "ftam.attributes_element",
+      { "attributes", "ftam.select_attributes_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "Select_Attributes", HFILL }},
     { &hf_ftam_requested_access,
@@ -5070,7 +5037,7 @@ void proto_register_ftam(void) {
         FT_UINT32, BASE_DEC, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_read_attributes,
-      { "attributes", "ftam.attributes_element",
+      { "attributes", "ftam.read_attributes_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "Read_Attributes", HFILL }},
     { &hf_ftam_attributes,
@@ -5082,7 +5049,7 @@ void proto_register_ftam(void) {
         FT_BYTES, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_open_contents_type,
-      { "contents-type", "ftam.contents_type",
+      { "contents-type", "ftam.open_contents_type",
         FT_UINT32, BASE_DEC, VALS(ftam_T_open_contents_type_vals), 0,
         "T_open_contents_type", HFILL }},
     { &hf_ftam_unknown,
@@ -5102,7 +5069,7 @@ void proto_register_ftam(void) {
         FT_INT32, BASE_DEC, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_request_recovery_mode,
-      { "recovery-mode", "ftam.recovery_mode",
+      { "recovery-mode", "ftam.request_recovery_mode",
         FT_INT32, BASE_DEC, VALS(ftam_T_request_recovery_mode_vals), 0,
         "T_request_recovery_mode", HFILL }},
     { &hf_ftam_remove_contexts,
@@ -5134,7 +5101,7 @@ void proto_register_ftam(void) {
         FT_UINT32, BASE_DEC, VALS(ftam_Contents_Type_Attribute_vals), 0,
         "Contents_Type_Attribute", HFILL }},
     { &hf_ftam_response_recovery_mode,
-      { "recovery-mode", "ftam.recovery_mode",
+      { "recovery-mode", "ftam.response_recovery_mode",
         FT_INT32, BASE_DEC, VALS(ftam_T_response_recovery_mode_vals), 0,
         "T_response_recovery_mode", HFILL }},
     { &hf_ftam_presentation_action,
@@ -5226,7 +5193,7 @@ void proto_register_ftam(void) {
         FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_read_access_context,
-      { "access-context", "ftam.access_context_element",
+      { "access-context", "ftam.read_access_context_element",
         FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_transfer_number,
@@ -5310,11 +5277,11 @@ void proto_register_ftam(void) {
         FT_UINT32, BASE_DEC, VALS(ftam_Object_Size_Attribute_vals), 0,
         "Object_Size_Attribute", HFILL }},
     { &hf_ftam_change_attributes_access_control,
-      { "access-control", "ftam.access_control",
+      { "access-control", "ftam.change_attributes_access_control",
         FT_UINT32, BASE_DEC, VALS(ftam_Access_Control_Change_Attribute_vals), 0,
         "Access_Control_Change_Attribute", HFILL }},
     { &hf_ftam_change_path_access_control,
-      { "path-access-control", "ftam.path_access_control",
+      { "path-access-control", "ftam.change_path_access_control",
         FT_UINT32, BASE_DEC, VALS(ftam_Access_Control_Change_Attribute_vals), 0,
         "Access_Control_Change_Attribute", HFILL }},
     { &hf_ftam_legal_qualification,
@@ -5510,7 +5477,7 @@ void proto_register_ftam(void) {
         FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_actual_values3,
-      { "actual-values", "ftam.actual_values",
+      { "actual-values", "ftam.actual_values3",
         FT_UINT32, BASE_DEC, NULL, 0,
         "SET_OF_Access_Control_Element", HFILL }},
     { &hf_ftam_actual_values3_item,
@@ -5518,7 +5485,7 @@ void proto_register_ftam(void) {
         FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_actual_values1,
-      { "actual-values", "ftam.actual_values_element",
+      { "actual-values", "ftam.actual_values1_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "T_actual_values1", HFILL }},
     { &hf_ftam_insert_values,
@@ -5558,39 +5525,39 @@ void proto_register_ftam(void) {
         FT_UINT32, BASE_DEC, VALS(acse_AE_title_vals), 0,
         "Application_Entity_Title", HFILL }},
     { &hf_ftam_read_key,
-      { "read", "ftam.read",
+      { "read", "ftam.read_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_insert_key,
-      { "insert", "ftam.insert",
+      { "insert", "ftam.insert_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_replace_key,
-      { "replace", "ftam.replace",
+      { "replace", "ftam.replace_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_extend_key,
-      { "extend", "ftam.extend",
+      { "extend", "ftam.extend_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_erase_key,
-      { "erase", "ftam.erase",
+      { "erase", "ftam.erase_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_read_attribute_key,
-      { "read-attribute", "ftam.read_attribute",
+      { "read-attribute", "ftam.read_attribute_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_change_attribute_key,
-      { "change-attribute", "ftam.change_attribute",
+      { "change-attribute", "ftam.change_attribute_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_delete_Object_key,
-      { "delete-Object", "ftam.delete_Object",
+      { "delete-Object", "ftam.delete_Object_key",
         FT_BYTES, BASE_NONE, NULL, 0,
         "Concurrency_Key", HFILL }},
     { &hf_ftam_actual_values2,
-      { "actual-values", "ftam.actual_values",
+      { "actual-values", "ftam.actual_values2",
         FT_STRING, BASE_NONE, NULL, 0,
         "Account", HFILL }},
     { &hf_ftam_document_type,
@@ -5610,11 +5577,11 @@ void proto_register_ftam(void) {
         FT_OID, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_actual_values5,
-      { "actual-values", "ftam.actual_values",
-        FT_STRING, BASE_NONE, NULL, 0,
+      { "actual-values", "ftam.actual_values5",
+        FT_ABSOLUTE_TIME, ABSOLUTE_TIME_LOCAL, NULL, 0,
         "GeneralizedTime", HFILL }},
     { &hf_ftam_actual_values8,
-      { "actual-values", "ftam.actual_values",
+      { "actual-values", "ftam.actual_values8",
         FT_INT32, BASE_DEC, VALS(ftam_T_actual_values8_vals), 0,
         "T_actual_values8", HFILL }},
     { &hf_ftam_incomplete_pathname,
@@ -5626,11 +5593,11 @@ void proto_register_ftam(void) {
         FT_UINT32, BASE_DEC, NULL, 0,
         "Pathname", HFILL }},
     { &hf_ftam_actual_values7,
-      { "actual-values", "ftam.actual_values",
+      { "actual-values", "ftam.actual_values7",
         FT_INT32, BASE_DEC, NULL, 0,
         "INTEGER", HFILL }},
     { &hf_ftam_actual_values9,
-      { "actual-values", "ftam.actual_values",
+      { "actual-values", "ftam.actual_values9",
         FT_STRING, BASE_NONE, NULL, 0,
         "GraphicString", HFILL }},
     { &hf_ftam_abstract_Syntax_not_supported,
@@ -5638,11 +5605,11 @@ void proto_register_ftam(void) {
         FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_ftam_actual_values4,
-      { "actual-values", "ftam.actual_values_element",
+      { "actual-values", "ftam.actual_values4_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "EXTERNAL", HFILL }},
     { &hf_ftam_actual_values6,
-      { "actual-values", "ftam.actual_values",
+      { "actual-values", "ftam.actual_values6",
         FT_STRING, BASE_NONE, NULL, 0,
         "User_Identity", HFILL }},
     { &hf_ftam_Child_Objects_Attribute_item,
@@ -5834,7 +5801,7 @@ void proto_register_ftam(void) {
         FT_UINT32, BASE_DEC, VALS(ftam_Pathname_Attribute_vals), 0,
         "Pathname_Attribute", HFILL }},
     { &hf_ftam_read_link_attributes,
-      { "attributes", "ftam.attributes_element",
+      { "attributes", "ftam.read_link_attributes_element",
         FT_NONE, BASE_NONE, NULL, 0,
         "Read_Attributes", HFILL }},
     { &hf_ftam_Attribute_Extension_Names_item,
@@ -6027,7 +5994,7 @@ void proto_register_ftam(void) {
         "Equality_Comparision", HFILL }},
     { &hf_ftam_time_and_date_value,
       { "time-and-date-value", "ftam.time_and_date_value",
-        FT_STRING, BASE_NONE, NULL, 0,
+        FT_ABSOLUTE_TIME, ABSOLUTE_TIME_LOCAL, NULL, 0,
         "GeneralizedTime", HFILL }},
     { &hf_ftam_relational_comparision,
       { "relational-comparision", "ftam.relational_comparision",
@@ -6074,7 +6041,7 @@ void proto_register_ftam(void) {
         FT_NONE, BASE_NONE, NULL, 0,
         "T_extension_set_attribute_Patterns_item", HFILL }},
     { &hf_ftam_attribute_extension_attribute_identifier,
-      { "extension-attribute-identifier", "ftam.extension_attribute_identifier",
+      { "extension-attribute-identifier", "ftam.attribute_extension_attribute_identifier",
         FT_OID, BASE_NONE, NULL, 0,
         "T_attribute_extension_attribute_identifier", HFILL }},
     { &hf_ftam_extension_attribute_Pattern,
@@ -6118,356 +6085,362 @@ void proto_register_ftam(void) {
         FT_UINT32, BASE_DEC, VALS(acse_ASO_qualifier_vals), 0,
         "AE_qualifier", HFILL }},
     { &hf_ftam_Protocol_Version_U_version_1,
-      { "version-1", "ftam.version-1",
+      { "version-1", "ftam.Protocol.Version.U.version.1",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Protocol_Version_U_version_2,
-      { "version-2", "ftam.version-2",
+      { "version-2", "ftam.Protocol.Version.U.version.2",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Service_Class_U_unconstrained_class,
-      { "unconstrained-class", "ftam.unconstrained-class",
+      { "unconstrained-class", "ftam.Service.Class.U.unconstrained.class",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Service_Class_U_management_class,
-      { "management-class", "ftam.management-class",
+      { "management-class", "ftam.Service.Class.U.management.class",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Service_Class_U_transfer_class,
-      { "transfer-class", "ftam.transfer-class",
+      { "transfer-class", "ftam.Service.Class.U.transfer.class",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Service_Class_U_transfer_and_management_class,
-      { "transfer-and-management-class", "ftam.transfer-and-management-class",
+      { "transfer-and-management-class", "ftam.Service.Class.U.transfer.and.management.class",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Service_Class_U_access_class,
-      { "access-class", "ftam.access-class",
+      { "access-class", "ftam.Service.Class.U.access.class",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
+    { &hf_ftam_Functional_Units_U_spare_bit0,
+      { "spare_bit0", "ftam.Functional.Units.U.spare.bit0",
+        FT_BOOLEAN, 8, NULL, 0x80,
+        NULL, HFILL }},
+    { &hf_ftam_Functional_Units_U_spare_bit1,
+      { "spare_bit1", "ftam.Functional.Units.U.spare.bit1",
+        FT_BOOLEAN, 8, NULL, 0x40,
+        NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_read,
-      { "read", "ftam.read",
+      { "read", "ftam.Functional.Units.U.read",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_write,
-      { "write", "ftam.write",
+      { "write", "ftam.Functional.Units.U.write",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_file_access,
-      { "file-access", "ftam.file-access",
+      { "file-access", "ftam.Functional.Units.U.file.access",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_limited_file_management,
-      { "limited-file-management", "ftam.limited-file-management",
+      { "limited-file-management", "ftam.Functional.Units.U.limited.file.management",
         FT_BOOLEAN, 8, NULL, 0x04,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_enhanced_file_management,
-      { "enhanced-file-management", "ftam.enhanced-file-management",
+      { "enhanced-file-management", "ftam.Functional.Units.U.enhanced.file.management",
         FT_BOOLEAN, 8, NULL, 0x02,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_grouping,
-      { "grouping", "ftam.grouping",
+      { "grouping", "ftam.Functional.Units.U.grouping",
         FT_BOOLEAN, 8, NULL, 0x01,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_fadu_locking,
-      { "fadu-locking", "ftam.fadu-locking",
+      { "fadu-locking", "ftam.Functional.Units.U.fadu.locking",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_recovery,
-      { "recovery", "ftam.recovery",
+      { "recovery", "ftam.Functional.Units.U.recovery",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_restart_data_transfer,
-      { "restart-data-transfer", "ftam.restart-data-transfer",
+      { "restart-data-transfer", "ftam.Functional.Units.U.restart.data.transfer",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_limited_filestore_management,
-      { "limited-filestore-management", "ftam.limited-filestore-management",
+      { "limited-filestore-management", "ftam.Functional.Units.U.limited.filestore.management",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_enhanced_filestore_management,
-      { "enhanced-filestore-management", "ftam.enhanced-filestore-management",
+      { "enhanced-filestore-management", "ftam.Functional.Units.U.enhanced.filestore.management",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_object_manipulation,
-      { "object-manipulation", "ftam.object-manipulation",
+      { "object-manipulation", "ftam.Functional.Units.U.object.manipulation",
         FT_BOOLEAN, 8, NULL, 0x04,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_group_manipulation,
-      { "group-manipulation", "ftam.group-manipulation",
+      { "group-manipulation", "ftam.Functional.Units.U.group.manipulation",
         FT_BOOLEAN, 8, NULL, 0x02,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_consecutive_access,
-      { "consecutive-access", "ftam.consecutive-access",
+      { "consecutive-access", "ftam.Functional.Units.U.consecutive.access",
         FT_BOOLEAN, 8, NULL, 0x01,
         NULL, HFILL }},
     { &hf_ftam_Functional_Units_U_concurrent_access,
-      { "concurrent-access", "ftam.concurrent-access",
+      { "concurrent-access", "ftam.Functional.Units.U.concurrent.access",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Groups_U_storage,
-      { "storage", "ftam.storage",
+      { "storage", "ftam.Attribute.Groups.U.storage",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Groups_U_security,
-      { "security", "ftam.security",
+      { "security", "ftam.Attribute.Groups.U.security",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Groups_U_private,
-      { "private", "ftam.private",
+      { "private", "ftam.Attribute.Groups.U.private",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Groups_U_extension,
-      { "extension", "ftam.extension",
+      { "extension", "ftam.Attribute.Groups.U.extension",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_T_processing_mode_f_read,
-      { "f-read", "ftam.f-read",
+      { "f-read", "ftam.T.processing.mode.f.read",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_T_processing_mode_f_insert,
-      { "f-insert", "ftam.f-insert",
+      { "f-insert", "ftam.T.processing.mode.f.insert",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_T_processing_mode_f_replace,
-      { "f-replace", "ftam.f-replace",
+      { "f-replace", "ftam.T.processing.mode.f.replace",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_T_processing_mode_f_extend,
-      { "f-extend", "ftam.f-extend",
+      { "f-extend", "ftam.T.processing.mode.f.extend",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_T_processing_mode_f_erase,
-      { "f-erase", "ftam.f-erase",
+      { "f-erase", "ftam.T.processing.mode.f.erase",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_read,
-      { "read", "ftam.read",
+      { "read", "ftam.Access.Request.U.read",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_insert,
-      { "insert", "ftam.insert",
+      { "insert", "ftam.Access.Request.U.insert",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_replace,
-      { "replace", "ftam.replace",
+      { "replace", "ftam.Access.Request.U.replace",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_extend,
-      { "extend", "ftam.extend",
+      { "extend", "ftam.Access.Request.U.extend",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_erase,
-      { "erase", "ftam.erase",
+      { "erase", "ftam.Access.Request.U.erase",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_read_attribute,
-      { "read-attribute", "ftam.read-attribute",
+      { "read-attribute", "ftam.Access.Request.U.read.attribute",
         FT_BOOLEAN, 8, NULL, 0x04,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_change_attribute,
-      { "change-attribute", "ftam.change-attribute",
+      { "change-attribute", "ftam.Access.Request.U.change.attribute",
         FT_BOOLEAN, 8, NULL, 0x02,
         NULL, HFILL }},
     { &hf_ftam_Access_Request_U_delete_Object,
-      { "delete-Object", "ftam.delete-Object",
+      { "delete-Object", "ftam.Access.Request.U.delete.Object",
         FT_BOOLEAN, 8, NULL, 0x01,
         NULL, HFILL }},
     { &hf_ftam_Concurrency_Key_not_required,
-      { "not-required", "ftam.not-required",
+      { "not-required", "ftam.Concurrency.Key.not.required",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Concurrency_Key_shared,
-      { "shared", "ftam.shared",
+      { "shared", "ftam.Concurrency.Key.shared",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Concurrency_Key_exclusive,
-      { "exclusive", "ftam.exclusive",
+      { "exclusive", "ftam.Concurrency.Key.exclusive",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Concurrency_Key_no_access,
-      { "no-access", "ftam.no-access",
+      { "no-access", "ftam.Concurrency.Key.no.access",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_read,
-      { "read", "ftam.read",
+      { "read", "ftam.Permitted.Actions.Attribute.read",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_insert,
-      { "insert", "ftam.insert",
+      { "insert", "ftam.Permitted.Actions.Attribute.insert",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_replace,
-      { "replace", "ftam.replace",
+      { "replace", "ftam.Permitted.Actions.Attribute.replace",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_extend,
-      { "extend", "ftam.extend",
+      { "extend", "ftam.Permitted.Actions.Attribute.extend",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_erase,
-      { "erase", "ftam.erase",
+      { "erase", "ftam.Permitted.Actions.Attribute.erase",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_read_attribute,
-      { "read-attribute", "ftam.read-attribute",
+      { "read-attribute", "ftam.Permitted.Actions.Attribute.read.attribute",
         FT_BOOLEAN, 8, NULL, 0x04,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_change_attribute,
-      { "change-attribute", "ftam.change-attribute",
+      { "change-attribute", "ftam.Permitted.Actions.Attribute.change.attribute",
         FT_BOOLEAN, 8, NULL, 0x02,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_delete_Object,
-      { "delete-Object", "ftam.delete-Object",
+      { "delete-Object", "ftam.Permitted.Actions.Attribute.delete.Object",
         FT_BOOLEAN, 8, NULL, 0x01,
         NULL, HFILL }},
-    { &hf_ftam_Permitted_Actions_Attribute_pass,
-      { "pass", "ftam.pass",
-        FT_BOOLEAN, 8, NULL, 0x10,
-        NULL, HFILL }},
-    { &hf_ftam_Permitted_Actions_Attribute_link,
-      { "link", "ftam.link",
-        FT_BOOLEAN, 8, NULL, 0x08,
-        NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_traversal,
-      { "traversal", "ftam.traversal",
+      { "traversal", "ftam.Permitted.Actions.Attribute.traversal",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_reverse_traversal,
-      { "reverse-traversal", "ftam.reverse-traversal",
+      { "reverse-traversal", "ftam.Permitted.Actions.Attribute.reverse.traversal",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Permitted_Actions_Attribute_random_Order,
-      { "random-Order", "ftam.random-Order",
+      { "random-Order", "ftam.Permitted.Actions.Attribute.random.Order",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
+    { &hf_ftam_Permitted_Actions_Attribute_pass,
+      { "pass", "ftam.Permitted.Actions.Attribute.pass",
+        FT_BOOLEAN, 8, NULL, 0x10,
+        NULL, HFILL }},
+    { &hf_ftam_Permitted_Actions_Attribute_link,
+      { "link", "ftam.Permitted.Actions.Attribute.link",
+        FT_BOOLEAN, 8, NULL, 0x08,
+        NULL, HFILL }},
     { &hf_ftam_Equality_Comparision_no_value_available_matches,
-      { "no-value-available-matches", "ftam.no-value-available-matches",
+      { "no-value-available-matches", "ftam.Equality.Comparision.no.value.available.matches",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Equality_Comparision_equals_matches,
-      { "equals-matches", "ftam.equals-matches",
+      { "equals-matches", "ftam.Equality.Comparision.equals.matches",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Relational_Comparision_no_value_available_matches,
-      { "no-value-available-matches", "ftam.no-value-available-matches",
+      { "no-value-available-matches", "ftam.Relational.Comparision.no.value.available.matches",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Relational_Comparision_equals_matches,
-      { "equals-matches", "ftam.equals-matches",
+      { "equals-matches", "ftam.Relational.Comparision.equals.matches",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Relational_Comparision_less_than_matches,
-      { "less-than-matches", "ftam.less-than-matches",
+      { "less-than-matches", "ftam.Relational.Comparision.less.than.matches",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Relational_Comparision_greater_than_matches,
-      { "greater-than-matches", "ftam.greater-than-matches",
+      { "greater-than-matches", "ftam.Relational.Comparision.greater.than.matches",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_pathname,
-      { "read-pathname", "ftam.read-pathname",
+      { "read-pathname", "ftam.Attribute.Names.read.pathname",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
-    { &hf_ftam_Attribute_Names_read_Object_type,
-      { "read-Object-type", "ftam.read-Object-type",
-        FT_BOOLEAN, 8, NULL, 0x20,
-        NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_permitted_actions,
-      { "read-permitted-actions", "ftam.read-permitted-actions",
+      { "read-permitted-actions", "ftam.Attribute.Names.read.permitted.actions",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_contents_type,
-      { "read-contents-type", "ftam.read-contents-type",
+      { "read-contents-type", "ftam.Attribute.Names.read.contents.type",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
-    { &hf_ftam_Attribute_Names_read_linked_Object,
-      { "read-linked-Object", "ftam.read-linked-Object",
-        FT_BOOLEAN, 8, NULL, 0x10,
-        NULL, HFILL }},
-    { &hf_ftam_Attribute_Names_read_Child_objects,
-      { "read-Child-objects", "ftam.read-Child-objects",
-        FT_BOOLEAN, 8, NULL, 0x01,
-        NULL, HFILL }},
-    { &hf_ftam_Attribute_Names_read_primary_pathname,
-      { "read-primary-pathname", "ftam.read-primary-pathname",
-        FT_BOOLEAN, 8, NULL, 0x08,
-        NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_storage_account,
-      { "read-storage-account", "ftam.read-storage-account",
+      { "read-storage-account", "ftam.Attribute.Names.read.storage.account",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_date_and_time_of_creation,
-      { "read-date-and-time-of-creation", "ftam.read-date-and-time-of-creation",
+      { "read-date-and-time-of-creation", "ftam.Attribute.Names.read.date.and.time.of.creation",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_date_and_time_of_last_modification,
-      { "read-date-and-time-of-last-modification", "ftam.read-date-and-time-of-last-modification",
+      { "read-date-and-time-of-last-modification", "ftam.Attribute.Names.read.date.and.time.of.last.modification",
         FT_BOOLEAN, 8, NULL, 0x04,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_date_and_time_of_last_read_access,
-      { "read-date-and-time-of-last-read-access", "ftam.read-date-and-time-of-last-read-access",
+      { "read-date-and-time-of-last-read-access", "ftam.Attribute.Names.read.date.and.time.of.last.read.access",
         FT_BOOLEAN, 8, NULL, 0x02,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_date_and_time_of_last_attribute_modification,
-      { "read-date-and-time-of-last-attribute-modification", "ftam.read-date-and-time-of-last-attribute-modification",
+      { "read-date-and-time-of-last-attribute-modification", "ftam.Attribute.Names.read.date.and.time.of.last.attribute.modification",
         FT_BOOLEAN, 8, NULL, 0x01,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_identity_of_creator,
-      { "read-identity-of-creator", "ftam.read-identity-of-creator",
+      { "read-identity-of-creator", "ftam.Attribute.Names.read.identity.of.creator",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_identity_of_last_modifier,
-      { "read-identity-of-last-modifier", "ftam.read-identity-of-last-modifier",
+      { "read-identity-of-last-modifier", "ftam.Attribute.Names.read.identity.of.last.modifier",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_identity_of_last_reader,
-      { "read-identity-of-last-reader", "ftam.read-identity-of-last-reader",
+      { "read-identity-of-last-reader", "ftam.Attribute.Names.read.identity.of.last.reader",
         FT_BOOLEAN, 8, NULL, 0x20,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_identity_of_last_attribute_modifier,
-      { "read-identity-of-last-attribute-modifier", "ftam.read-identity-of-last-attribute-modifier",
+      { "read-identity-of-last-attribute-modifier", "ftam.Attribute.Names.read.identity.of.last.attribute.modifier",
         FT_BOOLEAN, 8, NULL, 0x10,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_Object_availability,
-      { "read-Object-availability", "ftam.read-Object-availability",
+      { "read-Object-availability", "ftam.Attribute.Names.read.Object.availability",
         FT_BOOLEAN, 8, NULL, 0x08,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_Object_size,
-      { "read-Object-size", "ftam.read-Object-size",
+      { "read-Object-size", "ftam.Attribute.Names.read.Object.size",
         FT_BOOLEAN, 8, NULL, 0x04,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_future_Object_size,
-      { "read-future-Object-size", "ftam.read-future-Object-size",
+      { "read-future-Object-size", "ftam.Attribute.Names.read.future.Object.size",
         FT_BOOLEAN, 8, NULL, 0x02,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_access_control,
-      { "read-access-control", "ftam.read-access-control",
+      { "read-access-control", "ftam.Attribute.Names.read.access.control",
         FT_BOOLEAN, 8, NULL, 0x01,
         NULL, HFILL }},
-    { &hf_ftam_Attribute_Names_read_path_access_control,
-      { "read-path-access-control", "ftam.read-path-access-control",
-        FT_BOOLEAN, 8, NULL, 0x04,
-        NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_l8gal_qualifiCatiOnS,
-      { "read-l8gal-qualifiCatiOnS", "ftam.read-l8gal-qualifiCatiOnS",
+      { "read-l8gal-qualifiCatiOnS", "ftam.Attribute.Names.read.l8gal.qualifiCatiOnS",
         FT_BOOLEAN, 8, NULL, 0x80,
         NULL, HFILL }},
     { &hf_ftam_Attribute_Names_read_private_use,
-      { "read-private-use", "ftam.read-private-use",
+      { "read-private-use", "ftam.Attribute.Names.read.private.use",
         FT_BOOLEAN, 8, NULL, 0x40,
         NULL, HFILL }},
-
-/*--- End of included file: packet-ftam-hfarr.c ---*/
-#line 119 "./asn1/ftam/packet-ftam-template.c"
+    { &hf_ftam_Attribute_Names_read_Object_type,
+      { "read-Object-type", "ftam.Attribute.Names.read.Object.type",
+        FT_BOOLEAN, 8, NULL, 0x20,
+        NULL, HFILL }},
+    { &hf_ftam_Attribute_Names_read_linked_Object,
+      { "read-linked-Object", "ftam.Attribute.Names.read.linked.Object",
+        FT_BOOLEAN, 8, NULL, 0x10,
+        NULL, HFILL }},
+    { &hf_ftam_Attribute_Names_read_primary_pathname,
+      { "read-primary-pathname", "ftam.Attribute.Names.read.primary.pathname",
+        FT_BOOLEAN, 8, NULL, 0x08,
+        NULL, HFILL }},
+    { &hf_ftam_Attribute_Names_read_path_access_control,
+      { "read-path-access-control", "ftam.Attribute.Names.read.path.access.control",
+        FT_BOOLEAN, 8, NULL, 0x04,
+        NULL, HFILL }},
+    { &hf_ftam_Attribute_Names_spare_bit22,
+      { "spare_bit22", "ftam.Attribute.Names.spare.bit22",
+        FT_BOOLEAN, 8, NULL, 0x02,
+        NULL, HFILL }},
+    { &hf_ftam_Attribute_Names_read_Child_objects,
+      { "read-Child-objects", "ftam.Attribute.Names.read.Child.objects",
+        FT_BOOLEAN, 8, NULL, 0x01,
+        NULL, HFILL }},
   };
 
   /* List of subtrees */
-  static gint *ett[] = {
+  static int *ett[] = {
     &ett_ftam,
-
-/*--- Included file: packet-ftam-ettarr.c ---*/
-#line 1 "./asn1/ftam/packet-ftam-ettarr.c"
     &ett_ftam_PDU,
     &ett_ftam_FTAM_Regime_PDU,
     &ett_ftam_F_INITIALIZE_request,
@@ -6630,9 +6603,6 @@ void proto_register_ftam(void) {
     &ett_ftam_Path_Access_Passwords_item,
     &ett_ftam_Attribute_Names,
     &ett_ftam_AE_title,
-
-/*--- End of included file: packet-ftam-ettarr.c ---*/
-#line 125 "./asn1/ftam/packet-ftam-template.c"
   };
   static ei_register_info ei[] = {
     { &ei_ftam_zero_pdu, { "ftam.zero_pdu", PI_PROTOCOL, PI_ERROR, "Internal error, zero-byte FTAM PDU", EXPFILL }},

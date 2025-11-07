@@ -1,4 +1,5 @@
-/* tap-tcp-stream.h
+/** @file
+ *
  * TCP stream statistics
  * Originally from tcp_graph.c by Pavel Mores <pvl@uh.cz>
  * Win32 port:  rwh@unifiedtech.com
@@ -7,7 +8,8 @@
  * By Gerald Combs <gerald@wireshark.org>
  * Copyright 1998 Gerald Combs
  *
- * SPDX-License-Identifier: GPL-2.0-or-later*/
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 
 #ifndef __TAP_TCP_STREAM_H__
 #define __TAP_TCP_STREAM_H__
@@ -25,42 +27,63 @@ typedef enum tcp_graph_type_ {
     GRAPH_UNDEFINED
 } tcp_graph_type;
 
+#define RTT_ALL             0x0001
+#define RTT_SAK             0x0002
+#define RTT_RTT             0x0004
+#define RTT_KRN             0x0008
+
+typedef enum rtt_sampling_method_ {
+    SAMPLING_ALL,
+    SAMPLING_ALL_SACK,
+    SAMPLING_RTT,
+    SAMPLING_KARN,
+    SAMPLING_UNDEFINED
+} rtt_sampling_method;
+
 struct segment {
     struct segment *next;
-    guint32 num;
-    guint32 rel_secs;
-    guint32 rel_usecs;
+    uint32_t num;
+    uint32_t rel_secs;
+    uint32_t rel_usecs;
     /* Currently unused.
-    guint32 abs_secs;
-    guint32 abs_usecs;
+    time_t abs_secs;
+    uint32_t abs_usecs;
     */
 
-    guint32 th_seq;
-    guint32 th_ack;
-    guint16 th_flags;
-    guint32 th_win;   /* make it 32 bits so we can handle some scaling */
-    guint32 th_seglen;
-    guint16 th_sport;
-    guint16 th_dport;
+    uint32_t th_seq;
+    uint32_t th_ack;
+    uint32_t th_rawseq;
+    uint32_t th_rawack;
+    uint16_t th_flags;
+    uint32_t th_win;   /* make it 32 bits so we can handle some scaling */
+    uint32_t th_seglen;
+    uint16_t th_sport;
+    uint16_t th_dport;
     address ip_src;
     address ip_dst;
 
-    guint8  num_sack_ranges;
-    guint32 sack_left_edge[MAX_TCP_SACK_RANGES];
-    guint32 sack_right_edge[MAX_TCP_SACK_RANGES];
+    bool     ack_karn; /* true when ambiguous according to Karn's algo */
+
+    uint8_t num_sack_ranges;
+    uint32_t sack_left_edge[MAX_TCP_SACK_RANGES];
+    uint32_t sack_right_edge[MAX_TCP_SACK_RANGES];
 };
 
 struct tcp_graph {
     tcp_graph_type   type;
 
+    /* RTT sampling method (for RTT graphs only) */
+    uint8_t          rtt_sampling;
+
     /* The stream this graph will show */
     address          src_address;
-    guint16          src_port;
+    uint16_t         src_port;
     address          dst_address;
-    guint16          dst_port;
-    guint32          stream;
+    uint16_t         dst_port;
+    uint32_t         stream;
     /* Should this be a map or tree instead? */
     struct segment  *segments;
+    struct segment  *last;
 };
 
 /** Fill in the segment list for a TCP graph
@@ -70,11 +93,8 @@ struct tcp_graph {
  *        destination address types are AT_NONE the address and port
  *        information will be filled in using the first packet in the
  *        specified stream.
- * @param stream_known If FALSE, session information will be filled in using
- *        the currently selected packet. If FALSE, session information will
- *        be matched against tg.
  */
-void graph_segment_list_get(capture_file *cf, struct tcp_graph *tg, gboolean stream_known );
+void graph_segment_list_get(capture_file *cf, struct tcp_graph *tg);
 void graph_segment_list_free(struct tcp_graph * );
 
 /* for compare_headers() */
@@ -82,12 +102,12 @@ void graph_segment_list_free(struct tcp_graph * );
 #define COMPARE_CURR_DIR    0
 #define COMPARE_ANY_DIR     1
 
-int compare_headers(address *saddr1, address *daddr1, guint16 sport1, guint16 dport1, const address *saddr2, const address *daddr2, guint16 sport2, guint16 dport2, int dir);
+int compare_headers(address *saddr1, address *daddr1, uint16_t sport1, uint16_t dport1, const address *saddr2, const address *daddr2, uint16_t sport2, uint16_t dport2, int dir);
 
 int get_num_dsegs(struct tcp_graph * );
 int get_num_acks(struct tcp_graph *, int * );
 
-struct tcpheader *select_tcpip_session(capture_file *, struct segment * );
+uint32_t select_tcpip_session(capture_file *);
 
 /* This is used by rtt module only */
 struct rtt_unack {
@@ -97,28 +117,45 @@ struct rtt_unack {
     unsigned int  end_seqno;
 };
 
-int rtt_is_retrans(struct rtt_unack * , unsigned int );
+/**
+ * Check if a sequence number is currently in the Unacked list,
+ * typically for avoiding adding redundant sequences.
+ * In practice, the retrans meaning in this particular code is different
+ * from TCP's one and would rather cover Keep-Alives and Spurious Retrans.
+ *
+ * @param list The list containing the Unacked sequences
+ * @param seqno The sequence number to be searched for in the Unacked list
+ * @return true if the list contains the sequence number, false otherwise
+ */
+bool rtt_is_retrans(struct rtt_unack *list, unsigned int seqno);
+
 struct rtt_unack *rtt_get_new_unack(double , unsigned int , unsigned int );
 void rtt_put_unack_on_list(struct rtt_unack ** , struct rtt_unack * );
 void rtt_delete_unack_from_list(struct rtt_unack ** , struct rtt_unack * );
 void rtt_destroy_unack_list(struct rtt_unack ** );
 
 static inline int
-tcp_seq_before(guint32 s1, guint32 s2) {
-    return (gint32)(s1 - s2) < 0;
+tcp_seq_eq(uint32_t s1, uint32_t s2) {
+    return (int32_t)(s1 - s2) == 0;
 }
 
 static inline int
-tcp_seq_eq_or_after(guint32 s1, guint32 s2) {
+tcp_seq_before(uint32_t s1, uint32_t s2) {
+    return (int32_t)(s1 - s2) < 0;
+}
+
+static inline int
+tcp_seq_eq_or_after(uint32_t s1, uint32_t s2) {
     return !tcp_seq_before(s1, s2);
 }
 
 static inline int
-tcp_seq_after(guint32 s1, guint32 s2) {
-    return (gint32)(s1 - s2) > 0;
+tcp_seq_after(uint32_t s1, uint32_t s2) {
+    return (int32_t)(s1 - s2) > 0;
 }
 
-static inline int tcp_seq_before_or_eq(guint32 s1, guint32 s2) {
+static inline int
+tcp_seq_before_or_eq(uint32_t s1, uint32_t s2) {
     return !tcp_seq_after(s1, s2);
 }
 
@@ -127,16 +164,3 @@ static inline int tcp_seq_before_or_eq(guint32 s1, guint32 s2) {
 #endif /* __cplusplus */
 
 #endif /* __TAP_TCP_STREAM_H__ */
-
-/*
- * Editor modelines
- *
- * Local Variables:
- * c-basic-offset: 4
- * tab-width: 8
- * indent-tabs-mode: nil
- * End:
- *
- * ex: set shiftwidth=4 tabstop=8 expandtab:
- * :indentSize=4:tabSize=8:noTabs=true:
- */

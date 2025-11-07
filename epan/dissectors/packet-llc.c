@@ -13,21 +13,18 @@
 
 #include <epan/packet.h>
 #include <epan/capture_dissectors.h>
-#include <wiretap/wtap.h>
 #include <wsutil/pint.h>
 #include <epan/oui.h>
 #include <epan/xdlc.h>
-#include <epan/etypes.h>
 #include <epan/llcsaps.h>
 #include <epan/bridged_pids.h>
 #include <epan/ppptypes.h>
 #include <epan/arcnet_pids.h>
 #include <epan/nlpid.h>
 #include <epan/addr_resolv.h>
+#include <epan/tfs.h>
+#include <wsutil/array.h>
 #include "packet-fc.h"
-#include "packet-ip.h"
-#include "packet-ipx.h"
-#include "packet-netbios.h"
 #include "packet-sll.h"
 #include "packet-juniper.h"
 
@@ -39,46 +36,47 @@ void proto_reg_handoff_llc(void);
 
 #define UDP_PORT_LLC_RANGE   "12000-12004"
 
-static int proto_llc = -1;
-static int hf_llc_dsap = -1;
-static int hf_llc_ssap = -1;
-static int hf_llc_dsap_sap = -1;
-static int hf_llc_dsap_ig = -1;
-static int hf_llc_ssap_sap = -1;
-static int hf_llc_ssap_cr = -1;
-static int hf_llc_ctrl = -1;
-static int hf_llc_n_r = -1;
-static int hf_llc_n_s = -1;
-static int hf_llc_p = -1;
-static int hf_llc_p_ext = -1;
-static int hf_llc_f = -1;
-static int hf_llc_f_ext = -1;
-static int hf_llc_s_ftype = -1;
-static int hf_llc_u_modifier_cmd = -1;
-static int hf_llc_u_modifier_resp = -1;
-static int hf_llc_ftype_i = -1;
-static int hf_llc_ftype_s_u = -1;
-static int hf_llc_ftype_s_u_ext = -1;
-static int hf_llc_type = -1;
-static int hf_llc_oui = -1;
-static int hf_llc_pid = -1;
+static int proto_llc;
+static int hf_llc_dsap;
+static int hf_llc_ssap;
+static int hf_llc_dsap_sap;
+static int hf_llc_dsap_ig;
+static int hf_llc_ssap_sap;
+static int hf_llc_ssap_cr;
+static int hf_llc_ctrl;
+static int hf_llc_n_r;
+static int hf_llc_n_s;
+static int hf_llc_p;
+static int hf_llc_p_ext;
+static int hf_llc_f;
+static int hf_llc_f_ext;
+static int hf_llc_s_ftype;
+static int hf_llc_u_modifier_cmd;
+static int hf_llc_u_modifier_resp;
+static int hf_llc_ftype_i;
+static int hf_llc_ftype_s_u;
+static int hf_llc_ftype_s_u_ext;
+static int hf_llc_type;
+static int hf_llc_oui;
+static int hf_llc_pid;
 
-static int proto_basicxid = -1;
-static int hf_llc_xid_format = -1;
-static int hf_llc_xid_types = -1;
-static int hf_llc_xid_wsize = -1;
+static int proto_basicxid;
+static int hf_llc_xid_format;
+static int hf_llc_xid_types;
+static int hf_llc_xid_wsize;
 
-static gint ett_llc = -1;
-static gint ett_llc_dsap = -1;
-static gint ett_llc_ssap = -1;
-static gint ett_llc_ctrl = -1;
-static gint ett_llc_basicxid = -1;
+static int ett_llc;
+static int ett_llc_dsap;
+static int ett_llc_ssap;
+static int ett_llc_ctrl;
+static int ett_llc_basicxid;
 
 static dissector_table_t dsap_subdissector_table;
 static dissector_table_t xid_subdissector_table;
 
 static dissector_table_t ethertype_subdissector_table;
 static dissector_table_t hpteam_subdissector_table;
+static dissector_table_t other_control_dissector_table;
 
 static dissector_handle_t bpdu_handle;
 static dissector_handle_t eth_withoutfcs_handle;
@@ -88,7 +86,7 @@ static dissector_handle_t tr_handle;
 static dissector_handle_t turbo_handle;
 static dissector_handle_t mesh_handle;
 static dissector_handle_t llc_handle;
-
+static dissector_handle_t epd_llc_handle;
 
 /*
  * Group/Individual bit, in the DSAP.
@@ -189,7 +187,7 @@ static const value_string type_vals[] = {
 /*
  * Hash table for translating OUIs to an oui_info_t.
  */
-static wmem_map_t *oui_info_table = NULL;
+static wmem_map_t *oui_info_table;
 
 /*
  * Decode the SAP value as a bitfield into a string, skipping the GI/CR bit.
@@ -208,16 +206,16 @@ static wmem_map_t *oui_info_table = NULL;
  */
 
 static void
-llc_sap_value( gchar *result, guint32 sap )
+llc_sap_value( char *result, uint32_t sap )
 {
-	g_snprintf( result, ITEM_LABEL_LENGTH, "%s", val_to_str_const(sap<<1, sap_vals, "Unknown"));
+	snprintf( result, ITEM_LABEL_LENGTH, "%s", val_to_str_const(sap<<1, sap_vals, "Unknown"));
 }
 
 /*
  * Add an entry for a new OUI.
  */
 void
-llc_add_oui(guint32 oui, const char *table_name, const char *table_ui_name,
+llc_add_oui(uint32_t oui, const char *table_name, const char *table_ui_name,
 	    hf_register_info *hf_item, const int proto)
 {
 	oui_info_t *new_info;
@@ -238,14 +236,14 @@ llc_add_oui(guint32 oui, const char *table_name, const char *table_ui_name,
 	wmem_map_insert(oui_info_table, GUINT_TO_POINTER(oui), new_info);
 }
 
-static gboolean
-capture_snap(const guchar *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header _U_)
+static bool
+capture_snap(const unsigned char *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header _U_)
 {
-	guint32		oui;
-	guint16		etype;
+	uint32_t		oui;
+	uint16_t		etype;
 
 	if (!BYTES_ARE_IN_FRAME(offset, len, 5))
-		return FALSE;
+		return false;
 
 	oui = pd[offset] << 16 | pd[offset+1] << 8 | pd[offset+2];
 	etype = pntoh16(&pd[offset+3]);
@@ -253,14 +251,6 @@ capture_snap(const guchar *pd, int offset, int len, capture_packet_info_t *cpinf
 
 	case OUI_ENCAP_ETHER:
 	case OUI_CISCO_90:
-	case OUI_APPLE_ATALK:
-		/* No, I have no idea why Apple used
-		   one of their own OUIs, rather than
-		   OUI_ENCAP_ETHER, and an Ethernet
-		   packet type as protocol ID, for
-		   AppleTalk data packets - but used
-		   OUI_ENCAP_ETHER and an Ethernet
-		   packet type for AARP packets. */
 		return try_capture_dissector("ethertype", etype, pd, offset+5, len, cpinfo, pseudo_header);
 
 	case OUI_CISCO:
@@ -276,18 +266,18 @@ capture_snap(const guchar *pd, int offset, int len, capture_packet_info_t *cpinf
 		return try_capture_dissector("ethertype", etype, pd, offset+5+5, len, cpinfo, pseudo_header);
 	}
 
-	return FALSE;
+	return false;
 }
 
-static gboolean
-capture_llc(const guchar *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header _U_) {
+static bool
+capture_llc(const unsigned char *pd, int offset, int len, capture_packet_info_t *cpinfo, const union wtap_pseudo_header *pseudo_header _U_) {
 
 	int		is_snap;
-	guint16		control;
+	uint16_t		control;
 	int		llc_header_len;
 
 	if (!BYTES_ARE_IN_FRAME(offset, len, 2))
-		return FALSE;
+		return false;
 
 	is_snap = (pd[offset] == SAP_SNAP) && (pd[offset+1] == SAP_SNAP);
 	llc_header_len = 2;	/* DSAP + SSAP */
@@ -299,12 +289,12 @@ capture_llc(const guchar *pd, int offset, int len, capture_packet_info_t *cpinfo
 	 * whether it's basic or extended operation; is that the case?
 	 */
 	control = get_xdlc_control(pd, offset+2, pd[offset+1] & SSAP_CR_BIT);
-	llc_header_len += XDLC_CONTROL_LEN(control, TRUE);
+	llc_header_len += XDLC_CONTROL_LEN(control, true);
 	if (!BYTES_ARE_IN_FRAME(offset, len, llc_header_len))
-		return FALSE;
+		return false;
 
 	if (!XDLC_IS_INFORMATION(control))
-		return FALSE;
+		return false;
 
 	if (is_snap)
 		return capture_snap(pd, offset+llc_header_len, len, cpinfo, pseudo_header);
@@ -344,12 +334,12 @@ dissect_basicxid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 {
 	proto_tree	*xid_tree = NULL;
 	proto_item	*ti = NULL;
-	guint8		format, types, wsize;
+	uint8_t		format, types, wsize;
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "XID");
 	col_clear(pinfo->cinfo, COL_INFO);
 
-	format = tvb_get_guint8(tvb, 0);
+	format = tvb_get_uint8(tvb, 0);
 
 	ti = proto_tree_add_item(tree, proto_basicxid, tvb, 0, -1, ENC_NA);
 	xid_tree = proto_item_add_subtree(ti, ett_llc_basicxid);
@@ -357,7 +347,7 @@ dissect_basicxid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 
 	col_append_str(pinfo->cinfo, COL_INFO, "Basic Format");
 
-	types = tvb_get_guint8(tvb, 1);
+	types = tvb_get_uint8(tvb, 1);
 	proto_tree_add_uint(xid_tree, hf_llc_xid_types, tvb, 1,
 			1, types & TYPES_MASK);
 
@@ -365,7 +355,7 @@ dissect_basicxid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 		    "; %s", val_to_str(types & TYPES_MASK, type_vals, "0x%02x")
 		);
 
-	wsize = tvb_get_guint8(tvb, 2);
+	wsize = tvb_get_uint8(tvb, 2);
 	proto_tree_add_uint(xid_tree, hf_llc_xid_wsize, tvb, 2,
 			1, (wsize & 0xFE) >> 1);
 
@@ -374,31 +364,38 @@ dissect_basicxid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 	return tvb_captured_length(tvb);
 }
 
+/*
+ * IEEE Std 802.2-1998 and ISO/IEC 8802-2.
+ *
+ * This is what IEEE Std 802-2014 describes in section 5.2.2 "LLC sublayer"
+ * as "LLC protocol discrimination (LPD)".
+ */
 static int
-dissect_llc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
+dissect_llc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
 	proto_tree	*llc_tree;
 	proto_tree	*field_tree;
 	proto_item	*ti, *sap_item;
 	int		is_snap;
-	guint16		control;
+	uint16_t		control;
 	int		llc_header_len;
-	guint8		dsap, ssap, format;
+	uint8_t		dsap, ssap, format;
 	tvbuff_t	*next_tvb;
 
 	col_set_str(pinfo->cinfo, COL_PROTOCOL, "LLC");
 	col_clear(pinfo->cinfo, COL_INFO);
 
-	dsap = tvb_get_guint8(tvb, 0);
+	dsap = tvb_get_uint8(tvb, 0);
 
 	ti = proto_tree_add_item(tree, proto_llc, tvb, 0, -1, ENC_NA);
 	llc_tree = proto_item_add_subtree(ti, ett_llc);
+
 	sap_item = proto_tree_add_item(llc_tree, hf_llc_dsap, tvb, 0, 1, ENC_BIG_ENDIAN);
 	field_tree = proto_item_add_subtree(sap_item, ett_llc_dsap);
 	proto_tree_add_item(field_tree, hf_llc_dsap_sap, tvb, 0, 1, ENC_BIG_ENDIAN);
 	proto_tree_add_item(field_tree, hf_llc_dsap_ig, tvb, 0, 1, ENC_NA);
 
-	ssap = tvb_get_guint8(tvb, 1);
+	ssap = tvb_get_uint8(tvb, 1);
 	sap_item = proto_tree_add_item(llc_tree, hf_llc_ssap, tvb, 1, 1, ENC_BIG_ENDIAN);
 	field_tree = proto_item_add_subtree(sap_item, ett_llc_ssap);
 	proto_tree_add_item(field_tree, hf_llc_ssap_sap, tvb, 1, 1, ENC_BIG_ENDIAN);
@@ -416,8 +413,8 @@ dissect_llc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 	control = dissect_xdlc_control(tvb, 2, pinfo, llc_tree,
 				hf_llc_ctrl, ett_llc_ctrl,
 				&llc_cf_items, &llc_cf_items_ext,
-				NULL, NULL, ssap & SSAP_CR_BIT, TRUE, FALSE);
-	llc_header_len += XDLC_CONTROL_LEN(control, TRUE);
+				NULL, NULL, ssap & SSAP_CR_BIT, true, false);
+	llc_header_len += XDLC_CONTROL_LEN(control, true);
 	if (is_snap)
 		llc_header_len += 5;	/* 3 bytes of OUI, 2 bytes of protocol ID */
 
@@ -425,7 +422,7 @@ dissect_llc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 		proto_item_set_len(ti, llc_header_len);
 
 	if (is_snap) {
-		dissect_snap(tvb, 2+XDLC_CONTROL_LEN(control, TRUE), pinfo, tree, llc_tree, control,
+		dissect_snap(tvb, 2+XDLC_CONTROL_LEN(control, true), pinfo, tree, llc_tree, control,
 		    hf_llc_oui, hf_llc_type, hf_llc_pid, 2);
 	}
 	else {
@@ -457,22 +454,26 @@ dissect_llc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 				 * Non-SNAP XID frame.
 				 * Test for LLC basic format first
 				 */
-				format = tvb_get_guint8(next_tvb, 0);
+				format = tvb_get_uint8(next_tvb, 0);
 				if (format == 0x81) {
-				    dissect_basicxid(next_tvb, pinfo, tree, data);
+					dissect_basicxid(next_tvb, pinfo, tree, data);
 				} else {
-				/*
-				 * Try the XID LLC subdissector table
-				 * with the DSAP.
-				 */
-				    if (!dissector_try_uint(
-					xid_subdissector_table, dsap, next_tvb,
-					pinfo, tree)) {
+					/*
+					 * Try the XID LLC subdissector table
+					 * with the DSAP.
+					 */
+					if (!dissector_try_uint(
+					    xid_subdissector_table, dsap,
+					    next_tvb, pinfo, tree)) {
 						call_data_dissector(next_tvb, pinfo, tree);
-				    }
+					}
 				}
 			} else {
-				call_data_dissector(next_tvb, pinfo, tree);
+				if (!dissector_try_uint(
+					other_control_dissector_table, control,
+					next_tvb, pinfo, tree)) {
+					call_data_dissector(next_tvb, pinfo, tree);
+				}
 			}
 		}
 	}
@@ -487,9 +488,9 @@ dissect_snap(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree,
 	     proto_tree *snap_tree, int control, int hf_oui, int hf_type, int hf_pid,
 	     int bridge_pad)
 {
-	guint32		oui;
-	const gchar *oui_str;
-	guint16		etype;
+	uint32_t		oui;
+	const char *oui_str;
+	uint16_t		etype;
 	tvbuff_t	*next_tvb;
 	oui_info_t	*oui_info;
 	dissector_table_t subdissector_table;
@@ -511,6 +512,21 @@ dissect_snap(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree,
 	switch (oui) {
 
 	case OUI_HP_2:
+		/*
+		 * We don't use the standard SNAP OUI mechanism here
+		 * because that only calls the subdissector for
+		 * information frames, and, according to the HP document
+		 * at
+		 *
+		 *	http://www.hp.com/sbso/bus_protect/teaming.pdf
+		 *
+		 * the heartbeats are sent to 03-00-C7-00-00-EE in SNAP
+		 * frames in unnumbered TEST frames, not information
+		 * frames (numbered or unnumbered).
+		 *
+		 * See the comment in epan/dissectors/packet-hpteam.c
+		 * for more details.
+		 */
 		oui_info = get_snap_oui_info(oui);
 		hf = *oui_info->field_info->p_id;
 		proto_tree_add_uint(snap_tree, hf, tvb, offset+3, 2, etype);
@@ -522,14 +538,6 @@ dissect_snap(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree,
 
 	case OUI_ENCAP_ETHER:
 	case OUI_CISCO_90:
-	case OUI_APPLE_ATALK:
-		/* No, I have no idea why Apple used
-		   one of their own OUIs, rather than
-		   OUI_ENCAP_ETHER, and an Ethernet
-		   packet type as protocol ID, for
-		   AppleTalk data packets - but used
-		   OUI_ENCAP_ETHER and an Ethernet
-		   packet type for AARP packets. */
 		if (XDLC_IS_INFORMATION(control)) {
 			if (tree) {
 				proto_tree_add_uint(snap_tree, hf_type,
@@ -684,13 +692,38 @@ dissect_snap(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree *tree,
  * if there isn't one.
  */
 oui_info_t *
-get_snap_oui_info(guint32 oui)
+get_snap_oui_info(uint32_t oui)
 {
 	if (oui_info_table != NULL) {
 		return (oui_info_t *)wmem_map_lookup(oui_info_table,
 		    GUINT_TO_POINTER(oui));
 	} else
 		return NULL;
+}
+
+/*
+ * This is what IEEE Std 802-2014 describes in section 5.2.2 "LLC sublayer"
+ * as "EtherType protocol discrimination (EPD)".
+ */
+static int
+dissect_epd_llc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+{
+	proto_tree	*llc_tree;
+	proto_item	*ti;
+	uint32_t		etype;
+	tvbuff_t	*next_tvb;
+
+	col_set_str(pinfo->cinfo, COL_PROTOCOL, "LLC");
+	col_clear(pinfo->cinfo, COL_INFO);
+
+	ti = proto_tree_add_item(tree, proto_llc, tvb, 0, 2, ENC_NA);
+	llc_tree = proto_item_add_subtree(ti, ett_llc);
+	proto_tree_add_item_ret_uint(llc_tree, hf_llc_type, tvb, 0, 2, ENC_BIG_ENDIAN, &etype);
+	next_tvb = tvb_new_subset_remaining(tvb, 2);
+	if (dissector_try_uint(ethertype_subdissector_table, etype, next_tvb,
+	    pinfo, tree) == 0)
+		call_data_dissector(next_tvb, pinfo, tree);
+	return tvb_captured_length(tvb);
 }
 
 void
@@ -789,7 +822,7 @@ proto_register_llc(void)
 		{ "Protocol ID", "llc.pid", FT_UINT16, BASE_HEX,
 			NULL, 0x0, NULL, HFILL }}
 	};
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_llc,
 		&ett_llc_dsap,
 		&ett_llc_ssap,
@@ -805,9 +838,13 @@ proto_register_llc(void)
 	  "LLC SAP", proto_llc, FT_UINT8, BASE_HEX);
 	xid_subdissector_table = register_dissector_table("llc.xid_dsap",
 	  "LLC XID SAP", proto_llc, FT_UINT8, BASE_HEX);
+	other_control_dissector_table = register_dissector_table("llc.control",
+	  "LLC Control", proto_llc, FT_UINT16, BASE_HEX);
 	register_capture_dissector_table("llc.dsap", "LLC");
 
 	llc_handle = register_dissector("llc", dissect_llc, proto_llc);
+	epd_llc_handle = register_dissector("epd_llc", dissect_epd_llc,
+	  proto_llc);
 
 	register_capture_dissector("llc", capture_llc, proto_llc);
 }
@@ -828,7 +865,7 @@ proto_register_basicxid(void)
 		{ "Receive Window Size", "basicxid.llc.xid.wsize", FT_UINT8, BASE_DEC,
 			NULL, 0x0, NULL, HFILL }}
 	};
-	static gint *ett[] = {
+	static int *ett[] = {
 		&ett_llc_basicxid
 	};
 
@@ -840,7 +877,7 @@ proto_register_basicxid(void)
 }
 
 static void
-register_hf(gpointer key _U_, gpointer value, gpointer user_data _U_)
+register_hf(void *key _U_, void *value, void *user_data _U_)
 {
 	oui_info_t *info = (oui_info_t *)value;
 
@@ -909,7 +946,7 @@ proto_reg_handoff_llc(void)
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 8

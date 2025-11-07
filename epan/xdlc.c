@@ -120,9 +120,9 @@ const value_string modifier_vals_resp[] = {
 };
 
 int
-get_xdlc_control(const guchar *pd, int offset, gboolean is_extended)
+get_xdlc_control(const uint8_t *pd, int offset, bool is_extended)
 {
-    guint16 control;
+    uint16_t control;
 
     switch (pd[offset] & 0x03) {
 
@@ -156,24 +156,24 @@ get_xdlc_control(const guchar *pd, int offset, gboolean is_extended)
 
 int
 dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
-  proto_tree *xdlc_tree, int hf_xdlc_control, gint ett_xdlc_control,
+  proto_tree *xdlc_tree, int hf_xdlc_control, int ett_xdlc_control,
   const xdlc_cf_items *cf_items_nonext, const xdlc_cf_items *cf_items_ext,
   const value_string *u_modifier_short_vals_cmd,
-  const value_string *u_modifier_short_vals_resp, gboolean is_response,
-  gboolean is_extended, gboolean append_info)
+  const value_string *u_modifier_short_vals_resp, bool is_response,
+  bool is_extended, bool append_info)
 {
-    guint16 control;
+    uint16_t control;
     int control_len;
     const xdlc_cf_items *cf_items;
     const char *control_format;
-    guint16 poll_final;
+    uint16_t poll_final;
     char *info;
     proto_tree *tc, *control_tree;
-    const gchar *frame_type = NULL;
-    const gchar *modifier;
+    const char *frame_type = NULL;
+    const char *modifier;
 
-    info=(char *)wmem_alloc(wmem_packet_scope(), 80);
-    switch (tvb_get_guint8(tvb, offset) & 0x03) {
+    info=(char *)wmem_alloc(pinfo->pool, 80);
+    switch (tvb_get_uint8(tvb, offset) & 0x03) {
 
     case XDLC_S:
         /*
@@ -185,7 +185,7 @@ dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
             cf_items = cf_items_ext;
             control_format = "Control field: %s (0x%04X)";
         } else {
-            control = tvb_get_guint8(tvb, offset);
+            control = tvb_get_uint8(tvb, offset);
             control_len = 1;
             cf_items = cf_items_nonext;
             control_format = "Control field: %s (0x%02X)";
@@ -209,7 +209,7 @@ dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
         }
         if (is_extended) {
             poll_final = (control & XDLC_P_F_EXT);
-            g_snprintf(info, 80, "S%s, func=%s, N(R)=%u",
+            snprintf(info, 80, "S%s, func=%s, N(R)=%u",
                         (poll_final ?
                             (is_response ? " F" : " P") :
                             ""),
@@ -217,7 +217,7 @@ dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
                         (control & XDLC_N_R_EXT_MASK) >> XDLC_N_R_EXT_SHIFT);
         } else {
             poll_final = (control & XDLC_P_F);
-            g_snprintf(info, 80, "S%s, func=%s, N(R)=%u",
+            snprintf(info, 80, "S%s, func=%s, N(R)=%u",
                         (poll_final ?
                             (is_response ? " F" : " P") :
                             ""),
@@ -265,7 +265,7 @@ dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
                 u_modifier_short_vals_cmd = modifier_short_vals_cmd;
         if (u_modifier_short_vals_resp == NULL)
                 u_modifier_short_vals_resp = modifier_short_vals_resp;
-        control = tvb_get_guint8(tvb, offset);
+        control = tvb_get_uint8(tvb, offset);
         control_len = 1;
         cf_items = cf_items_nonext;
         control_format = "Control field: %s (0x%02X)";
@@ -277,7 +277,7 @@ dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
                         u_modifier_short_vals_cmd, "Unknown");
         }
         poll_final = (control & XDLC_P_F);
-        g_snprintf(info, 80, "U%s, func=%s",
+        snprintf(info, 80, "U%s, func=%s",
                 (poll_final ?
                     (is_response ? " F" : " P") :
                     ""),
@@ -318,17 +318,17 @@ dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
             cf_items = cf_items_ext;
             control_format = "Control field: %s (0x%04X)";
             poll_final = (control & XDLC_P_F_EXT);
-            g_snprintf(info, 80, "I%s, N(R)=%u, N(S)=%u",
+            snprintf(info, 80, "I%s, N(R)=%u, N(S)=%u",
                         ((control & XDLC_P_F_EXT) ? " P" : ""),
                         (control & XDLC_N_R_EXT_MASK) >> XDLC_N_R_EXT_SHIFT,
                         (control & XDLC_N_S_EXT_MASK) >> XDLC_N_S_EXT_SHIFT);
         } else {
-            control = tvb_get_guint8(tvb, offset);
+            control = tvb_get_uint8(tvb, offset);
             control_len = 1;
             cf_items = cf_items_nonext;
             control_format = "Control field: %s (0x%02X)";
             poll_final = (control & XDLC_P_F);
-            g_snprintf(info, 80, "I%s, N(R)=%u, N(S)=%u",
+            snprintf(info, 80, "I%s, N(R)=%u, N(S)=%u",
                         ((control & XDLC_P_F) ? " P" : ""),
                         (control & XDLC_N_R_MASK) >> XDLC_N_R_SHIFT,
                         (control & XDLC_N_S_MASK) >> XDLC_N_S_SHIFT);
@@ -361,7 +361,7 @@ dissect_xdlc_control(tvbuff_t *tvb, int offset, packet_info *pinfo,
 }
 
 /*
- * Editor modelines  -  http://www.wireshark.org/tools/modelines.html
+ * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
  * Local variables:
  * c-basic-offset: 4

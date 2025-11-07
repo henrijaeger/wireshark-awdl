@@ -21,12 +21,9 @@ set( EXT_ASN_FILE_LIST
 set( ASN_FILE_LIST
 	EUTRA-InterNodeDefinitions.asn
 	EUTRA-RRC-Definitions.asn
-	EUTRA-Sidelink-Preconf.asn
-	EUTRA-UE-Variables.asn
 	PC5-RRC-Definitions.asn
 	NBIOT-InterNodeDefinitions.asn
 	NBIOT-RRC-Definitions.asn
-	NBIOT-UE-Variables.asn
 )
 
 set( EXTRA_DIST
@@ -41,6 +38,6 @@ set( SRC_FILES
 	${EXT_ASN_FILE_LIST}
 )
 
-set( A2W_FLAGS -L )
+set( A2W_FLAGS )
 
 ASN2WRS()

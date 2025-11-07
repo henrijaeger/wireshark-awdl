@@ -14,6 +14,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #define PORT_MBTCP        502    /* Modbus/TCP located on port 502, with IANA registration */
+#define PORT_MBTLS        802    /* Modbus/TCP Security protocol (Modbus/TCP over TLS) is registered on port 802 */
 #define PORT_MBRTU        0    /* Modbus RTU over TCP does not have a standard port, default to zero */
 
 /* Modbus protocol function codes */
@@ -93,16 +94,25 @@
 #define MODBUS_PREF_REGISTER_FORMAT_INT32           5
 
 typedef struct {
-    guint32 fnum;
-    guint8  function_code;
-    guint16 base_address;
-    guint16 num_reg;
+    uint32_t fnum;
+    uint8_t function_code;
+    uint16_t mbtcp_transid;
+    uint8_t unit_id;
+    uint16_t base_address;
+    uint16_t num_reg;
+    nstime_t req_time;
 } modbus_request_info_t;
+
+typedef struct {
+    int     packet_type;
+    uint16_t mbtcp_transid;      /* Set to zero if not available */
+    uint8_t unit_id;            /* Set to zero if not available */
+} modbus_data_t;
 
 /* List contains request data  */
 typedef struct {
     wmem_list_t *modbus_request_frame_data;
-    gint        register_format;
+    int         register_format;
 } modbus_conversation;
 
 /*
