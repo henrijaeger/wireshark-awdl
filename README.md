@@ -5,7 +5,8 @@ cd build
 cmake ..
 make
 ```
-Compiled binaries can be found in `build/run`
+Compiled binaries can be found in `build/run`.
+
 ---
 
 General Information
