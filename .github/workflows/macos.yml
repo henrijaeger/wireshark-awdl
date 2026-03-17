@@ -27,9 +27,9 @@ jobs:
         run: mkdir build
       - name: Cmake
         working-directory: build
-        run: cmake -GNinja ..
+        run: cmake ..
       - name: Build
-        run: ninja
+        run: make
         working-directory: build
       - name: Build test-programs
         run: ninja test-programs
