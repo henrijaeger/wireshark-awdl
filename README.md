@@ -4,8 +4,20 @@ mkdir build
 cd build
 cmake ..
 make
+sudo make install # optional
 ```
 Compiled binaries can be found in `build/run`.
+
+On macOS x86_64 run `cmake ..` with the following arguments instead:
+```
+PKG_CONFIG_PATH="/usr/local/opt/glib/lib/pkgconfig:/usr/local/lib/pkgconfig" \
+CFLAGS="-I/usr/local/opt/libgpg-error/include" \
+CXXFLAGS="-I/usr/local/opt/libgpg-error/include" \
+cmake .. \
+  -DQT_FORCE_MIN_CMAKE_VERSION_FOR_USING_QT=3.21 \
+  -DGCRYPT_ERROR_LIBRARY=/usr/local/opt/libgpg-error/lib/libgpg-error.dylib \
+  -DENABLE_WERROR=OFF
+```
 
 ---
 
