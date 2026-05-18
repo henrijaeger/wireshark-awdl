@@ -1,8 +1,13 @@
+Dependencies:
+```bash
+brew install qt libgcrypt glib speexdsp
+```
+
 Build:
 ```
 mkdir build
 cd build
-cmake ..
+cmake -DENABLE_WERROR=OFF ..
 make
 sudo make install # optional
 ```
