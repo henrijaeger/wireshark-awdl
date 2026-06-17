@@ -1,6 +1,6 @@
 Dependencies:
 ```bash
-brew install qt libgcrypt glib speexdsp
+brew install qt libgcrypt glib speexdsp cmake
 ```
 
 Build:
