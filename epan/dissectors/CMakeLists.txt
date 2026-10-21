@@ -928,6 +928,14 @@ set(DISSECTOR_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-collectd.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-componentstatus.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-communityid.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity-ble.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity-companion.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity-keys.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity-media.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity-opack.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity-rdlink.c
+	${CMAKE_CURRENT_SOURCE_DIR}/packet-continuity-sidecar.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-cops.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-corecapture.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packet-corecapture-awdl.c

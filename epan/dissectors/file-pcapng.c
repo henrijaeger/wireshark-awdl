@@ -530,6 +530,7 @@ static const value_string dsb_secrets_types_vals[] = {
     { SECRETS_TYPE_ZIGBEE_NWK_KEY,  "Zigbee NWK Key" },
     { SECRETS_TYPE_ZIGBEE_APS_KEY,  "Zigbee APS Key" },
     { SECRETS_TYPE_OPCUA,           "OPC UA Key Log" },
+    { SECRETS_TYPE_CONTINUITY,      "Apple Continuity Key Log" },
     { 0, NULL }
 };
 

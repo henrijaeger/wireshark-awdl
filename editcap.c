@@ -176,6 +176,7 @@ static const struct {
     { "ssh",    SECRETS_TYPE_SSH },
     { "wg",     SECRETS_TYPE_WIREGUARD },
     { "opcua",  SECRETS_TYPE_OPCUA },
+    { "continuity", SECRETS_TYPE_CONTINUITY },
 };
 
 static unsigned find_dct2000_real_data(const uint8_t *buf);

@@ -501,6 +501,7 @@ additional configuration in protocol preferences.
 
 The file format is described by <secrets type> which can be one of:
 
+__continuity__  Apple Continuity Key Log: RDLINK_SHARED, RDLINK_CLIENT_ENC and RDLINK_SERVER_ENC lines, each keyed on the handshake's ephemeral public key +
 __opcua__  OPC UA Key Log, see https://ietf-opsawg-wg.github.io/draft-ietf-opsawg-pcap/draft-ietf-opsawg-pcapng.html#name-decryption-secrets-block +
 __ssh__  SSH Key Log, see {wireshark-wiki-url}SSH#key-log-format +
 __tls__  TLS Key Log, see https://tlswg.org/sslkeylogfile/draft-ietf-tls-keylogfile.html +

@@ -29,6 +29,7 @@ extern "C" {
 #define SECRETS_TYPE_ZIGBEE_NWK_KEY 0x5a4e574b /* Zigbee NWK Key */
 #define SECRETS_TYPE_ZIGBEE_APS_KEY 0x5a415053 /* Zigbee APS Key */
 #define SECRETS_TYPE_OPCUA          0x55414b4c /* OPC UA Key Log */
+#define SECRETS_TYPE_CONTINUITY     0x4c464b4c /* Apple Continuity Key Log */
 
 WS_DLL_PUBLIC
 const char* secrets_type_description(uint32_t type);

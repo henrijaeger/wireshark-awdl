@@ -1,0 +1,897 @@
+/* packet-continuity-opack.c — the object encoding the control channel carries.
+ *
+ * Copyright (C) 2026  Henri Jäger
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * ---------------------------------------------------------------------------
+ *
+ * Apple's OPACK: a self-describing container of dictionaries, arrays,
+ * strings, integers and byte strings, in which every value begins with one
+ * marker byte that says what it is and how long it is.
+ *
+ * The markers decoded here were read off real captures in this repository
+ * rather than taken from a specification:
+ *
+ *     e1 43 5f 70 64 91 28 ...   dict(1), string(3) "_pd", data(0x28)
+ *     e1 43 5f 70 64 73 06 01 04 dict(1), string(3) "_pd", data(3)
+ *     ... 42 5f 69 61 24 ...     string(2), then string(1-byte length 0x24)
+ *
+ * so the four forms above -- inline-length dicts, inline-length strings,
+ * inline-length byte strings, and a byte string or string with a following
+ * length -- are the ones the tests exercise against bytes that came off the
+ * air. The rest of the table follows the same shape and is decoded on the
+ * same terms, and anything whose marker is not in it stops the walk and is
+ * reported as undecoded bytes rather than guessed at. A container decoder
+ * that resynchronises after a marker it did not understand reports a
+ * structure that was never sent.
+ *
+ * BACK-REFERENCES. A value the message already carried is usually sent again
+ * as a reference to it. The rule was read from the platform itself --
+ * CoreUtils 742.5.2 (macOS 14.7.5), by encoding known objects with its
+ * OPACKEncoderCreateData and feeding hand-made bodies to its OPACKDecodeData:
+ *
+ *   - one table per message, shared by keys and values, in the order objects
+ *     are transmitted in full -- every one, an equal earlier entry
+ *     notwithstanding; a reference adds nothing to it;
+ *   - strings, data, UUIDs, dates, floats and sized integers (0x30..0x33)
+ *     enter it; booleans, null, inline integers and containers never do;
+ *   - 0xa0..0xc0 refer to index marker - 0xa0 (0..32); 0xc1..0xc4 carry the
+ *     index in the next 1..4 bytes, little-endian (the encoder uses 0xc1 from
+ *     index 33, 0xc2 once one byte is not enough).
+ *
+ * It looks de-duplicated from captures, because the encoder never sends a
+ * duplicate in full; the platform's decoder shows it is not. With this rule
+ * every decrypted body of continuity-camera.pcapng (24),
+ * continuity-handshake-decrypted.pcapng (88) and a view-switch session of
+ * 2026-10-12 (108) decodes to its last byte, the _camCapUpdate and
+ * _systemInfo bodies that used to stop included. A reference this rule cannot
+ * resolve stops the walk with its index and the table size -- which is also
+ * what the platform's own decoder does with one.
+ */
+
+#include "config.h"
+
+#include <epan/packet.h>
+#include <epan/expert.h>
+
+#include <inttypes.h>
+#include <math.h>
+#include <time.h>
+#include <string.h>
+
+#include "packet-continuity.h"
+
+static int proto_opack = -1;
+
+static int hf_opack_key = -1;
+static int hf_opack_string = -1;
+static int hf_opack_int = -1;
+static int hf_opack_float = -1;
+static int hf_opack_uuid = -1;
+static int hf_opack_date = -1;
+static int hf_opack_ref_index = -1;
+static int hf_opack_bool = -1;
+static int hf_opack_null = -1;
+static int hf_opack_bytes = -1;
+static int hf_opack_dict = -1;
+static int hf_opack_array = -1;
+static int hf_opack_undecoded = -1;
+static int hf_opack_member = -1;
+
+static int ett_opack = -1;
+static int ett_opack_value = -1;
+
+static expert_field ei_opack_undecoded;
+static expert_field ei_opack_truncated;
+
+/* Markers, as observed. */
+#define OPACK_TERMINATOR    0x03
+#define OPACK_TRUE          0x01
+#define OPACK_FALSE         0x02
+#define OPACK_NULL          0x04
+#define OPACK_UUID          0x05 /* 16 bytes */
+#define OPACK_DATE          0x06 /* 8-byte little-endian double, seconds since 2001 */
+/* Inline integers -1..39: the value is marker - OPACK_SMALL_INT_ZERO. The
+ * platform's encoder writes -1 as 0x07, which is why the range starts there. */
+#define OPACK_SMALL_INT_MIN  0x07
+#define OPACK_SMALL_INT_ZERO 0x08
+#define OPACK_SMALL_INT_MAX  0x2f
+#define OPACK_INT8          0x30
+#define OPACK_INT16         0x31
+#define OPACK_INT32         0x32
+#define OPACK_INT64         0x33
+#define OPACK_FLOAT32       0x35 /* 4-byte little-endian IEEE 754 single */
+#define OPACK_FLOAT64       0x36 /* 8-byte little-endian IEEE 754 double */
+#define OPACK_REF_MIN       0xa0 /* back-reference to index marker - 0xa0 */
+#define OPACK_REF_MAX       0xc0
+#define OPACK_REF_LEN1      0xc1 /* back-reference, index in the next 1..4 bytes */
+#define OPACK_REF_LEN4      0xc4
+#define OPACK_STRING_MIN    0x40 /* 0x40 + n, n bytes of string */
+#define OPACK_STRING_MAX    0x60
+#define OPACK_STRING_LEN1   0x61 /* one length byte follows, then the string */
+#define OPACK_STRING_LEN4   0x64
+#define OPACK_BYTES_MIN     0x70 /* 0x70 + n, n bytes */
+#define OPACK_BYTES_MAX     0x90
+#define OPACK_BYTES_LEN1    0x91
+#define OPACK_BYTES_LEN4    0x94
+#define OPACK_ARRAY_MIN     0xd0 /* 0xd0 + n entries */
+#define OPACK_ARRAY_ENDLESS 0xdf
+#define OPACK_DICT_MIN      0xe0 /* 0xe0 + n entries */
+#define OPACK_DICT_ENDLESS  0xef
+
+/* How deep a container may nest before the walk gives up. Not a property of
+ * the encoding: a bound on what a malformed or hostile body can make this do,
+ * since the length fields come from the packet. */
+#define OPACK_MAX_DEPTH 16
+
+/* The longest member path, in bytes including the terminator. A longer one is
+ * cut and ends in an ellipsis; its member is still reported. */
+#define OPACK_PATH_MAX 256
+
+/* How many objects one message's reference table holds. Far more than any
+ * observed message carries; the bound exists because the count comes from the
+ * packet. Exceeding it stops the walk. */
+#define OPACK_TABLE_MAX 4096
+
+typedef struct {
+    packet_info *pinfo;
+    tvbuff_t *tvb;
+    int end;
+    bool stopped; /* a marker the walk does not know; nothing after it is read */
+
+    /* What the most recent leaf was, so a caller that needs a value and not
+     * just a rendering of it can have one.
+     *
+     * Kept on the walk rather than returned, so that the recursive step keeps
+     * its one job -- reporting fields -- and nothing above it has to thread a
+     * result through every container. Only the outermost dictionary reads
+     * these, and only to recognise the envelope its entries sit in.
+     */
+    const char *last_string;
+    int64_t last_int;
+    bool last_was_string;
+    bool last_was_int;
+
+    /* Filled for the outermost dictionary's entries, when it looks like the
+     * companion link's request/response envelope. */
+    continuity_envelope *envelope;
+
+    /* Where in the message the walk is: keys joined with '.', array elements
+     * as [i]. What makes a member reportable as one value -- path and value
+     * together -- so no generic flattening of the tree can separate a key
+     * from its value again. Bounded: the depth and the keys come from the
+     * packet. */
+    char path[OPACK_PATH_MAX];
+    size_t path_len;
+    bool path_truncated;
+
+    /* Set while a dictionary key is being read. A key is itself an encoded
+     * value and is walked as one, but it is a name, not a member. */
+    bool in_key;
+
+    /* Every object transmitted in full that a back-reference can name, in
+     * transmission order (see the header). */
+    wmem_array_t *table;
+
+    /* The depth at which the entries of `_c` are walked, while they are; 0
+     * otherwise. Entries deeper than that are inside `_c` too, nested. */
+    int content_depth;
+} opack_walk;
+
+typedef enum {
+    OPACK_OBJECT_STRING,
+    OPACK_OBJECT_BYTES,
+    OPACK_OBJECT_INT,
+    OPACK_OBJECT_FLOAT32,
+    OPACK_OBJECT_FLOAT64,
+    OPACK_OBJECT_UUID,
+    OPACK_OBJECT_DATE,
+} opack_object_kind;
+
+/* One table entry: its kind, its value, and -- for bytes and UUIDs -- where it
+ * was in the body, so a reference reports the bytes that were sent. */
+typedef struct {
+    opack_object_kind kind;
+    const char *string;
+    int64_t integer;
+    double real;
+    int offset;
+    int length;
+} opack_object;
+
+static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth,
+                       const char *key);
+
+/* Record one dictionary entry's value for the summary, if it is a scalar.
+ *
+ * Classified by the value's own marker rather than by what the walk last saw:
+ * after a container, `last_string` and `last_int` hold that container's last
+ * leaf, which is not this entry's value. A byte string is never recorded --
+ * on this link key material is always bytes -- and neither is a container. */
+static void envelope_member(opack_walk *walk, const char *key, int value_start, bool in_content,
+                            bool nested)
+{
+    continuity_envelope *envelope = walk->envelope;
+    if (value_start >= walk->end) {
+        return;
+    }
+    uint8_t marker = tvb_get_uint8(walk->tvb, value_start);
+    bool integer = (marker >= OPACK_SMALL_INT_MIN && marker <= OPACK_SMALL_INT_MAX) ||
+                   (marker >= OPACK_INT8 && marker <= OPACK_INT64);
+    bool string = (marker >= OPACK_STRING_MIN && marker <= OPACK_STRING_MAX) ||
+                  (marker >= OPACK_STRING_LEN1 && marker <= OPACK_STRING_LEN4);
+    /* A back-reference is the object it names, and that is never a container,
+     * so what the walk last saw is this entry's value -- an `_i` or a stream id
+     * sent as a reference belongs on the line as much as one sent in full. */
+    if ((marker >= OPACK_REF_MIN && marker <= OPACK_REF_MAX) ||
+        (marker >= OPACK_REF_LEN1 && marker <= OPACK_REF_LEN4)) {
+        integer = walk->last_was_int;
+        string = walk->last_was_string;
+    }
+
+    const char *value = NULL;
+    if (marker == OPACK_TRUE || marker == OPACK_FALSE) {
+        value = marker == OPACK_TRUE ? "true" : "false";
+    } else if (integer && walk->last_was_int) {
+        value = wmem_strdup_printf(walk->pinfo->pool, "%" PRId64, walk->last_int);
+    } else if (string && walk->last_was_string && walk->last_string != NULL) {
+        value = walk->last_string;
+    } else {
+        return;
+    }
+
+    if (envelope->member_count >= CONTINUITY_ENVELOPE_MEMBERS) {
+        envelope->members_truncated = true;
+        return;
+    }
+    envelope->members[envelope->member_count].key = key;
+    envelope->members[envelope->member_count].value = value;
+    envelope->members[envelope->member_count].in_content = in_content;
+    envelope->members[envelope->member_count].nested = nested;
+    envelope->member_count++;
+}
+
+/* Read a big-endian length of `bytes` octets. OPACK's inline lengths are
+ * little-endian where they are more than one byte, which is the opposite of
+ * the frame header one layer up -- a difference worth stating because
+ * assuming otherwise decodes a plausible wrong length. */
+static uint64_t opack_length(tvbuff_t *tvb, int offset, int bytes)
+{
+    uint64_t value = 0;
+    for (int i = 0; i < bytes; i++) {
+        value |= (uint64_t)tvb_get_uint8(tvb, offset + i) << (8 * i);
+    }
+    return value;
+}
+
+/* ---------------------------------------------------------------------------
+ * Members: one value per decoded scalar, stating where it is and what it is.
+ *
+ * The typed leaves above report every value, and in a tree view their nesting
+ * shows which key a value belongs to. A generic flattening of the tree keeps
+ * the leaves and loses the nesting -- a key and its value become two numbered
+ * rows related only by position, and integers are numbered apart from
+ * strings -- so "every _streamAddr in this session" could not be asked. Only
+ * the walk knows the structure, so the walk states it.
+ */
+
+typedef struct {
+    size_t len;
+    bool truncated;
+} opack_path_mark;
+
+/* Append a piece to the path, cutting it with an ellipsis rather than growing
+ * past the bound. Returns the mark to restore on the way out. */
+static opack_path_mark path_push(opack_walk *walk, const char *piece)
+{
+    opack_path_mark mark = { walk->path_len, walk->path_truncated };
+    if (walk->path_truncated) {
+        return mark;
+    }
+    size_t length = strlen(piece);
+    if (walk->path_len + length + 1 <= OPACK_PATH_MAX) {
+        memcpy(walk->path + walk->path_len, piece, length + 1);
+        walk->path_len += length;
+        return mark;
+    }
+    static const char ellipsis[] = "…";
+    size_t room = OPACK_PATH_MAX - 1 - (sizeof ellipsis - 1);
+    size_t keep = room > walk->path_len ? room - walk->path_len : 0;
+    if (keep > length) {
+        keep = length;
+    }
+    /* Not inside a multi-byte character: back off its continuation bytes. */
+    while (keep > 0 && ((uint8_t)piece[keep] & 0xC0) == 0x80) {
+        keep--;
+    }
+    size_t at = walk->path_len < room ? walk->path_len : room;
+    memcpy(walk->path + at, piece, keep);
+    memcpy(walk->path + at + keep, ellipsis, sizeof ellipsis);
+    walk->path_len = at + keep + (sizeof ellipsis - 1);
+    walk->path_truncated = true;
+    return mark;
+}
+
+static void path_pop(opack_walk *walk, opack_path_mark mark)
+{
+    walk->path_len = mark.len;
+    walk->path[mark.len] = '\0';
+    walk->path_truncated = mark.truncated;
+}
+
+/* The path as reported: the top of the message, before any key, is "(root)". */
+static const char *path_text(const opack_walk *walk)
+{
+    return walk->path_len == 0 ? "(root)" : walk->path;
+}
+
+/* One member for the scalar just decoded at [start, start + length). Not for a
+ * key, which names a member rather than being one. */
+static void opack_member(opack_walk *walk, proto_tree *tree, int start, int length,
+                         const char *value)
+{
+    if (walk->in_key) {
+        return;
+    }
+    proto_item *item = proto_tree_add_string(
+        tree, hf_opack_member, walk->tvb, start, length,
+        wmem_strdup_printf(walk->pinfo->pool, "%s = %s", path_text(walk), value));
+    proto_item_set_generated(item);
+}
+
+/* Bytes as Wireshark renders them elsewhere: lowercase hex, ':' between. */
+static const char *opack_hex(opack_walk *walk, int offset, int length)
+{
+    if (length <= 0) {
+        return "";
+    }
+    wmem_strbuf_t *text = wmem_strbuf_new_sized(walk->pinfo->pool, (size_t)length * 3);
+    for (int i = 0; i < length; i++) {
+        wmem_strbuf_append_printf(text, i == 0 ? "%02x" : ":%02x",
+                                  tvb_get_uint8(walk->tvb, offset + i));
+    }
+    return wmem_strbuf_get_str(text);
+}
+
+/* Admit an object to the table. False when the table is full, in which case
+ * the walk has been stopped with the reason. */
+static void opack_stop(opack_walk *walk, proto_tree *tree, int offset, const char *why);
+
+static bool opack_admit(opack_walk *walk, proto_tree *tree, int next, opack_object object)
+{
+    if (wmem_array_get_count(walk->table) >= OPACK_TABLE_MAX) {
+        opack_stop(walk, tree, next,
+                   "the message holds more objects than the reference table's bound of 4096");
+        return false;
+    }
+    wmem_array_append_one(walk->table, object);
+    return true;
+}
+
+/* A date: seconds since 2001-01-01, as UTC text. */
+static const char *opack_date_text(opack_walk *walk, double seconds)
+{
+    time_t whole = (time_t)floor(seconds) + 978307200;
+    int micro = (int)((seconds - floor(seconds)) * 1e6 + 0.5);
+    struct tm utc;
+    if (gmtime_r(&whole, &utc) == NULL) {
+        return wmem_strdup_printf(walk->pinfo->pool, "%.6f s since 2001", seconds);
+    }
+    return wmem_strdup_printf(walk->pinfo->pool, "%04d-%02d-%02dT%02d:%02d:%02d.%06dZ",
+                              utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday, utc.tm_hour,
+                              utc.tm_min, utc.tm_sec, micro);
+}
+
+static nstime_t opack_date_time(double seconds)
+{
+    nstime_t t;
+    double whole = floor(seconds);
+    t.secs = (time_t)whole + 978307200;
+    t.nsecs = (int)((seconds - whole) * 1e9);
+    return t;
+}
+
+/* Report a table object at [start, start + length) with its own type's field
+ * and member, and leave it as the walk's last value -- so a key that arrived as
+ * a reference names its member and its envelope entry like one sent in full. */
+static void opack_report_object(opack_walk *walk, proto_tree *tree, int start, int length,
+                                const opack_object *object)
+{
+    const char *text = "";
+    switch (object->kind) {
+    case OPACK_OBJECT_STRING:
+        proto_tree_add_string(tree, hf_opack_string, walk->tvb, start, length, object->string);
+        walk->last_string = object->string;
+        walk->last_was_string = true;
+        text = object->string;
+        break;
+    case OPACK_OBJECT_BYTES:
+        proto_tree_add_bytes_with_length(tree, hf_opack_bytes, walk->tvb, start, length,
+                                         tvb_get_ptr(walk->tvb, object->offset, object->length),
+                                         object->length);
+        text = opack_hex(walk, object->offset, object->length);
+        break;
+    case OPACK_OBJECT_INT:
+        proto_tree_add_int64(tree, hf_opack_int, walk->tvb, start, length, object->integer);
+        walk->last_int = object->integer;
+        walk->last_was_int = true;
+        text = wmem_strdup_printf(walk->pinfo->pool, "%" PRId64, object->integer);
+        break;
+    case OPACK_OBJECT_FLOAT32:
+    case OPACK_OBJECT_FLOAT64:
+        proto_tree_add_double(tree, hf_opack_float, walk->tvb, start, length, object->real);
+        text = wmem_strdup_printf(walk->pinfo->pool,
+                                  object->kind == OPACK_OBJECT_FLOAT32 ? "%.9g" : "%.17g",
+                                  object->real);
+        break;
+    case OPACK_OBJECT_UUID: {
+        e_guid_t guid;
+        tvb_get_guid(walk->tvb, object->offset, &guid, ENC_BIG_ENDIAN);
+        proto_tree_add_guid(tree, hf_opack_uuid, walk->tvb, start, length, &guid);
+        const uint8_t *u = tvb_get_ptr(walk->tvb, object->offset, 16);
+        text = wmem_strdup_printf(walk->pinfo->pool,
+                                  "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
+                                  "%02x%02x%02x%02x%02x%02x",
+                                  u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9],
+                                  u[10], u[11], u[12], u[13], u[14], u[15]);
+        break;
+    }
+    case OPACK_OBJECT_DATE: {
+        nstime_t when = opack_date_time(object->real);
+        proto_tree_add_time(tree, hf_opack_date, walk->tvb, start, length, &when);
+        text = opack_date_text(walk, object->real);
+        break;
+    }
+    }
+    opack_member(walk, tree, start, length, text);
+}
+
+static void opack_stop(opack_walk *walk, proto_tree *tree, int offset, const char *why)
+{
+    walk->stopped = true;
+    int remaining = walk->end - offset;
+    if (remaining <= 0) {
+        return;
+    }
+    proto_item *item =
+        proto_tree_add_item(tree, hf_opack_undecoded, walk->tvb, offset, remaining, ENC_NA);
+
+    /* Where the gap is, as a member: at the path the walk had reached, which
+     * says which part of the message is missing. Reported even while a key
+     * was being read -- the gap is then in the dictionary the path names. */
+    proto_item *gap = proto_tree_add_string(
+        tree, hf_opack_member, walk->tvb, offset, remaining,
+        wmem_strdup_printf(walk->pinfo->pool, "%s = <undecoded: %d bytes>", path_text(walk),
+                           remaining));
+    proto_item_set_generated(gap);
+    expert_add_info_format(walk->pinfo, item, &ei_opack_undecoded,
+                           "%s; the remaining %d byte(s) are reported undecoded rather "
+                           "than walked past, because a container decoder that "
+                           "resynchronises reports a structure that was never sent",
+                           why, remaining);
+}
+
+/* One value. Returns the offset just past it, or the end on a stop. */
+static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth,
+                       const char *key)
+{
+    if (offset >= walk->end) {
+        return walk->end;
+    }
+    if (depth > OPACK_MAX_DEPTH) {
+        opack_stop(walk, tree, offset, "the container nests deeper than this decode walks");
+        return walk->end;
+    }
+
+    uint8_t marker = tvb_get_uint8(walk->tvb, offset);
+    int start = offset;
+    offset += 1;
+
+    /* The key, where this value is a dictionary entry's. Added before the
+     * value so the two read in the order they were written. */
+    if (key != NULL) {
+        proto_item *key_item =
+            proto_tree_add_string(tree, hf_opack_key, walk->tvb, start, 1, key);
+        proto_item_set_generated(key_item);
+    }
+
+    if (marker == OPACK_TRUE || marker == OPACK_FALSE) {
+        proto_tree_add_boolean(tree, hf_opack_bool, walk->tvb, start, 1,
+                               marker == OPACK_TRUE);
+        opack_member(walk, tree, start, 1, marker == OPACK_TRUE ? "true" : "false");
+        return offset;
+    }
+    if (marker == OPACK_NULL) {
+        proto_tree_add_item(tree, hf_opack_null, walk->tvb, start, 1, ENC_NA);
+        opack_member(walk, tree, start, 1, "null");
+        return offset;
+    }
+    if (marker >= OPACK_SMALL_INT_MIN && marker <= OPACK_SMALL_INT_MAX) {
+        /* add_int64, not add_int: the field is FT_INT64, and the 32-bit
+         * adder against a 64-bit field is a dissector bug that Wireshark
+         * reports in place of the value. It went unnoticed while the only
+         * bodies being decoded were handshake ones, which carry no integer
+         * -- the first decrypted body had one. */
+        proto_tree_add_int64(tree, hf_opack_int, walk->tvb, start, 1,
+                             marker - OPACK_SMALL_INT_ZERO);
+        walk->last_int = marker - OPACK_SMALL_INT_ZERO;
+        walk->last_was_int = true;
+        opack_member(walk, tree, start, 1,
+                     wmem_strdup_printf(walk->pinfo->pool, "%" PRId64, walk->last_int));
+        return offset;
+    }
+    if (marker >= OPACK_INT8 && marker <= OPACK_INT64) {
+        int width = 1 << (marker - OPACK_INT8);
+        if (offset + width > walk->end) {
+            opack_stop(walk, tree, start, "an integer runs past the end of the body");
+            return walk->end;
+        }
+        walk->last_int = (int64_t)opack_length(walk->tvb, offset, width);
+        walk->last_was_int = true;
+        proto_tree_add_int64(tree, hf_opack_int, walk->tvb, start, 1 + width, walk->last_int);
+        opack_member(walk, tree, start, 1 + width,
+                     wmem_strdup_printf(walk->pinfo->pool, "%" PRId64, walk->last_int));
+        opack_object object = { .kind = OPACK_OBJECT_INT, .integer = walk->last_int };
+        return opack_admit(walk, tree, offset + width, object) ? offset + width : walk->end;
+    }
+    if (marker == OPACK_FLOAT32 || marker == OPACK_FLOAT64 || marker == OPACK_UUID ||
+        marker == OPACK_DATE) {
+        int width = marker == OPACK_FLOAT32 ? 4 : marker == OPACK_UUID ? 16 : 8;
+        if (offset + width > walk->end) {
+            opack_stop(walk, tree, start, "a value runs past the end of the body");
+            return walk->end;
+        }
+        opack_object object = { .offset = offset, .length = width };
+        if (marker == OPACK_FLOAT32) {
+            object.kind = OPACK_OBJECT_FLOAT32;
+            object.real = (double)tvb_get_letohieee_float(walk->tvb, offset);
+        } else if (marker == OPACK_FLOAT64) {
+            object.kind = OPACK_OBJECT_FLOAT64;
+            object.real = tvb_get_letohieee_double(walk->tvb, offset);
+        } else if (marker == OPACK_UUID) {
+            object.kind = OPACK_OBJECT_UUID;
+        } else {
+            object.kind = OPACK_OBJECT_DATE;
+            object.real = tvb_get_letohieee_double(walk->tvb, offset);
+        }
+        opack_report_object(walk, tree, start, 1 + width, &object);
+        return opack_admit(walk, tree, offset + width, object) ? offset + width : walk->end;
+    }
+    if ((marker >= OPACK_REF_MIN && marker <= OPACK_REF_MAX) ||
+        (marker >= OPACK_REF_LEN1 && marker <= OPACK_REF_LEN4)) {
+        int width = marker <= OPACK_REF_MAX ? 0 : marker - OPACK_REF_LEN1 + 1;
+        if (offset + width > walk->end) {
+            opack_stop(walk, tree, start, "a reference's index runs past the end of the body");
+            return walk->end;
+        }
+        uint64_t index = width == 0 ? (uint64_t)(marker - OPACK_REF_MIN)
+                                    : opack_length(walk->tvb, offset, width);
+        unsigned size = wmem_array_get_count(walk->table);
+        if (index >= size) {
+            /* Not guessed: no nearest entry, no fallback. The platform's own
+             * decoder refuses such a body too. */
+            opack_stop(walk, tree, start,
+                       wmem_strdup_printf(walk->pinfo->pool,
+                                          "unresolvable reference (index %" PRIu64
+                                          ", table size %u)", index, size));
+            return walk->end;
+        }
+        const opack_object *object =
+            (const opack_object *)wmem_array_index(walk->table, (unsigned)index);
+        opack_report_object(walk, tree, start, 1 + width, object);
+        proto_item *ref = proto_tree_add_uint(tree, hf_opack_ref_index, walk->tvb, start,
+                                              1 + width, (uint32_t)index);
+        proto_item_set_generated(ref);
+        return offset + width;
+    }
+
+    bool is_string = (marker >= OPACK_STRING_MIN && marker <= OPACK_STRING_MAX);
+    bool is_bytes = (marker >= OPACK_BYTES_MIN && marker <= OPACK_BYTES_MAX);
+    if (is_string || is_bytes) {
+        uint64_t length = is_string ? (marker - OPACK_STRING_MIN) : (marker - OPACK_BYTES_MIN);
+        if (offset + (int)length > walk->end) {
+            opack_stop(walk, tree, start, "a value runs past the end of the body");
+            return walk->end;
+        }
+        if (is_string) {
+            proto_tree_add_item(tree, hf_opack_string, walk->tvb, offset, (int)length,
+                                ENC_UTF_8);
+            walk->last_string = (const char *)tvb_get_string_enc(
+                walk->pinfo->pool, walk->tvb, offset, (int)length, ENC_UTF_8);
+            walk->last_was_string = true;
+            opack_member(walk, tree, start, 1 + (int)length, walk->last_string);
+        } else {
+            proto_tree_add_item(tree, hf_opack_bytes, walk->tvb, offset, (int)length, ENC_NA);
+            opack_member(walk, tree, start, 1 + (int)length, opack_hex(walk, offset, (int)length));
+        }
+        opack_object object = { .kind = is_string ? OPACK_OBJECT_STRING : OPACK_OBJECT_BYTES,
+                                .string = is_string ? walk->last_string : NULL,
+                                .offset = offset, .length = (int)length };
+        return opack_admit(walk, tree, offset + (int)length, object) ? offset + (int)length
+                                                                     : walk->end;
+    }
+
+    bool string_with_length = (marker >= OPACK_STRING_LEN1 && marker <= OPACK_STRING_LEN4);
+    bool bytes_with_length = (marker >= OPACK_BYTES_LEN1 && marker <= OPACK_BYTES_LEN4);
+    if (string_with_length || bytes_with_length) {
+        int width = string_with_length ? (marker - OPACK_STRING_LEN1 + 1)
+                                       : (marker - OPACK_BYTES_LEN1 + 1);
+        if (offset + width > walk->end) {
+            opack_stop(walk, tree, start, "a length runs past the end of the body");
+            return walk->end;
+        }
+        uint64_t length = opack_length(walk->tvb, offset, width);
+        offset += width;
+        if (length > (uint64_t)(walk->end - offset)) {
+            opack_stop(walk, tree, start, "a value runs past the end of the body");
+            return walk->end;
+        }
+        if (string_with_length) {
+            proto_tree_add_item(tree, hf_opack_string, walk->tvb, offset, (int)length,
+                                ENC_UTF_8);
+            /* Kept like a short string's, so a value longer than 32 bytes is a
+             * value too -- a stream id such as 123C0ECF:ContinuityCaptureMedia-
+             * Microphone is 41. */
+            walk->last_string = (const char *)tvb_get_string_enc(
+                walk->pinfo->pool, walk->tvb, offset, (int)length, ENC_UTF_8);
+            walk->last_was_string = true;
+            opack_member(walk, tree, start, offset - start + (int)length, walk->last_string);
+        } else {
+            proto_tree_add_item(tree, hf_opack_bytes, walk->tvb, offset, (int)length, ENC_NA);
+            opack_member(walk, tree, start, offset - start + (int)length,
+                         opack_hex(walk, offset, (int)length));
+        }
+        opack_object object = {
+            .kind = string_with_length ? OPACK_OBJECT_STRING : OPACK_OBJECT_BYTES,
+            .string = string_with_length ? walk->last_string : NULL,
+            .offset = offset, .length = (int)length };
+        return opack_admit(walk, tree, offset + (int)length, object) ? offset + (int)length
+                                                                     : walk->end;
+    }
+
+    if (marker >= OPACK_ARRAY_MIN && marker <= OPACK_ARRAY_ENDLESS) {
+        bool endless = (marker == OPACK_ARRAY_ENDLESS);
+        unsigned count = endless ? 0 : (unsigned)(marker - OPACK_ARRAY_MIN);
+        proto_item *item = proto_tree_add_none_format(tree, hf_opack_array, walk->tvb, start,
+                                                      1, "Array");
+        proto_tree *subtree = proto_item_add_subtree(item, ett_opack_value);
+        for (unsigned i = 0; !walk->stopped && offset < walk->end; i++) {
+            if (endless) {
+                if (tvb_get_uint8(walk->tvb, offset) == OPACK_TERMINATOR) {
+                    offset += 1;
+                    break;
+                }
+            } else if (i >= count) {
+                break;
+            }
+            char index[24];
+            snprintf(index, sizeof index, "[%u]", i);
+            opack_path_mark mark = path_push(walk, index);
+            offset = opack_value(walk, subtree, offset, depth + 1, NULL);
+            path_pop(walk, mark);
+        }
+        proto_item_set_len(item, offset - start);
+        return offset;
+    }
+
+    if (marker >= OPACK_DICT_MIN && marker <= OPACK_DICT_ENDLESS) {
+        bool endless = (marker == OPACK_DICT_ENDLESS);
+        unsigned count = endless ? 0 : (unsigned)(marker - OPACK_DICT_MIN);
+        proto_item *item =
+            proto_tree_add_none_format(tree, hf_opack_dict, walk->tvb, start, 1, "Dictionary");
+        proto_tree *subtree = proto_item_add_subtree(item, ett_opack_value);
+        for (unsigned i = 0; !walk->stopped && offset < walk->end; i++) {
+            if (endless) {
+                if (tvb_get_uint8(walk->tvb, offset) == OPACK_TERMINATOR) {
+                    offset += 1;
+                    break;
+                }
+            } else if (i >= count) {
+                break;
+            }
+            /* A dictionary is a run of alternating keys and values, and the
+             * key is itself an OPACK value -- usually a short string. It is
+             * walked as one rather than assumed to be a string, because a
+             * dictionary keyed on something else would otherwise decode as a
+             * structure that was never sent. */
+            walk->last_was_string = false;
+            walk->last_was_int = false;
+            bool was_in_key = walk->in_key;
+            walk->in_key = true;
+            offset = opack_value(walk, subtree, offset, depth + 1, NULL);
+            walk->in_key = was_in_key;
+            if (walk->stopped) {
+                break;
+            }
+
+            /* The key, copied rather than pointed at. `last_string` is
+             * overwritten by the very next value this walk reads, so a
+             * borrowed pointer here is read back as whatever came after it --
+             * which is how an entry named `_streamKey` came to report an
+             * event of one control character. */
+            const char *entry_key = NULL;
+            if (walk->last_was_string && walk->last_string != NULL) {
+                entry_key = wmem_strdup(walk->pinfo->pool, walk->last_string);
+            }
+
+            /* The member's name in the path: the key as sent. A key that is
+             * not a string is named by its integer, or by '?' when it is
+             * neither -- the value is still reported under it. */
+            const char *name = entry_key;
+            if (name == NULL) {
+                name = walk->last_was_int
+                           ? wmem_strdup_printf(walk->pinfo->pool, "%" PRId64, walk->last_int)
+                           : "?";
+            }
+            opack_path_mark mark = path_push(
+                walk, walk->path_len == 0 ? name
+                                          : wmem_strdup_printf(walk->pinfo->pool, ".%s", name));
+
+            walk->last_was_string = false;
+            walk->last_was_int = false;
+            int value_start = offset;
+            bool entering_content = walk->envelope != NULL && depth == 0 &&
+                                    entry_key != NULL && strcmp(entry_key, "_c") == 0;
+            if (entering_content) {
+                walk->content_depth = depth + 1;
+            }
+            offset = opack_value(walk, subtree, offset, depth + 1, NULL);
+            path_pop(walk, mark);
+            if (entering_content) {
+                walk->content_depth = 0;
+            }
+
+            /* The summary's members: the envelope's own entries, and those
+             * inside `_c` at any depth -- an identifying key need not be at
+             * its top. */
+            if (walk->envelope != NULL && entry_key != NULL &&
+                (depth == 0 || (walk->content_depth != 0 && depth >= walk->content_depth))) {
+                envelope_member(walk, entry_key, value_start, depth != 0,
+                                depth > walk->content_depth && walk->content_depth != 0);
+            }
+
+            /* The envelope's own entries, which only the outermost dictionary
+             * can carry: an entry named the same thing nested inside the
+             * content would otherwise be mistaken for the envelope's. */
+            if (walk->envelope != NULL && depth == 0 && entry_key != NULL) {
+                if (walk->last_was_int && strcmp(entry_key, "_x") == 0) {
+                    walk->envelope->xid = (uint64_t)walk->last_int;
+                    walk->envelope->has_xid = true;
+                } else if (walk->last_was_int && strcmp(entry_key, "_t") == 0) {
+                    walk->envelope->type = walk->last_int;
+                    walk->envelope->has_type = true;
+                } else if (walk->last_was_string && walk->last_string != NULL &&
+                           strcmp(entry_key, "_i") == 0) {
+                    walk->envelope->event = wmem_strdup(walk->pinfo->pool, walk->last_string);
+                    walk->envelope->has_event = true;
+                } else if (strcmp(entry_key, "_c") == 0) {
+                    /* The bounds of the content, not its contents: what is in
+                     * there is the service's to say, and the transport should
+                     * not need to know. */
+                    walk->envelope->content_offset = value_start;
+                    walk->envelope->content_length = offset - value_start;
+                }
+            }
+        }
+        proto_item_set_len(item, offset - start);
+        return offset;
+    }
+
+    opack_stop(walk, tree, start, "an unrecognised marker");
+    return walk->end;
+}
+
+int continuity_opack_dissect(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset,
+                             int length)
+{
+    return continuity_opack_dissect_envelope(tvb, pinfo, tree, offset, length, NULL);
+}
+
+int continuity_opack_dissect_envelope(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                      int offset, int length, continuity_envelope *envelope)
+{
+    if (length <= 0) {
+        return offset;
+    }
+    proto_item *item = proto_tree_add_item(tree, proto_opack, tvb, offset, length, ENC_NA);
+    proto_tree *opack_tree = proto_item_add_subtree(item, ett_opack);
+
+    opack_walk walk = {
+        .pinfo = pinfo,
+        .tvb = tvb,
+        .end = offset + length,
+        .stopped = false,
+        .envelope = envelope,
+        .table = wmem_array_new(pinfo->pool, sizeof(opack_object)),
+    };
+    int consumed = opack_value(&walk, opack_tree, offset, 0, NULL);
+
+    /* Trailing bytes are reported, not ignored. A body whose container ended
+     * early is carrying something this decode did not account for, and that
+     * is worth seeing rather than trimming. */
+    if (!walk.stopped && consumed < walk.end) {
+        proto_item *trailing = proto_tree_add_item(opack_tree, hf_opack_undecoded, tvb,
+                                                   consumed, walk.end - consumed, ENC_NA);
+        expert_add_info_format(pinfo, trailing, &ei_opack_truncated,
+                               "%d byte(s) follow the container and were not decoded",
+                               walk.end - consumed);
+    }
+    return consumed;
+}
+
+void proto_register_continuity_opack(void)
+{
+    static hf_register_info hf[] = {
+        { &hf_opack_key,
+          { "Key", "continuity.opack.key", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+        { &hf_opack_string,
+          { "String", "continuity.opack.string", FT_STRING, BASE_NONE, NULL, 0x0, NULL,
+            HFILL } },
+        { &hf_opack_int,
+          { "Integer", "continuity.opack.int", FT_INT64, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+        { &hf_opack_bool,
+          { "Boolean", "continuity.opack.bool", FT_BOOLEAN, BASE_NONE, NULL, 0x0, NULL,
+            HFILL } },
+        { &hf_opack_null,
+          { "Null", "continuity.opack.null", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+        { &hf_opack_bytes,
+          { "Bytes", "continuity.opack.bytes", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+        { &hf_opack_dict,
+          { "Dictionary", "continuity.opack.dict", FT_NONE, BASE_NONE, NULL, 0x0, NULL,
+            HFILL } },
+        { &hf_opack_array,
+          { "Array", "continuity.opack.array", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+        { &hf_opack_float,
+          { "Float", "continuity.opack.float", FT_DOUBLE, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+        { &hf_opack_uuid,
+          { "UUID", "continuity.opack.uuid", FT_GUID, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+        { &hf_opack_date,
+          { "Date", "continuity.opack.date", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0x0,
+            "Sent as seconds since 2001-01-01", HFILL } },
+        { &hf_opack_ref_index,
+          { "Reference index", "continuity.opack.ref_index", FT_UINT32, BASE_DEC, NULL, 0x0,
+            "This value was transmitted as a back-reference to the earlier object at this "
+            "index of the message's object table; the value shown is that object", HFILL } },
+        { &hf_opack_member,
+          { "Member", "continuity.opack.member", FT_STRING, BASE_NONE, NULL, 0x0,
+            "One decoded value with where it is: \"<path> = <value>\", the path being the "
+            "keys from the top of the message joined with '.', array elements as [i]. "
+            "Selectable by path, e.g. value LIKE '_c._streamAddr = %'", HFILL } },
+        { &hf_opack_undecoded,
+          { "Undecoded", "continuity.opack.undecoded", FT_BYTES, BASE_NONE, NULL, 0x0,
+            "Bytes this decode did not account for, retained rather than walked past",
+            HFILL } },
+    };
+
+    static int *ett[] = { &ett_opack, &ett_opack_value };
+
+    static ei_register_info ei[] = {
+        { &ei_opack_undecoded,
+          { "continuity.opack.undecoded.expert", PI_UNDECODED, PI_NOTE,
+            "The object encoding could not be walked further", EXPFILL } },
+        { &ei_opack_truncated,
+          { "continuity.opack.trailing", PI_UNDECODED, PI_NOTE,
+            "Bytes follow the container", EXPFILL } },
+    };
+
+    proto_opack = proto_register_protocol("Apple OPACK", "OPACK", "continuity.opack");
+    proto_register_field_array(proto_opack, hf, array_length(hf));
+    proto_register_subtree_array(ett, array_length(ett));
+
+    expert_module_t *expert = expert_register_protocol(proto_opack);
+    expert_register_field_array(expert, ei, array_length(ei));
+}
+
+void proto_reg_handoff_continuity_opack(void)
+{
+    /* Reached from the frames that carry it, not from a table of its own. */
+}

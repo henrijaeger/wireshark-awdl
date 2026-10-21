@@ -1,0 +1,258 @@
+/* packet-continuity.h — the umbrella every part of this component contributes to.
+ *
+ * Copyright (C) 2026  Henri Jäger
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * ---------------------------------------------------------------------------
+ *
+ * An operator investigating what two devices said to each other should have
+ * one thing to filter on, not four. The advertisement is inside a Bluetooth
+ * event, the control frame is inside TCP, the media is inside UDP, and they
+ * share no byte, no transport and no capture file — so the only thing that can
+ * join them is a name every part of this component puts on every record it
+ * touches.
+ *
+ * That is `continuity`. It is contributed through continuity_mark() below,
+ * which every sub-decode calls before contributing anything of its own.
+ *
+ * It is a function rather than a convention because the failure is silent: a
+ * sub-decode that forgets still produces correct records of its own, and the
+ * single filter goes on appearing to work because the other layers still
+ * match. What is missing is one layer, and it is missing quietly, for as long
+ * as nobody counts. `tests/test_umbrella.py` counts.
+ */
+
+#ifndef __PACKET_CONTINUITY_H__
+#define __PACKET_CONTINUITY_H__
+
+#include <epan/packet.h>
+
+/* The umbrella protocol. Registered once, referenced by every sub-decode. */
+extern int proto_continuity;
+
+/* The Continuity service a record belongs to, as an attribute rather than a
+ * container: a camera session is control on one transport and media on
+ * another, and nesting the service above the transport would force the same
+ * service to appear under each. Registered in the service table (see
+ * continuity_service_register) so a further service attaches to the shared
+ * transport decoding instead of duplicating it.
+ */
+/* How a service reads its own payload, when it has one this component
+ * decodes. `offset` and `length` bound the payload within `tvb` -- the
+ * transport has already reported the framing around it. */
+typedef void (*continuity_service_dissect)(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                           int offset, int length);
+
+typedef struct {
+    const char *id;    /* what `continuity.service` holds, e.g. "camera" */
+    const char *name;  /* what a reader sees, e.g. "Continuity Camera" */
+
+    /* Optional. A service with no decode here still gets its records
+     * attributed to it, with its payload reported as bytes -- which is the
+     * honest state for a service whose payload has not been worked out, and
+     * is most of them. */
+    continuity_service_dissect dissect;
+} continuity_service;
+
+/* Put the umbrella on this record, and say which service it belongs to.
+ *
+ * `service` may be NULL, which is the honest answer for a transport record
+ * whose service is not yet known — the companion link carries several, and
+ * which one a frame belongs to is often only decidable once its body has been
+ * read.
+ *
+ * Returns the tree to hang the sub-decode's own fields under, which is the
+ * caller's tree: the umbrella is an attribute of the record, not a layer above
+ * it.
+ */
+proto_tree *continuity_mark(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb,
+                            const continuity_service *service);
+
+/* Bind a session to this conversation, and report it on every record of it.
+ *
+ * The session is identified by the handshake's cleartext ephemeral public key:
+ * visible in the capture, unique per session, and present before any protected
+ * frame. That is what lets a reader holding only the capture and the keys bind
+ * one to the other, and isolate one session in a capture containing several.
+ *
+ * Keying on the address and port tuple was tried and is wrong: ports are
+ * reused across sessions, and one observed listener port was shared by two
+ * transports.
+ */
+void continuity_session_set(packet_info *pinfo, const uint8_t *ephemeral_key, unsigned len);
+void continuity_session_report(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb);
+
+/* This conversation's session, as the lowercase hex of the ephemeral public
+ * key, or NULL if its handshake was not in the capture. A capture cut after
+ * the handshake is the ordinary reason for NULL, and it is why a frame says
+ * which of "no keys at all" and "no key for this session" applies. */
+const char *continuity_session_get(packet_info *pinfo);
+
+/* Services, in a table so that supporting another one is a registration.
+ * `continuity_service_lookup` returns NULL for an id nothing registered.
+ */
+void continuity_service_register(const continuity_service *service);
+const continuity_service *continuity_service_lookup(const char *id);
+
+/* Say which service one part of a record belongs to.
+ *
+ * Separate from continuity_mark() because a record is not always all one
+ * service: a single advertisement carries several Continuity messages, and
+ * they can be messages of different services. Attributing the whole record to
+ * whichever happened to be first would be a wrong answer that looks like a
+ * right one, so the attribution goes where the evidence is -- on the message.
+ */
+void continuity_service_report(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb,
+                               const continuity_service *service);
+
+/* Field handles the umbrella owns; sub-decodes use them rather than declaring
+ * their own spelling of the same thing. */
+extern int hf_continuity_service;
+extern int hf_continuity_session;
+
+void proto_register_continuity(void);
+void proto_reg_handoff_continuity(void);
+
+void proto_register_continuity_ble(void);
+void proto_reg_handoff_continuity_ble(void);
+
+void proto_register_continuity_rdlink(void);
+void proto_reg_handoff_continuity_rdlink(void);
+
+void proto_register_continuity_media(void);
+void proto_reg_handoff_continuity_media(void);
+
+void proto_register_continuity_opack(void);
+void proto_reg_handoff_continuity_opack(void);
+
+/* The key store, registered by the umbrella rather than as a dissector of
+ * its own: its preference belongs to the umbrella's protocol, and a
+ * preference registered before that protocol exists aborts at startup. */
+void continuity_keys_register(int proto);
+void continuity_keys_handoff(void);
+
+/* The handshake's cleartext ephemeral public key, which names a session, and
+ * the direction keys derived from that session's shared secret. Both are
+ * Curve25519/ChaCha20 sized and both are 32 bytes; they are named separately
+ * because they are different things that happen to be the same length. */
+#define CONTINUITY_SESSION_LEN 32
+#define CONTINUITY_KEY_LEN     32
+
+/* One session's key material, as far as it is known.
+ *
+ * Either direction may be absent: a keylog written while only one end was
+ * observed carries one key, and the honest result for the other direction is
+ * that its frames are reported unread rather than guessed at.
+ */
+typedef struct {
+    bool has_client;
+    bool has_server;
+    uint8_t client_enc[CONTINUITY_KEY_LEN];
+    uint8_t server_enc[CONTINUITY_KEY_LEN];
+} continuity_session_keys;
+
+/* Key material for the session named by this ephemeral public key, or NULL if
+ * none was supplied. Never blocks and never reads the network: the inputs are
+ * a preference-named file and the capture's own secrets blocks. */
+const continuity_session_keys *continuity_keys_lookup(const char *session_hex);
+
+/* Whether any key material at all was supplied, which is what separates "no
+ * keys were given" from "keys were given and none of them is this session's".
+ * An operator needs to be told which of those happened. */
+bool continuity_keys_any_loaded(void);
+
+/* Secrets recorded without the session they belong to (keyed on the all-zero
+ * session in a keylog). A connection with no key of its own is tried against
+ * each, and the one that authenticates is its key. */
+unsigned continuity_keys_unbound_count(void);
+const continuity_session_keys *continuity_keys_unbound_at(unsigned index);
+
+void proto_register_continuity_companion(void);
+void proto_reg_handoff_continuity_companion(void);
+
+void proto_register_continuity_sidecar(void);
+void proto_reg_handoff_continuity_sidecar(void);
+
+/* The three-key envelope every companion-link message sits in, as far as a
+ * body carried it. `_c` (the content) is not here: it is reported by the
+ * object decode in place, and copying it would be a second name for bytes
+ * that already have one. */
+/* How many scalar members an envelope keeps for the summary. Far more than a
+ * line can show; the bound exists because the count comes from the packet. */
+#define CONTINUITY_ENVELOPE_MEMBERS 48
+
+typedef struct {
+    bool has_xid;
+    bool has_type;
+    uint64_t xid;
+    int64_t type;
+
+    bool has_event;
+
+    /* `_i`, the event identifier: what the message is, named by the sender.
+     * Some values are a service in reverse-DNS form and some name a message
+     * of the link itself, so this is reported as the event identifier it is
+     * and only separately resolved to a service. */
+    const char *event;
+
+    /* Where `_c`, the content, sits in the body -- so a service can be handed
+     * its own payload without the transport knowing anything about it.
+     * `content_length` is 0 when the message carried no content. */
+    int content_offset;
+    int content_length;
+
+    /* The scalar members the object decode found -- the envelope's own and
+     * those inside `_c`, at any depth -- in wire order, as text. They are what a
+     * record's one-line summary is made from, so the summary says what the
+     * fields say without a second decode of the body.
+     *
+     * Scalars only: strings, integers, booleans. A byte string is never one,
+     * which is what keeps key material -- always bytes on this link -- out of
+     * the line by construction rather than by a list of names to remember. */
+    unsigned member_count;
+    bool members_truncated;
+    struct {
+        const char *key;
+        const char *value;
+        bool in_content;
+        /* Inside a container within `_c`, not directly in it. An identifying
+         * key can sit there -- `_camCapUpdate` carries InUseState in
+         * `_c._cCap` -- but a generic summary takes only `_c`'s own. */
+        bool nested;
+    } members[CONTINUITY_ENVELOPE_MEMBERS];
+} continuity_envelope;
+
+/* Report the envelope, and pair this frame with the other half of its
+ * exchange. Called by the transport decode, on a cleartext or a decrypted
+ * body -- the envelope is the same either way. */
+/* Reports the companion envelope, and returns what a one-line summary should
+ * call the message: its own event, or for a response the event of the request
+ * it answers followed by " response". NULL when neither is known. */
+const char *continuity_companion_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                        const continuity_envelope *envelope);
+
+/* Walk the object encoding at `offset` for `length` bytes, reporting its
+ * contents as fields. Returns the offset just past what it consumed.
+ *
+ * Used for a cleartext body and, where key material recovered one, for a
+ * decrypted body: the encoding is the same either way, which is the point of
+ * decoding it in one place.
+ */
+int continuity_opack_dissect(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset,
+                             int length);
+
+/* The same walk, additionally reporting the envelope its outermost dictionary
+ * carried, if it carried one. */
+int continuity_opack_dissect_envelope(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                      int offset, int length, continuity_envelope *envelope);
+
+#endif /* __PACKET_CONTINUITY_H__ */
