@@ -24,42 +24,6 @@ cmake .. \
   -DENABLE_WERROR=OFF
 ```
 
-Apple Continuity
-----------------
-
-Besides AWDL and CoreCapture, this build decodes Apple Continuity traffic:
-
-| filter                 | what                                                              |
-|------------------------|-------------------------------------------------------------------|
-| `continuity`           | every record below, plus `continuity.service` and `continuity.session` |
-| `continuity.ble`       | Apple manufacturer data in BLE advertisements, received and sent  |
-| `continuity.rdlink`    | the Rapport remote-display link (PairVerify, then protected frames) over TCP |
-| `continuity.companion` | the `_i`/`_t`/`_x`/`_c` envelope, with requests paired to responses |
-| `continuity.opack`     | the OPACK object encoding those bodies are written in             |
-| `continuity.media`     | the media flow, marked and handed to RTP/RTCP                     |
-| `continuity.sidecar`   | Sidecar messages                                                  |
-
-Protected RDLink frames are decrypted when key material is available, as
-lines keyed on the handshake's cleartext ephemeral public key:
-
-```
-RDLINK_SHARED     <ephemeral public key hex>  <shared secret hex>
-RDLINK_CLIENT_ENC <ephemeral public key hex>  <key hex>
-RDLINK_SERVER_ENC <ephemeral public key hex>  <key hex>
-```
-
-Point the `continuity.keylog_file` preference at such a file, or embed it in
-the capture so it needs no configuration:
-
-```
-editcap --inject-secrets continuity,session.keylog in.pcap out.pcapng
-```
-
-These dissectors used to ship separately as a `continuity.so` plugin. They
-are now built in, and Wireshark refuses to start ("Duplicate protocol name")
-if that plugin is still installed, so remove any old copy, e.g. from
-`~/.local/lib/wireshark/plugins/<version>/epan/continuity.so`.
-
 ---
 
 General Information
