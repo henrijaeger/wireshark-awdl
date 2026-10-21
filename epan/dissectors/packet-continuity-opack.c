@@ -58,6 +58,7 @@
 
 #include <epan/packet.h>
 #include <epan/expert.h>
+#include <wsutil/time_util.h>
 
 #include <inttypes.h>
 #include <math.h>
@@ -379,7 +380,7 @@ static const char *opack_date_text(opack_walk *walk, double seconds)
     time_t whole = (time_t)floor(seconds) + 978307200;
     int micro = (int)((seconds - floor(seconds)) * 1e6 + 0.5);
     struct tm utc;
-    if (gmtime_r(&whole, &utc) == NULL) {
+    if (ws_gmtime_r(&whole, &utc) == NULL) {
         return wmem_strdup_printf(walk->pinfo->pool, "%.6f s since 2001", seconds);
     }
     return wmem_strdup_printf(walk->pinfo->pool, "%04d-%02d-%02dT%02d:%02d:%02d.%06dZ",
