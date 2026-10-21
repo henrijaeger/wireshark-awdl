@@ -19,7 +19,7 @@ function print_usage() {
 	printf "Usage: %s [--install-optional] [...other options...]\n" "$0"
 	printf "\t--install-optional: install optional software as well\n"
 	printf "\t--install-rpm-deps: install packages required to build the .rpm file\n"
-	printf "\\t--install-qt5-deps: force installation of packages required to use Qt5\\n"
+	printf "\\t--install-qt5-deps: force installation of packages required to use Qt5 (not recommended)\\n"
 	printf "\\t--install-qt6-deps: force installation of packages required to use Qt6\\n"
 	printf "\\t--install-all: install everything\\n"
 	printf "\t[other]: other options are passed as-is to the package manager\n"
@@ -81,6 +81,7 @@ BASIC_LIST="
 	glib2-devel
 	libgcrypt-devel
 	libpcap-devel
+	libxml2-devel
 	pcre2-devel
 	python3
 	"
@@ -89,7 +90,6 @@ ADDITIONAL_LIST="
 	krb5-devel
 	libcap-devel
 	libssh-devel
-	libxml2-devel
 	lz4
 	perl
 	perl-Parse-Yapp
@@ -98,6 +98,7 @@ ADDITIONAL_LIST="
 	snappy-devel
 	spandsp-devel
 	systemd-devel
+	xxhash-devel
 	"
 
 # Uncomment to add PNG compression utilities used by compress-pngs:
@@ -185,13 +186,9 @@ echo "Required package speexdsp-devel|speex-devel is unavailable" >&2
 
 if [ $HAVE_ADD_QT -eq 0 ]
 then
-	# Try to select Qt version from distro
-	test -e /etc/os-release && os_release='/etc/os-release' || os_release='/usr/lib/os-release'
-	# shellcheck disable=SC1090
-	. "${os_release}"
-
-	# Fedora 35 or later
-	if [ "${ID:-linux}" = "fedora" ] && [ "${VERSION_ID:-0}" -ge "35" ]; then
+	# The user didn't select a Qt version. Select Qt 6 if it's available, otherwise Qt 5.
+	# shellcheck disable=SC2086
+	if $PM $PM_SEARCH qt6-qtbase-devel 2&> /dev/null || $PM $PM_SEARCH qt6-base-devel 2&> /dev/null ; then
 		echo "Installing Qt6."
 		ADD_QT6=1
 	else
@@ -319,7 +316,7 @@ echo "Optional package docbook-style-xsl|docbook-xsl-stylesheets is unavailable"
 add_package ADDITIONAL_LIST brotli-devel || add_packages ADDITIONAL_LIST libbrotli-devel libbrotlidec1 ||
 echo "Optional packages brotli-devel|libbrotli-devel is unavailable" >&2
 
-add_package ADDITIONAL_LIST libnl3-devel || add_package ADDITIONAL_LIST libnl-devel ||
+add_package ADDITIONAL_LIST libnl3-devel ||
 echo "Optional package libnl3-devel|libnl-devel are unavailable" >&2
 
 add_package ADDITIONAL_LIST ilbc-devel ||
@@ -349,8 +346,10 @@ echo "Optional package sbc-devel is unavailable"
 add_package ADDITIONAL_LIST libsmi-devel ||
 echo "Optional package libsmi-devel is unavailable"
 
-add_package ADDITIONAL_LIST opencore-amr-devel ||
-echo "Optional package opencore-amr-devel is unavailable" >&2
+# opencore-amr-devel: RHEL/CentOS, Fedora
+# libopencore-amr-devel: OpenSUSE
+add_package ADDITIONAL_LIST opencore-amr-devel || add_package ADDITIONAL_LIST libopencore-amr-devel ||
+echo "Optional package opencore-amr-devel|libopencore-amr-devel is unavailable" >&2
 
 add_package ADDITIONAL_LIST softhsm ||
 echo "Optional package softhsm is unavailable" >&2

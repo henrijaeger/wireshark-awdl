@@ -1322,7 +1322,7 @@ dissect_sapdiag_dp(tvbuff_t *tvb, proto_tree *tree, uint32_t offset){
 	proto_tree_add_item(dp_tree, hf_sapdiag_dp_rq_id, tvb, offset, 2, ENC_BIG_ENDIAN);				/* 0x27 */
 	offset+=2;
 	offset+=40; /* Unknown 40 bytes (0x20 * 40) */													/* 0x29 */
-	proto_tree_add_item(dp_tree, hf_sapdiag_dp_terminal, tvb, offset, 15, ENC_ASCII|ENC_NA);		/* 0x51 */
+	proto_tree_add_item(dp_tree, hf_sapdiag_dp_terminal, tvb, offset, 15, ENC_ASCII);		/* 0x51 */
 }
 
 static void
@@ -3632,12 +3632,12 @@ proto_register_sapdiag(void)
 	/* Register the expert info */
 	static ei_register_info ei[] = {
 		{ &ei_sapdiag_item_unknown, { "sapdiag.item.unknown", PI_UNDECODED, PI_WARN, "The Diag Item has a unknown type that is not dissected", EXPFILL }},
-		{ &ei_sapdiag_item_partial, { "sapdiag.item.unknown", PI_UNDECODED, PI_WARN, "The Diag Item is dissected partially", EXPFILL }},
+		{ &ei_sapdiag_item_partial, { "sapdiag.item.unknown_partial", PI_UNDECODED, PI_WARN, "The Diag Item is dissected partially", EXPFILL }},
 		{ &ei_sapdiag_item_unknown_length, { "sapdiag.item.length.unknown", PI_UNDECODED, PI_WARN, "Diag Type of unknown length", EXPFILL }},
 		{ &ei_sapdiag_item_offset_invalid, { "sapdiag.item.offset.invalid", PI_MALFORMED, PI_ERROR, "Invalid offset", EXPFILL }},
 		{ &ei_sapdiag_item_length_invalid, { "sapdiag.item.length.invalid", PI_MALFORMED, PI_WARN, "Item length is invalid", EXPFILL }},
 		{ &ei_sapdiag_atom_item_unknown, { "sapdiag.item.value.dyntatom.item.unknown", PI_UNDECODED, PI_WARN, "The Diag Atom has a unknown type that is not dissected", EXPFILL }},
-		{ &ei_sapdiag_atom_item_partial, { "sapdiag.item.value.dyntatom.item.unknown", PI_UNDECODED, PI_WARN, "The Diag Atom is dissected partially", EXPFILL }},
+		{ &ei_sapdiag_atom_item_partial, { "sapdiag.item.value.dyntatom.item.unknown_part", PI_UNDECODED, PI_WARN, "The Diag Atom is dissected partially", EXPFILL }},
 		{ &ei_sapdiag_atom_item_malformed, { "sapdiag.item.value.dyntatom.invalid", PI_MALFORMED, PI_WARN, "The Diag Atom is malformed", EXPFILL }},
 		{ &ei_sapdiag_dynt_focus_more_cont_ids, { "sapdiag.item.value.uievent.containernrs.invalid", PI_MALFORMED, PI_WARN, "Number of Container IDs is invalid", EXPFILL }},
 		{ &ei_sapdiag_password_field, { "sapdiag.item.value.dyntatom.item.password", PI_SECURITY, PI_WARN, "Password field?", EXPFILL }},

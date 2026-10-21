@@ -21,7 +21,7 @@
 #include <QScrollBar>
 
 // To do:
-// - Draw text by hand similar to ByteViewText. This would let us add
+// - Draw text by hand similar to HexDataSourceView. This would let us add
 //   extra information, e.g. a timestamp column and get rid of
 //   max_document_length_ in FollowStreamDialog.
 
@@ -31,7 +31,13 @@ FollowStreamText::FollowStreamText(QWidget *parent) :
     setMouseTracking(true);
 //    setMaximumBlockCount(1);
     QTextDocument *text_doc = document();
+    /* https://qt-project.atlassian.net/browse/QTBUG-715
+     * Zooming a Q[Plain]TextEdit uses the text edit's font, not
+     * the document's default font. Set both. (#21137)
+     * XXX - Should we pass true to monospaceFont so as to default
+     * to the zoomed size? (Cf. #13992) */
     text_doc->setDefaultFont(mainApp->monospaceFont());
+    setFont(mainApp->monospaceFont());
 
     metainfo_fg_ = ColorUtils::alphaBlend(palette().windowText(), palette().window(), 0.35);
 }

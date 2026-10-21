@@ -45,6 +45,8 @@ if(USE_MSYSTEM)
 		${MINGW_BIN}/libnettle-*.dll
 		${MINGW_BIN}/libnghttp2-*.dll
 		${MINGW_BIN}/libnghttp3-[1-9]*.dll
+		${MINGW_BIN}/libopencore-amrnb-*.dll
+		${MINGW_BIN}/libopencore-amrwb-*.dll
 		${MINGW_BIN}/libopus-*.dll
 		${MINGW_BIN}/libp11-kit-*.dll
 		${MINGW_BIN}/libpcre2-16-*.dll
@@ -65,8 +67,9 @@ if(USE_MSYSTEM)
 		${MINGW_BIN}/libunistring-*.dll
 		${MINGW_BIN}/libwinpthread-*.dll
 		${MINGW_BIN}/libxml2-*.dll
+		${MINGW_BIN}/libxxhash.dll
 		${MINGW_BIN}/libzstd.dll
-		${MINGW_BIN}/lua54.dll
+		${MINGW_BIN}/lua5[3-9].dll
 		${MINGW_BIN}/zlib1.dll
 	)
 endif()

@@ -202,6 +202,7 @@ private slots:
     void on_jitterSpinBox_valueChanged(double);
     void on_timingComboBox_currentIndexChanged(int);
     void on_todCheckBox_toggled(bool checked);
+    void on_visualSRSpinBox_editingFinished();
     void on_buttonBox_helpRequested();
     void on_actionSelectAll_triggered();
     void on_actionSelectInvert_triggered();
@@ -310,7 +311,7 @@ private:
     qint64 saveAudioHeaderAU(QFile *save_file, quint32 channels, unsigned audio_rate);
     qint64 saveAudioHeaderWAV(QFile *save_file, quint32 channels, unsigned audio_rate, qint64 samples);
     bool writeAudioSilenceSamples(QFile *out_file, qint64 samples, int stream_count);
-    bool writeAudioStreamsSamples(QFile *out_file, QVector<RtpAudioStream *> streams, bool swap_bytes);
+    bool writeAudioStreamsSamples(QFile *out_file, QVector<RtpAudioStream *> streams, bool big_endian);
     save_audio_t selectFileAudioFormatAndName(QString *file_path);
     save_payload_t selectFilePayloadFormatAndName(QString *file_path);
     QVector<RtpAudioStream *>getSelectedAudibleNonmutedAudioStreams();

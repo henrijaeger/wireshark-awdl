@@ -1876,6 +1876,9 @@ static void attach_fp_info(packet_info *pinfo, bool received,
         int n;
 
         p_fp_info->no_ddi_entries = outhdr_values[i++];
+        if (p_fp_info->no_ddi_entries > MAX_EDCH_DDIS) {
+            p_fp_info->no_ddi_entries = MAX_EDCH_DDIS;
+        }
 
         /* DDI values */
         for (n=0; n < p_fp_info->no_ddi_entries; n++) {
@@ -2957,7 +2960,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                     }
 
                     /* Create tvb */
-                    tvbuff_t *mac_nr_tvb = tvb_new_real_data(mac_data, idx, idx);
+                    tvbuff_t *mac_nr_tvb = tvb_new_child_real_data(tvb, (const uint8_t*)mac_data, idx, idx);
                     add_new_data_source(pinfo, mac_nr_tvb, "MAC-NR Payload");
                     /* Call the dissector! */
                     call_dissector_only(mac_nr_handle, mac_nr_tvb, pinfo, tree, NULL);
@@ -2982,10 +2985,10 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                     int idx, m;
 
                     /* The rest (or all) is data! */
-                    length = (int)strlen(payload) / 2;
                     for (m=0, idx=0; payload[m] != '\0' && idx < MAX_NRUP_DATA_LENGTH-4; m+=2, idx++) {
                         nrup_data[idx] = (hex_from_char(payload[m]) << 4) + hex_from_char(payload[m+1]);
                     }
+                    length = idx;
                     /* Pad out to nearest 4 bytes if necessary. */
                     if (length % 4 != 0) {
                         for (int p=length % 4; p < 4; p++) {
@@ -2994,7 +2997,9 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                     }
 
                     /* Create separate NRUP tvb */
-                    tvbuff_t *nrup_tvb = tvb_new_real_data(nrup_data, length, length);
+                    /* XXX - Should the reported length be based upon
+                     * strlen(payload) / 2 as we might have truncated? */
+                    tvbuff_t *nrup_tvb = tvb_new_child_real_data(tvb, nrup_data, length, length);
                     add_new_data_source(pinfo, nrup_tvb, "NRUP Payload");
 
                     /* Call the dissector! */
@@ -3061,7 +3066,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                     }
 
                     /* Create tvb */
-                    tvbuff_t *raw_traffic_tvb = tvb_new_real_data(eth_data, idx, idx);
+                    tvbuff_t *raw_traffic_tvb = tvb_new_child_real_data(tvb, eth_data, idx, idx);
                     add_new_data_source(pinfo, raw_traffic_tvb, "Raw-Traffic Payload");
 
                     /* PDU */
@@ -3179,7 +3184,7 @@ dissect_catapult_dct2000(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                                                            tvb_get_ntohs(tvb, source_port_offset) :
                                                            0,
                                                        (dest_addr_offset) ?
-                                                         ((source_addr_length == 4) ?
+                                                         ((dest_addr_length == 4) ?
                                                               get_hostname(tvb_get_ipv4(tvb, dest_addr_offset)) :
                                                               get_hostname6(&destv6)
                                                             ) :
@@ -3605,37 +3610,37 @@ void proto_register_catapult_dct2000(void)
         },
         { &hf_catapult_dct2000_ipprim_udp_src_port,
             { "UDP Source Port",
-              "dct2000.ipprim.udp.srcport", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.ipprim.udp.srcport", FT_UINT16, BASE_PT_UDP, NULL, 0x0,
               "IPPrim UDP Source Port", HFILL
             }
         },
         { &hf_catapult_dct2000_ipprim_udp_dst_port,
             { "UDP Destination Port",
-              "dct2000.ipprim.udp.dstport", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.ipprim.udp.dstport", FT_UINT16, BASE_PT_UDP, NULL, 0x0,
               "IPPrim UDP Destination Port", HFILL
             }
         },
         { &hf_catapult_dct2000_ipprim_udp_port,
             { "UDP Port",
-              "dct2000.ipprim.udp.port", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.ipprim.udp.port", FT_UINT16, BASE_PT_UDP, NULL, 0x0,
               "IPPrim UDP Port", HFILL
             }
         },
         { &hf_catapult_dct2000_ipprim_tcp_src_port,
             { "TCP Source Port",
-              "dct2000.ipprim.tcp.srcport", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.ipprim.tcp.srcport", FT_UINT16, BASE_PT_TCP, NULL, 0x0,
               "IPPrim TCP Source Port", HFILL
             }
         },
         { &hf_catapult_dct2000_ipprim_tcp_dst_port,
             { "TCP Destination Port",
-              "dct2000.ipprim.tcp.dstport", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.ipprim.tcp.dstport", FT_UINT16, BASE_PT_TCP, NULL, 0x0,
               "IPPrim TCP Destination Port", HFILL
             }
         },
         { &hf_catapult_dct2000_ipprim_tcp_port,
             { "TCP Port",
-              "dct2000.ipprim.tcp.port", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.ipprim.tcp.port", FT_UINT16, BASE_PT_TCP, NULL, 0x0,
               "IPPrim TCP Port", HFILL
             }
         },
@@ -3678,7 +3683,7 @@ void proto_register_catapult_dct2000(void)
         },
         { &hf_catapult_dct2000_sctpprim_dst_port,
             { "UDP Destination Port",
-              "dct2000.sctprim.dstport", FT_UINT16, BASE_DEC, NULL, 0x0,
+              "dct2000.sctprim.dstport", FT_UINT16, BASE_PT_SCTP, NULL, 0x0,
               "SCTPPrim Destination Port", HFILL
             }
         },

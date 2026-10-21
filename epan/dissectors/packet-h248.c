@@ -1323,7 +1323,7 @@ static const value_string context_id_type[] = {
 };
 #endif
 
-/* the following value_strings are used to build defalut packages.
+/* the following value_strings are used to build default packages.
    To add additional detail to a package, build a register a h248_package_t structure
  */
 
@@ -2963,6 +2963,9 @@ dissect_h248_T_terminationId(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 			}else{
 				curr_info.term->str = bytes_to_str_punct(actx->pinfo->pool,curr_info.term->buffer,curr_info.term->len, 0);
 			}
+		} else {
+			curr_info.term->buffer = (uint8_t*)wmem_strdup(actx->pinfo->pool, "");
+			curr_info.term->str = wmem_strdup(actx->pinfo->pool, "?");
 		}
 
 
@@ -4249,13 +4252,11 @@ static const ber_sequence_t SecondEventsDescriptor_sequence[] = {
 static int
 dissect_h248_SecondEventsDescriptor(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   // SecondEventsDescriptor -> SecondEventsDescriptor/eventList -> SecondRequestedEvent -> SecondRequestedActions -> NotifyBehaviour -> RegulatedEmbeddedDescriptor -> SecondEventsDescriptor
-  actx->pinfo->dissection_depth += 6;
-  increment_dissection_depth(actx->pinfo);
+  increment_dissection_depth_by_n(actx->pinfo, 6);
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    SecondEventsDescriptor_sequence, hf_index, ett_h248_SecondEventsDescriptor);
 
-  actx->pinfo->dissection_depth -= 6;
-  decrement_dissection_depth(actx->pinfo);
+  decrement_dissection_depth_by_n(actx->pinfo, 6);
   return offset;
 }
 

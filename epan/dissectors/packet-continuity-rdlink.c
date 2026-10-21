@@ -220,7 +220,7 @@ static bool pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         proto_item *item = proto_tree_add_item(tree, hf_rdlink_tlv, tvb, offset, 2 + len,
                                                ENC_NA);
         proto_item_set_text(item, "%s (0x%02x), %u byte(s)",
-                            val_to_str(tag, pv_tlv_tags, "Unknown"), tag, len);
+                            val_to_str(pinfo->pool, tag, pv_tlv_tags, "Unknown"), tag, len);
         proto_tree *tlv_tree = proto_item_add_subtree(item, ett_rdlink_tlv);
         proto_tree_add_item(tlv_tree, hf_rdlink_tlv_tag, tvb, offset, 1, ENC_BIG_ENDIAN);
         proto_tree_add_item(tlv_tree, hf_rdlink_tlv_length, tvb, offset + 1, 1,
@@ -637,7 +637,7 @@ static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
      * the frame's first PDU sets it: a later one must not erase what the
      * earlier ones said. */
     bool first = rdlink_first_pdu(pinfo);
-    const char *type_name = val_to_str(type, rdlink_types, "Type 0x%02x");
+    const char *type_name = val_to_str(pinfo->pool, type, rdlink_types, "Type 0x%02x");
     if (first) {
         col_add_fstr(pinfo->cinfo, COL_INFO, "%s, %u byte body", type_name, length);
     }

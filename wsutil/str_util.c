@@ -399,7 +399,7 @@ static const char* decimal_point = NULL;
 static void truncate_numeric_strbuf(wmem_strbuf_t *strbuf, int n) {
 
     const char *s = wmem_strbuf_get_str(strbuf);
-    char *p;
+    const char *p;
     int count;
 
     if (decimal_point == NULL) {
@@ -463,6 +463,7 @@ format_units(wmem_allocator_t *allocator, double size,
         prefix = iec_prefix;
         max_exp = (int)G_N_ELEMENTS(iec_prefix) - 1;
         power = 1024.0;
+        pfx_off = 0;
     }
 
     if (isfinite(size) && size != 0.0) {
@@ -599,7 +600,7 @@ format_size_wmem(wmem_allocator_t *allocator, int64_t size,
     int power = 1000;
     int pfx_off = 0;
     bool is_small = false;
-    static const char *prefix[] = {" T", " G", " M", " k", " Ti", " Gi", " Mi", " Ki"};
+    static const char * const prefix[] = {" T", " G", " M", " k", " Ti", " Gi", " Mi", " Ki"};
     char *ret_val;
 
     if (thousands_grouping_fmt == NULL)
@@ -863,7 +864,11 @@ ws_strdup_underline(wmem_allocator_t *allocator, long offset, size_t len)
          * adds at least another 128 bytes, which is more than enough \
          * for one more character plus a terminating '\0'. \
          */ \
-        fmtbuf_len *= 2; \
+        if (ckd_mul(&fmtbuf_len, fmtbuf_len, 2)) { \
+            ws_debug("overflow!"); \
+            FMTBUF_ENDSTR; \
+            return fmtbuf; \
+        } \
         fmtbuf = (char *)wmem_realloc(allocator, fmtbuf, fmtbuf_len); \
     }
 
@@ -1489,7 +1494,7 @@ hex_dump_buffer(bool (*print_line)(void *, const char *), void *fp,
     char                  line[MAX_LINE_LEN + 1];
     unsigned int          use_digits;
 
-    static char binhex[16] = {
+    static const char binhex[16] = {
         '0', '1', '2', '3', '4', '5', '6', '7',
         '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 

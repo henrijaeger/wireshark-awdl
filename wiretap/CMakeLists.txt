@@ -15,6 +15,7 @@ set(WIRETAP_PUBLIC_HEADERS
 	pcapng_module.h
 	secrets-types.h
 	wtap.h
+	wtap_module.h
 	wtap_modules.h
 	wtap_opttypes.h
 )
@@ -75,6 +76,7 @@ set(WIRETAP_C_MODULE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/mplog.c
 	${CMAKE_CURRENT_SOURCE_DIR}/mime_file.c
 	${CMAKE_CURRENT_SOURCE_DIR}/mp2t.c
+	${CMAKE_CURRENT_SOURCE_DIR}/netlog.c
 	${CMAKE_CURRENT_SOURCE_DIR}/netmon.c
 	${CMAKE_CURRENT_SOURCE_DIR}/netscaler.c
 	${CMAKE_CURRENT_SOURCE_DIR}/netscreen.c
@@ -85,6 +87,10 @@ set(WIRETAP_C_MODULE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/observer.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packetlogger.c
 	${CMAKE_CURRENT_SOURCE_DIR}/pcap-common.c
+	${CMAKE_CURRENT_SOURCE_DIR}/pcapng-darwin-custom.c
+	${CMAKE_CURRENT_SOURCE_DIR}/pcapng-netflix-custom.c
+	${CMAKE_CURRENT_SOURCE_DIR}/pcapng-sysdig.c
+	${CMAKE_CURRENT_SOURCE_DIR}/peak-trc.c
 	${CMAKE_CURRENT_SOURCE_DIR}/peekclassic.c
 	${CMAKE_CURRENT_SOURCE_DIR}/peektagged.c
 	${CMAKE_CURRENT_SOURCE_DIR}/pppdump.c
@@ -127,6 +133,7 @@ set(WIRETAP_NONGENERATED_C_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/file_wrappers.c
 	${CMAKE_CURRENT_SOURCE_DIR}/merge.c
 	${CMAKE_CURRENT_SOURCE_DIR}/secrets-types.c
+	${CMAKE_CURRENT_SOURCE_DIR}/socketcan.c
 	${CMAKE_CURRENT_SOURCE_DIR}/wtap.c
 	${CMAKE_CURRENT_SOURCE_DIR}/wtap_opttypes.c
 )
@@ -140,13 +147,11 @@ add_lex_files(LEX_FILES WIRETAP_FILES
 	${WIRETAP_LEX_MODULE_FILES}
 	${CMAKE_CURRENT_SOURCE_DIR}/ascend_scanner.l
 	${CMAKE_CURRENT_SOURCE_DIR}/busmaster_scanner.l
-	${CMAKE_CURRENT_SOURCE_DIR}/candump_scanner.l
 )
 
 add_lemon_files(LEMON_FILES WIRETAP_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/ascend_parser.lemon
 	${CMAKE_CURRENT_SOURCE_DIR}/busmaster_parser.lemon
-	${CMAKE_CURRENT_SOURCE_DIR}/candump_parser.lemon
 )
 
 #
@@ -183,7 +188,7 @@ set_target_properties(wiretap PROPERTIES
 	PREFIX "lib"
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
 	LINK_FLAGS "${WS_LINK_FLAGS}"
-	VERSION "0.0.0" SOVERSION 0
+	VERSION "16.0.9" SOVERSION 16
 	FOLDER "DLLs"
 	INSTALL_RPATH "${LIBRARY_INSTALL_RPATH}"
 )

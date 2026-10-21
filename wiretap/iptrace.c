@@ -11,9 +11,21 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include "wtap-int.h"
+
+#include <wsutil/array.h>
+#include <wsutil/pint.h>
+
+#include "wtap_module.h"
 #include "file_wrappers.h"
 #include "atm.h"
+
+/*
+ * iptrace is the capture program that comes with AIX 3.x and 4.x.  AIX 3 uses
+ * the iptrace 1.0 file format, while AIX4 uses iptrace 2.0.  iptrace has
+ * an undocumented, yet very simple, file format.  The interesting thing
+ * about iptrace is that it will record packets coming in from all network
+ * interfaces; a single iptrace file can contain multiple datalink types.
+*/
 
 /*
  * Private per-wtap_t data needed to read a file.
@@ -211,7 +223,7 @@ iptrace_read_rec_1_0(wtap *wth, FILE_T fh, wtap_rec *rec,
 	}
 
 	/* Get the record length */
-	record_length = pntoh32(&header[IPTRACE_1_0_REC_LENGTH_OFFSET]);
+	record_length = pntohu32(&header[IPTRACE_1_0_REC_LENGTH_OFFSET]);
 	if (record_length < IPTRACE_1_0_PINFO_SIZE) {
 		/*
 		 * Uh-oh, the record isn't big enough to even have a
@@ -231,6 +243,9 @@ iptrace_read_rec_1_0(wtap *wth, FILE_T fh, wtap_rec *rec,
 		/* Read error or EOF */
 		return false;
 	}
+
+	wtap_setup_packet_rec(rec, wth->file_encap);
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 
 	/*
 	 * The if_type field of the frame header appears to be an SNMP
@@ -287,12 +302,10 @@ iptrace_read_rec_1_0(wtap *wth, FILE_T fh, wtap_rec *rec,
 		return false;
 	}
 
-	rec->rec_type = REC_TYPE_PACKET;
-	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS | WTAP_HAS_INTERFACE_ID;
 	rec->rec_header.packet_header.len = packet_size;
 	rec->rec_header.packet_header.caplen = packet_size;
-	rec->ts.secs = pntoh32(&header[IPTRACE_1_0_TV_SEC_OFFSET]);
+	rec->ts.secs = pntohu32(&header[IPTRACE_1_0_TV_SEC_OFFSET]);
 	rec->ts.nsecs = 0;
 	wtap_block_add_uint32_option(rec->block, OPT_PKT_FLAGS,
 	    pkt_info[IPTRACE_1_0_TX_FLAGS_OFFSET] ?
@@ -465,7 +478,7 @@ iptrace_read_rec_2_0(wtap *wth, FILE_T fh, wtap_rec *rec,
 	}
 
 	/* Get the record length */
-	record_length = pntoh32(&header[IPTRACE_2_0_REC_LENGTH_OFFSET]);
+	record_length = pntohu32(&header[IPTRACE_2_0_REC_LENGTH_OFFSET]);
 	if (record_length < IPTRACE_2_0_PINFO_SIZE) {
 		/*
 		 * Uh-oh, the record isn't big enough to even have a
@@ -485,6 +498,9 @@ iptrace_read_rec_2_0(wtap *wth, FILE_T fh, wtap_rec *rec,
 		/* Read error or EOF */
 		return false;
 	}
+
+	wtap_setup_packet_rec(rec, wth->file_encap);
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 
 	/*
 	 * The if_type field of the frame header appears to be an SNMP
@@ -559,13 +575,11 @@ iptrace_read_rec_2_0(wtap *wth, FILE_T fh, wtap_rec *rec,
 		return false;
 	}
 
-	rec->rec_type = REC_TYPE_PACKET;
-	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS | WTAP_HAS_INTERFACE_ID;
 	rec->rec_header.packet_header.len = packet_size;
 	rec->rec_header.packet_header.caplen = packet_size;
-	rec->ts.secs = pntoh32(&pkt_info[IPTRACE_2_0_TV_SEC_OFFSET]);
-	rec->ts.nsecs = pntoh32(&pkt_info[IPTRACE_2_0_TV_NSEC_OFFSET]);
+	rec->ts.secs = pntohu32(&pkt_info[IPTRACE_2_0_TV_SEC_OFFSET]);
+	rec->ts.nsecs = pntohu32(&pkt_info[IPTRACE_2_0_TV_NSEC_OFFSET]);
 	wtap_block_add_uint32_option(rec->block, OPT_PKT_FLAGS,
 	    pkt_info[IPTRACE_2_0_TX_FLAGS_OFFSET] ?
 	      (PACK_FLAGS_DIRECTION_OUTBOUND << PACK_FLAGS_DIRECTION_SHIFT) :

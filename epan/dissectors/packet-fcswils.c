@@ -616,7 +616,7 @@ dissect_swils_ess_capability(tvbuff_t *tvb, proto_tree *tree, int offset,
 }
 
 static int
-dissect_swils_ess_capability_obj(tvbuff_t *tvb, proto_tree *tree, int offset)
+dissect_swils_ess_capability_obj(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int offset)
 {
     int         i = 0, num_entries = 0, len = 0, total_len = 0;
     uint8_t     type, subtype, srvr_type;
@@ -634,7 +634,7 @@ dissect_swils_ess_capability_obj(tvbuff_t *tvb, proto_tree *tree, int offset)
             total_len = 4 + (num_entries*8);
             capinfo_tree = proto_tree_add_subtree_format(tree, tvb, offset,
                                      total_len, ett_fcswils_capinfo, NULL, "Capability Object (%s)",
-                                     val_to_str(type, fc_ct_gstype_vals,
+                                     val_to_str(pinfo->pool, type, fc_ct_gstype_vals,
                                                 "Unknown (0x%x)"));
         } else {
             i = tvb_get_uint8(tvb, offset+3);
@@ -890,7 +890,7 @@ dissect_swils_efp(tvbuff_t *tvb, packet_info* pinfo, proto_tree *efp_tree, uint8
             rec_type = tvb_get_uint8(tvb, offset);
             lrec_tree = proto_tree_add_subtree(efp_tree, tvb, offset, -1,
                                         ett_fcswils_efplist, NULL,
-                                        val_to_str(rec_type,
+                                        val_to_str(pinfo->pool, rec_type,
                                                    fcswils_rectype_val,
                                                    "Unknown record type (0x%02x)"));
             proto_tree_add_uint(lrec_tree, hf_swils_efp_rec_type, tvb, offset, 1,
@@ -1231,8 +1231,11 @@ dissect_swils_zone_obj(tvbuff_t *tvb, packet_info* pinfo, proto_tree *zobj_tree,
     offset += 8 + ZONENAME_LEN(tvb, offset+4);
     for (i = 0; i < numrec; i++) {
         if (objtype == FC_SWILS_ZONEOBJ_ZONESET) {
-            // We recurse here, but we'll run out of packet before we run out of stack.
+            increment_dissection_depth(pinfo);
+            /* XXX - Is it legal to have more than one level of nesting here?
+             * get_zoneobj_len assumes one at most. Should there be a subtree? */
             dissect_swils_zone_obj(tvb, pinfo, zobj_tree, offset);
+            decrement_dissection_depth(pinfo);
             offset += get_zoneobj_len(tvb, offset);
         }
         else {
@@ -1559,7 +1562,7 @@ dissect_swils_ess(tvbuff_t *tvb, packet_info* pinfo _U_, proto_tree *ess_tree, u
     offset += 4;
 
     while ((len > 0) && (numcapobj > 0)) {
-        capobjlen = dissect_swils_ess_capability_obj(tvb, ess_tree, offset);
+        capobjlen = dissect_swils_ess_capability_obj(tvb, pinfo, ess_tree, offset);
         numcapobj--;
         len -= capobjlen;
         offset += capobjlen;
@@ -1751,15 +1754,15 @@ dissect_fcswils(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 
     if (isreq == FC_SWILS_REQ) {
         col_add_str(pinfo->cinfo, COL_INFO,
-                    val_to_str(opcode, fc_swils_opcode_key_val, "0x%x"));
+                    val_to_str(pinfo->pool, opcode, fc_swils_opcode_key_val, "0x%x"));
     }
     else if (opcode == FC_SWILS_SWRJT) {
         col_add_fstr(pinfo->cinfo, COL_INFO, "SW_RJT (%s)",
-                        val_to_str(failed_opcode, fc_swils_opcode_key_val, "0x%x"));
+                        val_to_str(pinfo->pool, failed_opcode, fc_swils_opcode_key_val, "0x%x"));
     }
     else {
         col_add_fstr(pinfo->cinfo, COL_INFO, "SW_ACC (%s)",
-                        val_to_str(opcode, fc_swils_opcode_key_val, "0x%x"));
+                        val_to_str(pinfo->pool, opcode, fc_swils_opcode_key_val, "0x%x"));
     }
 
     proto_tree_add_item(swils_tree, hf_swils_opcode, tvb, offset, 1, ENC_BIG_ENDIAN);

@@ -8,11 +8,21 @@
 
 #include "config.h"
 #include "dbs-etherwatch.h"
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+#include <wsutil/array.h>
+#include <wsutil/pint.h>
+
+/*
+ * DBS Etherwatch (text format)
+ *
+ * Text output from DBS Etherwatch is supported.  DBS Etherwatch is available
+ * from: https://web.archive.org/web/20070612033348/http://www.users.bigpond.com/dbsneddon/software.htm.
+*/
 
 /* This module reads the text output of the 'DBS-ETHERTRACE' command in VMS
  * It was initially based on vms.c.
@@ -74,11 +84,11 @@ static bool dbs_etherwatch_read(wtap *wth, wtap_rec *rec,
     int *err, char **err_info, int64_t *data_offset);
 static bool dbs_etherwatch_seek_read(wtap *wth, int64_t seek_off,
     wtap_rec *rec, int *err, char **err_info);
-static bool parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
+static bool parse_dbs_etherwatch_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
     int *err, char **err_info);
-static unsigned parse_single_hex_dump_line(char* rec, uint8_t *buf,
+static unsigned parse_single_hex_dump_line(char* rec, Buffer *buf,
     int byte_offset);
-static unsigned parse_hex_dump(char* dump, uint8_t *buf, char separator, char end);
+static unsigned parse_hex_dump(char* dump, Buffer *buf, char separator, char end);
 
 static int dbs_etherwatch_file_type_subtype = -1;
 
@@ -206,7 +216,7 @@ static bool dbs_etherwatch_read(wtap *wth, wtap_rec *rec,
     *data_offset = offset;
 
     /* Parse the packet */
-    return parse_dbs_etherwatch_packet(wth->fh, rec, err, err_info);
+    return parse_dbs_etherwatch_packet(wth, wth->fh, rec, err, err_info);
 }
 
 /* Used to read packets in random-access fashion */
@@ -217,7 +227,7 @@ dbs_etherwatch_seek_read(wtap *wth, int64_t seek_off,
     if (file_seek(wth->random_fh, seek_off - 1, SEEK_SET, err) == -1)
         return false;
 
-    return parse_dbs_etherwatch_packet(wth->random_fh, rec, err, err_info);
+    return parse_dbs_etherwatch_packet(wth, wth->random_fh, rec, err, err_info);
 }
 
 /* Parse a packet */
@@ -265,19 +275,20 @@ unnumbered. Unnumbered has length 1, numbered 2.
 #define CTL_UNNUMB_MASK     0x03
 #define CTL_UNNUMB_VALUE    0x03
 static bool
-parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
+parse_dbs_etherwatch_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
     int *err, char **err_info)
 {
     uint8_t *pd;
     char    line[DBS_ETHERWATCH_LINE_LENGTH];
     int num_items_scanned;
-    int eth_hdr_len, pkt_len, csec;
-    int length_pos, length_from, length;
+    int pkt_len_signed, csec_signed;
+    unsigned eth_hdr_len, pkt_len, csec;
+    unsigned length_pos, length_from, length;
     struct tm tm;
     char mon[4] = "xxx";
     char *p;
     static const char months[] = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC";
-    int count, line_count;
+    unsigned count, line_count;
 
     /* Make sure we have enough room for a regular Ethernet packet */
     ws_buffer_assure_space(&rec->data, DBS_ETHERWATCH_MAX_ETHERNET_PACKET_LEN);
@@ -305,7 +316,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         return false;
     }
     p += strlen(DEST_MAC_PREFIX);
-    if(parse_hex_dump(p, &pd[eth_hdr_len], HEX_HDR_SPR, HEX_HDR_END)
+    if(parse_hex_dump(p, &rec->data, HEX_HDR_SPR, HEX_HDR_END)
                 != MAC_ADDR_LENGTH) {
         *err = WTAP_ERR_BAD_FILE;
         *err_info = g_strdup("dbs_etherwatch: destination address not valid");
@@ -323,7 +334,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
     while(!g_ascii_isxdigit(*p)) {
         p++;
     }
-    if(parse_hex_dump(p, &pd[eth_hdr_len], HEX_HDR_SPR,
+    if(parse_hex_dump(p, &rec->data, HEX_HDR_SPR,
         HEX_HDR_END) != MAC_ADDR_LENGTH) {
         *err = WTAP_ERR_BAD_FILE;
         *err_info = g_strdup("dbs_etherwatch: source address not valid");
@@ -347,12 +358,19 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         return false;
     }
 
+    /*
+     * %u doesn't fail if the value has a sign; it works like the
+     * strto*() routines.
+     *
+     * Use %d, scan into signed values, and then check whether they're
+     * < 0.
+     */
     num_items_scanned = sscanf(line + LENGTH_POS,
                 "%9d byte buffer at %2d-%3s-%4d %2d:%2d:%2d.%9d",
-                &pkt_len,
+                &pkt_len_signed,
                 &tm.tm_mday, mon,
                 &tm.tm_year, &tm.tm_hour, &tm.tm_min,
-                &tm.tm_sec, &csec);
+                &tm.tm_sec, &csec_signed);
 
     if (num_items_scanned != 8) {
         *err = WTAP_ERR_BAD_FILE;
@@ -360,18 +378,27 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         return false;
     }
 
-    if (pkt_len < 0) {
+    if (pkt_len_signed < 0) {
         *err = WTAP_ERR_BAD_FILE;
         *err_info = g_strdup("dbs_etherwatch: packet header has a negative packet length");
         return false;
     }
+
+    if (csec_signed < 0) {
+        *err = WTAP_ERR_BAD_FILE;
+        *err_info = g_strdup("dbs_etherwatch: packet header has a negative microseconds time stamp");
+        return false;
+    }
+
+    pkt_len = (unsigned) pkt_len_signed;
+    csec = (unsigned) csec_signed;
 
     /* Determine whether it is Ethernet II or IEEE 802 */
     if(strncmp(&line[ETH_II_CHECK_POS], ETH_II_CHECK_STR,
         strlen(ETH_II_CHECK_STR)) == 0) {
         /* Ethernet II */
         /* Get the Protocol */
-        if(parse_hex_dump(&line[PROTOCOL_POS], &pd[eth_hdr_len], HEX_HDR_SPR,
+        if(parse_hex_dump(&line[PROTOCOL_POS], &rec->data, HEX_HDR_SPR,
                     HEX_HDR_END) != PROTOCOL_LENGTH) {
             *err = WTAP_ERR_BAD_FILE;
             *err_info = g_strdup("dbs_etherwatch: Ethernet II protocol value not valid");
@@ -387,7 +414,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         /* Remember how much of the header should not be added to the length */
         length_from = eth_hdr_len;
         /* Get the DSAP + SSAP */
-        if(parse_hex_dump(&line[SAP_POS], &pd[eth_hdr_len], HEX_HDR_SPR,
+        if(parse_hex_dump(&line[SAP_POS], &rec->data, HEX_HDR_SPR,
                     HEX_HDR_END) != SAP_LENGTH) {
             *err = WTAP_ERR_BAD_FILE;
             *err_info = g_strdup("dbs_etherwatch: 802.2 DSAP+SSAP value not valid");
@@ -395,7 +422,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         }
         eth_hdr_len += SAP_LENGTH;
         /* Get the (first part of the) control field */
-        if(parse_hex_dump(&line[CTL_POS], &pd[eth_hdr_len], HEX_HDR_SPR,
+        if(parse_hex_dump(&line[CTL_POS], &rec->data, HEX_HDR_SPR,
                     HEX_HDR_END) != CTL_UNNUMB_LENGTH) {
             *err = WTAP_ERR_BAD_FILE;
             *err_info = g_strdup("dbs_etherwatch: 802.2 control field first part not valid");
@@ -404,8 +431,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         /* Determine whether the control is numbered, and thus longer */
         if((pd[eth_hdr_len] & CTL_UNNUMB_MASK) != CTL_UNNUMB_VALUE) {
             /* Get the rest of the control field, the first octet in the PID */
-            if(parse_hex_dump(&line[PID_POS],
-                        &pd[eth_hdr_len + CTL_UNNUMB_LENGTH], HEX_HDR_END,
+            if(parse_hex_dump(&line[PID_POS], &rec->data, HEX_HDR_END,
                         HEX_HDR_SPR) != CTL_NUMB_LENGTH - CTL_UNNUMB_LENGTH) {
                 *err = WTAP_ERR_BAD_FILE;
                 *err_info = g_strdup("dbs_etherwatch: 802.2 control field second part value not valid");
@@ -419,7 +445,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         if(strncmp(&line[SNAP_CHECK_POS], SNAP_CHECK_STR,
                 strlen(SNAP_CHECK_STR)) == 0) {
             /* Get the PID */
-            if(parse_hex_dump(&line[PID_POS], &pd[eth_hdr_len], HEX_HDR_SPR,
+            if(parse_hex_dump(&line[PID_POS], &rec->data, HEX_HDR_SPR,
                         HEX_PID_END) != PID_LENGTH) {
                 *err = WTAP_ERR_BAD_FILE;
                 *err_info = g_strdup("dbs_etherwatch: 802.2 PID value not valid");
@@ -428,12 +454,11 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
             eth_hdr_len += PID_LENGTH;
         }
         /* Write the length in the header */
-        length = eth_hdr_len - length_from + pkt_len;
-        pd[length_pos] = (length) >> 8;
-        pd[length_pos+1] = (length) & 0xFF;
+        length = (eth_hdr_len - length_from) + pkt_len;
+        phtonu16(&pd[length_pos], length);
     }
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, wth->file_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
 
@@ -460,9 +485,10 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
         return false;
     }
 
-    /* Make sure we have enough room, even for an oversized Ethernet packet */
-    ws_buffer_assure_space(&rec->data, rec->rec_header.packet_header.caplen);
-    pd = ws_buffer_start_ptr(&rec->data);
+    /* Make sure we have enough room, even for an oversized Ethernet packet.
+     * The length is checked *after* writing each line, so add slack.
+     * Note the byte separator is optional. */
+    ws_buffer_assure_space(&rec->data, rec->rec_header.packet_header.caplen + DBS_ETHERWATCH_LINE_LENGTH/2);
 
     /*
      * We don't have an FCS in this frame.
@@ -480,7 +506,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
             return false;
         }
         if (!(line_count = parse_single_hex_dump_line(line,
-                &pd[eth_hdr_len + count], count))) {
+                &rec->data, count))) {
             *err = WTAP_ERR_BAD_FILE;
             *err_info = g_strdup("dbs_etherwatch: packet data value not valid");
             return false;
@@ -533,7 +559,7 @@ parse_dbs_etherwatch_packet(FILE_T fh, wtap_rec *rec,
  * Returns length parsed if a good hex dump, 0 if bad.
  */
 static unsigned
-parse_single_hex_dump_line(char* rec, uint8_t *buf, int byte_offset) {
+parse_single_hex_dump_line(char* rec, Buffer *buf, int byte_offset) {
 
     int     pos, i;
     int     value;
@@ -596,12 +622,13 @@ parse_single_hex_dump_line(char* rec, uint8_t *buf, int byte_offset) {
 
 /* Parse a hex dump */
 static unsigned
-parse_hex_dump(char* dump, uint8_t *buf, char separator, char end) {
+parse_hex_dump(char* dump, Buffer *buf, char separator, char end) {
     int     pos, count;
 
     /* Parse the hex dump */
     pos = 0;
     count = 0;
+    uint8_t *pd = ws_buffer_end_ptr(buf);
     while(dump[pos] != end) {
         /* Check the hex value */
         if(!(g_ascii_isxdigit(dump[pos]) &&
@@ -610,15 +637,15 @@ parse_hex_dump(char* dump, uint8_t *buf, char separator, char end) {
         }
         /* Get the hex value */
         if(g_ascii_isdigit(dump[pos])) {
-            buf[count] = (dump[pos] - '0') << 4;
+            pd[count] = (dump[pos] - '0') << 4;
         } else {
-            buf[count] = (g_ascii_toupper(dump[pos]) - 'A' + 10) << 4;
+            pd[count] = (g_ascii_toupper(dump[pos]) - 'A' + 10) << 4;
         }
         pos++;
         if(g_ascii_isdigit(dump[pos])) {
-            buf[count] += dump[pos] - '0';
+            pd[count] += dump[pos] - '0';
         } else {
-            buf[count] += g_ascii_toupper(dump[pos]) - 'A' + 10;
+            pd[count] += g_ascii_toupper(dump[pos]) - 'A' + 10;
         }
         pos++;
         count++;
@@ -627,6 +654,7 @@ parse_hex_dump(char* dump, uint8_t *buf, char separator, char end) {
             pos++;
         }
     }
+    ws_buffer_increase_length(buf, count);
     return count;
 }
 

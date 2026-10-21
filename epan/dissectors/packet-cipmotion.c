@@ -21,6 +21,8 @@
 #include <epan/expert.h>
 #include <epan/unit_strings.h>
 
+#include <wsutil/ws_roundup.h>
+
 #include "packet-cipmotion.h"
 
 #include "packet-cip.h"
@@ -1501,10 +1503,7 @@ dissect_set_axis_attr_list_request(packet_info *pinfo, tvbuff_t* tvb, proto_tree
       }
 
       /* Round the attribute size up so the next attribute lines up on a 32-bit boundary */
-      if (attribute_size % 4 != 0)
-      {
-         attribute_size = attribute_size + (4 - (attribute_size % 4));
-      }
+      attribute_size = WS_ROUNDUP_4(attribute_size);
 
       /* Move the local offset to the next attribute */
       local_offset += (attribute_size + increment_size);
@@ -1791,10 +1790,7 @@ dissect_get_axis_attr_list_response(packet_info* pinfo, tvbuff_t* tvb, proto_tre
          }
 
          /* Round the attribute size up so the next attribute lines up on a 32-bit boundary */
-         if (attribute_size % 4 != 0)
-         {
-             attribute_size = attribute_size + (4 - (attribute_size % 4));
-         }
+         attribute_size = WS_ROUNDUP_4(attribute_size);
       }
 
       /* Move the local offset to the next attribute */
@@ -2147,7 +2143,7 @@ dissect_cipmotion(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, void* dat
 
    /* Add connection format and update number to the info column */
    col_add_fstr( pinfo->cinfo, COL_INFO, "%s, Update Id: %d",
-                 val_to_str(con_format, cip_con_format_vals, "Unknown connection format (%x)"), update_id );
+                 val_to_str(pinfo->pool, con_format, cip_con_format_vals, "Unknown connection format (%x)"), update_id );
 
    /* Attempt to classify the incoming header */
    if (( con_format == FORMAT_VAR_CONTROL_TO_DEVICE ) ||

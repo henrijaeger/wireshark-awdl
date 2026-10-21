@@ -158,44 +158,40 @@ dissect_revokeHandleListReason(tvbuff_t *tvb, int offset, proto_tree *tree)
 }
 
 static int
-dissect_handleList(tvbuff_t *tvb, int offset, packet_info *pinfo _U_,
+dissect_handleList(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		   proto_tree *tree)
 {
 
-	int	    numHandles;
-	int	    listLength;
-	int	    i;
+	unsigned    numHandles;
 	proto_tree *handleListTree;
+	proto_item *ti;
 
 	numHandles = tvb_get_ntohl(tvb, offset);
-	listLength = 4;
 
-	for (i = 0; i < numHandles; i++) {
-		listLength += (4 + tvb_get_ntohl(tvb, offset + listLength));
-	}
-
-	handleListTree =  proto_tree_add_subtree(tree, tvb, offset, listLength,
-					      ett_fmp_notify_hlist, NULL, "Handle List");
+	handleListTree =  proto_tree_add_subtree(tree, tvb, offset, 4,
+					      ett_fmp_notify_hlist, &ti, "Handle List");
 
 	offset = dissect_rpc_uint32(tvb,  handleListTree,
 				    hf_fmp_handleListLen, offset);
 
-	for (i = 0; i < numHandles; i++) {
-		offset = dissect_rpc_data(tvb, handleListTree,
+	for (unsigned i = 0; i < numHandles; i++) {
+		offset = dissect_rpc_data(tvb, pinfo, handleListTree,
 					  hf_fmp_fmpFHandle, offset);/*	 changed */
 	}
+
+	proto_item_set_end(ti, tvb, offset);
 
 	return offset;
 }
 
 static int
-dissect_FMP_NOTIFY_DownGrade_request(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
+dissect_FMP_NOTIFY_DownGrade_request(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
 	int offset = 0;
 
-	offset = dissect_rpc_data(tvb,	tree, hf_fmp_sessionHandle,
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_sessionHandle,
 				  offset);
-	offset = dissect_rpc_data(tvb,	tree, hf_fmp_fmpFHandle, offset);
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_fmpFHandle, offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_fmp_msgNum, offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_fmp_firstLogBlk,
 				    offset);
@@ -212,13 +208,13 @@ dissect_FMP_NOTIFY_DownGrade_reply(tvbuff_t *tvb, packet_info *pinfo _U_, proto_
 }
 
 static int
-dissect_FMP_NOTIFY_RevokeList_request(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
+dissect_FMP_NOTIFY_RevokeList_request(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
 	int offset = 0;
 
-	offset = dissect_rpc_data(tvb,	tree, hf_fmp_sessionHandle,
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_sessionHandle,
 				  offset);
-	offset = dissect_rpc_data(tvb, tree, hf_fmp_fmpFHandle, offset);
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_fmpFHandle, offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_fmp_msgNum, offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_fmp_firstLogBlk,
 				    offset);
@@ -236,12 +232,12 @@ dissect_FMP_NOTIFY_RevokeList_reply(tvbuff_t *tvb, packet_info *pinfo _U_, proto
 
 static int
 dissect_FMP_NOTIFY_RevokeAll_request(tvbuff_t *tvb,
-				     packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
+				     packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
 	int offset = 0;
-	offset = dissect_rpc_data(tvb, tree, hf_fmp_sessionHandle,
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_sessionHandle,
 				  offset);
-	offset = dissect_rpc_data(tvb, tree, hf_fmp_fmpFHandle, offset);
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_fmpFHandle, offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_fmp_msgNum, offset);
 	return offset;
 }
@@ -257,12 +253,12 @@ dissect_FMP_NOTIFY_RevokeAll_reply(tvbuff_t *tvb,
 
 static int
 dissect_FMP_NOTIFY_FileSetEof_request(tvbuff_t *tvb,
-				      packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
+				      packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
 	int offset = 0;
-	offset = dissect_rpc_data(tvb, tree, hf_fmp_sessionHandle,
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_sessionHandle,
 				  offset);
-	offset = dissect_rpc_data(tvb, tree, hf_fmp_fmpFHandle, offset);
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_fmpFHandle, offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_fmp_msgNum, offset);
 	offset = dissect_rpc_uint64(tvb, tree, hf_fmp_fileSize, offset);
 	return offset;
@@ -286,9 +282,9 @@ dissect_FMP_NOTIFY_RequestDone_request(tvbuff_t *tvb,
 
 	offset = dissect_fmp_notify_status(tvb, offset,tree, &rval);
 	if (rval == 0) {
-		offset = dissect_rpc_data(tvb,	tree,
+		offset = dissect_rpc_data(tvb, pinfo, tree,
 					  hf_fmp_sessionHandle, offset);
-		offset = dissect_rpc_data(tvb, tree, hf_fmp_fmpFHandle,
+		offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_fmpFHandle,
 					  offset);
 		offset = dissect_rpc_uint32(tvb, tree, hf_fmp_msgNum,
 					    offset);
@@ -314,7 +310,7 @@ dissect_FMP_NOTIFY_volFreeze_request(tvbuff_t *tvb,
 {
 	int offset = 0;
 
-	offset = dissect_rpc_data(tvb, tree, hf_fmp_sessionHandle,
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_sessionHandle,
 				  offset);
 	offset = dissect_rpc_uint32(tvb, tree, hf_fmp_fsID, offset);
 	return offset;
@@ -335,8 +331,7 @@ dissect_FMP_NOTIFY_revokeHandleList_request(tvbuff_t *tvb,
 {
 	int offset = 0;
 
-	offset = dissect_rpc_data(tvb, tree, hf_fmp_sessionHandle,
-										  offset);
+	offset = dissect_rpc_data(tvb, pinfo, tree, hf_fmp_sessionHandle, offset);
 	offset = dissect_revokeHandleListReason(tvb, offset, tree);
 	offset = dissect_handleList(tvb, offset, pinfo, tree);
 	return offset;

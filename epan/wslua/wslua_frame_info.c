@@ -55,13 +55,31 @@ WSLUA_METAMETHOD FrameInfo__tostring(lua_State* L) {
         lua_pushstring(L,"FrameInfo pointer is NULL!");
     } else {
         if (fi->rec)
-            lua_pushfstring(L, "FrameInfo: rec_type=%u, presence_flags=%d, caplen=%d, len=%d, pkt_encap=%d, block='%p'",
+            lua_pushfstring(L, "FrameInfo: rec_type=%d, presence_flags=%d, caplen=%d, len=%d, pkt_encap=%d, block='%p'",
                 fi->rec->rec_type, fi->rec->presence_flags, fi->rec->rec_header.packet_header.caplen, fi->rec->rec_header.packet_header.len, fi->rec->rec_header.packet_header.pkt_encap, fi->rec->block);
         else
             lua_pushstring(L, "FrameInfo rec pointer is NULL!");
     }
 
     WSLUA_RETURN(1); /* String of debug information. */
+}
+
+WSLUA_METHOD FrameInfo_setup_packet_rec(lua_State* L) {
+    /* calls wtap_setup_packet_rec() */
+#define WSLUA_ARG_FrameInfo_setup_packet_rec_ENCAP 2 /* The encapsulation type to use. */
+    FrameInfo fi = checkFrameInfo(L,1);
+    int encap = wslua_checkuint32(L, WSLUA_ARG_FrameInfo_setup_packet_rec_ENCAP);
+
+    wtap_setup_packet_rec(fi->rec, encap);
+
+    /*
+     * Always succeeds.
+     *
+     * XXX - can a method return nothing?
+     */
+    lua_pushboolean(L, true);
+
+    WSLUA_RETURN(1);
 }
 
 /* XXX: should this function be a method of File instead? */
@@ -292,6 +310,7 @@ WSLUA_ATTRIBUTES FrameInfo_attributes[] = {
 };
 
 WSLUA_METHODS FrameInfo_methods[] = {
+    WSLUA_CLASS_FNREG(FrameInfo,setup_packet_rec),
     WSLUA_CLASS_FNREG(FrameInfo,read_data),
     { NULL, NULL }
 };
@@ -329,7 +348,7 @@ WSLUA_METAMETHOD FrameInfoConst__tostring(lua_State* L) {
         lua_pushstring(L,"FrameInfo pointer is NULL!");
     } else {
         if (fi->rec && !fi->expired)
-            lua_pushfstring(L, "FrameInfo: rec_type=%u, presence_flags=%d, caplen=%d, len=%d, pkt_encap=%d, block='%p'",
+            lua_pushfstring(L, "FrameInfo: rec_type=%d, presence_flags=%d, caplen=%d, len=%d, pkt_encap=%d, block='%p'",
                 fi->rec->rec_type, fi->rec->presence_flags, fi->rec->rec_header.packet_header.caplen, fi->rec->rec_header.packet_header.len, fi->rec->rec_header.packet_header.pkt_encap, fi->rec->block);
         else
             lua_pushfstring(L, "FrameInfo has %s", fi->rec?"expired":"null rec pointer");

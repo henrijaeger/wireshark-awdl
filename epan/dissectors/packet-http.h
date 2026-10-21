@@ -13,7 +13,7 @@
 #include <epan/packet.h>
 #include "ws_symbol_export.h"
 
-WS_DLL_PUBLIC const value_string vals_http_status_code[];
+extern const value_string vals_http_status_code[];
 
 WS_DLL_PUBLIC
 void http_tcp_dissector_add(uint32_t port, dissector_handle_t handle);
@@ -24,6 +24,9 @@ void http_tcp_port_add(uint32_t port);
 
 WS_DLL_PUBLIC
 void http_add_path_components_to_tree(tvbuff_t* tvb, packet_info* pinfo _U_, proto_item* item, int offset, int length);
+
+WS_DLL_PUBLIC
+dissector_handle_t http_upgrade_dissector(const char *protocol);
 
 /* Used for HTTP statistics */
 typedef struct _http_info_value_t {
@@ -63,6 +66,18 @@ typedef struct _http_req_res_t {
 	void* private_data;
 } http_req_res_t;
 
+/** Used for version-independent HTTP information for upgrade protocols */
+typedef struct _http_upgrade_info_t {
+	/** Server port. Can be used for protocol heuristics */
+	uint16_t    server_port;
+	/** HTTP version (1, 2 or 3) */
+	uint8_t     http_version;
+	/** Lookup header value */
+	const char *(*get_header_value)(packet_info *, const char *, bool);
+	/** Direction of the message */
+	bool	    from_server;
+} http_upgrade_info_t;
+
 /** Conversation data of a HTTP connection. */
 typedef struct _http_conv_t {
 
@@ -74,9 +89,8 @@ typedef struct _http_conv_t {
 	uint32_t	 startframe;	/* First frame of proxied connection */
 	int    	 startoffset;	/* Offset within the frame where the new protocol begins. */
 	dissector_handle_t next_handle;	/* New protocol */
+	http_upgrade_info_t *upgrade_info; /* Data for new protocol */
 
-	char    *websocket_protocol;	/* Negotiated WebSocket protocol */
-	char    *websocket_extensions;	/* Negotiated WebSocket extensions */
 	/* Server address and port, known after first server response */
 	uint16_t server_port;
 	address server_addr;

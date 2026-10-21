@@ -33,6 +33,7 @@
 #include <wsutil/plugins.h>
 #endif
 
+#include <wsutil/clopts_common.h>
 #include <wsutil/wslog.h>
 
 #include "ui/failure_message.h"
@@ -76,7 +77,7 @@ typedef struct FrameRecord_t {
 /**************************************************/
 
 
-static void
+static bool
 frame_write(FrameRecord_t *frame, wtap *wth, wtap_dumper *pdh,
             wtap_rec *rec, const char *infile, const char *outfile)
 {
@@ -95,7 +96,7 @@ frame_write(FrameRecord_t *frame, wtap *wth, wtap_dumper *pdh,
                     "reordercap: An error occurred while re-reading \"%s\".\n",
                     infile);
             cfile_read_failure_message(infile, err, err_info);
-            exit(1);
+            return false;
         }
     }
 
@@ -108,9 +109,11 @@ frame_write(FrameRecord_t *frame, wtap *wth, wtap_dumper *pdh,
     if (!wtap_dump(pdh, rec, &err, &err_info)) {
         cfile_write_failure_message(infile, outfile, err, err_info, frame->num,
                                     wtap_file_type_subtype(wth));
-        exit(1);
+        return false;
     }
     wtap_rec_reset(rec);
+
+    return true;
 }
 
 /* Comparing timestamps between 2 frames.
@@ -156,8 +159,11 @@ main(int argc, char *argv[])
     static const struct ws_option long_options[] = {
         {"help", ws_no_argument, NULL, 'h'},
         {"version", ws_no_argument, NULL, 'v'},
+        LONGOPT_WSLOG
         {0, 0, 0, 0 }
     };
+#define OPTSTRING "hnv"
+    static const char optstring[] = OPTSTRING;
     int file_count;
     char *infile;
     const char *outfile;
@@ -171,7 +177,7 @@ main(int argc, char *argv[])
     ws_log_init(vcmdarg_err);
 
     /* Early logging command-line initialization. */
-    ws_log_parse_args(&argc, argv, vcmdarg_err, WS_EXIT_INVALID_OPTION);
+    ws_log_parse_args(&argc, argv, optstring, long_options, vcmdarg_err, WS_EXIT_INVALID_OPTION);
 
     ws_noisy("Finished log init and parsing command line log arguments");
 
@@ -200,7 +206,7 @@ main(int argc, char *argv[])
     wtap_init(true);
 
     /* Process the options first */
-    while ((opt = ws_getopt_long(argc, argv, "hnv", long_options, NULL)) != -1) {
+    while ((opt = ws_getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
         switch (opt) {
             case 'n':
                 write_output_regardless = false;
@@ -213,6 +219,11 @@ main(int argc, char *argv[])
                 show_version();
                 goto clean_exit;
             case '?':
+            default:
+                /* wslog arguments are okay */
+                if (ws_log_is_wslog_arg(opt))
+                    break;
+
                 print_usage(stderr);
                 ret = WS_EXIT_INVALID_OPTION;
                 goto clean_exit;
@@ -311,7 +322,8 @@ main(int argc, char *argv[])
         for (i = 0; i < frames->len; i++) {
             FrameRecord_t *frame = (FrameRecord_t *)frames->pdata[i];
 
-            frame_write(frame, wth, pdh, &rec, infile, outfile);
+            if (!frame_write(frame, wth, pdh, &rec, infile, outfile))
+                return EXIT_FAILURE;
 
             g_slice_free(FrameRecord_t, frame);
         }

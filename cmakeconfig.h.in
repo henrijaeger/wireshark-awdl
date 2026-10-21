@@ -31,14 +31,14 @@
 /*  Define to 1 if we check hf conflict */
 #cmakedefine ENABLE_CHECK_FILTER 1
 
-/* Link Wireshark libraries statically */
-#cmakedefine ENABLE_STATIC 1
-
 /* Enable AddressSanitizer (and LeakSanitizer on clang/gcc) */
 #cmakedefine ENABLE_ASAN 1
 
 /* Enable LeakSanitizer standalone */
 #cmakedefine ENABLE_LSAN 1
+
+/* Adapt build products for fuzzing (e.g. accepting incorrect checksums or prioritizing determinism). */
+#cmakedefine FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION 1
 
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #cmakedefine HAVE_ARPA_INET_H 1
@@ -133,12 +133,6 @@
 /* Enable libnl support */
 #cmakedefine HAVE_LIBNL 1
 
-/* libnl version 1 */
-#cmakedefine HAVE_LIBNL1 1
-
-/* libnl version 2 */
-#cmakedefine HAVE_LIBNL2 1
-
 /* libnl version 3 */
 #cmakedefine HAVE_LIBNL3 1
 
@@ -150,6 +144,10 @@
 
 /* Define to 1 if libsmi exports a version string (and that symbol is visible). */
 #cmakedefine HAVE_SMI_VERSION_STRING 1
+
+/* Define to use xxhash library */
+#cmakedefine HAVE_XXHASH 1
+#define XXHASH_VERSION_STRING "${XXHASH_VERSION_STRING}"
 
 /* Define to use zlib library */
 #cmakedefine HAVE_ZLIB 1
@@ -200,6 +198,9 @@
 /* The size of the lua_Integer type, if we have Lua. */
 #cmakedefine LUA_INTEGER_SIZE ${LUA_INTEGER_SIZE}
 
+/* Whether the Lua library has a two-argument lua_resetthread(). */
+#cmakedefine HAVE_TWO_ARGUMENT_LUA_RESETTHREAD 1
+
 /* Define to use MIT kerberos */
 #cmakedefine HAVE_MIT_KERBEROS 1
 
@@ -220,6 +221,12 @@
 
 /* VHT_CAPABILITY is supported */
 #cmakedefine HAVE_NL80211_VHT_CAPABILITY 1
+
+/* HE_CAPABILITY is supported */
+#cmakedefine HAVE_NL80211_HE_CAPABILITY 1
+
+/* EHT_CAPABILITY is supported */
+#cmakedefine HAVE_NL80211_EHT_CAPABILITY 1
 
 /* Define to 1 if you have macOS frameworks */
 #cmakedefine HAVE_MACOS_FRAMEWORKS 1
@@ -256,9 +263,6 @@
 
 /* Define to 1 if you have the opus library. */
 #cmakedefine HAVE_OPUS 1
-
-/* Define to 1 if you have the lixbml2 library. */
-#cmakedefine HAVE_LIBXML2 1
 
 /* Define to 1 if you have the `setresgid' function. */
 #cmakedefine HAVE_SETRESGID 1
@@ -371,7 +375,7 @@
  * - The VersionNT parts of packaging\wix\Prerequisites.wxi
  */
 #  ifndef NTDDI_VERSION
-#  define NTDDI_VERSION   NTDDI_WIN10
+#  define NTDDI_VERSION   NTDDI_WIN10_RS5
 #  endif
 
 #  ifndef _WIN32_WINNT

@@ -11,7 +11,6 @@
 #define WS_LOG_DOMAIN LOG_DOMAIN_CAPCHILD
 
 #include <stdio.h>
-#include <stdlib.h> /* for exit() */
 #include <glib.h>
 
 #include <string.h>
@@ -25,10 +24,6 @@
 #endif
 
 #include <wsutil/ws_getopt.h>
-
-#if defined(__APPLE__) && defined(__LP64__)
-#include <sys/utsname.h>
-#endif
 
 #include <signal.h>
 #include <errno.h>
@@ -390,18 +385,8 @@ static loop_data   global_ld;
 /*
  * Timeout, in milliseconds, for reads from the stream of captured packets
  * from a capture device.
- *
- * A bug in Mac OS X 10.6 and 10.6.1 causes calls to pcap_open_live(), in
- * 64-bit applications, with sub-second timeouts not to work.  The bug is
- * fixed in 10.6.2, re-broken in 10.6.3, and again fixed in 10.6.5.
  */
-#if defined(__APPLE__) && defined(__LP64__)
-static bool need_timeout_workaround;
-
-#define CAP_READ_TIMEOUT        (need_timeout_workaround ? 1000 : 250)
-#else
 #define CAP_READ_TIMEOUT        250
-#endif
 
 /*
  * Timeout, in microseconds, for reads from the stream of captured packets
@@ -448,8 +433,6 @@ static void capture_loop_get_errmsg(char *errmsg, size_t errmsglen,
                                     size_t secondary_errmsglen,
                                     const char *fname, int err,
                                     bool is_close);
-
-WS_NORETURN static void exit_main(int err);
 
 static void report_new_capture_file(const char *filename);
 static void report_packet_count(unsigned int packet_count);
@@ -580,7 +563,7 @@ print_usage(FILE *output)
 static void
 dumpcap_cmdarg_err(const char *fmt, va_list ap)
 {
-    if (capture_child) {
+    if ((capture_child) && (sync_pipe_fd > 0)) {
         char *msg;
         /* Generate a 'special format' message back to parent */
         msg = ws_strdup_vprintf(fmt, ap);
@@ -601,7 +584,7 @@ dumpcap_cmdarg_err(const char *fmt, va_list ap)
 static void
 dumpcap_cmdarg_err_cont(const char *fmt, va_list ap)
 {
-    if (capture_child) {
+    if ((capture_child) && (sync_pipe_fd > 0)) {
         char *msg;
         msg = ws_strdup_vprintf(fmt, ap);
         sync_pipe_write_errmsgs_to_parent(sync_pipe_fd, msg, "");
@@ -1191,7 +1174,7 @@ report_counts_siginfo(int signum _U_)
 #endif /* SIGINFO */
 
 static void
-exit_main(int status)
+exit_main(void)
 {
     ws_cleanup_sockets();
 
@@ -1212,7 +1195,6 @@ exit_main(int status)
     }
 
     capture_opts_cleanup(&global_capture_opts);
-    exit(status);
 }
 
 #ifdef HAVE_LIBCAP
@@ -1471,6 +1453,50 @@ dlt_to_linktype(int dlt)
 	/* Treat all other DLT_s as having the same value as the
 	   corresponding LINKTYPE_. */
 	return (dlt);
+}
+
+static void
+cap_pipe_ensure_databuf_size(capture_src *pcap_src, uint32_t block_length) {
+
+    size_t new_bufsize = block_length;
+    if (new_bufsize > pcap_src->cap_pipe_databuf_size) {
+        /*
+        * Grow the buffer to the packet size, rounded up to a power of
+        * 2.
+        *
+        * Caveats: This can "round up" to 0 if new_bufsize is 0 or, on
+        * platforms where size_t is 32 bits, larger than 2^31, which is
+        * not very useful. We shouldn't have to worry about 0, because
+        * pcap_src->cap_pipe_databuf_size is initialized to a nonzero
+        * value.
+        *
+        * All the various values of WTAP_MAX_PACKET_SIZE_*, and thus
+        * pcap_src->cap_pipe_max_pkt_size, are smaller than 2^31, but
+        * we don't check all blocks against the max pkt size since
+        * db9ed8844c48326a3a8e3823d1d9f152e6667542. Either we should, or
+        * we should probably have some fixed maximum and report failure
+        * in those cases.
+        */
+        /*
+        * https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+        */
+        /* XXX - Should this be added to wsutil/ws_roundup.h? */
+        new_bufsize--;
+        new_bufsize |= new_bufsize >> 1;
+        new_bufsize |= new_bufsize >> 2;
+        new_bufsize |= new_bufsize >> 4;
+        new_bufsize |= new_bufsize >> 8;
+        new_bufsize |= new_bufsize >> 16;
+        new_bufsize++;
+        if (new_bufsize == 0) {
+            /* Should only happen on platforms where SIZE_WIDTH is 32, which
+             * is new in C23 (or we could add a size check to CMake.)
+             */
+            new_bufsize = UINT32_MAX;
+        }
+        pcap_src->cap_pipe_databuf = (uint8_t*)g_realloc(pcap_src->cap_pipe_databuf, new_bufsize);
+        pcap_src->cap_pipe_databuf_size = new_bufsize;
+    }
 }
 
 /* Take care of byte order in the libpcap headers read from pipes.
@@ -2321,6 +2347,7 @@ pcapng_read_shb(capture_src *pcap_src,
                 size_t errmsgl)
 {
     pcapng_section_header_block_t shb;
+    pcapng_block_header_t *bh = &pcap_src->cap_pipe_info.pcapng.bh;
 
 #ifdef _WIN32
     if (pcap_src->from_cap_socket)
@@ -2389,7 +2416,6 @@ pcapng_read_shb(capture_src *pcap_src,
          * length and, for other block types, the block type, to read correctly.
          */
         pcap_src->cap_pipe_info.pcapng.byte_swapped = true;
-        pcapng_block_header_t *bh = &pcap_src->cap_pipe_info.pcapng.bh;
         bh->block_total_length = GUINT32_SWAP_LE_BE(bh->block_total_length);
         break;
     default:
@@ -2399,7 +2425,24 @@ pcapng_read_shb(capture_src *pcap_src,
         return -1;
     }
 
+    if ((bh->block_total_length & 0x03) != 0) {
+        snprintf(errmsg, errmsgl,
+                   "block_total_length read from pipe is %u, which is not a multiple of 4.",
+                   bh->block_total_length);
+        return -1;
+    }
+
     pcap_src->cap_pipe_max_pkt_size = WTAP_MAX_PACKET_SIZE_STANDARD;
+
+    cap_pipe_ensure_databuf_size(pcap_src, bh->block_total_length);
+
+    /* Make sure the total length is sane */
+    if (bh->block_total_length < sizeof(pcapng_block_header_t)+sizeof(pcapng_section_header_block_t)+sizeof(uint32_t)) {
+        snprintf(errmsg, errmsgl,
+                   "malformed pcapng SHB block_total_length < minimum");
+        pcap_src->cap_pipe_err = PIPEOF;
+        return -1;
+    }
 
     /* Setup state to capture any options following the section header block */
     pcap_src->cap_pipe_state = STATE_EXPECT_DATA;
@@ -2504,12 +2547,28 @@ pcapng_adjust_block(capture_src *pcap_src, const pcapng_block_header_t *bh, uint
  */
 static bool is_data_block(uint32_t block_type)
 {
-    // Any block types that lead to calling wtap_read_bytes_buffer in
-    // wiretap/pcapng.c should be listed here.
+    /* This should be the negation of get_block_type_internal in
+     * wiretap/pcapng.c, but dumpcap doesn't link with wiretap, and
+     * wouldn't know about blocks registered by plugins without running
+     * the registration routines.
+     *
+     * This is used for reporting packet counts. It affects autostop
+     * and file switching conditions, and is also reported via the
+     * sync pipe in capture child mode. In capture child mode, if the
+     * count reported is too small (i.e., false is returned for blocks
+     * that pcapng_read returns to the caller), then the parent process
+     * lags behind (and can report a "No packets captured error."). If
+     * the count reported is too large, then some parents (e.g. tshark)
+     * abort the capture because wtap_read will return an error.
+     *
+     * This errs on the side of returning false for unknown block types.
+     */
     switch (block_type) {
         case BLOCK_TYPE_PB:
         case BLOCK_TYPE_EPB:
         case BLOCK_TYPE_SPB:
+        case BLOCK_TYPE_CB_COPY:
+        case BLOCK_TYPE_CB_NO_COPY:
         case BLOCK_TYPE_SYSTEMD_JOURNAL_EXPORT:
         case BLOCK_TYPE_SYSDIG_EVENT:
         case BLOCK_TYPE_SYSDIG_EVENT_V2:
@@ -2584,12 +2643,6 @@ pcapng_pipe_open_live(int fd,
         pcap_src->cap_pipe_fd = fd;
     }
 #endif
-    if ((bh->block_total_length & 0x03) != 0) {
-        snprintf(errmsg, errmsgl,
-                   "block_total_length read from pipe is %u, which is not a multiple of 4.",
-                   bh->block_total_length);
-        goto error;
-    }
     if (pcapng_read_shb(pcap_src, errmsg, errmsgl)) {
         goto error;
     }
@@ -2618,7 +2671,6 @@ pcap_pipe_dispatch(loop_data *ld, capture_src *pcap_src, char *errmsg, size_t er
     void *    q_status;
 #endif
     ssize_t   b;
-    unsigned new_bufsize;
     pcap_pipe_info_t *pcap_info = &pcap_src->cap_pipe_info.pcap;
 
 #ifdef LOG_CAPTURE_VERBOSE
@@ -2780,25 +2832,7 @@ pcap_pipe_dispatch(loop_data *ld, capture_src *pcap_src, char *errmsg, size_t er
             break;
         }
 
-        if (pcap_info->rechdr.hdr.incl_len > pcap_src->cap_pipe_databuf_size) {
-            /*
-             * Grow the buffer to the packet size, rounded up to a power of
-             * 2.
-             */
-            new_bufsize = pcap_info->rechdr.hdr.incl_len;
-            /*
-             * https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-             */
-            new_bufsize--;
-            new_bufsize |= new_bufsize >> 1;
-            new_bufsize |= new_bufsize >> 2;
-            new_bufsize |= new_bufsize >> 4;
-            new_bufsize |= new_bufsize >> 8;
-            new_bufsize |= new_bufsize >> 16;
-            new_bufsize++;
-            pcap_src->cap_pipe_databuf = (char*)g_realloc(pcap_src->cap_pipe_databuf, new_bufsize);
-            pcap_src->cap_pipe_databuf_size = new_bufsize;
-        }
+        cap_pipe_ensure_databuf_size(pcap_src, pcap_info->rechdr.hdr.incl_len);
 
         if (pcap_info->rechdr.hdr.incl_len) {
             /*
@@ -2866,7 +2900,6 @@ pcapng_pipe_dispatch(loop_data *ld, capture_src *pcap_src, char *errmsg, size_t 
 #ifdef _WIN32
     void *    q_status;
 #endif
-    unsigned new_bufsize;
     pcapng_block_header_t *bh = &pcap_src->cap_pipe_info.pcapng.bh;
 
 #ifdef LOG_CAPTURE_VERBOSE
@@ -3040,25 +3073,7 @@ pcapng_pipe_dispatch(loop_data *ld, capture_src *pcap_src, char *errmsg, size_t 
             break;
         }
 
-        if (bh->block_total_length > pcap_src->cap_pipe_databuf_size) {
-            /*
-            * Grow the buffer to the packet size, rounded up to a power of
-            * 2.
-            */
-            new_bufsize = bh->block_total_length;
-            /*
-            * https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-            */
-            new_bufsize--;
-            new_bufsize |= new_bufsize >> 1;
-            new_bufsize |= new_bufsize >> 2;
-            new_bufsize |= new_bufsize >> 4;
-            new_bufsize |= new_bufsize >> 8;
-            new_bufsize |= new_bufsize >> 16;
-            new_bufsize++;
-            pcap_src->cap_pipe_databuf = (unsigned char*)g_realloc(pcap_src->cap_pipe_databuf, new_bufsize);
-            pcap_src->cap_pipe_databuf_size = new_bufsize;
-        }
+        cap_pipe_ensure_databuf_size(pcap_src, bh->block_total_length);
 
         /* The record always has at least the block total length following the header */
         if (bh->block_total_length < sizeof(pcapng_block_header_t)+sizeof(uint32_t)) {
@@ -3450,6 +3465,12 @@ capture_loop_init_pcapng_output(capture_options *capture_opts, loop_data *ld,
         pcapng_block_header_t bh;
 
         memcpy(&bh, ld->saved_shb, sizeof(pcapng_block_header_t));
+
+        ws_assert(global_ld.pcapng_passthrough);
+        capture_src *pcap_src = g_array_index(ld->pcaps, capture_src *, 0);
+        if (pcap_src->cap_pipe_info.pcapng.byte_swapped) {
+            bh.block_total_length = GUINT32_SWAP_LE_BE(bh.block_total_length);
+        }
 
         successful = pcapng_write_block(ld->pdh, ld->saved_shb, bh.block_total_length, &ld->bytes_written, err);
 
@@ -4779,6 +4800,11 @@ capture_loop_get_errmsg(char *errmsg, size_t errmsglen, char *secondary_errmsg,
         break;
 #endif
 
+    /* XXX - pcapng_write_block can set EINVAL (for block length and data
+     * are not aligned to 4 bytes) or EBADMSG (block_total_length field
+     * is not the same at the start and end of the block) and those should
+     * have more user-friendly messages than what g_strerror provides. */
+
     default:
         if (is_close) {
             snprintf(errmsg, errmsglen,
@@ -5088,38 +5114,47 @@ set_80211_channel(const char *iface, const char *opt)
         ;
 
     ret = ws80211_init();
-    if (ret != WS80211_INIT_OK) {
-        if (ret == WS80211_INIT_NOT_SUPPORTED)
+    if (ret != WS80211_OK) {
+        if (ret == WS80211_ERROR_NOT_SUPPORTED)
             cmdarg_err("Setting 802.11 channels is not supported on this platform");
-        else
-            cmdarg_err("Failed to init ws80211: %s", g_strerror(abs(ret)));
-        ret = 2;
+        else if (ret == WS80211_ERROR)
+            cmdarg_err("Failed to init ws80211: %s", ws80211_geterror(ret));
+        ret = WS_EXIT_INIT_FAILED;
         goto out;
     }
 
     if (options[0])
-        freq = get_nonzero_uint32(options[0], "802.11 channel frequency");
+        if (!get_nonzero_uint32(options[0], "802.11 channel frequency", &freq)) {
+            ret = WS_EXIT_INVALID_OPTION;
+            goto out;
+        }
 
     if (args >= 1 && options[1]) {
         type = ws80211_str_to_chan_type(options[1]);
         if (type == -1) {
             cmdarg_err("\"%s\" is not a valid 802.11 channel type", options[1]);
-            ret = EINVAL;
+            ret = WS_EXIT_INVALID_OPTION;
             goto out;
         }
     }
 
     if (args >= 2 && options[2])
-        center_freq1 = get_nonzero_uint32(options[2], "VHT center frequency");
+        if (!get_nonzero_uint32(options[2], "VHT center frequency", &center_freq1)) {
+            ret = WS_EXIT_INVALID_OPTION;
+            goto out;
+        }
 
     if (args >= 3 && options[3])
-        center_freq2 = get_nonzero_uint32(options[3], "VHT center frequency 2");
+        if (!get_nonzero_uint32(options[3], "VHT center frequency 2", &center_freq2)) {
+            ret = WS_EXIT_INVALID_OPTION;
+            goto out;
+        }
 
     ret = ws80211_set_freq(iface, freq, type, center_freq1, center_freq2);
 
     if (ret) {
-        cmdarg_err("%d: Failed to set channel: %s\n", abs(ret), g_strerror(abs(ret)));
-        ret = 2;
+        cmdarg_err("Failed to set channel: %s", ws80211_geterror(ret));
+        ret = WS_EXIT_INVALID_OPTION;
         goto out;
     }
 
@@ -5163,6 +5198,7 @@ main(int argc, char *argv[])
         {"help", ws_no_argument, NULL, 'h'},
         {"version", ws_no_argument, NULL, 'v'},
         LONGOPT_CAPTURE_COMMON
+        LONGOPT_WSLOG
         {"ifname", ws_required_argument, NULL, LONGOPT_IFNAME},
         {"ifdescr", ws_required_argument, NULL, LONGOPT_IFDESCR},
         {"capture-comment", ws_required_argument, NULL, LONGOPT_CAPTURE_COMMENT},
@@ -5172,6 +5208,23 @@ main(int argc, char *argv[])
 #endif
         {0, 0, 0, 0 }
     };
+
+#ifdef HAVE_PCAP_REMOTE
+#define OPTSTRING_r "r"
+#define OPTSTRING_u "u"
+#else
+#define OPTSTRING_r
+#define OPTSTRING_u
+#endif
+
+#ifdef HAVE_PCAP_SETSAMPLING
+#define OPTSTRING_m "m:"
+#else
+#define OPTSTRING_m
+#endif
+
+#define OPTSTRING OPTSTRING_CAPTURE_COMMON "C:dghk:" OPTSTRING_m "MN:nPqQ" OPTSTRING_r "St" OPTSTRING_u "vw:Z:"
+    static const char optstring[] = OPTSTRING;
 
     bool              arg_error             = false;
 
@@ -5191,9 +5244,6 @@ main(int argc, char *argv[])
     int               status, run_once_args = 0;
     int               i;
     unsigned          j;
-#if defined(__APPLE__) && defined(__LP64__)
-    struct utsname    osinfo;
-#endif
     GString          *str;
 
     /* Set the program name. */
@@ -5231,13 +5281,15 @@ main(int argc, char *argv[])
             machine_readable = true;  /* request machine-readable output */
             i++;
             if (i >= argc) {
-                exit_main(1);
+                exit_main();
+                return WS_EXIT_INVALID_OPTION;
             }
 
             if (strcmp(argv[i], SIGNAL_PIPE_CTRL_ID_NONE) != 0) {
                 // get_positive_int calls cmdarg_err
                 if (!ws_strtoi(argv[i], NULL, &sync_pipe_fd) || sync_pipe_fd <= 0) {
-                    exit_main(1);
+                    exit_main();
+                    return WS_EXIT_INVALID_OPTION;
                 }
 #ifdef _WIN32
                 /* On UN*X the fd is the same when we fork + exec.
@@ -5271,7 +5323,7 @@ main(int argc, char *argv[])
 #endif
 
     /* Early logging command-line initialization. */
-    ws_log_parse_args(&argc, argv, vcmdarg_err, 1);
+    ws_log_parse_args(&argc, argv, optstring, long_options, vcmdarg_err, WS_EXIT_INVALID_OPTION);
 
 #if DEBUG_CHILD_DUMPCAP
     /* Assume that if we're specially compiled with dumpcap debugging
@@ -5306,44 +5358,6 @@ main(int argc, char *argv[])
     ws_init_version_info("Dumpcap", gather_dumpcap_compiled_info,
                          gather_dumpcap_runtime_info);
 
-#ifdef HAVE_PCAP_REMOTE
-#define OPTSTRING_r "r"
-#define OPTSTRING_u "u"
-#else
-#define OPTSTRING_r
-#define OPTSTRING_u
-#endif
-
-#ifdef HAVE_PCAP_SETSAMPLING
-#define OPTSTRING_m "m:"
-#else
-#define OPTSTRING_m
-#endif
-
-#define OPTSTRING OPTSTRING_CAPTURE_COMMON "C:dghk:" OPTSTRING_m "MN:nPqQ" OPTSTRING_r "St" OPTSTRING_u "vw:Z:"
-
-#if defined(__APPLE__) && defined(__LP64__)
-    /*
-     * Is this Mac OS X 10.6.0, 10.6.1, 10.6.3, or 10.6.4?  If so, we need
-     * a bug workaround - timeouts less than 1 second don't work with libpcap
-     * in 64-bit code.  (The bug was introduced in 10.6, fixed in 10.6.2,
-     * re-introduced in 10.6.3, not fixed in 10.6.4, and fixed in 10.6.5.
-     * The problem is extremely unlikely to be reintroduced in a future
-     * release.)
-     */
-    if (uname(&osinfo) == 0) {
-        /*
-         * {Mac} OS X/macOS 10.x uses Darwin {x+4}.0.0; 10.x.y uses Darwin
-         * {x+4}.y.0 (except that 10.6.1 appears to have a uname version
-         * number of 10.0.0, not 10.1.0 - go figure).
-         */
-        if (strcmp(osinfo.release, "10.0.0") == 0 ||    /* 10.6, 10.6.1 */
-            strcmp(osinfo.release, "10.3.0") == 0 ||    /* 10.6.3 */
-            strcmp(osinfo.release, "10.4.0") == 0)              /* 10.6.4 */
-            need_timeout_workaround = true;
-    }
-#endif
-
     /* Initialize the pcaps list and IDBs */
     global_ld.pcaps = g_array_new(FALSE, FALSE, sizeof(capture_src *));
     /* Assume, for now, that there will be only one input, which is pcapng. */
@@ -5359,7 +5373,8 @@ main(int argc, char *argv[])
         g_free(err_msg);
         ws_log(LOG_DOMAIN_CAPCHILD, LOG_LEVEL_ERROR,
                           "%s", please_report_bug());
-        exit_main(1);
+        exit_main();
+        return EXIT_FAILURE;
     }
 
 #ifdef _WIN32
@@ -5500,17 +5515,17 @@ main(int argc, char *argv[])
     global_capture_opts.capture_child = capture_child;
 
     /* Now get our args */
-    while ((opt = ws_getopt_long(argc, argv, OPTSTRING, long_options, NULL)) != -1) {
+    while ((opt = ws_getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
         switch (opt) {
         case 'h':        /* Print help and exit */
             show_help_header("Capture network packets and dump them into a pcapng or pcap file.");
             print_usage(stdout);
-            exit_main(0);
-            break;
+            exit_main();
+            return EXIT_SUCCESS;
         case 'v':        /* Show version and exit */
             show_version();
-            exit_main(0);
-            break;
+            exit_main();
+            return EXIT_SUCCESS;
         case LONGOPT_APPLICATION_FLAVOR:
             set_application_flavor(application_name_to_flavor(ws_optarg));
             break;
@@ -5544,7 +5559,8 @@ main(int argc, char *argv[])
         case LONGOPT_UPDATE_INTERVAL:      /* sync pipe update interval */
             status = capture_opts_add_opt(&global_capture_opts, opt, ws_optarg);
             if (status != 0) {
-                exit_main(status);
+                exit_main();
+                return status;
             }
             break;
             /*** hidden option: Wireshark child mode (using binary output messages) ***/
@@ -5556,7 +5572,8 @@ main(int argc, char *argv[])
                 interface_opts->ifname = g_strdup(ws_optarg);
             } else {
                 cmdarg_err("--ifname must be specified after a -i option");
-                exit_main(1);
+                exit_main();
+                return WS_EXIT_INVALID_OPTION;
             }
             break;
         case LONGOPT_IFDESCR:
@@ -5567,7 +5584,8 @@ main(int argc, char *argv[])
                 interface_opts->descr = g_strdup(ws_optarg);
             } else {
                 cmdarg_err("--ifdescr must be specified after a -i option");
-                exit_main(1);
+                exit_main();
+                return WS_EXIT_INVALID_OPTION;
             }
             break;
         case LONGOPT_CAPTURE_COMMENT:  /* capture comment */
@@ -5587,7 +5605,8 @@ main(int argc, char *argv[])
             if (!capture_child) {
                 /* We have already checked for -Z at the very beginning. */
                 cmdarg_err("--signal-pipe may only be specified with -Z");
-                exit_main(1);
+                exit_main();
+                return WS_EXIT_INVALID_OPTION;
             }
             /*
              * ws_optarg = the control ID, aka the PPID, currently used for the
@@ -5601,7 +5620,8 @@ main(int argc, char *argv[])
                 if (sig_pipe_handle == INVALID_HANDLE_VALUE) {
                     ws_info("Signal pipe: Unable to open %s.  Dead parent?",
                           sig_pipe_name);
-                    exit_main(1);
+                    exit_main();
+                    return WS_EXIT_INVALID_OPTION;
                 }
             }
             break;
@@ -5661,12 +5681,18 @@ main(int argc, char *argv[])
             machine_readable = true;
             break;
         case 'C':
-            pcap_queue_byte_limit = get_positive_int(ws_optarg, "byte_limit");
+            if (!get_positive_int64(ws_optarg, "byte_limit", &pcap_queue_byte_limit))
+                arg_error = true;
             break;
         case 'N':
-            pcap_queue_packet_limit = get_positive_int(ws_optarg, "packet_limit");
+            if (!get_positive_int64(ws_optarg, "packet_limit", &pcap_queue_packet_limit))
+                arg_error = true;
             break;
         default:
+            /* wslog arguments are okay */
+            if (ws_log_is_wslog_arg(opt))
+                break;
+
             cmdarg_err("Invalid Option: %s", argv[ws_optind-1]);
             /* FALLTHROUGH */
         case '?':        /* Bad flag - print usage message */
@@ -5705,21 +5731,25 @@ main(int argc, char *argv[])
     if (arg_error) {
         if (ws_optopt == 'F') {
             capture_opts_list_file_types();
-            exit_main(1);
+            exit_main();
+            return WS_EXIT_INVALID_OPTION;
         }
         print_usage(stderr);
-        exit_main(1);
+        exit_main();
+        return WS_EXIT_INVALID_OPTION;
     }
 
     if (run_once_args > 1) {
         cmdarg_err("Only one of -D, -L, -d, -k or -S may be supplied.");
-        exit_main(1);
+        exit_main();
+        return WS_EXIT_INVALID_OPTION;
     } else if (run_once_args == 1) {
         /* We're supposed to print some information, rather than
            to capture traffic; did they specify a ring buffer option? */
         if (global_capture_opts.multi_files_on) {
             cmdarg_err("Ring buffer requested, but a capture isn't being done.");
-            exit_main(1);
+            exit_main();
+            return WS_EXIT_INVALID_OPTION;
         }
     } else {
         /* We're supposed to capture traffic; */
@@ -5734,7 +5764,8 @@ main(int argc, char *argv[])
             (!global_capture_opts.use_pcapng || global_capture_opts.multi_files_on)) {
             /* XXX - for ringbuffer, should we apply the comments to each file? */
             cmdarg_err("Capture comments can only be set if we capture into a single pcapng file.");
-            exit_main(1);
+            exit_main();
+            return WS_EXIT_INVALID_OPTION;
         }
 
         /* Was the ring buffer option specified and, if so, does it make sense? */
@@ -5760,7 +5791,8 @@ main(int argc, char *argv[])
             }
             if (global_capture_opts.has_file_duration && global_capture_opts.has_file_interval) {
                 cmdarg_err("Ring buffer file duration and interval can't be used at the same time.");
-                exit_main(1);
+                exit_main();
+                return WS_EXIT_INVALID_OPTION;
             }
         }
     }
@@ -5786,12 +5818,14 @@ main(int argc, char *argv[])
                  */
                 if (!machine_readable) {
                     cmdarg_err("There are no interfaces on which a capture can be done");
-                    exit_main(2);
+                    exit_main();
+                    return WS_EXIT_INVALID_INTERFACE;
                 }
             } else {
                 cmdarg_err("%s", err_str);
                 g_free(err_str);
-                exit_main(2);
+                exit_main();
+                return WS_EXIT_INVALID_INTERFACE;
             }
         }
 
@@ -5861,7 +5895,8 @@ main(int argc, char *argv[])
         }
         free_interface_list(if_list);
         if (!print_statistics) {
-            exit_main(status);
+            exit_main();
+            return status;
         }
     }
 
@@ -5871,7 +5906,8 @@ main(int argc, char *argv[])
      */
     if (print_statistics) {
         status = print_statistics_loop(machine_readable);
-        exit_main(status);
+        exit_main();
+        return status;
     }
 
     if (set_chan) {
@@ -5879,12 +5915,14 @@ main(int argc, char *argv[])
 
         if (global_capture_opts.ifaces->len != 1) {
             cmdarg_err("Need one interface");
-            exit_main(2);
+            exit_main();
+            return WS_EXIT_INVALID_INTERFACE;
         }
 
         interface_opts = &g_array_index(global_capture_opts.ifaces, interface_options, 0);
         status = set_80211_channel(interface_opts->name, set_chan_arg);
-        exit_main(status);
+        exit_main();
+        return status;
     }
 
     /*
@@ -5894,7 +5932,8 @@ main(int argc, char *argv[])
     status = capture_opts_default_iface_if_necessary(&global_capture_opts, NULL);
     if (status != 0) {
         /* cmdarg_err() already called .... */
-        exit_main(status);
+        exit_main();
+        return status;
     }
 
     if (caps_queries) {
@@ -5973,7 +6012,8 @@ main(int argc, char *argv[])
                                     get_pcap_failure_secondary_error_message(open_status, open_status_str));
                     }
                     g_free(open_status_str);
-                    exit_main(2);
+                    exit_main();
+                    return WS_EXIT_INVALID_INTERFACE;
                 }
 
                 /* XXX: We might want to print also the interface name */
@@ -5985,7 +6025,8 @@ main(int argc, char *argv[])
                     break;
             }
         }
-        exit_main(status);
+        exit_main();
+        return status;
     }
 
     for (j = 0; j < global_capture_opts.ifaces->len; j++) {
@@ -5996,7 +6037,9 @@ main(int argc, char *argv[])
             interface_opts->timestamp_type_id = pcap_tstamp_type_name_to_val(interface_opts->timestamp_type);
             if (interface_opts->timestamp_type_id < 0) {
                 cmdarg_err("Invalid argument to option: --time-stamp-type=%s", interface_opts->timestamp_type);
-                exit_main(1);
+                exit_main();
+                return WS_EXIT_INVALID_OPTION;
+
             }
         }
     }
@@ -6066,7 +6109,8 @@ main(int argc, char *argv[])
 
     if (print_bpf_code) {
         show_filter_code(&global_capture_opts);
-        exit_main(0);
+        exit_main();
+        return EXIT_SUCCESS;
     }
 
     /* We're supposed to do a capture.  Process the ring buffer arguments. */
@@ -6078,12 +6122,13 @@ main(int argc, char *argv[])
     /* Now start the capture. */
     if (capture_loop_start(&global_capture_opts, &stats_known, &stats) == true) {
         /* capture ok */
-        exit_main(0);
-    } else {
-        /* capture failed */
-        exit_main(1);
+        exit_main();
+        return EXIT_SUCCESS;
     }
-    return 0; /* never here, make compiler happy */
+
+    /* capture failed */
+    exit_main();
+    return EXIT_FAILURE;
 }
 
 static void

@@ -11,7 +11,7 @@
 
 #include <string.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 #include "logcat.h"
@@ -32,7 +32,7 @@ void register_logcat_text(void);
 
 /* Returns '?' for invalid priorities */
 static char get_priority(const uint8_t priority) {
-    static char priorities[] = "??VDIWEFS";
+    static const char priorities[] = "??VDIWEFS";
 
     if (priority >= (uint8_t) sizeof(priorities))
         return '?';
@@ -181,9 +181,8 @@ static void get_time(char *string, wtap_rec *rec) {
     }
 }
 
-static bool logcat_text_read_packet(FILE_T fh, wtap_rec *rec,
+static bool logcat_text_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
         int file_type) {
-    int8_t *pd;
     char *cbuff;
     char *ret = NULL;
 
@@ -223,13 +222,11 @@ static bool logcat_text_read_packet(FILE_T fh, wtap_rec *rec,
         g_free(lbuff);
     }
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, wth->file_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->rec_header.packet_header.caplen = (uint32_t)strlen(cbuff);
     rec->rec_header.packet_header.len = rec->rec_header.packet_header.caplen;
 
-    ws_buffer_assure_space(&rec->data, rec->rec_header.packet_header.caplen + 1);
-    pd = ws_buffer_start_ptr(&rec->data);
     if ((logcat_text_time_file_type_subtype == file_type
             || logcat_text_threadtime_file_type_subtype == file_type
             || logcat_text_long_file_type_subtype == file_type)
@@ -244,7 +241,7 @@ static bool logcat_text_read_packet(FILE_T fh, wtap_rec *rec,
         rec->ts.secs = (time_t) 0;
         rec->ts.nsecs = 0;
     }
-    memcpy(pd, cbuff, rec->rec_header.packet_header.caplen + 1);
+    ws_buffer_append(&rec->data, (uint8_t*)cbuff, rec->rec_header.packet_header.caplen + 1);
     g_free(cbuff);
     return true;
 }
@@ -253,7 +250,7 @@ static bool logcat_text_read(wtap *wth, wtap_rec *rec,
         int *err _U_ , char **err_info _U_, int64_t *data_offset) {
     *data_offset = file_tell(wth->fh);
 
-    return logcat_text_read_packet(wth->fh, rec, wth->file_type_subtype);
+    return logcat_text_read_packet(wth, wth->fh, rec, wth->file_type_subtype);
 }
 
 static bool logcat_text_seek_read(wtap *wth, int64_t seek_off,
@@ -261,7 +258,7 @@ static bool logcat_text_seek_read(wtap *wth, int64_t seek_off,
     if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) == -1)
         return false;
 
-    if (!logcat_text_read_packet(wth->random_fh, rec, wth->file_type_subtype)) {
+    if (!logcat_text_read_packet(wth, wth->random_fh, rec, wth->file_type_subtype)) {
         if (*err == 0)
             *err = WTAP_ERR_SHORT_READ;
         return false;
@@ -432,7 +429,7 @@ static bool logcat_text_dump_text(wtap_dumper *wdh, const wtap_rec *rec,
     int *err, char **err_info)
 {
     char                           *buf;
-    int                             length;
+    unsigned                        length;
     char                            priority;
     const struct logger_entry      *log_entry;
     const struct logger_entry_v2   *log_entry_v2;
@@ -454,6 +451,7 @@ static bool logcat_text_dump_text(wtap_dumper *wdh, const wtap_rec *rec,
     /* We can only write packet records. */
     if (rec->rec_type != REC_TYPE_PACKET) {
         *err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+        *err_info = wtap_unwritable_rec_type_err_string(rec);
         return false;
     }
 
@@ -471,22 +469,32 @@ static bool logcat_text_dump_text(wtap_dumper *wdh, const wtap_rec *rec,
     switch (wdh->file_encap) {
     case WTAP_ENCAP_WIRESHARK_UPPER_PDU:
         {
-            int skipped_length;
+            unsigned skipped_length;
 
-            skipped_length = logcat_exported_pdu_length(pd);
+            length = rec->rec_header.packet_header.caplen;
+            if (!logcat_exported_pdu_length(pd, length, &skipped_length) ||
+                ckd_sub(&length, length, skipped_length)) {
+                *err = WTAP_ERR_BAD_FILE;
+                return false;
+            }
             pd += skipped_length;
 
-            if (!wtap_dump_file_write(wdh, (const char*) pd, rec->rec_header.packet_header.caplen - skipped_length, err)) {
+            if (!wtap_dump_file_write(wdh, (const char*) pd, length, err)) {
                 return false;
             }
         }
         break;
     case WTAP_ENCAP_LOGCAT:
-        /* Skip EXPORTED_PDU*/
+        length = rec->rec_header.packet_header.caplen;
         if (wdh->file_encap == WTAP_ENCAP_WIRESHARK_UPPER_PDU) {
-            int skipped_length;
+            /* Skip EXPORTED_PDU - XXX - This is unreachable. */
+            unsigned skipped_length;
 
-            skipped_length = logcat_exported_pdu_length(pd);
+            if (!logcat_exported_pdu_length(pd, length, &skipped_length) ||
+                ckd_sub(&length, length, skipped_length)) {
+                *err = WTAP_ERR_BAD_FILE;
+                return false;
+            }
             pd += skipped_length;
 
             logcat_version = buffered_detect_version(pd);

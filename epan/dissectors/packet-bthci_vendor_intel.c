@@ -594,9 +594,9 @@ dissect_bthci_vendor_intel(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
         event_code = tvb_get_uint8(tvb, offset);
 
         if (try_val_to_str(event_code, intel_event_code_vals))
-            description = val_to_str(event_code, intel_event_code_vals, "Unknown 0x%08x");
+            description = val_to_str(pinfo->pool, event_code, intel_event_code_vals, "Unknown 0x%08x");
         else
-            description = val_to_str_ext(event_code, &bthci_evt_evt_code_vals_ext, "Unknown 0x%08x");
+            description = val_to_str_ext(pinfo->pool, event_code, &bthci_evt_evt_code_vals_ext, "Unknown 0x%08x");
         col_append_str(pinfo->cinfo, COL_INFO, description);
         proto_tree_add_item(main_tree, hf_intel_event_code, tvb, offset, 1, ENC_NA);
         offset += 1;
@@ -711,31 +711,35 @@ dissect_bthci_vendor_intel(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
                 }
                 break;
             case 0x0005: /* Read Version */
-                proto_tree_add_item(main_tree, hf_intel_hardware_platform, tvb, offset, length, ENC_NA);
+                /* XXX - There appears to be a TLV based format in new devices,
+                 * distinguishable via length:
+                 * https://github.com/bluez/bluez/blob/00dfd32af38ac950db32af0acfa4193511f718d9/monitor/intel.c#L386-L389
+                 */
+                proto_tree_add_item(main_tree, hf_intel_hardware_platform, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_hardware_variant, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_hardware_variant, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_hardware_revision, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_hardware_revision, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_firmware_variant, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_firmware_variant, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_firmware_revision, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_firmware_revision, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_firmware_build_version_nn, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_firmware_build_version_nn, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_firmware_build_version_cw, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_firmware_build_version_cw, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_firmware_build_version_yy, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_firmware_build_version_yy, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
-                proto_tree_add_item(main_tree, hf_intel_firmware_patch, tvb, offset, length, ENC_NA);
+                proto_tree_add_item(main_tree, hf_intel_firmware_patch, tvb, offset, 1, ENC_NA);
                 offset += 1;
 
                 break;

@@ -135,7 +135,7 @@ static bool process_packet(capture_file *cf, epan_dissect_t *edt, int64_t offset
                                wtap_rec *rec);
 static void show_print_file_io_error(int err);
 
-static void protocolinfo_init(char *field);
+static bool protocolinfo_init(char *field);
 static bool parse_field_string_format(char *format);
 
 typedef enum {
@@ -421,6 +421,7 @@ main(int argc, char *argv[])
       {"version", ws_no_argument, NULL, 'v'},
       LONGOPT_DISSECT_COMMON
       LONGOPT_READ_CAPTURE_COMMON
+      LONGOPT_WSLOG
       {0, 0, 0, 0 }
     };
 
@@ -447,7 +448,7 @@ main(int argc, char *argv[])
     ws_log_init(vcmdarg_err);
 
     /* Early logging command-line initialization. */
-    ws_log_parse_args(&argc, argv, vcmdarg_err, WS_EXIT_INVALID_OPTION);
+    ws_log_parse_args(&argc, argv, optstring, long_options, vcmdarg_err, WS_EXIT_INVALID_OPTION);
 
     ws_noisy("Finished log init and parsing command line log arguments");
 
@@ -571,10 +572,9 @@ main(int argc, char *argv[])
                 break;
 #if !defined(_WIN32) && defined(RLIMIT_AS)
             case 'm':
-                limit.rlim_cur = get_positive_int(ws_optarg, "memory limit");
-                limit.rlim_max = get_positive_int(ws_optarg, "memory limit");
-
-                if(setrlimit(RLIMIT_AS, &limit) != 0) {
+                if (!get_uint32(ws_optarg, "memory limit", (uint32_t*)(&limit.rlim_cur)) ||
+                    !get_uint32(ws_optarg, "memory limit", (uint32_t*)(&limit.rlim_max)) ||
+                    (setrlimit(RLIMIT_AS, &limit) != 0)) {
                     cmdarg_err("setrlimit(RLIMIT_AS) failed: %s",
                                g_strerror(errno));
                     ret = WS_EXIT_INVALID_OPTION;
@@ -666,8 +666,12 @@ main(int argc, char *argv[])
                     goto clean_exit;
                 }
                 break;
-            default:
             case '?':        /* Bad flag - print usage message */
+            default:
+                /* wslog arguments are okay */
+                if (ws_log_is_wslog_arg(opt))
+                    break;
+
                 print_usage(stderr);
                 ret = WS_EXIT_INVALID_OPTION;
                 goto clean_exit;
@@ -683,7 +687,8 @@ main(int argc, char *argv[])
 
     /* Initialize our display fields */
     for (fc = 0; fc < disp_fields->len; fc++) {
-        protocolinfo_init((char *)g_ptr_array_index(disp_fields, fc));
+        if (!protocolinfo_init((char *)g_ptr_array_index(disp_fields, fc)))
+            return WS_EXIT_INVALID_OPTION;
     }
     g_ptr_array_free(disp_fields, TRUE);
     printf("\n");
@@ -862,7 +867,7 @@ raw_pipe_read(wtap_rec *rec, int *err, char **err_info, int64_t *data_offset) {
         ptr += bytes_read;
     }
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, encap);
     rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
     if (want_pcap_pkthdr) {
         rec->ts.secs = mem_hdr.ts.tv_sec;
@@ -876,8 +881,6 @@ raw_pipe_read(wtap_rec *rec, int *err, char **err_info, int64_t *data_offset) {
         rec->rec_header.packet_header.len = disk_hdr.orig_len;
     }
     bytes_needed = rec->rec_header.packet_header.caplen;
-
-    rec->rec_header.packet_header.pkt_encap = encap;
 
 #if 0
     printf("mem_hdr: %lu disk_hdr: %lu\n", sizeof(mem_hdr), sizeof(disk_hdr));
@@ -1042,7 +1045,7 @@ process_packet(capture_file *cf, epan_dissect_t *edt, int64_t offset,
 
     if (ferror(stdout)) {
         show_print_file_io_error(errno);
-        exit(2);
+        return false;
     }
 
     epan_dissect_reset(edt);
@@ -1259,7 +1262,7 @@ int g_cmd_line_index;
 /*
  * field must be persistent - we don't g_strdup() it below
  */
-static void
+static bool
 protocolinfo_init(char *field)
 {
     pci_t *rs;
@@ -1270,7 +1273,7 @@ protocolinfo_init(char *field)
     hfi=proto_registrar_get_byname(field);
     if(!hfi){
         fprintf(stderr, "rawshark: Field \"%s\" doesn't exist.\n", field);
-        exit(1);
+        return false;
     }
 
     field_display_to_string(hfi, hfibuf, sizeof(hfibuf));
@@ -1295,8 +1298,10 @@ protocolinfo_init(char *field)
         }
         g_free(rs);
 
-        exit(1);
+        return false;
     }
+
+    return true;
 }
 
 /*
@@ -1331,6 +1336,7 @@ parse_field_string_format(char *format) {
     while (pos < len) {
         if (format[pos] == '%') {
             if (pos >= (len-1)) { /* There should always be a following specifier character */
+                g_string_free(plain_s, TRUE);
                 return false;
             }
             pos++;
@@ -1352,6 +1358,7 @@ parse_field_string_format(char *format) {
                     g_string_append_c(plain_s, '%');
                     break;
                 default: /* Invalid format */
+                    g_string_free(plain_s, TRUE);
                     return false;
             }
         } else {
@@ -1402,6 +1409,9 @@ raw_epan_new(capture_file *cf)
         cap_file_provider_get_frame_ts,
         cap_file_provider_get_interface_name,
         cap_file_provider_get_interface_description,
+        NULL,
+        NULL,
+        NULL,
         NULL,
     };
 

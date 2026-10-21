@@ -155,7 +155,7 @@ static int hf_isakmp_notify_data_dpd_are_you_there;
 static int hf_isakmp_notify_data_dpd_are_you_there_ack;
 static int hf_isakmp_notify_data_unity_load_balance;
 static int hf_isakmp_notify_data_fortinet_network_overlay_id;
-static int hf_isakmp_notify_data_accepted_dh_group;
+static int hf_isakmp_notify_data_accepted_ke_method;
 static int hf_isakmp_notify_data_ipcomp_cpi;
 static int hf_isakmp_notify_data_ipcomp_transform_id;
 static int hf_isakmp_notify_data_auth_lifetime;
@@ -232,6 +232,7 @@ static int hf_isakmp_notify_data_3gpp_device_identity_type;
 static int hf_isakmp_notify_data_3gpp_device_identity_imei;
 static int hf_isakmp_notify_data_3gpp_device_identity_imeisv;
 
+static int hf_isakmp_notify_data_3gpp_emergency_call_mcc;
 static int hf_isakmp_notify_data_3gpp_emergency_call_numbers_len;
 static int hf_isakmp_notify_data_3gpp_emergency_call_numbers_spare;
 static int hf_isakmp_notify_data_3gpp_emergency_call_numbers_element_len;
@@ -305,7 +306,7 @@ static int hf_isakmp_trans_type;
 static int hf_isakmp_trans_encr;
 static int hf_isakmp_trans_prf;
 static int hf_isakmp_trans_integ;
-static int hf_isakmp_trans_dh;
+static int hf_isakmp_trans_ke;
 static int hf_isakmp_trans_esn;
 static int hf_isakmp_trans_id_v2;
 
@@ -330,7 +331,7 @@ static int hf_isakmp_cisco_frag_packetid;
 static int hf_isakmp_cisco_frag_seq;
 static int hf_isakmp_cisco_frag_last;
 
-static int hf_isakmp_key_exch_dh_group;
+static int hf_isakmp_key_exch_method;
 static int hf_isakmp_key_exch_data;
 static int hf_isakmp_eap_data;
 
@@ -1105,6 +1106,16 @@ static const value_string ike_attr_authmeth_china[] = {
   { 0,     NULL },
 };
 
+/* This value string is used both by IKEv1 Group Description (Value 4)
+ * and IKEv2 Transform Type 4, formerly "Diffie-Hellman Group (D-H)",
+ * renamed by RFC 9370 to "Key Exchange Method (KE)". Unlike other IKE
+ * registries, the two are compatible. 3-4 are assigned in IKEv1 and
+ * Reserved in IKEv2. 6-13 were reserved per draft-ipsec-ike-ecc-groups
+ * but that I-D expired without being adopted and they are deprecated
+ * in IKEv1 and Unassigned in IKEv2. All entries starting with 31 are
+ * defined for IKEv2 only. This value string prefers the defined value
+ * over unassigned values when the two registries differ. That may
+ * change as RFC 9395 deprecated IKEv1. */
 static const value_string dh_group[] = {
   { 0,  "UNDEFINED - 0" },
   { 1,  "Default 768-bit MODP group" },
@@ -1158,7 +1169,7 @@ static const value_string ike_attr_grp_type[] = {
 #define TF_IKE2_ENCR    1
 #define TF_IKE2_PRF     2
 #define TF_IKE2_INTEG   3
-#define TF_IKE2_DH      4
+#define TF_IKE2_KE      4
 #define TF_IKE2_ESN     5
 #define TF_IKE2_ADDKE1  6
 #define TF_IKE2_ADDKE2  7
@@ -1173,7 +1184,7 @@ static const range_string transform_ike2_type[] = {
   { TF_IKE2_ENCR,TF_IKE2_ENCR,  "Encryption Algorithm (ENCR)" },
   { TF_IKE2_PRF,TF_IKE2_PRF,    "Pseudo-random Function (PRF)"},
   { TF_IKE2_INTEG,TF_IKE2_INTEG,"Integrity Algorithm (INTEG)"},
-  { TF_IKE2_DH,TF_IKE2_DH,      "Diffie-Hellman Group (D-H)"},
+  { TF_IKE2_KE,TF_IKE2_KE,      "Key Exchange Method (KE)"},
   { TF_IKE2_ESN,TF_IKE2_ESN,    "Extended Sequence Numbers (ESN)"},
   { TF_IKE2_ADDKE1,TF_IKE2_ADDKE1, "ADDKE1"},
   { TF_IKE2_ADDKE2,TF_IKE2_ADDKE2, "ADDKE2"},
@@ -1420,9 +1431,10 @@ static const range_string notifmsg_v2_type[] = {
   { 42,42,      "USE_ASSIGNED_HoA" },                           /* RFC5026 */
   { 43,43,      "TEMPORARY_FAILURE" },                          /* RFC5996 */
   { 44,44,      "CHILD_SA_NOT_FOUND" },                         /* RFC5996 */
-  { 45,45,      "INVALID_GROUP_ID" },                           /* draft-yeung-g-ikev2 */
-  { 46,46,      "CHILD_SA_NOT_FOUND" },                         /* draft-yeung-g-ikev2 */
-  { 47,8191,    "RESERVED TO IANA - Error types" },
+  { 45,45,      "INVALID_GROUP_ID" },                           /* RFC9838 */
+  { 46,46,      "CHILD_SA_NOT_FOUND" },                         /* RFC9838 */
+  { 47,47,      "STATE_NOT_FOUND" },                            /* RFC9370 */
+  { 48,8191,    "RESERVED TO IANA - Error types" },
   { 8192,16383,         "Private Use - Errors" },
   { 16384,16384,        "INITIAL_CONTACT" },
   { 16385,16385,        "SET_WINDOW_SIZE" },
@@ -2438,7 +2450,7 @@ static void dissect_sig(tvbuff_t *, int, int, proto_tree *);
 static void dissect_nonce(tvbuff_t *, int, int, proto_tree *);
 static void dissect_notif(tvbuff_t *, packet_info *, int, int, proto_tree *, int);
 static void dissect_delete(tvbuff_t *, int, int, proto_tree *, int);
-static int dissect_vid(tvbuff_t *, int, int, proto_tree *);
+static int dissect_vid(tvbuff_t *, packet_info*, int, int, proto_tree *);
 static void dissect_config(tvbuff_t *, packet_info *, int, int, proto_tree *, int, bool);
 static void dissect_sa_kek(tvbuff_t *, packet_info *, int, int, proto_tree *);
 static void dissect_sa_tek(tvbuff_t *, packet_info *, int, int, proto_tree *);
@@ -2446,7 +2458,7 @@ static void dissect_key_download(tvbuff_t *, packet_info *, int, int, proto_tree
 static void dissect_sequence(tvbuff_t *, packet_info *, int, int, proto_tree *);
 static void dissect_nat_discovery(tvbuff_t *, int, int, proto_tree * );
 static void dissect_nat_original_address(tvbuff_t *, int, int, proto_tree *, int );
-static void dissect_ts_payload(tvbuff_t *, int, int, proto_tree *);
+static void dissect_ts_payload(tvbuff_t *, packet_info*, int, int, proto_tree *);
 static tvbuff_t * dissect_enc(tvbuff_t *, int, int, proto_tree *, packet_info *, uint8_t, bool, void*, bool);
 static void dissect_eap(tvbuff_t *, int, int, proto_tree *, packet_info *);
 static void dissect_gspm(tvbuff_t *, int, int, proto_tree *);
@@ -3245,7 +3257,7 @@ dissect_payloads(tvbuff_t *tvb, proto_tree *tree,
             break;
           case PLOAD_IKE_VID:
           case PLOAD_IKE2_V:
-            dissect_vid(tvb, offset + 4, payload_length - 4, ntree);
+            dissect_vid(tvb, pinfo, offset + 4, payload_length - 4, ntree);
             break;
           case PLOAD_IKE_A:
           case PLOAD_IKE2_CP:
@@ -3268,7 +3280,7 @@ dissect_payloads(tvbuff_t *tvb, proto_tree *tree,
             break;
           case PLOAD_IKE2_TSI:
           case PLOAD_IKE2_TSR:
-            dissect_ts_payload(tvb, offset + 4, payload_length - 4, ntree);
+            dissect_ts_payload(tvb, pinfo, offset + 4, payload_length - 4, ntree);
             break;
           case PLOAD_IKE2_SK:
             if(isakmp_version == 2)
@@ -3448,10 +3460,10 @@ dissect_isakmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _
 
     if(isakmp_version == 1) {
         proto_tree_add_item(isakmp_tree,  hf_isakmp_exchangetype_v1, tvb, offset, 1, ENC_BIG_ENDIAN);
-        col_add_str(pinfo->cinfo, COL_INFO,val_to_str(hdr.exch_type, exchange_v1_type, "Unknown %d"));
+        col_add_str(pinfo->cinfo, COL_INFO,val_to_str(pinfo->pool, hdr.exch_type, exchange_v1_type, "Unknown %d"));
     } else if (isakmp_version == 2){
         proto_tree_add_item(isakmp_tree,  hf_isakmp_exchangetype_v2, tvb, offset, 1, ENC_BIG_ENDIAN);
-        col_add_str(pinfo->cinfo, COL_INFO,val_to_str(hdr.exch_type, exchange_v2_type, "Unknown %d"));
+        col_add_str(pinfo->cinfo, COL_INFO,val_to_str(pinfo->pool, hdr.exch_type, exchange_v2_type, "Unknown %d"));
     }
     offset += 1;
 
@@ -3750,7 +3762,7 @@ dissect_proposal(tvbuff_t *tvb, packet_info *pinfo, int offset, int length, prot
  * @param [out] subtree         The subtree created for this attribute.
  */
 static void
-dissect_attribute_header(tvbuff_t *tvb, proto_tree *tree, int offset,
+dissect_attribute_header(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int offset,
                          attribute_common_fields hf_attr, const range_string *attr_typenames,
                          unsigned *headerlen, unsigned *value_len, unsigned *attr_type,
                          proto_item **attr_item, proto_tree **subtree)
@@ -3774,7 +3786,7 @@ dissect_attribute_header(tvbuff_t *tvb, proto_tree *tree, int offset,
   }
 
   *attr_item = proto_tree_add_item(tree, hf_attr.all, tvb, offset, *headerlen + *value_len, ENC_NA);
-  attr_typename = rval_to_str(*attr_type, attr_typenames, "Unknown Attribute Type (%02d)");
+  attr_typename = rval_to_str_wmem(pinfo->pool, *attr_type, attr_typenames, "Unknown Attribute Type (%02d)");
   proto_item_append_text(*attr_item, " (t=%d,l=%d): %s", *attr_type, *value_len, attr_typename);
 
   *subtree = proto_item_add_subtree(*attr_item, ett_isakmp_attr);
@@ -3796,7 +3808,7 @@ dissect_rohc_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int 
   proto_item *attr_item;
   proto_tree *attr_tree;
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_notify_data_rohc_attr, rohc_attr_type,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -3924,7 +3936,7 @@ dissect_ipsec_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int
   proto_item *attr_item;
   proto_tree *attr_tree;
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_ipsec_attr, ipsec_attr_type,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -3940,22 +3952,22 @@ dissect_ipsec_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int
   switch(attr_type) {
     case IPSEC_ATTR_LIFE_TYPE:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_life_type, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
       break;
     case IPSEC_ATTR_LIFE_DURATION:
       dissect_life_duration(tvb, attr_tree, attr_item, hf_isakmp_ipsec_attr_life_duration_uint32, hf_isakmp_ipsec_attr_life_duration_uint64, hf_isakmp_ipsec_attr_life_duration_bytes, offset, value_len);
       break;
     case IPSEC_ATTR_GROUP_DESC:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_group_description, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), dh_group, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), dh_group, "Unknown %d"));
       break;
     case IPSEC_ATTR_ENCAP_MODE:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_encap_mode, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ipsec_attr_encap_mode, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ipsec_attr_encap_mode, "Unknown %d"));
       break;
     case IPSEC_ATTR_AUTH_ALGORITHM:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_auth_algorithm, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ipsec_attr_auth_algo, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ipsec_attr_auth_algo, "Unknown %d"));
       break;
     case IPSEC_ATTR_KEY_LENGTH:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_key_length, tvb, offset, value_len, ENC_BIG_ENDIAN);
@@ -3973,11 +3985,11 @@ dissect_ipsec_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int
       break;
     case IPSEC_ATTR_ECN_TUNNEL:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_ecn_tunnel, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ipsec_attr_ecn_tunnel, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ipsec_attr_ecn_tunnel, "Unknown %d"));
       break;
     case IPSEC_ATTR_EXT_SEQ_NBR:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_ext_seq_nbr, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ipsec_attr_ext_seq_nbr, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ipsec_attr_ext_seq_nbr, "Unknown %d"));
       break;
     case IPSEC_ATTR_AUTH_KEY_LENGTH:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_auth_key_length, tvb, offset, value_len, ENC_BIG_ENDIAN);
@@ -3989,12 +4001,12 @@ dissect_ipsec_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int
 
     case IPSEC_ATTR_ADDR_PRESERVATION:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_addr_preservation, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ipsec_attr_addr_preservation, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ipsec_attr_addr_preservation, "Unknown %d"));
       break;
 
     case IPSEC_ATTR_SA_DIRECTION:
       proto_tree_add_item(attr_tree, hf_isakmp_ipsec_attr_sa_direction, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ipsec_attr_sa_direction, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ipsec_attr_sa_direction, "Unknown %d"));
     default:
       /* No Default Action */
       break;
@@ -4011,7 +4023,7 @@ dissect_resp_lifetime_ipsec_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_t
   proto_item *attr_item;
   proto_tree *attr_tree;
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_resp_lifetime_ipsec_attr, ipsec_attr_type,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -4027,7 +4039,7 @@ dissect_resp_lifetime_ipsec_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_t
   switch(attr_type) {
     case IPSEC_ATTR_LIFE_TYPE:
       proto_tree_add_item(attr_tree, hf_isakmp_resp_lifetime_ipsec_attr_life_type, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
       break;
     case IPSEC_ATTR_LIFE_DURATION:
       dissect_life_duration(tvb, attr_tree, attr_item, hf_isakmp_resp_lifetime_ipsec_attr_life_duration_uint32, hf_isakmp_resp_lifetime_ipsec_attr_life_duration_uint64, hf_isakmp_resp_lifetime_ipsec_attr_life_duration_bytes, offset, value_len);
@@ -4048,7 +4060,7 @@ dissect_ike_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int o
   proto_item *attr_item;
   proto_tree *attr_tree;
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_ike_attr, ike_attr_type,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -4064,12 +4076,12 @@ dissect_ike_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int o
   switch(attr_type) {
     case IKE_ATTR_ENCRYPTION_ALGORITHM:
       proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_encryption_algorithm, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ike_attr_enc_algo, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ike_attr_enc_algo, "Unknown %d"));
       if (decr) decr->ike_encr_alg = tvb_get_ntohs(tvb, offset);
       break;
     case IKE_ATTR_HASH_ALGORITHM:
       proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_hash_algorithm, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ike_attr_hash_algo, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ike_attr_hash_algo, "Unknown %d"));
       if (decr) decr->ike_hash_alg = tvb_get_ntohs(tvb, offset);
       break;
     case IKE_ATTR_AUTHENTICATION_METHOD:
@@ -4077,24 +4089,24 @@ dissect_ike_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int o
       if(decr && (decr->ike_hash_alg == HMAC_SM3 || decr->ike_encr_alg == ENC_SM1_CBC || decr->ike_encr_alg == ENC_SM4_CBC))
       {
         proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_authentication_method_china, tvb, offset, value_len, ENC_BIG_ENDIAN);
-        proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ike_attr_authmeth_china, "Unknown %d"));
+        proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ike_attr_authmeth_china, "Unknown %d"));
 
       }
       else
       {
         proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_authentication_method, tvb, offset, value_len, ENC_BIG_ENDIAN);
-        proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ike_attr_authmeth, "Unknown %d"));
+        proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ike_attr_authmeth, "Unknown %d"));
       }
       if (decr) decr->is_psk = tvb_get_ntohs(tvb, offset) == 0x01 ? true : false;
       break;
     case IKE_ATTR_GROUP_DESCRIPTION:
       proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_group_description, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), dh_group, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), dh_group, "Unknown %d"));
       if (decr) decr->group = tvb_get_ntohs(tvb, offset);
       break;
     case IKE_ATTR_GROUP_TYPE:
       proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_group_type, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ike_attr_grp_type, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ike_attr_grp_type, "Unknown %d"));
       break;
     case IKE_ATTR_GROUP_PRIME:
       proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_group_prime, tvb, offset, value_len, ENC_NA);
@@ -4113,7 +4125,7 @@ dissect_ike_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int o
       break;
     case IKE_ATTR_LIFE_TYPE:
       proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_life_type, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
       break;
     case IKE_ATTR_LIFE_DURATION:
       dissect_life_duration(tvb, attr_tree, attr_item, hf_isakmp_ike_attr_life_duration_uint32, hf_isakmp_ike_attr_life_duration_uint64, hf_isakmp_ike_attr_life_duration_bytes, offset, value_len);
@@ -4137,7 +4149,7 @@ dissect_ike_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int o
       break;
     case IKE_ATTR_ACAT:
       proto_tree_add_item(attr_tree, hf_isakmp_ike_attr_asymmetric_cryptographic_algorithm_type, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), ike_attr_asym_algo, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), ike_attr_asym_algo, "Unknown %d"));
       break;
     default:
       /* No Default Action */
@@ -4155,7 +4167,7 @@ dissect_resp_lifetime_ike_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tre
   proto_item *attr_item;
   proto_tree *attr_tree;
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_resp_lifetime_ike_attr, ike_attr_type,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -4171,7 +4183,7 @@ dissect_resp_lifetime_ike_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tre
   switch(attr_type) {
     case IKE_ATTR_LIFE_TYPE:
       proto_tree_add_item(attr_tree, hf_isakmp_resp_lifetime_ike_attr_life_type, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), attr_life_type, "Unknown %d"));
       break;
     case IKE_ATTR_LIFE_DURATION:
       dissect_life_duration(tvb, attr_tree, attr_item, hf_isakmp_resp_lifetime_ike_attr_life_duration_uint32, hf_isakmp_resp_lifetime_ike_attr_life_duration_uint64, hf_isakmp_resp_lifetime_ike_attr_life_duration_bytes, offset, value_len);
@@ -4192,7 +4204,7 @@ dissect_ike2_transform_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
   proto_item *attr_item;
   proto_tree *attr_tree;
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_ike2_attr, transform_ike2_attr_type,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -4308,8 +4320,8 @@ dissect_transform(tvbuff_t *tvb, packet_info *pinfo, int offset, int length, pro
     case TF_IKE2_INTEG:
       proto_tree_add_item(tree, hf_isakmp_trans_integ, tvb, offset, 2, ENC_BIG_ENDIAN);
       break;
-    case TF_IKE2_DH:
-      proto_tree_add_item(tree, hf_isakmp_trans_dh, tvb, offset, 2, ENC_BIG_ENDIAN);
+    case TF_IKE2_KE:
+      proto_tree_add_item(tree, hf_isakmp_trans_ke, tvb, offset, 2, ENC_BIG_ENDIAN);
       break;
     case TF_IKE2_ESN:
       proto_tree_add_item(tree, hf_isakmp_trans_esn, tvb, offset, 2, ENC_BIG_ENDIAN);
@@ -4331,7 +4343,7 @@ dissect_key_exch(tvbuff_t *tvb, int offset, int length, proto_tree *tree, int is
                  packet_info* pinfo, void* decr_data)
 {
   if (isakmp_version == 2) {
-    proto_tree_add_item(tree, hf_isakmp_key_exch_dh_group, tvb, offset, 2, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_isakmp_key_exch_method, tvb, offset, 2, ENC_BIG_ENDIAN);
     offset += 2;
     length -= 2;
 
@@ -4943,7 +4955,7 @@ dissect_notif(tvbuff_t *tvb, packet_info *pinfo, int offset, int length, proto_t
   {
     switch(msgtype){
       case 17: /* INVALID_KE_PAYLOAD */
-        proto_tree_add_item(tree, hf_isakmp_notify_data_accepted_dh_group, tvb, offset, 2, ENC_BIG_ENDIAN);
+        proto_tree_add_item(tree, hf_isakmp_notify_data_accepted_ke_method, tvb, offset, 2, ENC_BIG_ENDIAN);
         break;
       case 16387: /* IPCOMP_SUPPORTED */
         proto_tree_add_item(tree, hf_isakmp_notify_data_ipcomp_cpi, tvb, offset, 2, ENC_BIG_ENDIAN);
@@ -5091,51 +5103,56 @@ dissect_notif(tvbuff_t *tvb, packet_info *pinfo, int offset, int length, proto_t
         /* If Notify Data is not empty/missing */
         if(length>0)
         {
-          /* As specified in 3GPP TS 23.302 (Section 8.1.2.3) and TS 24.008 (Section 10.5.3.13) */
+          /* As specified in 3GPP TS 24.302 (Section 8.2.9.8) and TS 24.008 (Section 10.5.3.13) */
           proto_tree *em_call_num_tree;
 
           /* Main Payload Subtree */
           em_call_num_tree = proto_tree_add_subtree(tree, tvb, offset, length, ett_isakmp_notify_data_3gpp_emergency_call_numbers_main, NULL, "Emergency Call Numbers");
 
-          /* Payload Octet 5 - Length of IE Contents */
-          proto_tree_add_item(em_call_num_tree, hf_isakmp_notify_data_3gpp_emergency_call_numbers_len, tvb, offset, 1, ENC_BIG_ENDIAN);
+          /* MCC information Octet 5 - 6 */
+          proto_tree_add_item(tree, hf_isakmp_notify_data_3gpp_emergency_call_mcc, tvb, offset, 2, ENC_BCD_DIGITS_0_9 | ENC_LITTLE_ENDIAN);
+          offset += 2;
+          /* Payload Octet 7 - Length of IE Contents */
+          uint32_t len;
+          proto_tree_add_item_ret_uint(em_call_num_tree, hf_isakmp_notify_data_3gpp_emergency_call_numbers_len, tvb, offset, 1, ENC_BIG_ENDIAN, &len);
           offset += 1;
 
           /* Subtree for actual values */
-          proto_tree *current_emergency_call_number_tree;
+          de_emerg_num_list(tvb, em_call_num_tree, pinfo, offset, len, NULL, 0);
+          //proto_tree *current_emergency_call_number_tree;
 
-          while(offset<offset_end){
-            uint8_t current_em_num_len = tvb_get_uint8(tvb,offset)+1; //Total length including octets 3 and 4 for proper highlighting
+          //while(offset<offset_end){
+          //  uint8_t current_em_num_len = tvb_get_uint8(tvb,offset)+1; //Total length including octets 3 and 4 for proper highlighting
 
-            /* Subtree for elements*/
-            current_emergency_call_number_tree = proto_tree_add_subtree(em_call_num_tree, tvb, offset, current_em_num_len, ett_isakmp_notify_data_3gpp_emergency_call_numbers_element, NULL, "Emergency Number");
+          //  /* Subtree for elements*/
+          //  current_emergency_call_number_tree = proto_tree_add_subtree(em_call_num_tree, tvb, offset, current_em_num_len, ett_isakmp_notify_data_3gpp_emergency_call_numbers_element, NULL, "Emergency Number");
 
-            /*IE Octet 3 Number of octets used to encode the Emergency Service Category Value and the Number digits. */
-            proto_tree_add_item(current_emergency_call_number_tree, hf_isakmp_notify_data_3gpp_emergency_call_numbers_element_len,tvb,offset,1,ENC_BIG_ENDIAN);
-            offset += 1;
+          //  /*IE Octet 3 Number of octets used to encode the Emergency Service Category Value and the Number digits. */
+          //  proto_tree_add_item(current_emergency_call_number_tree, hf_isakmp_notify_data_3gpp_emergency_call_numbers_element_len,tvb,offset,1,ENC_BIG_ENDIAN);
+          //  offset += 1;
 
-            /*IE Octet 4 |Spare=0|Spare=0|Spare=0|Emergency Service Category Value|
-             * Bits 1 to 5 are coded as bits 1 to 5 of octet 3 of the Service Category
-             * information element as specified in subclause 10.5.4.33. (TS 24.008)
-             */
-            static int * const isakmp_notify_data_3gpp_emergency_call_numbers_flags[] = {
-              &hf_isakmp_notify_data_3gpp_emergency_call_numbers_spare,
-              &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b5_mountain_rescue,
-              &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b4_marine_guard,
-              &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b3_fire_brigade,
-              &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b2_ambulance,
-              &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b1_police,
-              NULL
-            };
-            proto_tree_add_bitmask_with_flags(current_emergency_call_number_tree, tvb, offset, hf_isakmp_notify_data_3gpp_emergency_call_numbers_flags,
-                ett_isakmp_notify_data_3gpp_emergency_call_numbers_element, isakmp_notify_data_3gpp_emergency_call_numbers_flags,ENC_BIG_ENDIAN, BMT_NO_FALSE | BMT_NO_INT | BMT_NO_TFS);
-            offset += 1;
+          //  /*IE Octet 4 |Spare=0|Spare=0|Spare=0|Emergency Service Category Value|
+          //   * Bits 1 to 5 are coded as bits 1 to 5 of octet 3 of the Service Category
+          //   * information element as specified in subclause 10.5.4.33. (TS 24.008)
+          //   */
+          //  static int * const isakmp_notify_data_3gpp_emergency_call_numbers_flags[] = {
+          //    &hf_isakmp_notify_data_3gpp_emergency_call_numbers_spare,
+          //    &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b5_mountain_rescue,
+          //    &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b4_marine_guard,
+          //    &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b3_fire_brigade,
+          //    &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b2_ambulance,
+          //    &hf_isakmp_notify_data_3gpp_emergency_call_numbers_flag_b1_police,
+          //    NULL
+          //  };
+          //  proto_tree_add_bitmask_with_flags(current_emergency_call_number_tree, tvb, offset, hf_isakmp_notify_data_3gpp_emergency_call_numbers_flags,
+          //      ett_isakmp_notify_data_3gpp_emergency_call_numbers_element, isakmp_notify_data_3gpp_emergency_call_numbers_flags,ENC_BIG_ENDIAN, BMT_NO_FALSE | BMT_NO_INT | BMT_NO_TFS);
+          //  offset += 1;
 
-            /*IE Octet 5 to j | Digit_N+1 | Digit_N | */
-            current_em_num_len -= 2; //Not counting octets 3 and 4
-            proto_tree_add_item(current_emergency_call_number_tree, hf_iskamp_notify_data_3gpp_emergency_call_number, tvb, offset, current_em_num_len, ENC_BCD_DIGITS_0_9|ENC_LITTLE_ENDIAN);
-            offset += current_em_num_len; //moving to the next number in the list
-          }
+          //  /*IE Octet 5 to j | Digit_N+1 | Digit_N | */
+          //  current_em_num_len -= 2; //Not counting octets 3 and 4
+          //  proto_tree_add_item(current_emergency_call_number_tree, hf_iskamp_notify_data_3gpp_emergency_call_number, tvb, offset, current_em_num_len, ENC_BCD_DIGITS_0_9|ENC_LITTLE_ENDIAN);
+          //  offset += current_em_num_len; //moving to the next number in the list
+          //}
         }
         break;
       case 61520: /* Network Overlay ID (Fortinet) */
@@ -5191,14 +5208,14 @@ dissect_delete(tvbuff_t *tvb, int offset, int length, proto_tree *tree, int isak
 
 
 static int
-dissect_vid(tvbuff_t *tvb, int offset, int length, proto_tree *tree)
+dissect_vid(tvbuff_t *tvb, packet_info* pinfo, int offset, int length, proto_tree *tree)
 {
   const uint8_t * pVID;
   const char * vendorstring;
 
   pVID = tvb_get_ptr(tvb, offset, length);
 
-  vendorstring = bytesprefix_to_str(pVID, (size_t)length, vendor_id, "Unknown Vendor ID");
+  vendorstring = bytesprefix_to_str(pinfo->pool, pVID, (size_t)length, vendor_id, "Unknown Vendor ID");
   proto_tree_add_item(tree, hf_isakmp_vid_bytes, tvb, offset, length, ENC_NA);
   proto_tree_add_string(tree, hf_isakmp_vid_string, tvb, offset, length, vendorstring);
   proto_item_append_text(tree," : %s", vendorstring);
@@ -5281,7 +5298,7 @@ dissect_config_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, in
     return 4;
   }
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_cfg_attr, vs_cfgattr,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -5361,7 +5378,7 @@ dissect_config_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, in
       }
       break;
     case INTERNAL_IP6_NETMASK: /* 9 Only in IKEv1 */
-      proto_tree_add_item(attr_tree, hf_isakmp_cfg_attr_internal_ip6_netmask, tvb, offset, 18, ENC_NA);
+      proto_tree_add_item(attr_tree, hf_isakmp_cfg_attr_internal_ip6_netmask, tvb, offset, 16, ENC_NA);
       break;
     case INTERNAL_IP6_DNS: /* 10 */
       if (value_len % 16 == 0)
@@ -5466,7 +5483,7 @@ dissect_config_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, in
       break;
     case XAUTH_TYPE: /* 16520 */
       proto_tree_add_item(attr_tree, hf_isakmp_cfg_attr_xauth_type, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", rval_to_str(tvb_get_ntohs(tvb, offset), cfgattr_xauth_type, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", rval_to_str_wmem(pinfo->pool, tvb_get_ntohs(tvb, offset), cfgattr_xauth_type, "Unknown %d"));
       break;
     case XAUTH_USER_NAME: /* 16521 */
       proto_tree_add_item_ret_string(attr_tree, hf_isakmp_cfg_attr_xauth_user_name, tvb, offset, value_len, ENC_ASCII|ENC_NA, pinfo->pool, &str);
@@ -5494,7 +5511,7 @@ dissect_config_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, in
       break;
     case XAUTH_STATUS: /* 16527 */
       proto_tree_add_item(attr_tree, hf_isakmp_cfg_attr_xauth_status, tvb, offset, value_len, ENC_BIG_ENDIAN);
-      proto_item_append_text(attr_item, ": %s", val_to_str(tvb_get_ntohs(tvb, offset), cfgattr_xauth_status, "Unknown %d"));
+      proto_item_append_text(attr_item, ": %s", val_to_str(pinfo->pool, tvb_get_ntohs(tvb, offset), cfgattr_xauth_status, "Unknown %d"));
       break;
     case XAUTH_NEXT_PIN: /* 16528 */
       proto_tree_add_item_ret_string(attr_tree, hf_isakmp_cfg_attr_xauth_next_pin, tvb, offset, value_len, ENC_ASCII|ENC_NA, pinfo->pool, &str);
@@ -5696,7 +5713,7 @@ dissect_tek_key_attribute(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, i
   proto_item *attr_item;
   proto_tree *attr_tree;
 
-  dissect_attribute_header(tvb, tree, offset,
+  dissect_attribute_header(tvb, pinfo, tree, offset,
                            hf_isakmp_tek_key_attr, tek_key_attr_type,
                            &headerlen, &value_len, &attr_type,
                            &attr_item, &attr_tree);
@@ -5804,7 +5821,7 @@ dissect_nat_original_address(tvbuff_t *tvb, int offset, int length _U_, proto_tr
 }
 
 static int
-dissect_ts(tvbuff_t *tvb, int offset, proto_tree *payload_tree)
+dissect_ts(tvbuff_t *tvb, packet_info* pinfo, int offset, proto_tree *payload_tree)
 {
   uint8_t       tstype, protocol_id;
   uint16_t      len;
@@ -5821,7 +5838,7 @@ dissect_ts(tvbuff_t *tvb, int offset, proto_tree *payload_tree)
 
   tstype = tvb_get_uint8(tvb, offset);
   proto_tree_add_item(tree, hf_isakmp_ts_type, tvb, offset, 1, ENC_BIG_ENDIAN);
-  ts_typename = rval_to_str(tstype, traffic_selector_type, "Unknown Type (%d)");
+  ts_typename = rval_to_str_wmem(pinfo->pool, tstype, traffic_selector_type, "Unknown Type (%d)");
   proto_item_append_text(ts_item, ": %s", ts_typename);
 
   offset += 1;
@@ -5911,7 +5928,7 @@ dissect_ts(tvbuff_t *tvb, int offset, proto_tree *payload_tree)
 }
 
 static void
-dissect_ts_payload(tvbuff_t *tvb, int offset, int length, proto_tree *tree)
+dissect_ts_payload(tvbuff_t *tvb, packet_info* pinfo, int offset, int length, proto_tree *tree)
 {
   uint8_t       num;
   int           offset_end = offset + length;
@@ -5925,7 +5942,7 @@ dissect_ts_payload(tvbuff_t *tvb, int offset, int length, proto_tree *tree)
   offset += 3;
 
   while (offset < offset_end) {
-    offset += dissect_ts(tvb, offset, tree);
+    offset += dissect_ts(tvb, pinfo, offset, tree);
   }
 }
 
@@ -6005,7 +6022,7 @@ dissect_enc(tvbuff_t *tvb,
     if (dissect_payload_now) {
       encr_data_item = proto_tree_add_item(tree, hf_isakmp_enc_data, tvb, offset, encr_data_len, ENC_NA);
       proto_item_append_text(encr_data_item, " (%d bytes)",encr_data_len);
-      proto_item_append_text(encr_data_item, " <%s>", val_to_str(key_info->encr_spec->number, vs_ikev2_encr_algs, "Unknown cipher: %d"));
+      proto_item_append_text(encr_data_item, " <%s>", val_to_str(pinfo->pool, key_info->encr_spec->number, vs_ikev2_encr_algs, "Unknown cipher: %d"));
     }
     encr_data = (unsigned char *)tvb_memdup(pinfo->pool, tvb, offset, encr_data_len);
     offset += encr_data_len;
@@ -6030,7 +6047,7 @@ dissect_enc(tvbuff_t *tvb,
         icv_data = (unsigned char *)tvb_memdup(pinfo->pool, tvb, offset, icv_len);
       } else
       if (key_info->auth_spec->gcry_alg) {
-        proto_item_append_text(icd_item, " <%s>", val_to_str(key_info->auth_spec->number, vs_ikev2_auth_algs, "Unknown mac algo: %d"));
+        proto_item_append_text(icd_item, " <%s>", val_to_str(pinfo->pool, key_info->auth_spec->number, vs_ikev2_auth_algs, "Unknown mac algo: %d"));
         err = gcry_md_open(&md_hd, key_info->auth_spec->gcry_alg, key_info->auth_spec->gcry_flag);
         if (err) {
           REPORT_DISSECTOR_BUG("IKEv2 hashing error: algorithm %d: gcry_md_open failed: %s",
@@ -6515,8 +6532,9 @@ static bool ikev2_uat_data_update_cb(void* p, char** err) {
   }
 
   if (ud->encr_spec->icv_len && ud->auth_spec->number != IKEV2_AUTH_NONE) {
-    *err = ws_strdup_printf("Selected encryption_algorithm %s requires selecting NONE integrity algorithm.",
-             val_to_str(ud->encr_spec->number, vs_ikev2_encr_algs, "other-%d"));
+    char* auth_str = val_to_str(NULL, ud->auth_spec->number, vs_ikev2_auth_algs, "other-%d");
+    *err = ws_strdup_printf("Selected encryption_algorithm %s requires selecting NONE integrity algorithm.", auth_str);
+    wmem_free(NULL, auth_str);
     return false;
   }
 
@@ -6876,8 +6894,8 @@ proto_register_isakmp(void)
       { "Network Overlay ID", "isakmp.notify.data.fortinet.network_overlay_id",
         FT_UINT8, BASE_DEC_HEX, NULL, 0x0,
         NULL, HFILL }},
-    { &hf_isakmp_notify_data_accepted_dh_group,
-      { "Accepted DH group number", "isakmp.notify.data.accepted_dh_group",
+    { &hf_isakmp_notify_data_accepted_ke_method,
+      { "Accepted KE method", "isakmp.notify.data.accepted_dh_group",
         FT_UINT16, BASE_DEC, VALS(dh_group), 0x0,
         NULL, HFILL }},
     { &hf_isakmp_notify_data_ipcomp_cpi,
@@ -7572,8 +7590,8 @@ proto_register_isakmp(void)
       { "Transform ID (INTEG)", "isakmp.tf.id.integ",
         FT_UINT16, BASE_DEC, VALS(transform_ike2_integ_type), 0x00,
         NULL, HFILL }},
-    { &hf_isakmp_trans_dh,
-      { "Transform ID (D-H)", "isakmp.tf.id.dh",
+    { &hf_isakmp_trans_ke,
+      { "Transform ID (KE)", "isakmp.tf.id.dh",
         FT_UINT16, BASE_DEC, VALS(dh_group), 0x00,
         NULL, HFILL }},
     { &hf_isakmp_trans_esn,
@@ -7612,8 +7630,8 @@ proto_register_isakmp(void)
         NULL, HFILL }},
 
 
-    { &hf_isakmp_key_exch_dh_group,
-      { "DH Group #", "isakmp.key_exchange.dh_group",
+    { &hf_isakmp_key_exch_method,
+      { "Key Exchange Method", "isakmp.key_exchange.dh_group",
         FT_UINT16, BASE_DEC, VALS(dh_group), 0x00,
         NULL, HFILL }},
     { &hf_isakmp_key_exch_data,
@@ -8016,10 +8034,14 @@ proto_register_isakmp(void)
         FT_STRING, BASE_NONE, NULL, 0,
         NULL, HFILL }},
 
+    { &hf_isakmp_notify_data_3gpp_emergency_call_mcc,
+      { "MCC", "isakmp.notify.priv.3gpp.emergency_call_mcc",
+        FT_STRING, BASE_NONE, NULL, 0x0,
+        NULL, HFILL }},
     { &hf_isakmp_notify_data_3gpp_emergency_call_numbers_len,
       { "Total Length", "isakmp.notify.priv.3gpp.emergency_call_numbers_len",
         FT_UINT8, BASE_DEC, NULL, 0x0,
-        NULL, HFILL }},
+        NULL, HFILL } },
     { &hf_isakmp_notify_data_3gpp_emergency_call_numbers_spare,
       { "Spare", "isakmp.notify.priv.3gpp.emergency_call_numbers_spare",
         FT_UINT8, BASE_DEC, NULL, 0xE0,
@@ -8136,7 +8158,7 @@ proto_register_isakmp(void)
       &ikev1_uat_data,
       &num_ikev1_uat_data,
       UAT_AFFECTS_DISSECTION, /* affects dissection of packets, but not set of named fields */
-      "ChIKEv1DecryptionSection",
+      NULL,
       ikev1_uat_data_copy_cb,
       ikev1_uat_data_update_cb,
       ikev1_uat_data_free_cb,

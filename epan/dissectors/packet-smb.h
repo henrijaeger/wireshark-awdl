@@ -174,6 +174,7 @@ typedef struct {
 	uint8_t		  cmd;
 	void		 *extra_info;
 	smb_extra_info_t  extra_info_type;
+	bool		  is_create_req;
 	/* we save the fid in each transaction so that we can get fid filters
 	   to match both request and response */
 	bool		  fid_seen_in_request;
@@ -248,6 +249,7 @@ typedef struct smb_info {
   int	   info_count;
   smb_saved_info_t *sip;	/* smb_saved_info_t, if any, for this */
   conv_tables_t	   *ct;
+  proto_tree *smbtree;
 } smb_info_t;
 
 /*
@@ -285,7 +287,7 @@ typedef struct _smb_locking_saved_info_t {
 	smb_lock_info_t *unlocks;
 } smb_locking_saved_info_t;
 
-/* used for tracking fid/tid to filename/sharename openedframe closedframe */
+/* fsi used for tracking fid/tid to filename/sharename openedframe closedframe */
 typedef struct _smb_fid_saved_info_t {
 	char	*filename;
 	uint32_t	 create_flags;
@@ -321,7 +323,7 @@ typedef struct _smb_tid_into_t {
  * Dissect an smb FID
  */
 extern smb_fid_info_t *dissect_smb_fid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
-    int offset, int len, uint16_t fid, bool is_created, bool is_closed, bool is_generated, smb_info_t* si);
+    int offset, int len, uint16_t fid, bool is_created, bool is_closed, bool is_generated, bool is_displayed, smb_info_t* si);
 
 /*
  * Dissect named pipe state information.
@@ -351,8 +353,8 @@ extern int dissect_qfsi_FS_SIZE_INFO(tvbuff_t * tvb, packet_info * pinfo, proto_
 extern int dissect_qfsi_FS_DEVICE_INFO(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, int offset, uint16_t *bcp);
 extern int dissect_qfsi_FS_ATTRIBUTE_INFO(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, int offset, uint16_t *bcp);
 extern int dissect_nt_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint16_t *bcp);
-extern int dissect_nt_user_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint16_t *bcp);
-extern int dissect_nt_get_user_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint32_t *bcp);
+extern int dissect_nt_user_quota(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int offset, uint16_t *bcp);
+extern int dissect_nt_get_user_quota(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int offset, uint32_t *bcp);
 extern int dissect_qfsi_FS_OBJECTID_INFO(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, int offset, uint16_t *bcp);
 extern int dissect_qfsi_FS_FULL_SIZE_INFO(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, int offset, uint16_t *bcp);
 extern int dissect_qfi_SMB_FILE_EA_INFO(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, int offset, uint16_t *bcp, bool *trunc);

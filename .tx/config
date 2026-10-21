@@ -1,7 +1,8 @@
 [main]
 host = https://www.transifex.com
 
-[o:wireshark:p:wireshark:r:po-master]
+[o:wireshark:p:wireshark:r:po-46]
+resource_name          = Qt .ts, 4.6 branch
 file_filter            = packaging/debian/po/<lang>.po
 source_file            = packaging/debian/po/templates.pot
 source_lang            = en
@@ -9,7 +10,8 @@ type                   = PO
 replace_edited_strings = false
 keep_translations      = false
 
-[o:wireshark:p:wireshark:r:qt-master]
+[o:wireshark:p:wireshark:r:qt-46]
+resource_name          = Gettext .po, 4.6 branch
 file_filter            = ui/qt/wireshark_<lang>.ts
 source_file            = ui/qt/wireshark_en.ts
 source_lang            = en
@@ -28,6 +30,9 @@ trans.uk               = ui/qt/wireshark_uk.ts
 trans.de               = ui/qt/wireshark_de.ts
 trans.ko               = ui/qt/wireshark_ko.ts
 trans.ca               = ui/qt/wireshark_ca.ts
+trans.ga_IE            = ui/qt/wireshark_ga_IE.ts
+trans.pt_BR            = ui/qt/wireshark_pt_BR.ts
+trans.id               = ui/qt/wireshark_id.ts
 replace_edited_strings = false
 keep_translations      = false
 

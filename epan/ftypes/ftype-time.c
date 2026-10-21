@@ -481,6 +481,7 @@ absolute_val_to_repr(wmem_allocator_t *scope, const fvalue_t *fv, ftrepr_t rtype
 			break;
 
 		case FTREPR_JSON:
+		case FTREPR_EK:
 			/*
 			 * JSON is a data serialization format used primarily
 			 * for machine input (despite the human-readable text)
@@ -534,7 +535,7 @@ time_is_zero(const fvalue_t *fv)
 static bool
 time_is_negative(const fvalue_t *fv)
 {
-	return fv->value.time.secs < 0;
+	return nstime_is_negative(&fv->value.time);
 }
 
 static enum ft_result
@@ -716,6 +717,7 @@ ftype_register_time(void)
 		time_hash,			/* hash */
 		time_is_zero,			/* is_zero */
 		time_is_negative,		/* is_negative */
+		NULL,				/* is_nan */
 		NULL,
 		NULL,
 		NULL,				/* bitwise_and */
@@ -754,6 +756,7 @@ ftype_register_time(void)
 		time_hash,			/* hash */
 		time_is_zero,			/* is_zero */
 		time_is_negative,		/* is_negative */
+		NULL,				/* is_nan */
 		NULL,
 		NULL,
 		NULL,				/* bitwise_and */

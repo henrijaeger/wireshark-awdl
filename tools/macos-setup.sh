@@ -142,8 +142,8 @@ fi
 # the optional libraries are required by other optional libraries.
 #
 LIBSMI_VERSION=0.4.8
-GNUTLS_VERSION=3.8.4
-GNUTLS_SHA256=2bea4e154794f3f00180fa2a5c51fe8b005ac7a31cd58bd44cdfa7f36ebc3a9b
+GNUTLS_VERSION=3.8.10
+GNUTLS_SHA256=db7fab7cce791e7727ebbef2334301c821d79a550ec55c9ef096b610b03eb6b7
 if [ "$GNUTLS_VERSION" ]; then
     #
     # We'll be building GnuTLS, so we may need some additional libraries.
@@ -152,7 +152,7 @@ if [ "$GNUTLS_VERSION" ]; then
     #
     GNUTLS_MAJOR_VERSION="$( expr $GNUTLS_VERSION : '\([0-9][0-9]*\).*' )"
     GNUTLS_MINOR_VERSION="$( expr $GNUTLS_VERSION : '[0-9][0-9]*\.\([0-9][0-9]*\).*' )"
-    NETTLE_VERSION=3.9.1
+    NETTLE_VERSION=3.10.2
 
     #
     # And, in turn, Nettle requires GMP.
@@ -161,10 +161,10 @@ if [ "$GNUTLS_VERSION" ]; then
 
     #
     # And p11-kit
-    P11KIT_VERSION=0.25.3
+    P11KIT_VERSION=0.25.5
 
     # Which requires libtasn1
-    LIBTASN1_VERSION=4.19.0
+    LIBTASN1_VERSION=4.20.0
 fi
 # lua_bitop.c has been ported to 5.3 and 5.4 so use the latest release.
 # We may still need to check for compatibility issues (we'd want Lua
@@ -179,7 +179,7 @@ LIBXML2_SHA256=780157a1efdb57188ec474dca87acaee67a3a839c2525b2214d318228451809f
 LZ4_VERSION=1.10.0
 SBC_VERSION=2.0
 CARES_VERSION=1.31.0
-LIBSSH_VERSION=0.11.1
+LIBSSH_VERSION=0.11.3
 # mmdbresolve
 MAXMINDDB_VERSION=1.9.1
 NGHTTP2_VERSION=1.62.1
@@ -396,7 +396,7 @@ uninstall_pcre2() {
     if [ -n "$installed_pcre2_version" ] && [ -s "pcre2-$installed_pcre2_version/build_dir/install_manifest.txt" ] ; then
         echo "Uninstalling pcre2:"
         # PCRE2 10.39 installs pcre2unicode.3 twice, so this will return an error.
-        while read -r ; do $DO_RM -v "$REPLY" ; done < <(cat "pcre2-$installed_pcre2_version/build_dir/install_manifest.txt"; echo)
+        while read -r ; do $DO_RM -f -v "$REPLY" ; done < <(cat "pcre2-$installed_pcre2_version/build_dir/install_manifest.txt"; echo)
         rm "pcre2-$installed_pcre2_version-done"
 
         if [ "$#" -eq 1 ] && [ "$1" = "-r" ] ; then
@@ -1929,23 +1929,33 @@ install_lz4() {
         #
         if [[ "$LZ4_VERSION" == r* ]]
         then
-            [ -f lz4-$LZ4_VERSION.tar.gz ] || curl "${CURL_LOCAL_NAME_OPTS[@]}" lz4-$LZ4_VERSION.tar.gz https://github.com/lz4/lz4/archive/$LZ4_VERSION.tar.gz
+            echo "lz4 $LZ4_VERSION" is too old 1>&2
         else
+            LZ4_MAJOR_VERSION="$( expr "$LZ4_VERSION" : '\([0-9][0-9]*\).*' )"
+            LZ4_MINOR_VERSION="$( expr "$LZ4_VERSION" : '[0-9][0-9]*\.\([0-9][0-9]*\).*' )"
             [ -f lz4-$LZ4_VERSION.tar.gz ] || curl "${CURL_LOCAL_NAME_OPTS[@]}" lz4-$LZ4_VERSION.tar.gz https://github.com/lz4/lz4/archive/v$LZ4_VERSION.tar.gz
+            $no_build && echo "Skipping installation" && return
+            gzcat lz4-$LZ4_VERSION.tar.gz | tar xf -
+            cd lz4-$LZ4_VERSION
+            #
+            # On lz4 < 1.10.0, if MOREFLAGS is set, that's added to CFLAGS (or
+            # CPPFLAGS on 1.9.4), and those are combined with LDFLAGS into
+            # FLAGS, which is used when building source files and libraries.
+            #
+            # On lz4 >= 1.10.0, user defined CFLAGS are appended the default
+            # CFLAGS, and those are combined with CPPFLAGS and LDFLAGS into
+            # ALLFLAGS, which is used when building source files and libraries.
+            #
+            if [[ "$LZ4_MAJOR_VERSION" -gt 1 ]] || [[ "$LZ4_MINOR_VERSION" -ge 10 ]]; then
+                CFLAGS="$CFLAGS -D_FORTIFY_SOURCE=0 $VERSION_MIN_FLAGS $SDKFLAGS" \
+                    make PREFIX="$installation_prefix" "${MAKE_BUILD_OPTS[@]}"
+            else
+                MOREFLAGS="-D_FORTIFY_SOURCE=0 $VERSION_MIN_FLAGS $SDKFLAGS" \
+                    make PREFIX="$installation_prefix" "${MAKE_BUILD_OPTS[@]}"
+            fi
+            $DO_MAKE PREFIX="$installation_prefix" install
+            cd ..
         fi
-        $no_build && echo "Skipping installation" && return
-        gzcat lz4-$LZ4_VERSION.tar.gz | tar xf -
-        cd lz4-$LZ4_VERSION
-        #
-        # No configure script here, but it appears that if MOREFLAGS is
-        # set, that's added to CFLAGS, and those are combined with LDFLAGS
-        # and CXXFLAGS into FLAGS, which is used when building source
-        # files and libraries.
-        #
-        MOREFLAGS="-D_FORTIFY_SOURCE=0 $VERSION_MIN_FLAGS $SDKFLAGS" \
-            make PREFIX="$installation_prefix" "${MAKE_BUILD_OPTS[@]}"
-        $DO_MAKE PREFIX="$installation_prefix" install
-        cd ..
         touch lz4-$LZ4_VERSION-done
     fi
 }

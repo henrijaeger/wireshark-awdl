@@ -100,13 +100,13 @@ try_decode_payload(tvbuff_t *tvb, packet_info *pinfo, proto_item *tree)
 static void
 try_uncompress(tvbuff_t *tvb, packet_info *pinfo, int offset, /*int len,*/ proto_item *ti)
 {
-    tvbuff_t *uncompress_tvb = tvb_uncompress_zlib(tvb, offset, tvb_captured_length(tvb) - offset);
+    tvbuff_t *uncompress_tvb = tvb_child_uncompress_zlib(tvb, tvb, offset, tvb_captured_length_remaining(tvb, offset));
     if (uncompress_tvb) {
         add_new_data_source(pinfo, uncompress_tvb, "Uncompressed Payload");
 
         proto_tree *uncompress_tree = proto_item_add_subtree(ti, ett_uncomp_payload);
         unsigned decomp_length = tvb_captured_length(uncompress_tvb);
-        proto_item *ti_uncomp = proto_tree_add_item(uncompress_tree, hf_uncomp_payload, uncompress_tvb, 0, decomp_length, ENC_ASCII);
+        proto_item *ti_uncomp = proto_tree_add_item(uncompress_tree, hf_uncomp_payload, uncompress_tvb, 0, decomp_length, ENC_NA);
         proto_item_set_generated(ti_uncomp);
 
         proto_tree *payload_tree = proto_item_add_subtree(ti_uncomp, ett_uncomp_decode);

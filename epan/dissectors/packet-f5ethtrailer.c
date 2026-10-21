@@ -1632,7 +1632,7 @@ render_f5_legacy_hdr(tvbuff_t *tvb, proto_tree *tree, int offset)
  * @param trailer_length    Length of the trailer data to process
  * @param trailer_ver       Version of the trailer detected
  * @param tdata             Pointer to tap data structure
- * @return                  Number of btyes consumed
+ * @return                  Number of bytes consumed
  */
 static unsigned
 dissect_high_trailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset,
@@ -1745,7 +1745,7 @@ dissect_high_trailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsign
  * @param trailer_length    Length of the trailer data to process
  * @param trailer_ver       Version of the trailer detected
  * @param tdata             Pointer to tap data structure
- * @return                  Number of btyes consumed
+ * @return                  Number of bytes consumed
  */
 static unsigned
 dissect_med_trailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset,
@@ -1929,7 +1929,7 @@ dissect_med_trailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigne
                         tvb_get_string_enc(pinfo->pool, tvb, o,
                         rstcauselen - (o - startcause), ENC_ASCII));
                 proto_tree_add_item(rc_tree, hf_rstcause_txt, tvb, o,
-                    rstcauselen - (o - startcause), ENC_ASCII | ENC_NA);
+                    rstcauselen - (o - startcause), ENC_ASCII);
                 break;
             default:
                 break;
@@ -1952,7 +1952,7 @@ dissect_med_trailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigne
  * @param trailer_length    Length of the trailer data to process
  * @param trailer_ver       Version of the trailer detected
  * @param tdata             Pointer to tap data structure
- * @return                  Number of btyes consumed
+ * @return                  Number of bytes consumed
  */
 static unsigned
 dissect_low_trailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset,
@@ -2081,7 +2081,7 @@ dissect_low_trailer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigne
         proto_item_set_hidden(pi);
         o += 1;
     }
-    pi = proto_tree_add_item(tree, hf_vip, tvb, o, vipnamelen, ENC_ASCII | ENC_NA);
+    pi = proto_tree_add_item(tree, hf_vip, tvb, o, vipnamelen, ENC_ASCII);
     proto_item_prepend_text(pi, "VIP ");
 
     return trailer_length;
@@ -2281,7 +2281,7 @@ dissect_dpt_trailer_noise_med(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
      */
     if (tvb_reported_length_remaining(tvb, o + F5_MEDV4_LENMIN) < rstcauselen) {
         badrstcauselen = 1;
-        /* Set this to zero to prevent processing of things that utilze it */
+        /* Set this to zero to prevent processing of things that utilize it */
         rstcauselen = 0;
     }
     if (rstcauselen)
@@ -2375,7 +2375,7 @@ dissect_dpt_trailer_noise_med(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
                 tvb_get_string_enc(
                     pinfo->pool, tvb, o, rstcauselen - (o - startcause), ENC_ASCII));
             proto_tree_add_item(rc_tree, hf_rstcause_txt, tvb, o,
-                rstcauselen - (o - startcause), ENC_ASCII | ENC_NA);
+                rstcauselen - (o - startcause), ENC_ASCII);
             /*o = startcause + rstcauselen;*/
             break;
         default:
@@ -2957,7 +2957,7 @@ found_trailer:
         trailer_item = proto_tree_add_item(tree, proto_f5ethtrailer, tvb, offset, -1, ENC_NA);
         tree = proto_item_add_subtree(trailer_item, ett_f5ethtrailer);
         if (has_fcs) {
-            proto_tree_add_item(tree, hf_orig_fcs, tvb, offset - 4, 4, ENC_NA);
+            proto_tree_add_item(tree, hf_orig_fcs, tvb, offset - 4, 4, ENC_BIG_ENDIAN);
         }
     }
 
@@ -2973,7 +2973,7 @@ found_trailer:
     tdata->trailer_len = trailer_length;
     proto_item_set_len(trailer_item, trailer_length);
 
-    /* If the analyis preference is enabled, process it */
+    /* If the analysis preference is enabled, process it */
     if (pref_perform_analysis) {
         struct f5eth_analysis_data_t *ad;
 
@@ -4369,7 +4369,7 @@ dissect_f5fileinfo(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *da
         else if (strncmp(object, "PLAT: ", 6) == 0) {
             proto_tree_add_string(tree, hf_fi_platform, tvb, offset + 6, objlen - 6, &object[6]);
             platform = &object[6];
-            platform_name = str_to_str(platform, f5info_platform_strings, "Unknown, please report");
+            platform_name = str_to_str_wmem(pinfo->pool, platform, f5info_platform_strings, "Unknown, please report");
             proto_tree_add_string_format(tree, hf_fi_platformname, tvb, offset + 6, objlen - 6, platform_name,
                 "%s: %s", platform, platform_name);
         } else if (strncmp(object, "PROD: ", 6) == 0)

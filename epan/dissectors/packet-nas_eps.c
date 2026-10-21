@@ -3945,8 +3945,8 @@ de_esm_pdn_addr(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_,
              */
             tvb_memcpy(tvb, interface_id, curr_offset, 8);
             proto_tree_add_bytes_format_value(tree, hf_nas_eps_esm_pdn_ipv6_if_id, tvb, curr_offset, 8, NULL,
-                                              "::%x:%x:%x:%x", pntoh16(&interface_id[0]), pntoh16(&interface_id[2]),
-                                              pntoh16(&interface_id[4]), pntoh16(&interface_id[6]));
+                                              "::%x:%x:%x:%x", pntohu16(&interface_id[0]), pntohu16(&interface_id[2]),
+                                              pntohu16(&interface_id[4]), pntohu16(&interface_id[6]));
             curr_offset+=8;
             break;
         case 3:
@@ -3959,8 +3959,8 @@ de_esm_pdn_addr(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_,
              */
             tvb_memcpy(tvb, interface_id, curr_offset, 8);
             proto_tree_add_bytes_format_value(tree, hf_nas_eps_esm_pdn_ipv6_if_id, tvb, curr_offset, 8, NULL,
-                                              "::%x:%x:%x:%x", pntoh16(&interface_id[0]), pntoh16(&interface_id[2]),
-                                              pntoh16(&interface_id[4]), pntoh16(&interface_id[6]));
+                                              "::%x:%x:%x:%x", pntohu16(&interface_id[0]), pntohu16(&interface_id[2]),
+                                              pntohu16(&interface_id[4]), pntohu16(&interface_id[6]));
             curr_offset+=8;
             proto_tree_add_item(tree, hf_nas_eps_esm_pdn_ipv4, tvb, curr_offset, 4, ENC_BIG_ENDIAN);
             curr_offset+=4;
@@ -7295,7 +7295,6 @@ dissect_nas_eps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
                 proto_tree_add_item(nas_eps_tree, hf_nas_eps_seq_no, tvb, offset, 1, ENC_BIG_ENDIAN);
                 offset++;
 
-                col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                 proto_tree_add_item(nas_eps_tree, hf_nas_eps_ciphered_msg, tvb, offset, len - 6, ENC_NA);
 
                 /* Integrity protected and ciphered = 2, Integrity protected and ciphered with new EPS security context = 4 */
@@ -7303,6 +7302,7 @@ dissect_nas_eps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
                 /* No decipher mechanism selected, returning without trying to decipher */
                 if (!g_nas_eps_null_decipher)
                 {
+                    col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                     return tvb_captured_length(tvb);
                 }
                 /* Force deciphering with EEA2*/
@@ -7312,11 +7312,13 @@ dissect_nas_eps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
 
                     if (!tvb_deciphered)
                     {
+                        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                         return tvb_captured_length(tvb);
                     }
                     uint32_t pd_deciphered = tvb_get_uint8(tvb_deciphered, 0);
                     if ((pd_deciphered != 7) && (pd_deciphered != 15) && ((pd_deciphered & 0x0f) != 2))
                     {
+                        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                         return tvb_captured_length(tvb);
                     }
                     len = tvb_reported_length(tvb_deciphered);
@@ -7809,7 +7811,7 @@ proto_register_nas_eps(void)
         NULL, HFILL }
     },
     { &hf_nas_eps_emm_tai_tac,
-        { "Tracking area code(TAC)","nas-eps.emm.tai_tac",
+        { "Tracking area code (TAC)","nas-eps.emm.tai_tac",
         FT_UINT16, BASE_DEC,  NULL, 0x0,
         NULL, HFILL }
     },
@@ -8681,22 +8683,22 @@ proto_register_nas_eps(void)
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_embr_ul,
-        { "Maximum bit rate for uplink(ext)","nas-eps.esm.embr_ul",
+        { "Maximum bit rate for uplink (ext)","nas-eps.esm.embr_ul",
         FT_UINT8,BASE_DEC, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_embr_dl,
-        { "Maximum bit rate for downlink(ext)","nas-eps.esm.embr_dl",
+        { "Maximum bit rate for downlink (ext)","nas-eps.esm.embr_dl",
         FT_UINT8,BASE_DEC, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_egbr_ul,
-        { "Guaranteed bit rate for uplink(ext)","nas-eps.esm.egbr_ul",
+        { "Guaranteed bit rate for uplink (ext)","nas-eps.esm.egbr_ul",
         FT_UINT8,BASE_DEC, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_egbr_dl,
-        { "Guaranteed bit rate for downlink(ext)","nas-eps.esm.egbr_dl",
+        { "Guaranteed bit rate for downlink (ext)","nas-eps.esm.egbr_dl",
         FT_UINT8,BASE_DEC, NULL, 0x0,
         NULL, HFILL }
     },
@@ -8827,22 +8829,22 @@ proto_register_nas_eps(void)
     },
     { &hf_nas_eps_esm_remote_ue_context_list_ue_context_ipv4_udp_port_low,
         { "IPv4 UDP port low","nas-eps.esm.remote_ue_context_list.ue_context.ipv4_udp_port_low",
-        FT_UINT16, BASE_DEC, NULL, 0x0,
+        FT_UINT16, BASE_PT_UDP, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_remote_ue_context_list_ue_context_ipv4_udp_port_high,
         { "IPv4 UDP port high","nas-eps.esm.remote_ue_context_list.ue_context.ipv4_udp_port_high",
-        FT_UINT16, BASE_DEC, NULL, 0x0,
+        FT_UINT16, BASE_PT_UDP, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_remote_ue_context_list_ue_context_ipv4_tcp_port_low,
         { "IPv4 TCP port low","nas-eps.esm.remote_ue_context_list.ue_context.ipv4_tcp_port_low",
-        FT_UINT16, BASE_DEC, NULL, 0x0,
+        FT_UINT16, BASE_PT_TCP, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_remote_ue_context_list_ue_context_ipv4_tcp_port_high,
         { "IPv4 TCP port high","nas-eps.esm.remote_ue_context_list.ue_context.ipv4_tcp_port_high",
-        FT_UINT16, BASE_DEC, NULL, 0x0,
+        FT_UINT16, BASE_PT_TCP, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_nas_eps_esm_pkmf_address_type,
@@ -9374,7 +9376,7 @@ proto_register_nas_eps(void)
   };
 
     static ei_register_info ei[] = {
-        { &ei_nas_eps_extraneous_data, { "nas-eps.extraneous_data", PI_PROTOCOL, PI_NOTE, "Extraneous Data, dissector bug or later version spec(report to wireshark.org)", EXPFILL }},
+        { &ei_nas_eps_extraneous_data, { "nas-eps.extraneous_data", PI_PROTOCOL, PI_NOTE, "Extraneous Data, dissector bug or later version spec (report to wireshark.org)", EXPFILL }},
         { &ei_nas_eps_unknown_identity, { "nas-eps.emm.unknown_identity", PI_PROTOCOL, PI_WARN, "Type of identity not known", EXPFILL }},
         { &ei_nas_eps_unknown_type_of_list, { "nas-eps.emm.tai_unknown_list_type", PI_PROTOCOL, PI_WARN, "Unknown type of list", EXPFILL }},
         { &ei_nas_eps_wrong_nb_of_elems, { "nas-eps.emm.tai_wrong_number_of_elems", PI_PROTOCOL, PI_ERROR, "[Wrong number of elements?]", EXPFILL }},

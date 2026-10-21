@@ -35,11 +35,11 @@
 #include <epan/packet.h>
 #include <epan/capture_dissectors.h>
 #include <epan/to_str.h>
-#include <epan/xdlc.h>
 #include <epan/ax25_pids.h>
 #include <epan/ipproto.h>
 #include <epan/prefs.h>
 #include <epan/tfs.h>
+#include "packet-xdlc.h"
 
 #define STRLEN	80
 
@@ -238,7 +238,7 @@ dissect_ax25( tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* 
 		{
 
 		pid      = tvb_get_uint8( tvb, offset );
-		col_append_fstr( pinfo->cinfo, COL_INFO, ", %s", val_to_str(pid, pid_vals, "Unknown (0x%02x)") );
+		col_append_fstr( pinfo->cinfo, COL_INFO, ", %s", val_to_str(pinfo->pool, pid, pid_vals, "Unknown (0x%02x)") );
 		proto_tree_add_uint( ax25_tree, hf_ax25_pid, tvb, offset, 1, pid );
 
 		/* Call sub-dissectors here */

@@ -19,13 +19,14 @@ function print_usage() {
     printf "\\nUtility to setup a macOS system for Wireshark Development using Homebrew.\\n"
     printf "The basic usage installs the needed software\\n\\n"
     printf "Usage: %s [--install-optional] [--install-dmg-deps] [...other options...]\\n" "$0"
-    printf "\\t--install-optional: install optional software as well\\n"
+    printf "\\t--install-required: install third party libraries required to build Wireshark\\n"
+    printf "\\t--install-optional: install optional third party libraries\\n"
     printf "\\t--install-doc-deps: install packages required to build the documentation\\n"
     printf "\\t--install-dmg-deps: install packages required to build the .dmg file\\n"
     printf "\\t--install-sparkle-deps: install the Sparkle automatic updater\\n"
     printf "\\t--install-test-deps: install packages required for automated testing\\n"
     printf "\\t--install-all: install everything\\n"
-    printf "\\t--install-stratoshark: install everything to compile Stratoshark and Falco bridge\\n"
+    printf "\\t--install-stratoshark: install everything to compile Stratoshark and the Falco Events plugin\\n"
     printf "\\t[other]: other options are passed as-is to brew\\n"
 }
 
@@ -44,6 +45,7 @@ function install_formulae() {
     fi
 }
 
+INSTALL_REQUIRED=0
 INSTALL_OPTIONAL=0
 INSTALL_DOC_DEPS=0
 INSTALL_DMG_DEPS=0
@@ -56,6 +58,9 @@ for arg; do
         --help)
             print_usage
             exit 0
+            ;;
+        --install-required)
+            INSTALL_REQUIRED=1
             ;;
         --install-optional)
             INSTALL_OPTIONAL=1
@@ -99,12 +104,13 @@ REQUIRED_LIST=(
     c-ares
     glib
     libgcrypt
+    libxml2
     pcre2
     qt6
     speexdsp
 )
 
-ADDITIONAL_LIST=(
+OPTIONAL_LIST=(
     brotli
     gettext
     gnutls
@@ -114,7 +120,6 @@ ADDITIONAL_LIST=(
     libnghttp3
     libsmi
     libssh
-    libxml2
     lua
     lz4
     minizip
@@ -123,6 +128,7 @@ ADDITIONAL_LIST=(
     opus
     snappy
     spandsp
+    xxhash
     zlib-ng
     zstd
 )
@@ -140,11 +146,15 @@ STRATOSHARK_LIST=(
     uthash
 )
 
-ACTUAL_LIST=( "${BUILD_LIST[@]}" "${REQUIRED_LIST[@]}" )
+ACTUAL_LIST=( "${BUILD_LIST[@]}" )
+
+if [ $INSTALL_REQUIRED -ne 0 ] ; then
+    ACTUAL_LIST+=( "${REQUIRED_LIST[@]}" )
+fi
 
 # Now arrange for optional support libraries
 if [ $INSTALL_OPTIONAL -ne 0 ] ; then
-    ACTUAL_LIST+=( "${ADDITIONAL_LIST[@]}" )
+    ACTUAL_LIST+=( "${OPTIONAL_LIST[@]}" )
 fi
 
 if [ $INSTALL_DOC_DEPS -ne 0 ] ; then

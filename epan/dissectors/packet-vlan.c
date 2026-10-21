@@ -155,7 +155,7 @@ capture_vlan(const unsigned char *pd, int offset, int len, capture_packet_info_t
   if ( !BYTES_ARE_IN_FRAME(offset,len,5) )
     return false;
 
-  encap_proto = pntoh16( &pd[offset+2] );
+  encap_proto = pntohu16( &pd[offset+2] );
   if ( encap_proto <= IEEE_802_3_MAX_LEN) {
     if ( pd[offset+4] == 0xff && pd[offset+5] == 0xff ) {
       return call_capture_dissector(ipx_cap_handle, pd,offset+4,len, cpinfo, pseudo_header);
@@ -367,6 +367,7 @@ dissect_vlan(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
 
     call_dissector_with_data(ethertype_handle, tvb, pinfo, tree, &ethertype_data);
   }
+  p_set_proto_depth(pinfo, proto_vlan, vlan_nested_count - 1);
   return tvb_captured_length(tvb);
 }
 

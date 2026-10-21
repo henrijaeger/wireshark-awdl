@@ -57,7 +57,7 @@ DIAG_ON(frame-larger-than=)
 #include "epan/plugin_if.h"
 #include "epan/uat.h"
 #include "epan/uat-int.h"
-#include "epan/value_string.h"
+#include <wsutil/value_string.h>
 
 #ifdef HAVE_LUA
 #include <epan/wslua/init_wslua.h>
@@ -123,6 +123,7 @@ DIAG_ON(frame-larger-than=)
 #include "iax2_analysis_dialog.h"
 #include "interface_toolbar.h"
 #include "io_graph_dialog.h"
+#include "plot_dialog.h"
 #include <ui/qt/widgets/additional_toolbar.h>
 #include "lbm_stream_dialog.h"
 #include "lbm_lbtrm_transport_dialog.h"
@@ -290,7 +291,7 @@ bool WiresharkMainWindow::openCaptureFile(QString cf_path, QString read_filter, 
 
 finish:
 #ifdef HAVE_LIBPCAP
-    if (global_commandline_info.quit_after_cap)
+    if (commandline_is_quit_after_capture())
         exit(0);
 #endif
     return ret;
@@ -567,7 +568,7 @@ void WiresharkMainWindow::captureCaptureUpdateFinished(capture_session *session)
     setWindowIcon(mainApp->normalIcon());
     popLiveCaptureInProgress();
 
-    if (global_commandline_info.quit_after_cap) {
+    if (commandline_is_quit_after_capture()) {
         // Command line asked us to quit after capturing.
         // Don't pop up a dialog to ask for unsaved files etc.
         exit(0);
@@ -591,7 +592,7 @@ void WiresharkMainWindow::captureCaptureFixedFinished(capture_session *) {
     setWindowIcon(mainApp->normalIcon());
     popLiveCaptureInProgress();
 
-    if (global_commandline_info.quit_after_cap) {
+    if (commandline_is_quit_after_capture()) {
         // Command line asked us to quit after capturing.
         // Don't pop up a dialog to ask for unsaved files etc.
         exit(0);
@@ -612,7 +613,7 @@ void WiresharkMainWindow::captureCaptureFailed(capture_session *) {
     setWindowIcon(mainApp->normalIcon());
     popLiveCaptureInProgress();
 
-    if (global_commandline_info.quit_after_cap) {
+    if (commandline_is_quit_after_capture()) {
         // Command line asked us to quit after capturing.
         // Don't pop up a dialog to ask for unsaved files etc.
         exit(0);
@@ -940,7 +941,6 @@ void WiresharkMainWindow::startCapture(QStringList interfaces) {
     collect_ifaces(&global_capture_opts);
 
     CaptureFile::globalCapFile()->window = this;
-    info_data_.ui.ui = this;
     if (capture_start(&global_capture_opts, NULL, &cap_session_, &info_data_,
                       main_window_update)) {
         /* The capture succeeded, which means the capture filter syntax is
@@ -1197,7 +1197,7 @@ void WiresharkMainWindow::setEditCommentsMenu()
     }
     if (selectedRows().count() > 1) {
         main_ui_->menuPacketComment->addSeparator();
-        action = main_ui_->menuPacketComment->addAction(tr("Delete comments from %n packet(s)", nullptr, static_cast<int>(selectedRows().count())));
+        action = main_ui_->menuPacketComment->addAction(tr("Delete comments from %Ln packet(s)", "", static_cast<int>(selectedRows().count())));
         connect(action, &QAction::triggered, this, &WiresharkMainWindow::deleteCommentsFromPackets);
     }
 }
@@ -1549,7 +1549,7 @@ void WiresharkMainWindow::applyGlobalCommandLineOptions()
             }
         }
     }
-    if (global_commandline_info.full_screen) {
+    if (commandline_is_full_screen()) {
         this->showFullScreen();
     }
 }
@@ -1583,10 +1583,8 @@ void WiresharkMainWindow::fieldsChanged()
 
     emit checkDisplayFilter();
 
-    if (have_custom_cols(&CaptureFile::globalCapFile()->cinfo)) {
-        // Recreate packet list columns according to new/changed/deleted fields
-        packet_list_->fieldsChanged(CaptureFile::globalCapFile());
-    }
+    // Recreate packet list columns according to new/changed/deleted fields
+    packet_list_->fieldsChanged(CaptureFile::globalCapFile());
 
     emit reloadFields();
 }
@@ -2653,6 +2651,9 @@ void WiresharkMainWindow::connectViewMenuActions()
 
     connect(main_ui_->actionViewReload, &QAction::triggered, this,
             [this]() { reloadCaptureFile(); });
+
+    connect(main_ui_->actionViewRedissect, &QAction::triggered, this,
+            [this]() { redissectPackets(); });
 }
 
 void WiresharkMainWindow::showHideMainWidgets(QAction *action)
@@ -2685,7 +2686,7 @@ void WiresharkMainWindow::showHideMainWidgets(QAction *action)
     } else if (widget == proto_tree_) {
         recent.tree_view_show = show;
         main_ui_->actionViewPacketDetails->setChecked(show);
-    } else if (widget == byte_view_tab_) {
+    } else if (widget == data_source_tab_) {
         recent.byte_view_show = show;
         main_ui_->actionViewPacketBytes->setChecked(show);
     } else if (widget == packet_diagram_) {
@@ -2804,6 +2805,7 @@ void WiresharkMainWindow::setNameResolution()
         packet_list_->resetColumns();
     }
     mainApp->emitAppSignal(WiresharkApplication::NameResolutionChanged);
+    prefs_main_write();
 }
 
 void WiresharkMainWindow::zoomText()
@@ -3493,6 +3495,8 @@ void WiresharkMainWindow::connectStatisticsMenuActions()
 
     connect(main_ui_->actionStatisticsIOGraph, &QAction::triggered, this, [=]() { statCommandIOGraph(NULL, NULL); });
 
+    connect(main_ui_->actionStatisticsPlot, &QAction::triggered, this, [=]() { showPlotDialog(); });
+
     connect(main_ui_->actionStatisticsFlowGraph, &QAction::triggered, this, [=]() {
         SequenceDialog *sequence_dialog = new SequenceDialog(*this, capture_file_);
         sequence_dialog->show();
@@ -3735,6 +3739,57 @@ void WiresharkMainWindow::openIOGraph(bool filtered, QVector<uint> typed_conv_id
     IOGraphDialog *iog_dialog = new IOGraphDialog(*this, capture_file_, displayFilter, IOG_ITEM_UNIT_PACKETS, QString(), true, conv_filters);
     connect(this, SIGNAL(reloadFields()), iog_dialog, SLOT(reloadFields()));
     iog_dialog->show();
+}
+
+// Plot Dialog
+// XXX - The code here is identical on Stratoshark's side. Can we unify the two?
+void WiresharkMainWindow::showPlotDialog(const QString& y_field, bool filtered)
+{
+    PlotDialog* dialog = nullptr;
+    // Try to find an already existing dialog
+    QList<PlotDialog*> plotDialogs = findChildren<PlotDialog*>();
+    // GeometryStateDialogs aren't parented on Linux and Windows
+    // (see geometry_state_dialog.h), so we search for a Plot
+    // Dialog in all the top level widgets.
+    if (plotDialogs.isEmpty()) {
+        foreach(QWidget * topLevelWidget, mainApp->topLevelWidgets()) {
+            if (qobject_cast<PlotDialog*>(topLevelWidget)) {
+                plotDialogs << qobject_cast<PlotDialog*>(topLevelWidget);
+            }
+        }
+    }
+    foreach(PlotDialog* foundPlotDialog, plotDialogs) {
+        if (!foundPlotDialog->fileClosed()) {
+            dialog = foundPlotDialog;
+            break;
+        }
+    }
+
+    if (dialog == nullptr) {
+        bool showDefault = y_field.isEmpty();   /* Don't generate default plots if we already have a field to plot. */
+        dialog = new PlotDialog(*this, capture_file_, showDefault);
+        connect(dialog, &PlotDialog::goToPacket, packet_list_, &PacketList::goToPacket);
+    }
+
+    if (!y_field.isEmpty()) {
+        /* Add mew plot with supplied parameters */
+        QString d_filter = QString();
+        if (filtered) {
+            const DisplayFilterEdit* df_edit = qobject_cast<DisplayFilterEdit*>(df_combo_box_->lineEdit());
+            if (df_edit) d_filter = df_edit->text();
+        }
+
+        dialog->addPlot(true, d_filter, y_field);
+    }
+
+    if (dialog->isMinimized()) {
+        dialog->showNormal();
+    }
+    else {
+        dialog->show();
+    }
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 // Telephony Menu

@@ -291,15 +291,15 @@ static int * const can_status_bits[] = {
 };
 
 static int * const can_mjr_hdr_bits[] = {
-	& hf_can_reserved_bytes,
-	& hf_can_LEC,
-	& hf_can_ERRP,
-	& hf_can_ERRW,
-	& hf_can_BOFF,
-	& hf_can_DLEC,
-	& hf_can_TEC,
-	& hf_can_REC,
-	& hf_can_CEL,
+	&hf_can_reserved_bytes,
+	&hf_can_LEC,
+	&hf_can_ERRP,
+	&hf_can_ERRW,
+	&hf_can_BOFF,
+	&hf_can_DLEC,
+	&hf_can_TEC,
+	&hf_can_REC,
+	&hf_can_CEL,
 	NULL
 };
 
@@ -995,7 +995,7 @@ dissect_ebhscr_dio(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
 	next_tvb = tvb_new_subset_length(tvb, 32, ebhscr_current_payload_length);
 	call_data_dissector(next_tvb, pinfo, tree);
-	col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, 32, ebhscr_current_payload_length, ' '));
+	col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(pinfo->pool, tvb, 32, ebhscr_current_payload_length, ' '));
 
 	return tvb_captured_length(tvb);
 }
@@ -1295,7 +1295,7 @@ static int dissect_ebhscr_dsi3(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
 
 	next_tvb = tvb_new_subset_length(tvb, 32, ebhscr_current_payload_length);
 	call_data_dissector(next_tvb, pinfo, tree);
-	col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, 32, ebhscr_current_payload_length, ' '));
+	col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(pinfo->pool, tvb, 32, ebhscr_current_payload_length, ' '));
 
 	return tvb_captured_length(tvb);
 }
@@ -1330,8 +1330,8 @@ static int dissect_ebhscr_mipi_csi2(tvbuff_t *tvb, packet_info *pinfo, proto_tre
 		expert_add_info(pinfo, ti, &ei_ebhscr_warn_mjr_hdr_status_flag);
 	}
 
-	ti = proto_tree_add_item(mipi_csi2_mhdr_tree, hf_mipi_csi2_mjr_hdr_frame_counter, tvb, 28, 2, ENC_BIG_ENDIAN);
-	ti = proto_tree_add_item(mipi_csi2_mhdr_tree, hf_mipi_csi2_mjr_hdr_line_counter, tvb, 30, 2, ENC_BIG_ENDIAN);
+	proto_tree_add_item(mipi_csi2_mhdr_tree, hf_mipi_csi2_mjr_hdr_frame_counter, tvb, 28, 2, ENC_BIG_ENDIAN);
+	proto_tree_add_item(mipi_csi2_mhdr_tree, hf_mipi_csi2_mjr_hdr_line_counter, tvb, 30, 2, ENC_BIG_ENDIAN);
 
 	if (ebhscr_current_payload_length < MIPI_CSI2_PKT_HDR_LEN) {
 		return tvb_captured_length(tvb);
@@ -1340,12 +1340,12 @@ static int dissect_ebhscr_mipi_csi2(tvbuff_t *tvb, packet_info *pinfo, proto_tre
 	ti = proto_tree_add_item(tree, hf_mipi_csi2_payload_pkt_hdr, tvb, 32, 8, ENC_BIG_ENDIAN);
 	mipi_csi2_payload_pkt_header_subtree = proto_item_add_subtree(ti, ett_ebhscr_status);
 
-	ti = proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_dt, tvb, 32, 1, ENC_BIG_ENDIAN);
-	ti = proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_vc, tvb, 33, 1, ENC_BIG_ENDIAN);
-	ti = proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_ecc, tvb, 35, 1, ENC_BIG_ENDIAN);
-	ti = proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_crc, tvb, 36, 2, ENC_LITTLE_ENDIAN);
-	ti = proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_wc_lsb, tvb, 38, 2, ENC_LITTLE_ENDIAN);
-	ti = proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_wc_msb, tvb, 38, 2, ENC_LITTLE_ENDIAN);
+	proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_dt, tvb, 32, 1, ENC_BIG_ENDIAN);
+	proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_vc, tvb, 33, 1, ENC_BIG_ENDIAN);
+	proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_ecc, tvb, 35, 1, ENC_BIG_ENDIAN);
+	proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_crc, tvb, 36, 2, ENC_LITTLE_ENDIAN);
+	proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_wc_lsb, tvb, 38, 2, ENC_LITTLE_ENDIAN);
+	proto_tree_add_item(mipi_csi2_payload_pkt_header_subtree, hf_mipi_csi2_payload_pkt_hdr_wc_msb, tvb, 38, 2, ENC_LITTLE_ENDIAN);
 
 	ebhscr_current_payload_length -= MIPI_CSI2_PKT_HDR_LEN;
 	uint32_t const headers_length = EBHSCR_HEADER_LENGTH + MIPI_CSI2_PKT_HDR_LEN;
@@ -1353,7 +1353,7 @@ static int dissect_ebhscr_mipi_csi2(tvbuff_t *tvb, packet_info *pinfo, proto_tre
 	if (ebhscr_current_payload_length > 0) {
 		next_tvb = tvb_new_subset_length(tvb, headers_length, ebhscr_current_payload_length);
 		call_data_dissector(next_tvb, pinfo, tree);
-		col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, headers_length, ebhscr_current_payload_length, ' '));
+		col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(pinfo->pool, tvb, headers_length, ebhscr_current_payload_length, ' '));
 	}
 
 	return tvb_captured_length(tvb);
@@ -1402,16 +1402,16 @@ static int dissect_ebhscr_csi2_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tr
 
 		csi2_frame_header_sections_subtree[i] = proto_item_add_subtree(ti, ett_ebhscr_status);
 
-		ti = proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_payload_byte_offset, tvb, field_offset, 4, ENC_BIG_ENDIAN);
+		proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_payload_byte_offset, tvb, field_offset, 4, ENC_BIG_ENDIAN);
 		field_offset += 4;
 
-		ti = proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_bytes_total, tvb, field_offset, 4, ENC_BIG_ENDIAN);
+		proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_bytes_total, tvb, field_offset, 4, ENC_BIG_ENDIAN);
 		field_offset += 4;
 
-		ti = proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_bytes_per_line, tvb, field_offset, 2, ENC_BIG_ENDIAN);
+		proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_bytes_per_line, tvb, field_offset, 2, ENC_BIG_ENDIAN);
 		field_offset += 2;
 
-		ti = proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_number_lines, tvb, field_offset, 2, ENC_BIG_ENDIAN);
+		proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_number_lines, tvb, field_offset, 2, ENC_BIG_ENDIAN);
 		field_offset += 2;
 
 		/* Next 2 bytes are reserved */
@@ -1426,8 +1426,8 @@ static int dissect_ebhscr_csi2_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tr
 		}
 		field_offset += 1;
 
-		ti = proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_mipi_data_type, tvb, field_offset, 1, ENC_BIG_ENDIAN);
-		field_offset += 1;
+		proto_tree_add_item(csi2_frame_header_sections_subtree[i], hf_csi2_frame_header_mipi_data_type, tvb, field_offset, 1, ENC_BIG_ENDIAN);
+		/* field_offset += 1; */
 
 		ebhscr_current_payload_length -= CSI2_FRAME_SECTION_SIZE_BYTES;
 	}
@@ -1437,7 +1437,7 @@ static int dissect_ebhscr_csi2_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tr
 	if (ebhscr_current_payload_length > 0) {
 		next_tvb = tvb_new_subset_length(tvb, headers_length, ebhscr_current_payload_length);
 		call_data_dissector(next_tvb, pinfo, tree);
-		col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(wmem_packet_scope(), tvb, headers_length, ebhscr_current_payload_length, ' '));
+		col_append_fstr(pinfo->cinfo, COL_INFO, "  %s", tvb_bytes_to_str_punct(pinfo->pool, tvb, headers_length, ebhscr_current_payload_length, ' '));
 	}
 
 	return tvb_captured_length(tvb);
@@ -2047,7 +2047,7 @@ proto_register_ebhscr(void)
 			NULL, HFILL }
 		},
 		{ &hf_dio_channel_ref,
-			{ "Digital IO EBHSCR header 'Channel' referrence", "ebhscr.dio.ch_ref",
+			{ "Digital IO EBHSCR header 'Channel' reference", "ebhscr.dio.ch_ref",
 			FT_UINT64, BASE_DEC | BASE_VAL64_STRING,
 			VALS64(dio_channel_ref_strings), 0x0400000000000000,
 			NULL, HFILL }
@@ -2320,31 +2320,31 @@ proto_register_ebhscr(void)
 		{ &hf_dsi3_status_crc_error,
 			{ "CRC Error", "ebhscr.dsi3.status_crc_err",
 			FT_BOOLEAN, 16,
-			TFS(&dsi3_status_err_CRC_strings), 0x01,
+			TFS(&dsi3_status_err_CRC_strings), 0x0001,
 			NULL, HFILL }
 		},
 		{ &hf_dsi3_status_transition_error,
 			{ "Transition Error", "ebhscr.dsi3.status_trans_err",
 			FT_BOOLEAN, 16,
-			TFS(&dsi3_status_err_trans_strings), 0x02,
+			TFS(&dsi3_status_err_trans_strings), 0x0002,
 			NULL, HFILL }
 		},
 		{ &hf_dsi3_status_packet_truncated_error,
 			{ "Packet Truncated Error", "ebhscr.dsi3.status_trunc_err",
 			FT_BOOLEAN, 16,
-			TFS(&dsi3_status_err_trunc_strings), 0x04,
+			TFS(&dsi3_status_err_trunc_strings), 0x0004,
 			NULL, HFILL }
 		},
 		{ &hf_dsi3_status_packet_dropped_error,
 			{ "Packet Dropped Error", "ebhscr.dsi3.status_drop_err",
 			FT_BOOLEAN, 16,
-			TFS(&dsi3_status_err_drop_strings), 0x08,
+			TFS(&dsi3_status_err_drop_strings), 0x0008,
 			NULL, HFILL }
 		},
 		{ &hf_dsi3_mjr_hdr_st0_command_type,
 			{ "DSI3 Command Type", "ebhscr.dsi3.st0.cmd_type",
 			FT_BOOLEAN, 32,
-			TFS(&dsi3_mjr_hdr_st0_command_type_strings), 0x0100000,
+			TFS(&dsi3_mjr_hdr_st0_command_type_strings), 0x00100000,
 			NULL, HFILL }
 		},
 		{ &hf_dsi3_mjr_hdr_slave_st0_bit_count,
@@ -2462,7 +2462,7 @@ proto_register_ebhscr(void)
 			NULL, HFILL }
 		},
 		{ &hf_mipi_csi2_status_packet_checksum_err,
-			{ "MIPI CSI-2 long packet checksum error", "ebhscr.mipi_csi2.st.chceksum_err",
+			{ "MIPI CSI-2 long packet checksum error", "ebhscr.mipi_csi2.st.checksum_err",
 			FT_BOOLEAN, 12,
 			NULL, 0x001,
 			NULL, HFILL }
@@ -2506,19 +2506,19 @@ proto_register_ebhscr(void)
 		{ &hf_mipi_csi2_mjr_hdr_flags_packet_checksum_err,
 			{ "MIPI CSI-2 long packet checksum error", "ebhscr.mipi_csi2.mjhdr.flg.pkt_chsm_err",
 			FT_BOOLEAN, 16,
-			NULL, 0x01,
+			NULL, 0x0001,
 			NULL, HFILL }
 		},
 		{ &hf_mipi_csi2_mjr_hdr_flags_correctable_ecc_err,
 			{ "MIPI CSI-2 packet header contains an correctable ECC error", "ebhscr.mipi_csi2.mjhdr.flg.corr_ecc_err",
 			FT_BOOLEAN, 16,
-			NULL, 0x02,
+			NULL, 0x0002,
 			NULL, HFILL }
 		},
 		{ &hf_mipi_csi2_mjr_hdr_flags_uncorrectable_ecc_err,
 			{ "MIPI CSI-2 packet header contains an uncorrectable ECC error", "ebhscr.mipi_csi2.mjhdr.flg.uncorr_ecc_err",
 			FT_BOOLEAN, 16,
-			NULL, 0x04,
+			NULL, 0x0004,
 			NULL, HFILL }
 		},
 		{ &hf_mipi_csi2_mjr_hdr_flags_mipi_phy_type,

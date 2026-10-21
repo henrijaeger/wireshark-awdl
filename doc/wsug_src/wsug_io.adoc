@@ -501,7 +501,7 @@ I 2019-05-14T19:04:57Z
 ==== Regular Text Dumps
 
 Wireshark is also capable of scanning the input using a custom Perl regular
-expression as specified by GLib's https://developer-old.gnome.org/glib/stable/glib-regex-syntax.html[GRegex here].
+expression as specified by GLib's https://docs.gtk.org/glib/struct.Regex.html[GRegex here].
 Using a regex capturing a single packet in the given file
 Wireshark will search the given file from start to the second to last character
 (the last character has to be `\n` and is ignored)
@@ -628,7 +628,7 @@ Packet format regular expression::
 This is the regex used for searching packets and metadata inside the input file.
 Named capturing subgroups are used to find the individual fields. Anchors `^` and
 `$` are set to match directly before and after newlines `\n` or `\r\n`. See
-https://developer-old.gnome.org/glib/stable/glib-regex-syntax.html[GRegex] for a full
+https://docs.gtk.org/glib/struct.Regex.html[GRegex] for a full
 documentation.
 
 Data encoding::
@@ -709,9 +709,9 @@ some features to handle these file sets in a convenient way.
 
 .How does Wireshark detect the files of a file set?
 ****
-A filename in a file set uses the format Prefix_Number_DateTimeSuffix (or,
-in Wireshark 4.4.0 and later, Prefix_DateTime_NumberSuffix) which might
-look something like `test_00001_20250714183910.pcap`. All files of a file
+A filename in a file set uses the format Prefix_DateTime_NumberSuffix (or,
+prior to Wireshark 4.4.0, Prefix_Number_DateTimeSuffix) which might
+look something like `test_20250714183910_00001.pcap`. All files of a file
 set share the same prefix (e.g., “test”) and suffix (e.g., “.pcap”) and a
 varying middle part. Files are also allowed to have a second compression
 suffix of types that Wireshark can open; the compression suffix does not

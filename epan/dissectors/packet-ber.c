@@ -1770,9 +1770,6 @@ proto_tree_add_debug_text(tree, "OCTET STRING dissect_ber_octet_string(%s) enter
             it = ber_proto_tree_add_item(actx->pinfo, tree, hf_id, tvb, offset, length_remaining, encoding);
             actx->created_item = it;
             ber_check_length(length_remaining, min_len, max_len, actx, it, false);
-        } else {
-
-            proto_tree_add_item(tree, hf_ber_unknown_octetstring, tvb, offset, len, ENC_NA);
         }
 
         if (out_tvb) {
@@ -2235,6 +2232,10 @@ proto_tree_add_debug_text(tree, "SEQUENCE dissect_ber_sequence(%s) entered\n", n
     if(offset == end_offset){
         proto_item_append_text(item, " [0 length]");
     }
+
+    /* XXX - record the mandatory elements of the sequence so we can check at
+       the end that they were present, as in dissect_ber_set. */
+
     /* loop over all entries until we reach the end of the sequence */
     while (offset < end_offset) {
         int8_t   ber_class;
@@ -3865,10 +3866,9 @@ dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuf
 
     if (datestrptr) {
        *datestrptr = outstr; /* mark as valid */
-    } else {
-        if (hf_id > 0) {
-            proto_tree_add_string(tree, hf_id, tvb, offset, len, outstr);
-        }
+    }
+    if (hf_id > 0) {
+        proto_tree_add_string(tree, hf_id, tvb, offset, len, outstr);
     }
     if (tvblen) *tvblen = len;
 
@@ -4274,11 +4274,15 @@ dissect_ber_file(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
 {
     struct ber_phdr *ber = (struct ber_phdr *)data;
     const char *ptr;
-    const char *file_syntax = NULL;
+    const char *syntax = NULL;
 
-    if ((ptr = strrchr(ber->pathname, '.')) != NULL)
-        file_syntax = get_ber_oid_syntax(ptr);
-    return dissect_ber_common(tvb, pinfo, tree, file_syntax);
+    if (decode_as_syntax) {
+        syntax = decode_as_syntax;
+    } else if ((ptr = strrchr(ber->pathname, '.')) != NULL) {
+        syntax = get_ber_oid_syntax(ptr);
+    }
+
+    return dissect_ber_common(tvb, pinfo, tree, syntax);
 }
 
 bool

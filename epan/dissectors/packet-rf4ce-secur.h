@@ -13,11 +13,9 @@
 #define PACKET_RF4CE_SECUR_H
 
 #include <stdbool.h>
-#include "config.h"
 #include <epan/packet.h>
 #include <epan/expert.h>
 #include <epan/uat.h>
-#include <epan/value_string.h>
 
 #define RF4CE_IEEE_ADDR_LEN                 8
 #define RF4CE_SHORT_ADDR_LEN                2

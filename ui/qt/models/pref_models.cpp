@@ -274,7 +274,7 @@ fill_prefs(module_t *module, void *root_ptr)
     for (GList *pref_l = module->prefs; pref_l && pref_l->data; pref_l = gxx_list_next(pref_l)) {
         pref_t *pref = gxx_list_data(pref_t *, pref_l);
 
-        if (prefs_get_type(pref) == PREF_OBSOLETE || prefs_get_type(pref) == PREF_STATIC_TEXT)
+        if (prefs_is_preference_obsolete(pref) || (prefs_get_type(pref) == PREF_STATIC_TEXT))
             continue;
 
         const char *type_name = prefs_pref_type_name(pref);
@@ -314,6 +314,8 @@ void PrefsModel::populate()
     appearance_item->prependChild(appearance_subitem);
     appearance_subitem = new PrefsItem(PrefsModel::FontAndColors, appearance_item);
     appearance_item->prependChild(appearance_subitem);
+    appearance_subitem = new PrefsItem(PrefsModel::WelcomePage, appearance_item);
+    appearance_item->prependChild(appearance_subitem);
 
     special_item = new PrefsItem(PrefsModel::Capture, root_);
     root_->prependChild(special_item);
@@ -329,7 +331,7 @@ void PrefsModel::populate()
     root_->prependChild(special_item);
 }
 
-QString PrefsModel::typeToString(int type)
+QString PrefsModel::typeToString(PrefsModelType type)
 {
     QString typeStr;
 
@@ -340,6 +342,7 @@ QString PrefsModel::typeToString(int type)
         case Layout: typeStr = tr("Layout"); break;
         case Columns: typeStr = tr("Columns"); break;
         case FontAndColors: typeStr = tr("Font and Colors"); break;
+        case WelcomePage: typeStr = tr("Welcome Page"); break;
         case Capture: typeStr = tr("Capture"); break;
         case Expert: typeStr = tr("Expert"); break;
         case FilterButtons: typeStr = tr("Filter Buttons"); break;
@@ -349,7 +352,7 @@ QString PrefsModel::typeToString(int type)
     return typeStr;
 }
 
-QString PrefsModel::typeToHelp(int type)
+QString PrefsModel::typeToHelp(PrefsModelType type)
 {
     QString helpStr;
 
@@ -366,6 +369,9 @@ QString PrefsModel::typeToHelp(int type)
             break;
         case Layout:
             helpStr = QStringLiteral("ChCustPreferencesSection.html#_layout");
+            break;
+        case WelcomePage:
+            helpStr = QStringLiteral("ChCustPreferencesSection.html#_welcome_page");
             break;
         case Capture:
             helpStr = QStringLiteral("ChCustPreferencesSection.html#_capture");
@@ -710,14 +716,28 @@ bool AdvancedPrefsModel::filterAcceptsRow(int sourceRow, const QModelIndex &sour
 
 void AdvancedPrefsModel::setFilter(const QString& filter)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    beginFilterChange();
+#endif
     filter_ = filter;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    endFilterChange(QSortFilterProxyModel::Direction::Rows);
+#else
     invalidateFilter();
+#endif
 }
 
 void AdvancedPrefsModel::setShowChangedValues(bool show_changed_values)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    beginFilterChange();
+#endif
     show_changed_values_ = show_changed_values;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    endFilterChange(QSortFilterProxyModel::Direction::Rows);
+#else
     invalidateFilter();
+#endif
 }
 
 

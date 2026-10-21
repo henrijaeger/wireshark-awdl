@@ -1949,9 +1949,9 @@ dissect_h265_slice_segment_header(proto_tree *tree, tvbuff_t *tvb, packet_info *
 	unsigned MinCbLog2SizeY = log2_min_luma_coding_block_size_minus3 + 3;
 	unsigned CtbLog2SizeY = MinCbLog2SizeY + log2_diff_max_min_luma_coding_block_size;
 	unsigned CtbSizeY = 1 << CtbLog2SizeY;
-	double PicWidthInCtbsY = ceil(pic_width_in_luma_samples / CtbSizeY);
-        double PicHeightInCtbsY = ceil(pic_height_in_luma_samples / CtbSizeY);
-        double PicSizeInCtbsY = PicWidthInCtbsY * PicHeightInCtbsY;
+	double PicWidthInCtbsY = ceil((double)pic_width_in_luma_samples / CtbSizeY);
+	double PicHeightInCtbsY = ceil((double)pic_height_in_luma_samples / CtbSizeY);
+	double PicSizeInCtbsY = PicWidthInCtbsY * PicHeightInCtbsY;
 	unsigned nBits = (unsigned)(ceil(log2(PicSizeInCtbsY)));
 	unsigned i;
 
@@ -2409,11 +2409,11 @@ dissect_h265_hrd_parameters(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo 
 		}
 		if (nal_hrd_parameters_present_flag) {
 
-			dissect_h265_sub_layer_hrd_parameters(tree, tvb, pinfo, bit_offset, subLayerId, cpb_cnt_minus1[subLayerId] + 1, sub_pic_hrd_params_present_flag);
+			bit_offset = dissect_h265_sub_layer_hrd_parameters(tree, tvb, pinfo, bit_offset, subLayerId, cpb_cnt_minus1[subLayerId] + 1, sub_pic_hrd_params_present_flag);
 		}
 		if (vcl_hrd_parameters_present_flag) {
 
-			dissect_h265_sub_layer_hrd_parameters(tree, tvb, pinfo, bit_offset, subLayerId, cpb_cnt_minus1[subLayerId] + 1, sub_pic_hrd_params_present_flag);
+			bit_offset = dissect_h265_sub_layer_hrd_parameters(tree, tvb, pinfo, bit_offset, subLayerId, cpb_cnt_minus1[subLayerId] + 1, sub_pic_hrd_params_present_flag);
 		}
 	}
 	return bit_offset;
@@ -2954,7 +2954,7 @@ dissect_h265(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
 	type = h265_nalu_hextet >> 9 & 0x3F;
 
 	col_append_fstr(pinfo->cinfo, COL_INFO, " %s",
-		val_to_str(type, h265_type_summary_values, "Unknown Type (%u)"));
+		val_to_str(pinfo->pool, type, h265_type_summary_values, "Unknown Type (%u)"));
 
 	/* if (tree) */ {
 		item = proto_tree_add_item(tree, proto_h265, tvb, 0, -1, ENC_NA);
@@ -2996,7 +2996,7 @@ dissect_h265(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
 			if ((tvb_get_uint8(tvb, offset) & 0x80) == 0x80) {
 				type = tvb_get_uint8(tvb, offset) & 0x1f;
 				col_append_fstr(pinfo->cinfo, COL_INFO, " Start:%s",
-					val_to_str(type, h265_type_summary_values, "Unknown Type (%u)"));
+					val_to_str(pinfo->pool, type, h265_type_summary_values, "Unknown Type (%u)"));
 				offset++;
 			}
 			else
@@ -3150,7 +3150,7 @@ proto_register_h265(void)
 		NULL, HFILL }
 		},
 		{ &hf_h265_type,
-		{ "Type", "h265.nal_unit_type",
+        { "Type", "h265.type",
 		FT_UINT16, BASE_DEC, VALS(h265_type_values), 0x7E00,
 		NULL, HFILL }
 		},

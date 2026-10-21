@@ -237,62 +237,68 @@ WSLUA_CONSTRUCTOR Dumper_new(lua_State* L) {
 
     if (! d ) {
         /* WSLUA_ERROR("Error while opening file for writing"); */
+
+        /* Push an appropriate error message, and free the err_info string
+           if necessary. */
         switch (err) {
         case WTAP_ERR_NOT_REGULAR_FILE:
-            luaL_error(L,"The file \"%s\" is a \"special file\" or socket or other non-regular file",
-                       filename);
+            lua_pushfstring(L,"The file \"%s\" is a \"special file\" or socket or other non-regular file",
+                            filename);
             break;
 
         case WTAP_ERR_CANT_WRITE_TO_PIPE:
-            luaL_error(L,"The file \"%s\" is a pipe, and %s capture files can't be written to a pipe",
-                       filename, wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"The file \"%s\" is a pipe, and %s capture files can't be written to a pipe",
+                            filename,
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_UNWRITABLE_FILE_TYPE:
-            luaL_error(L,"Files of file type %s cannot be written",
-                       wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"Files of file type %s cannot be written",
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_UNWRITABLE_ENCAP:
-            luaL_error(L,"Files of file type %s don't support encapsulation %s",
-                       wtap_file_type_subtype_description(filetype),
-                       wtap_encap_name(encap));
+            lua_pushfstring(L,"Files of file type %s don't support encapsulation %s",
+                            wtap_file_type_subtype_description(filetype),
+                            wtap_encap_name(encap));
             break;
 
         case WTAP_ERR_ENCAP_PER_PACKET_UNSUPPORTED:
-            luaL_error(L,"Files of file type %s don't support per-packet encapsulation",
-                       wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"Files of file type %s don't support per-packet encapsulation",
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_CANT_OPEN:
-            luaL_error(L,"The file \"%s\" could not be created for some unknown reason",
-                       filename);
+            lua_pushfstring(L,"The file \"%s\" could not be created for some unknown reason",
+                            filename);
             break;
 
         case WTAP_ERR_SHORT_WRITE:
-            luaL_error(L,"A full header couldn't be written to the file \"%s\".",
-                       filename);
+            lua_pushfstring(L,"A full header couldn't be written to the file \"%s\".",
+                            filename);
             break;
 
         case WTAP_ERR_COMPRESSION_NOT_SUPPORTED:
-            luaL_error(L,"Files of file type %s cannot be written as a compressed file",
-                       wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"Files of file type %s cannot be written as a compressed file",
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_INTERNAL:
-            luaL_error(L,"An internal error occurred creating the file \"%s\" (%s)",
-                       filename,
-                       err_info != NULL ? err_info : "no information supplied");
+            lua_pushfstring(L,"An internal error occurred creating the file \"%s\" (%s)",
+                            filename,
+                            err_info != NULL ? err_info : "no information supplied");
             g_free(err_info);
             break;
 
         default:
-            luaL_error(L,"error while opening \"%s\": %s",
-                       filename,
-                       wtap_strerror(err));
+            lua_pushfstring(L,"error while opening \"%s\": %s",
+                            filename,
+                            wtap_strerror(err));
             break;
         }
-        return 0;
+
+        /* Now throw the error. */
+        return lua_error(L);
     }
 
     g_hash_table_insert(dumper_encaps,d,GINT_TO_POINTER(encap));
@@ -316,14 +322,19 @@ WSLUA_METHOD Dumper_close(lua_State* L) {
     g_hash_table_remove(dumper_encaps,*dp);
 
     if (!wtap_dump_close(*dp, NULL, &err, &err_info)) {
+        /* Push an appropriate error message, and free the err_info string
+           if necessary. */
         if (err_info != NULL) {
-            luaL_error(L,"error closing: %s (%s)",
-                       wtap_strerror(err), err_info);
+            lua_pushfstring(L,"error closing: %s (%s)",
+                            wtap_strerror(err), err_info);
             g_free(err_info);
         } else {
-            luaL_error(L,"error closing: %s",
-                       wtap_strerror(err));
+            lua_pushfstring(L,"error closing: %s",
+                            wtap_strerror(err));
         }
+
+        /* Now throw the error. */
+        return lua_error(L);
     }
 
     /* this way if we close a dumper any attempt to use it (for everything but GC) will yield an error */
@@ -385,7 +396,7 @@ WSLUA_METHOD Dumper_dump(lua_State* L) {
 
     wtap_rec_init(&rec, ba->len);
 
-    rec.rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(&rec, DUMPER_ENCAP(d));
 
     rec.presence_flags = WTAP_HAS_TS;
     rec.ts.secs  = (unsigned int)(floor(ts));
@@ -393,7 +404,6 @@ WSLUA_METHOD Dumper_dump(lua_State* L) {
 
     rec.rec_header.packet_header.len       = ba->len;
     rec.rec_header.packet_header.caplen    = ba->len;
-    rec.rec_header.packet_header.pkt_encap = DUMPER_ENCAP(d);
     if (ph->wph) {
         rec.rec_header.packet_header.pseudo_header = *ph->wph;
     }
@@ -405,19 +415,25 @@ WSLUA_METHOD Dumper_dump(lua_State* L) {
 
     if (! wtap_dump(d, &rec, &err, &err_info)) {
         wtap_rec_cleanup(&rec);
+
+        /* Push an appropriate error message, and free the err_info string
+           if necessary. */
         switch (err) {
 
         case WTAP_ERR_UNWRITABLE_REC_DATA:
-            luaL_error(L,"error while dumping: %s (%s)",
-                       wtap_strerror(err), err_info);
+            lua_pushfstring(L,"error while dumping: %s (%s)",
+                            wtap_strerror(err), err_info);
             g_free(err_info);
             break;
 
         default:
-            luaL_error(L,"error while dumping: %s",
-                       wtap_strerror(err));
+            lua_pushfstring(L,"error while dumping: %s",
+                            wtap_strerror(err));
             break;
         }
+
+        /* Now throw the error. */
+        return lua_error(L);
     }
 
     wtap_rec_cleanup(&rec);
@@ -454,62 +470,67 @@ WSLUA_METHOD Dumper_new_for_current(lua_State* L) {
                        &err_info);
 
     if (! d ) {
+        /* Push an appropriate error message, and free the err_info string
+           if necessary. */
         switch (err) {
         case WTAP_ERR_NOT_REGULAR_FILE:
-            luaL_error(L,"The file \"%s\" is a \"special file\" or socket or other non-regular file",
-                       filename);
+            lua_pushfstring(L,"The file \"%s\" is a \"special file\" or socket or other non-regular file",
+                            filename);
             break;
 
         case WTAP_ERR_CANT_WRITE_TO_PIPE:
-            luaL_error(L,"The file \"%s\" is a pipe, and %s capture files can't be written to a pipe",
-                       filename, wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"The file \"%s\" is a pipe, and %s capture files can't be written to a pipe",
+                            filename,
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_UNWRITABLE_FILE_TYPE:
-            luaL_error(L,"Files of file type %s cannot be written",
-                       wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"Files of file type %s cannot be written",
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_UNWRITABLE_ENCAP:
-            luaL_error(L,"Files of file type %s don't support encapsulation %s",
-                       wtap_file_type_subtype_description(filetype),
-                       wtap_encap_name(encap));
+            lua_pushfstring(L,"Files of file type %s don't support encapsulation %s",
+                            wtap_file_type_subtype_description(filetype),
+                            wtap_encap_name(encap));
             break;
 
         case WTAP_ERR_ENCAP_PER_PACKET_UNSUPPORTED:
-            luaL_error(L,"Files of file type %s don't support per-packet encapsulation",
-                       wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"Files of file type %s don't support per-packet encapsulation",
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_CANT_OPEN:
-            luaL_error(L,"The file \"%s\" could not be created for some unknown reason",
-                       filename);
+            lua_pushfstring(L,"The file \"%s\" could not be created for some unknown reason",
+                            filename);
             break;
 
         case WTAP_ERR_SHORT_WRITE:
-            luaL_error(L,"A full header couldn't be written to the file \"%s\".",
-                       filename);
+            lua_pushfstring(L,"A full header couldn't be written to the file \"%s\".",
+                            filename);
             break;
 
         case WTAP_ERR_COMPRESSION_NOT_SUPPORTED:
-            luaL_error(L,"Files of file type %s cannot be written as a compressed file",
-                       wtap_file_type_subtype_description(filetype));
+            lua_pushfstring(L,"Files of file type %s cannot be written as a compressed file",
+                            wtap_file_type_subtype_description(filetype));
             break;
 
         case WTAP_ERR_INTERNAL:
-             luaL_error(L,"An internal error occurred creating the file \"%s\" (%s)",
-                        filename,
-                        err_info != NULL ? err_info : "no information supplied");
+             lua_pushfstring(L,"An internal error occurred creating the file \"%s\" (%s)",
+                             filename,
+                             err_info != NULL ? err_info : "no information supplied");
              g_free(err_info);
              break;
 
         default:
-            luaL_error(L,"error while opening \"%s\": %s",
-                       filename,
-                       wtap_strerror(err));
+            lua_pushfstring(L,"error while opening \"%s\": %s",
+                            filename,
+                            wtap_strerror(err));
             break;
         }
-        return 0;
+
+        /* Now throw the error. */
+        return lua_error(L);
     }
 
     pushDumper(L,d);
@@ -547,12 +568,11 @@ WSLUA_METHOD Dumper_dump_current(lua_State* L) {
 
     wtap_rec_init(&rec, tvb_captured_length(tvb));
 
-    rec.rec_type                           = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(&rec, lua_pinfo->rec->rec_header.packet_header.pkt_encap);
     rec.presence_flags                     = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
     rec.ts                                 = lua_pinfo->abs_ts;
     rec.rec_header.packet_header.len       = tvb_reported_length(tvb);
     rec.rec_header.packet_header.caplen    = tvb_captured_length(tvb);
-    rec.rec_header.packet_header.pkt_encap = lua_pinfo->rec->rec_header.packet_header.pkt_encap;
     rec.rec_header.packet_header.pseudo_header = *lua_pinfo->pseudo_header;
 
     /*
@@ -571,19 +591,25 @@ WSLUA_METHOD Dumper_dump_current(lua_State* L) {
 
     if (! wtap_dump(d, &rec, &err, &err_info)) {
         wtap_rec_cleanup(&rec);
+
+        /* Push an appropriate error message, and free the err_info string
+           if necessary. */
         switch (err) {
 
         case WTAP_ERR_UNWRITABLE_REC_DATA:
-            luaL_error(L,"error while dumping: %s (%s)",
-                       wtap_strerror(err), err_info);
+            lua_pushfstring(L,"error while dumping: %s (%s)",
+                            wtap_strerror(err), err_info);
             g_free(err_info);
             break;
 
         default:
-            luaL_error(L,"error while dumping: %s",
-                       wtap_strerror(err));
+            lua_pushfstring(L,"error while dumping: %s",
+                            wtap_strerror(err));
             break;
         }
+
+        /* Now throw the error. */
+        return lua_error(L);
     }
 
     wtap_rec_cleanup(&rec);
@@ -605,14 +631,19 @@ static int Dumper__gc(lua_State* L) {
     g_hash_table_remove(dumper_encaps,*dp);
 
     if (!wtap_dump_close(*dp, NULL, &err, &err_info)) {
+        /* Push an appropriate error message, and free the err_info string
+           if necessary. */
         if (err_info != NULL) {
-            luaL_error(L,"error closing: %s (%s)",
-                       wtap_strerror(err), err_info);
+            lua_pushfstring(L,"error closing: %s (%s)",
+                            wtap_strerror(err), err_info);
             g_free(err_info);
         } else {
-            luaL_error(L,"error closing: %s",
-                       wtap_strerror(err));
+            lua_pushfstring(L,"error closing: %s",
+                            wtap_strerror(err));
         }
+
+        /* Now throw the error. */
+        return lua_error(L);
     }
 
     return 0;

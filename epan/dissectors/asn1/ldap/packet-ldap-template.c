@@ -530,7 +530,7 @@ get_hf_for_header(char* attribute_type)
 {
   int* hf_id = NULL;
 
-  if (attribute_types_hash) {
+  if (attribute_types_hash && attribute_type) {
     hf_id = (int*) g_hash_table_lookup(attribute_types_hash, attribute_type);
   } else {
     hf_id = NULL;
@@ -638,7 +638,7 @@ static char *ldapvalue_string;
  * display it as a string, othervise just display it in hex.
  */
 static int
-dissect_ldap_AssertionValue(bool implicit_tag, tvbuff_t *tvb, int offset, asn1_ctx_t *actx _U_, proto_tree *tree, int hf_index)
+dissect_ldap_AssertionValue(bool implicit_tag, tvbuff_t *tvb, int offset, asn1_ctx_t *actx, proto_tree *tree, int hf_index)
 {
   int8_t ber_class;
   bool pc, ind, is_ascii;
@@ -671,7 +671,7 @@ dissect_ldap_AssertionValue(bool implicit_tag, tvbuff_t *tvb, int offset, asn1_c
 
     /* this octet string contains an NT SID */
     sid_tvb=tvb_new_subset_length(tvb, offset, len);
-    dissect_nt_sid(sid_tvb, 0, tree, "SID", &tmpstr, hf_index);
+    dissect_nt_sid(sid_tvb, actx->pinfo, 0, tree, "SID", &tmpstr, hf_index);
     ldapvalue_string=tmpstr;
 
     goto finished;
@@ -766,7 +766,7 @@ static void ldap_do_protocolop(packet_info *pinfo)
 
   if (do_protocolop) {
 
-    valstr = val_to_str(ProtocolOp, ldap_ProtocolOp_choice_vals, "Unknown (%u)");
+    valstr = val_to_str(pinfo->pool, ProtocolOp, ldap_ProtocolOp_choice_vals, "Unknown (%u)");
 
     col_append_fstr(pinfo->cinfo, COL_INFO, "%s(%u) ", valstr, MessageID);
 
@@ -1329,7 +1329,7 @@ int dissect_mscldap_string(wmem_allocator_t *scope, tvbuff_t *tvb, int offset, i
   unsigned name_len;
 
   /* The name data MUST start at offset 0 of the tvb */
-  compr_len = get_dns_name(tvb, offset, max_len, 0, &name, &name_len);
+  compr_len = get_dns_name(scope, tvb, offset, max_len, 0, &name, &name_len);
   *str = get_utf_8_string(scope, name, name_len);
   return offset + compr_len;
 }
@@ -1748,12 +1748,12 @@ dissect_ldap_nt_sec_desc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 }
 
 static int
-dissect_ldap_sid(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void* data _U_)
+dissect_ldap_sid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
   char *tmpstr;
 
   /* this octet string contains an NT SID */
-  dissect_nt_sid(tvb, 0, tree, "SID", &tmpstr, hf_ldap_sid);
+  dissect_nt_sid(tvb, pinfo, 0, tree, "SID", &tmpstr, hf_ldap_sid);
   ldapvalue_string=tmpstr;
   return tvb_captured_length(tvb);
 }
@@ -2310,10 +2310,7 @@ proto_reg_handoff_ldap(void)
 
 /*  http://msdn.microsoft.com/library/default.asp?url=/library/en-us/dsml/dsml/ldap_controls_and_session_support.asp */
 /*  https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/3c5e87db-4728-4f29-b164-01dd7d7391ea */
-  oid_add_from_string("LDAP_PAGED_RESULT_OID_STRING","1.2.840.113556.1.4.319");
   oid_add_from_string("LDAP_SERVER_SHOW_DELETED_OID","1.2.840.113556.1.4.417");
-  oid_add_from_string("LDAP_SERVER_SORT_OID","1.2.840.113556.1.4.473");
-  oid_add_from_string("LDAP_SERVER_RESP_SORT_OID","1.2.840.113556.1.4.474");
   oid_add_from_string("LDAP_SERVER_CROSSDOM_MOVE_TARGET_OID","1.2.840.113556.1.4.521");
   oid_add_from_string("LDAP_SERVER_NOTIFICATION_OID","1.2.840.113556.1.4.528");
   oid_add_from_string("LDAP_SERVER_EXTENDED_DN_OID","1.2.840.113556.1.4.529");
@@ -2327,7 +2324,6 @@ proto_reg_handoff_ldap(void)
   oid_add_from_string("LDAP_MATCHING_RULE_BIT_AND", "1.2.840.113556.1.4.803");
   oid_add_from_string("LDAP_MATCHING_RULE_BIT_OR","1.2.840.113556.1.4.804");
   oid_add_from_string("LDAP_SERVER_TREE_DELETE_OID","1.2.840.113556.1.4.805");
-  oid_add_from_string("LDAP_SERVER_DIRSYNC_OID","1.2.840.113556.1.4.841");
   oid_add_from_string("LDAP_SERVER_GET_STATS_OID","1.2.840.113556.1.4.970");
   oid_add_from_string("LDAP_SERVER_VERIFY_NAME_OID","1.2.840.113556.1.4.1338");
   oid_add_from_string("LDAP_SERVER_DOMAIN_SCOPE_OID","1.2.840.113556.1.4.1339");

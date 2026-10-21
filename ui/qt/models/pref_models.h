@@ -35,6 +35,7 @@ public:
         Layout,
         Columns,
         FontAndColors,
+        WelcomePage,
         Capture,
         Expert,
         FilterButtons,
@@ -57,8 +58,8 @@ public:
     int rowCount(const QModelIndex &parent = QModelIndex()) const;
     int columnCount(const QModelIndex &parent = QModelIndex()) const;
 
-    static QString typeToString(int type);
-    static QString typeToHelp(int type);
+    static QString typeToString(PrefsModelType type);
+    static QString typeToHelp(PrefsModelType type);
 
 private:
     void populate();

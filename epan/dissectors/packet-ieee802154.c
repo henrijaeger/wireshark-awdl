@@ -108,6 +108,8 @@
 /* Use libgcrypt for cipher libraries. */
 #include <wsutil/wsgcrypt.h>
 
+#include <wsutil/ws_padding_to.h>
+
 #include "packet-ieee802154.h"
 #include "packet-sll.h"
 #include "packet-zbee-tlv.h"
@@ -202,10 +204,6 @@ static uint64_t ieee802154_tsch_asn;
 static const char  *ieee802154_user    = "User";
 
 static wmem_tree_t* mac_key_hash_handlers;
-
-#ifndef ROUND_UP
-#define ROUND_UP(_offset_, _align_) (((_offset_) + (_align_) - 1) / (_align_) * (_align_))
-#endif
 
 /*
  * Address Hash Tables
@@ -1473,7 +1471,7 @@ static bool ieee802154_extend_auth = true;
 
 static int ieee802_15_4_short_address_to_str(const address* addr, char *buf, int buf_len)
 {
-    uint16_t ieee_802_15_4_short_addr = pletoh16(addr->data);
+    uint16_t ieee_802_15_4_short_addr = pletohu16(addr->data);
 
     if (ieee_802_15_4_short_addr == 0xffff)
     {
@@ -2838,7 +2836,7 @@ ieee802154_dissect_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, u
         packet->dst64 = tvb_get_letoh64(tvb, offset);
 
         /* Copy and convert the address to network byte order. */
-        *p_addr = pntoh64(&(packet->dst64));
+        *p_addr = pntohu64(&(packet->dst64));
 
         /* Display the destination address. */
         /* XXX - OUI resolution doesn't happen when displaying resolved
@@ -2933,7 +2931,7 @@ ieee802154_dissect_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, u
         packet->src64 = tvb_get_letoh64(tvb, offset);
 
         /* Copy and convert the address to network byte order. */
-        *p_addr = pntoh64(&(packet->src64));
+        *p_addr = pntohu64(&(packet->src64));
 
         /* Display the source address. */
         /* XXX - OUI resolution doesn't happen when displaying resolved
@@ -3513,9 +3511,7 @@ ieee802154_create_tap_tlv_tree(proto_tree *tree, tvbuff_t *tvb, int offset, uint
     *length = tvb_get_letohs(tvb, offset+2);
 
     subtree_length = 4 + *length;
-    if (*length % 4) {
-        subtree_length += (4 - *length % 4);
-    }
+    subtree_length += WS_PADDING_TO_4(*length);
 
     subtree = proto_tree_add_subtree(tree, tvb, offset, subtree_length, ett_ieee802154_tap_tlv, &ti, "");
 
@@ -3659,17 +3655,19 @@ dissect_ieee802154_tap_tlvs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
                 proto_item_append_text(proto_tree_get_parent(tlvtree), "Unknown TLV");
                 break;
         } /* switch (tlv_type) */
+        offset += length;
 
-        if (length%4) {
+        unsigned padding_len = WS_PADDING_TO_4(length);
+        if (padding_len != 0) {
             uint32_t zero = 0;
             GByteArray *padding = g_byte_array_sized_new(4);
-            ti = proto_tree_add_bytes_item(tlvtree, hf_ieee802154_tap_tlv_padding, tvb, offset+length, 4-length%4, ENC_NA, padding, NULL, NULL);
-            if (memcmp(&zero, padding->data, 4-length%4)) {
+            ti = proto_tree_add_bytes_item(tlvtree, hf_ieee802154_tap_tlv_padding, tvb, offset, padding_len, ENC_NA, padding, NULL, NULL);
+            if (memcmp(&zero, padding->data, padding_len)) {
                 expert_add_info(NULL, ti, &ei_ieee802154_tap_tlv_padding_not_zeros);
             }
             g_byte_array_free(padding, true);
+            offset += padding_len;
         }
-        offset += ROUND_UP(length, 4);
     } /* while */
 
     /* if we have both slot start and frame start timestamp, show frame start offset */
@@ -5943,7 +5941,7 @@ proto_init_ieee802154(void)
     /* Reload the hash table from the static address UAT. */
     for (i=0; (i<num_static_addrs) && (static_addrs); i++) {
         ieee802154_addr_update(&ieee802154_map,(uint16_t)static_addrs[i].addr16, (uint16_t)static_addrs[i].pan,
-               pntoh64(static_addrs[i].eui64), ieee802154_user, IEEE802154_USER_MAPPING);
+               pntohu64(static_addrs[i].eui64), ieee802154_user, IEEE802154_USER_MAPPING);
     } /* for */
 } /* proto_init_ieee802154 */
 
@@ -7300,7 +7298,7 @@ void proto_register_ieee802154(void)
                 "Invalid Addressing", EXPFILL }},
         { &ei_ieee802154_invalid_panid_compression, { "wpan.invalid_panid_compression", PI_MALFORMED, PI_ERROR,
                 "Invalid Setting for PAN ID Compression", EXPFILL }},
-        { &ei_ieee802154_invalid_panid_compression2, { "wpan.invalid_panid_compression", PI_MALFORMED, PI_ERROR,
+        { &ei_ieee802154_invalid_panid_compression2, { "wpan.invalid_panid_compression2", PI_MALFORMED, PI_ERROR,
                 "Invalid Pan ID Compression and addressing combination for Frame Version 2", EXPFILL }},
         { &ei_ieee802154_dst, { "wpan.dst_invalid", PI_MALFORMED, PI_ERROR,
                 "Invalid Destination Address Mode", EXPFILL }},

@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * References: 3GPP TS 38.473 V18.5.0 (2025-03)
+ * References: 3GPP TS 38.473 V18.6.0 (2025-06)
  */
 
 #include "config.h"
@@ -356,6 +356,7 @@ struct f1ap_tap_t {
 #define MTYPE_BROADCAST_TRANSPORT_RESOURCE_REQUEST         155
 #define MTYPE_DU_CU_ACCESS_AND_MOBILITY_INDICATION         156
 #define MTYPE_SRS_INFORMATION_RESERVATION_NOTIFICATION     157
+#define MTYPE_CU_DU_MOBILITY_INITIATION_REQUEST            158
 
 static const value_string mtype_names[] = {
     { MTYPE_RESET,     "Reset" },
@@ -515,6 +516,7 @@ static const value_string mtype_names[] = {
     { MTYPE_BROADCAST_TRANSPORT_RESOURCE_REQUEST, "BroadcastTransportResourceRequest" },
     { MTYPE_DU_CU_ACCESS_AND_MOBILITY_INDICATION, "DUCUAccessAndMobilityIndication" },
     { MTYPE_SRS_INFORMATION_RESERVATION_NOTIFICATION, "SRSInformationReservationNotification" },
+    { MTYPE_CU_DU_MOBILITY_INITIATION_REQUEST, "CUDUMobilityInitiationRequest" },
     { 0,  NULL }
 };
 static value_string_ext mtype_names_ext = VALUE_STRING_EXT_INIT(mtype_names);
@@ -531,6 +533,9 @@ typedef struct {
   uint32_t gdb_cu_ue_f1ap_id;
   e212_number_type_t number_type;
   struct f1ap_tap_t  *stats_tap;
+  proto_tree *top_tree;
+  proto_tree *rrc_tree;
+  tvbuff_t *rrc_tvb;
 } f1ap_private_data_t;
 
 typedef struct {
@@ -563,16 +568,26 @@ static int dissect_SuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, pro
 static int dissect_UnsuccessfulOutcomeValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *);
 
 
-static proto_tree *top_tree;
+static f1ap_private_data_t*
+f1ap_get_private_data(packet_info *pinfo)
+{
+  f1ap_private_data_t *f1ap_data = (f1ap_private_data_t*)p_get_proto_data(pinfo->pool, pinfo, proto_f1ap, 0);
+  if (!f1ap_data) {
+    f1ap_data = wmem_new0(pinfo->pool, f1ap_private_data_t);
+    f1ap_data->srb_id = -1;
+    f1ap_data->gdb_cu_ue_f1ap_id = 1;
+    p_add_proto_data(pinfo->pool, pinfo, proto_f1ap, 0, f1ap_data);
+  }
+  return f1ap_data;
+}
 
 static void set_message_label(asn1_ctx_t *actx, int type)
 {
   const char *label = val_to_str_ext_const(type, &mtype_names_ext, "Unknown");
   col_append_sep_str(actx->pinfo->cinfo, COL_INFO, NULL, label);
-  /* N.B. would like to be able to use actx->subTree.top_tree, but not easy to set.. */
-  proto_item_append_text(top_tree, " (%s)", label);
+  f1ap_private_data_t *priv_data = f1ap_get_private_data(actx->pinfo);
+  proto_item_append_text(priv_data->top_tree, " (%s)", label);
 }
-
 
 
 static void
@@ -597,19 +612,6 @@ static void
 f1ap_N6Jitter_fmt(char *s, uint32_t v)
 {
   snprintf(s, ITEM_LABEL_LENGTH, "%.1fms (%d)", (float)v/2, (int32_t)v);
-}
-
-static f1ap_private_data_t*
-f1ap_get_private_data(packet_info *pinfo)
-{
-  f1ap_private_data_t *f1ap_data = (f1ap_private_data_t*)p_get_proto_data(wmem_file_scope(), pinfo, proto_f1ap, 0);
-  if (!f1ap_data) {
-    f1ap_data = wmem_new0(wmem_file_scope(), f1ap_private_data_t);
-    f1ap_data->srb_id = -1;
-    f1ap_data->gdb_cu_ue_f1ap_id = 1;
-    p_add_proto_data(wmem_file_scope(), pinfo, proto_f1ap, 0, f1ap_data);
-  }
-  return f1ap_data;
 }
 
 static void
@@ -693,14 +695,14 @@ f1ap_stats_tree_init(stats_tree *st)
 }
 
 static tap_packet_status
-f1ap_stats_tree_packet(stats_tree* st, packet_info* pinfo _U_,
+f1ap_stats_tree_packet(stats_tree* st, packet_info* pinfo,
                        epan_dissect_t* edt _U_ , const void* p, tap_flags_t flags _U_)
 {
     const struct f1ap_tap_t *pi = (const struct f1ap_tap_t *) p;
 
     tick_stat_node(st, st_str_packets, 0, false);
     stats_tree_tick_pivot(st, st_node_packet_types,
-                          val_to_str_ext(pi->f1ap_mtype, &mtype_names_ext,
+                          val_to_str_ext(pinfo->pool, pi->f1ap_mtype, &mtype_names_ext,
                                          "Unknown packet type (%d)"));
     return TAP_PACKET_REDRAW;
 }
@@ -730,13 +732,13 @@ dissect_f1ap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
   f1ap_item = proto_tree_add_item(tree, proto_f1ap, tvb, 0, -1, ENC_NA);
   f1ap_tree = proto_item_add_subtree(f1ap_item, ett_f1ap);
 
-  /* Store top-level tree */
-  top_tree = f1ap_tree;
 
   /* Add stats tap to private struct */
   f1ap_private_data_t *priv_data = f1ap_get_private_data(pinfo);
   priv_data->stats_tap = f1ap_info;
 
+  /* Store top-level tree */
+  priv_data->top_tree = f1ap_tree;
 
   dissect_F1AP_PDU_PDU(tvb, pinfo, f1ap_tree, NULL);
 

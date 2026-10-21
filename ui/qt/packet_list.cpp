@@ -325,14 +325,11 @@ void PacketList::colorsChanged()
         "  background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1 stop: 0 %4, stop: 0.5 %3, stop: 1 %4);"
         "}";
 
-    QString hover_style;
-#if !defined(Q_OS_WIN)
-    hover_style = QStringLiteral(
+    QString hover_style = QStringLiteral(
         "QTreeView:item:hover {"
         "  background-color: %1;"
         "  color: palette(text);"
         "}").arg(ColorUtils::hoverBackground().name(QColor::HexArgb));
-#endif
 
     QString active_style   = QString();
     QString inactive_style = QString();
@@ -878,13 +875,13 @@ void PacketList::mouseMoveEvent (QMouseEvent *event)
     {
         ctx_column_ = curIndex.column();
         QMimeData * mimeData = new QMimeData();
-        QWidget * content = nullptr;
+        DragLabel * drag_label = nullptr;
 
         QString filter = getFilterFromRowAndColumn(curIndex);
         QList<int> rows = selectedRows();
         if (rows.count() > 1)
         {
-            QStringList content;
+            QStringList entries;
             foreach (int row, rows)
             {
                 QModelIndex idx = model()->index(row, 0);
@@ -892,11 +889,11 @@ void PacketList::mouseMoveEvent (QMouseEvent *event)
                     continue;
 
                 QString entry = createSummaryText(idx, CopyAsText);
-                content << entry;
+                entries << entry;
             }
 
-            if (content.count() > 0)
-                mimeData->setText(content.join("\n"));
+            if (entries.count() > 0)
+                mimeData->setText(entries.join("\n"));
         }
         else if (! filter.isEmpty())
         {
@@ -921,7 +918,7 @@ void PacketList::mouseMoveEvent (QMouseEvent *event)
             filterData["description"] = name;
 
             mimeData->setData(WiresharkMimeData::DisplayFilterMimeType, QJsonDocument(filterData).toJson());
-            content = new DragLabel(QStringLiteral("%1\n%2").arg(name, abbrev), this);
+            drag_label = new DragLabel(QStringLiteral("%1\n%2").arg(name, abbrev), this);
         }
         else
         {
@@ -934,13 +931,14 @@ void PacketList::mouseMoveEvent (QMouseEvent *event)
         {
             QDrag * drag = new QDrag(this);
             drag->setMimeData(mimeData);
-            if (content)
+            if (drag_label)
             {
                 qreal dpr = window()->windowHandle()->devicePixelRatio();
-                QPixmap pixmap= QPixmap(content->size() * dpr);
+                QPixmap pixmap= QPixmap(drag_label->size() * dpr);
                 pixmap.setDevicePixelRatio(dpr);
-                content->render(&pixmap);
+                drag_label->render(&pixmap);
                 drag->setPixmap(pixmap);
+                delete drag_label;
             }
 
             drag->exec(Qt::CopyAction);
@@ -1209,10 +1207,20 @@ void PacketList::columnsChanged()
 // Fields have changed, update custom columns
 void PacketList::fieldsChanged(capture_file *cf)
 {
-    prefs.num_cols = g_list_length(prefs.col_list);
-    col_cleanup(&cf->cinfo);
-    build_column_format_array(&cf->cinfo, prefs.num_cols, false);
-    resetColumns();
+    // hfids used by custom columns or by the _ws.col fields may have changed,
+    // so recreate the columns. We shouldn't need to if prefs.col_list is NULL,
+    // since that doesn't register and deregister _ws.col fields.
+    // If the column pref changes to or from NULL, that triggers columnsChanged
+    // above, so we don't need to do it twice.
+    //
+    // XXX - If we knew exactly which fields changed, we could rebuild the
+    // columns only if a field used by the columns changed.
+    if (prefs.col_list) {
+        prefs.num_cols = g_list_length(prefs.col_list);
+        col_cleanup(&cf->cinfo);
+        build_column_format_array(&cf->cinfo, prefs.num_cols, false);
+        resetColumns();
+    }
 }
 
 // Column widths should
@@ -1235,8 +1243,6 @@ void PacketList::applyRecentColumnWidths()
         setColumnHidden(col, false);
         setRecentColumnWidth(col);
     }
-
-    column_state_ = header()->saveState();
 }
 
 void PacketList::preferencesChanged()
@@ -1629,14 +1635,8 @@ void PacketList::setCaptureFile(capture_file *cf)
 {
     cap_file_ = cf;
     packet_list_model_->setCaptureFile(cf);
-    if (cf) {
-        if (columns_changed_) {
-            columnsChanged();
-        } else {
-            // Restore columns widths and visibility.
-            header()->restoreState(column_state_);
-            setColumnVisibility();
-        }
+    if (cap_file_ && columns_changed_) {
+        columnsChanged();
     }
     create_near_overlay_ = true;
     changing_profile_ = false;

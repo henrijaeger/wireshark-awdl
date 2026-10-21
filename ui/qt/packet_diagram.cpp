@@ -251,8 +251,12 @@ public:
         }
         paintLabel(painter, label, scaled_tr_);
 
-        if (layout_->showFields()) {
-            label = finfo_->toString();
+        if (layout_->showFields() && finfo_->headerInfo().type != FT_NONE) {
+            if (representation_.isEmpty()) {
+                label = finfo_->toString();
+            } else {
+                label = representation_;
+            }
             paintLabel(painter, label, scaled_tr_.adjusted(0, scaled_tr_.height(), 0, scaled_tr_.height()));
         }
     }
@@ -480,7 +484,7 @@ void PacketDiagram::contextMenuEvent(QContextMenuEvent *event)
     action = ctx_menu->addAction(tr("Copy as Raster Image"));
     connect(action, &QAction::triggered, this, &PacketDiagram::copyAsRasterTriggered);
 
-#if defined(QT_SVG_LIB) && !defined(Q_OS_MAC)
+#if defined(QT_SVG_LIB) && !defined(Q_OS_MAC) && 0
     action = ctx_menu->addAction(tr("…as SVG"));
     connect(action, &QAction::triggered, this, &PacketDiagram::copyAsSvgTriggered);
 #endif

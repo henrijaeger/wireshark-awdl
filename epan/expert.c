@@ -15,7 +15,7 @@
 
 #include <stdio.h>
 
-#include "packet.h"
+#include <epan/packet.h>
 #include "expert.h"
 #include "uat.h"
 #include "prefs.h"
@@ -338,7 +338,6 @@ expert_deregister_expertinfo (const char *abbrev)
 	if (expinfo) {
 		g_ptr_array_add(deregistered_expertinfos, gpa_expertinfo.ei[expinfo->id]);
 		g_hash_table_steal(gpa_name_map, abbrev);
-		expinfo->hf_info.hfinfo.blurb = NULL;
 	}
 }
 
@@ -457,7 +456,6 @@ expert_register_field_array(expert_module_t *module, ei_register_info *exp, cons
 		ptr->eiinfo.hf_info.p_id = &ptr->ids->hf;
 		ptr->eiinfo.hf_info.hfinfo.name = ptr->eiinfo.summary;
 		ptr->eiinfo.hf_info.hfinfo.abbrev = ptr->eiinfo.name;
-		ptr->eiinfo.hf_info.hfinfo.blurb = "Expert_Item";
 
 		proto_register_field_array(module->proto_id, &ptr->eiinfo.hf_info, 1);
 	}
@@ -519,15 +517,15 @@ expert_set_item_flags(proto_item *pi, const int group, const unsigned severity)
 }
 
 static proto_tree*
-expert_create_tree(proto_item *pi, int group, int severity, const char *msg)
+expert_create_tree(proto_item *pi, packet_info* pinfo, int group, int severity, const char *msg)
 {
 	proto_tree *tree;
 	proto_item *ti;
 
 	tree = proto_item_add_subtree(pi, ett_expert);
 	ti = proto_tree_add_protocol_format(tree, proto_expert, NULL, 0, 0, "Expert Info (%s/%s): %s",
-					    val_to_str(severity, expert_severity_vals, "Unknown (%u)"),
-					    val_to_str(group, expert_group_vals, "Unknown (%u)"),
+					    val_to_str(pinfo->pool, severity, expert_severity_vals, "Unknown (%u)"),
+					    val_to_str(pinfo->pool, group, expert_group_vals, "Unknown (%u)"),
 					    msg);
 	proto_item_set_generated(ti);
 
@@ -583,7 +581,7 @@ expert_set_info_vformat(packet_info *pinfo, proto_item *pi, int group, int sever
 
 	if ((unsigned)severity > pinfo->expert_severity) {
 		pinfo->expert_severity = (unsigned)severity;
-		col_add_str(pinfo->cinfo, COL_EXPERT, val_to_str(severity, expert_severity_vals, "Unknown (%u)"));
+		col_add_str(pinfo->cinfo, COL_EXPERT, val_to_str(pinfo->pool, severity, expert_severity_vals, "Unknown (%u)"));
 	}
 
 	if (use_vaformat) {
@@ -600,7 +598,7 @@ expert_set_info_vformat(packet_info *pinfo, proto_item *pi, int group, int sever
 		ws_utf8_truncate(formatted, ITEM_LABEL_LENGTH - 1);
 	}
 
-	tree = expert_create_tree(pi, group, severity, formatted);
+	tree = expert_create_tree(pi, pinfo, group, severity, formatted);
 
 	if (hf_index <= 0) {
 		/* If no filterable expert info, just add the message */

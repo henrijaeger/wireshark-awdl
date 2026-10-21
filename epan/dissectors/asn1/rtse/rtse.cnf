@@ -125,10 +125,10 @@ CallingSSuserReference/t61String DISPLAY = BASE_NONE
 #.FN_PARS CommonReference
   VAL_PTR=&string
 #.FN_BODY CommonReference
-  tvbuff_t *string = NULL;
+  char *string = NULL;
   %(DEFAULT_BODY)s
   if(open_request && string)
-    col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %%s", tvb_format_text(actx->pinfo->pool, string, 0, tvb_reported_length(string)));
+    col_append_fstr(actx->pinfo->cinfo, COL_INFO, " %%s", string);
 
 #.END
 
@@ -162,7 +162,7 @@ CallingSSuserReference/t61String DISPLAY = BASE_NONE
   %(DEFAULT_BODY)s
 
   if(reason != -1)
-   col_append_fstr(actx->pinfo->cinfo, COL_INFO, " (%%s)", val_to_str(reason, rtse_RefuseReason_vals, "reason(%%d)"));
+   col_append_fstr(actx->pinfo->cinfo, COL_INFO, " (%%s)", val_to_str(actx->pinfo->pool, reason, rtse_RefuseReason_vals, "reason(%%d)"));
 
 #.FN_BODY RTABapdu
   col_append_str(actx->pinfo->cinfo, COL_INFO, "Abort");
@@ -178,7 +178,7 @@ CallingSSuserReference/t61String DISPLAY = BASE_NONE
   %(DEFAULT_BODY)s
 
   if(reason != -1)
-   col_append_fstr(actx->pinfo->cinfo, COL_INFO, " (%%s)", val_to_str(reason, rtse_AbortReason_vals, "reason(%%d)"));
+   col_append_fstr(actx->pinfo->cinfo, COL_INFO, " (%%s)", val_to_str(actx->pinfo->pool, reason, rtse_AbortReason_vals, "reason(%%d)"));
 
 #.TYPE_ATTR
 AdditionalReferenceInformation DISPLAY = BASE_NONE

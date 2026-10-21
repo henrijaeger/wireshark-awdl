@@ -18,10 +18,10 @@ extern "C" {
 
 /** Returned by base32_decode() if the input is not valid base32. */
 #define Base32_BAD_INPUT -1
-/** Returned by base32_decode() if the output buffer is too small. */
 #define Base32_TOO_BIG -2
 
-/* Encoding of a base32 byte array */
+/* Always return -1. The functionality has been removed due to a possible licensing
+ * issue, but the symbol is kept to not break the ABI. */
 WS_DLL_PUBLIC
 int ws_base32_decode(uint8_t* output, const uint32_t outputLength,
 						const uint8_t* in, const uint32_t inputLength);

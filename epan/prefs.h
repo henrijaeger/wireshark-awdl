@@ -166,7 +166,8 @@ typedef struct _e_prefs {
   GList       *col_list;
   int          num_cols;
   color_t      st_client_fg, st_client_bg, st_server_fg, st_server_bg;
-  color_t      gui_text_valid, gui_text_invalid, gui_text_deprecated;
+  color_t      gui_filter_valid_fg, gui_filter_invalid_fg, gui_filter_deprecated_fg;
+  color_t      gui_filter_valid_bg, gui_filter_invalid_bg, gui_filter_deprecated_bg;
   bool         restore_filter_after_following_stream;
   int          gui_toolbar_main_style;
   char        *gui_font_name;
@@ -213,6 +214,9 @@ typedef struct _e_prefs {
   bool         gui_interfaces_remote_display;
   bool         gui_io_graph_automatic_update;
   bool         gui_io_graph_enable_legend;
+  bool         gui_plot_automatic_update;
+  bool         gui_plot_enable_legend;
+  bool         gui_plot_enable_auto_scroll;
   bool         gui_packet_details_show_byteview;
   char        *capture_device;
   char        *capture_devices_linktypes;
@@ -934,6 +938,15 @@ char *prefs_pref_type_description(pref_t *pref);
  */
 WS_DLL_PUBLIC
 char *prefs_pref_to_str(pref_t *pref, pref_source_t source);
+
+/** Fetch whether a preference is marked obsolete.
+ *
+ * @param pref A preference.
+ *
+ * @return A boolean indication the obsolesence of the preference.
+ */
+WS_DLL_PUBLIC
+bool prefs_is_preference_obsolete(pref_t *pref);
 
 /**
  * Read the preferences file, fill in "prefs", and return a pointer to it.

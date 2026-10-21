@@ -2536,7 +2536,7 @@ dissect_z3950_T_attributeElement_attributeType(bool implicit_tag _U_, tvbuff_t *
   atinfo_data = (z3950_atinfo_t *)p_get_proto_data(pinfo->pool, pinfo, proto_z3950, Z3950_ATINFO_KEY);
   if (atinfo_data && atinfo_data->atsetidx == Z3950_ATSET_BIB1) {
     proto_item_append_text(actx->created_item, " (%s)",
-      val_to_str(att_type, z3950_bib1_att_types, "Unknown bib-1 attributeType %d"));
+      val_to_str(actx->pinfo->pool, att_type, z3950_bib1_att_types, "Unknown bib-1 attributeType %d"));
     atinfo_data->attype = att_type;
   }
   return offset;
@@ -2579,7 +2579,7 @@ dissect_z3950_T_attributeValue_numeric(bool implicit_tag _U_, tvbuff_t *tvb _U_,
     }
     if (att_value_string) {
       proto_item_append_text(actx->created_item, " (%s)",
-        val_to_str(att_value, att_value_string, "Unknown bib-1 attributeValue %d"));
+        val_to_str(actx->pinfo->pool, att_value, att_value_string, "Unknown bib-1 attributeValue %d"));
     }
   }
   return offset;
@@ -3033,14 +3033,12 @@ static const ber_choice_t RPNStructure_choice[] = {
 static int
 dissect_z3950_RPNStructure(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   // RPNStructure -> RPNStructure/rpnRpnOp -> RPNStructure
-  actx->pinfo->dissection_depth += 2;
-  increment_dissection_depth(actx->pinfo);
+  increment_dissection_depth_by_n(actx->pinfo, 2);
   offset = dissect_ber_choice(actx, tree, tvb, offset,
                                  RPNStructure_choice, hf_index, ett_z3950_RPNStructure,
                                  NULL);
 
-  actx->pinfo->dissection_depth -= 2;
-  decrement_dissection_depth(actx->pinfo);
+  decrement_dissection_depth_by_n(actx->pinfo, 2);
   return offset;
 }
 
@@ -3209,7 +3207,7 @@ dissect_z3950_T_condition(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _
   diaginfo_data = (z3950_diaginfo_t *)p_get_proto_data(pinfo->pool, pinfo, proto_z3950, Z3950_DIAGSET_KEY);
   if (diaginfo_data && diaginfo_data->diagsetidx == Z3950_DIAGSET_BIB1) {
     proto_item_append_text(actx->created_item, " (%s)",
-      val_to_str(diag_condition, z3950_bib1_diagconditions, "Unknown bib-1 diagnostic %d"));
+      val_to_str(actx->pinfo->pool, diag_condition, z3950_bib1_diagconditions, "Unknown bib-1 diagnostic %d"));
     diaginfo_data->diagcondition = diag_condition;
   }
   return offset;
@@ -6543,13 +6541,11 @@ static const ber_sequence_t ElementInfo_sequence[] = {
 static int
 dissect_z3950_ElementInfo(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   // ElementInfo -> ElementDataType -> ElementDataType/structured -> ElementInfo
-  actx->pinfo->dissection_depth += 3;
-  increment_dissection_depth(actx->pinfo);
+  increment_dissection_depth_by_n(actx->pinfo, 3);
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ElementInfo_sequence, hf_index, ett_z3950_ElementInfo);
 
-  actx->pinfo->dissection_depth -= 3;
-  decrement_dissection_depth(actx->pinfo);
+  decrement_dissection_depth_by_n(actx->pinfo, 3);
   return offset;
 }
 
@@ -8023,13 +8019,11 @@ static const ber_sequence_t TaggedElement_sequence[] = {
 static int
 dissect_z3950_TaggedElement(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   // TaggedElement -> ElementData -> ElementData/subtree -> TaggedElement
-  actx->pinfo->dissection_depth += 3;
-  increment_dissection_depth(actx->pinfo);
+  increment_dissection_depth_by_n(actx->pinfo, 3);
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    TaggedElement_sequence, hf_index, ett_z3950_TaggedElement);
 
-  actx->pinfo->dissection_depth -= 3;
-  decrement_dissection_depth(actx->pinfo);
+  decrement_dissection_depth_by_n(actx->pinfo, 3);
   return offset;
 }
 
@@ -12548,11 +12542,11 @@ proto_reg_handoff_z3950(void)
     dissector_add_uint_with_preference("tcp.port",
 	global_z3950_port, z3950_handle);
 
-  register_ber_oid_dissector("1.2.840.10003.5.100", dissect_Explain_Record_PDU, proto_z3950, "Explain-record");
-  register_ber_oid_dissector("1.2.840.10003.5.101", dissect_SutrsRecord_PDU, proto_z3950, "Sutrs-record");
-  register_ber_oid_dissector("1.2.840.10003.5.102", dissect_OPACRecord_PDU, proto_z3950, "OPAC-record");
-  register_ber_oid_dissector("1.2.840.10003.5.103", dissect_BriefBib_PDU, proto_z3950, "Summary-record");
-  register_ber_oid_dissector("1.2.840.10003.5.105", dissect_GenericRecord_PDU, proto_z3950, "GRS-1-record");
+  register_ber_oid_dissector("1.2.840.10003.5.100", dissect_Explain_Record_PDU, proto_z3950, "Explain");
+  register_ber_oid_dissector("1.2.840.10003.5.101", dissect_SutrsRecord_PDU, proto_z3950, "SUTRS");
+  register_ber_oid_dissector("1.2.840.10003.5.102", dissect_OPACRecord_PDU, proto_z3950, "OPAC");
+  register_ber_oid_dissector("1.2.840.10003.5.103", dissect_BriefBib_PDU, proto_z3950, "Summary");
+  register_ber_oid_dissector("1.2.840.10003.5.105", dissect_GenericRecord_PDU, proto_z3950, "GRS-1");
   register_ber_oid_dissector("1.2.840.10003.5.106", dissect_TaskPackage_PDU, proto_z3950, "ESTaskPackage");
   register_ber_oid_dissector("1.2.840.10003.4.2", dissect_DiagnosticFormat_PDU, proto_z3950, "diag-1");
   register_ber_oid_dissector("1.2.840.10003.8.1", dissect_PromptObject_PDU, proto_z3950, "Prompt-1");
@@ -12562,7 +12556,7 @@ proto_reg_handoff_z3950(void)
   register_ber_oid_dissector("1.2.840.10003.10.1000.17.1", dissect_OCLC_UserInformation_PDU, proto_z3950, "OCLC-UserInfo-1");
 
 
-    register_ber_oid_dissector(Z3950_RECORDSYNTAX_MARC21_OID, dissect_marc_record, proto_z3950, "MARC21");
+    register_ber_oid_dissector(Z3950_RECORDSYNTAX_MARC21_OID, dissect_marc_record, proto_z3950, "MARC21 (formerly USMARC)");
 
     oid_add_from_string("Z39.50", "1.2.840.10003");
     oid_add_from_string("Z39.50-APDU", "1.2.840.10003.2");
@@ -12583,7 +12577,6 @@ proto_reg_handoff_z3950(void)
     oid_add_from_string("UNIMARC","1.2.840.10003.5.1");
     oid_add_from_string("INTERMARC","1.2.840.10003.5.2");
     oid_add_from_string("CCF","1.2.840.10003.5.3");
-    oid_add_from_string("MARC21 (formerly USMARC)",Z3950_RECORDSYNTAX_MARC21_OID);
     oid_add_from_string("UKMARC","1.2.840.10003.5.11");
     oid_add_from_string("NORMARC","1.2.840.10003.5.12");
     oid_add_from_string("Librismarc","1.2.840.10003.5.13");
@@ -12608,14 +12601,8 @@ proto_reg_handoff_z3950(void)
     oid_add_from_string("MARC21-fin","1.2.840.10003.5.32");
     oid_add_from_string("COMARC","1.2.840.10003.5.33");
     /* Non-MARC record syntaxes */
-    oid_add_from_string("Explain","1.2.840.10003.5.100");
     oid_add_from_string("Explain with ZSQL","1.2.840.10003.5.100.1");
-    oid_add_from_string("SUTRS","1.2.840.10003.5.101");
-    oid_add_from_string("OPAC","1.2.840.10003.5.102");
-    oid_add_from_string("Summary","1.2.840.10003.5.103");
     oid_add_from_string("GRS-0","1.2.840.10003.5.104");
-    oid_add_from_string("GRS-1","1.2.840.10003.5.105");
-    oid_add_from_string("ESTaskPackage","1.2.840.10003.5.106");
     oid_add_from_string("fragment","1.2.840.10003.5.108");
     /* Attribute sets */
     oid_add_from_string("bib-1",Z3950_ATSET_BIB1_OID);
@@ -12654,6 +12641,7 @@ dissect_marc_record(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void * 
     proto_tree *marc_tree, *leader_tree,
                *directory_tree,
                *fields_tree;
+    wmem_array_t *marc_directory_array;
     marc_directory_entry *marc_directory;
     unsigned len = tvb_reported_length(tvb);
     const uint8_t *marc_value_str;
@@ -12826,10 +12814,8 @@ dissect_marc_record(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void * 
 
     directory_entry_len = 3 + length_of_field_size
                             + starting_character_position_size;
-    directory_entry_count = ((data_offset - 1) - MARC_LEADER_LENGTH) / directory_entry_len;
 
-    marc_directory = (marc_directory_entry *)wmem_alloc0(pinfo->pool,
-                                 directory_entry_count * sizeof(marc_directory_entry));
+    marc_directory_array = wmem_array_new(pinfo->pool, sizeof(marc_directory_entry));
 
     directory_item = proto_tree_add_item(marc_tree, hf_marc_directory,
                          tvb, offset, data_offset - offset, ENC_NA);
@@ -12838,9 +12824,7 @@ dissect_marc_record(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void * 
     dir_index = 0;
     /* Minus one for the terminator character */
     while (offset < (data_offset - 1)) {
-        uint32_t tag_value = 0,
-                length_value = 0,
-                starting_char_value = 0;
+        marc_directory_entry new_entry = {0};
         proto_item *length_item;
         proto_item *directory_entry_item;
         proto_tree *directory_entry_tree;
@@ -12856,7 +12840,7 @@ dissect_marc_record(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void * 
         offset += 3;
         if (marc_value_str) {
             if (isdigit_string(marc_value_str)) {
-                tag_value = (unsigned)strtoul(marc_value_str, NULL, 10);
+                new_entry.tag = (unsigned)strtoul(marc_value_str, NULL, 10);
             }
             else {
                 expert_add_info_format(pinfo, item,
@@ -12873,7 +12857,7 @@ dissect_marc_record(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void * 
         offset += length_of_field_size;
         if (marc_value_str) {
             if (isdigit_string(marc_value_str)) {
-                length_value = (unsigned)strtoul(marc_value_str, NULL, 10);
+                new_entry.length = (unsigned)strtoul(marc_value_str, NULL, 10);
             }
             else {
                 expert_add_info_format(pinfo, length_item,
@@ -12889,7 +12873,7 @@ dissect_marc_record(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void * 
         offset += starting_character_position_size;
         if (marc_value_str) {
             if (isdigit_string(marc_value_str)) {
-                starting_char_value = (unsigned)strtoul(marc_value_str, NULL, 10);
+                new_entry.starting_character = (unsigned)strtoul(marc_value_str, NULL, 10);
             }
             else {
                 expert_add_info_format(pinfo, item,
@@ -12899,23 +12883,24 @@ dissect_marc_record(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void * 
             }
         }
 
-        if (starting_char_value >= (record_length - data_offset)) {
+        if (new_entry.starting_character >= (record_length - data_offset)) {
             expert_add_info_format(pinfo, item,
                 &ei_marc_invalid_value,
                 "MARC directory entry %d starting char value %d is outside record size %d",
-                dir_index, starting_char_value, (record_length - data_offset));
+                dir_index, new_entry.starting_character, (record_length - data_offset));
         }
-        if ((starting_char_value + length_value) >= (record_length - data_offset)) {
+        if ((new_entry.starting_character + new_entry.length) >= (record_length - data_offset)) {
             expert_add_info_format(pinfo, length_item,
                 &ei_marc_invalid_value,
                 "MARC directory entry %d length value %d goes outside record size %d",
-                dir_index, length_value, (record_length - data_offset));
+                dir_index, new_entry.length, (record_length - data_offset));
         }
-        marc_directory[dir_index].tag = tag_value;
-        marc_directory[dir_index].length = length_value;
-        marc_directory[dir_index].starting_character = starting_char_value;
+        wmem_array_append_one(marc_directory_array, new_entry);
         dir_index++;
     }
+    directory_entry_count = wmem_array_get_count(marc_directory_array);
+    marc_directory = (marc_directory_entry *)wmem_array_finalize(marc_directory_array);
+
     proto_tree_add_item(directory_tree, hf_marc_directory_terminator,
         tvb, offset, 1, ENC_ASCII);
     offset += 1;

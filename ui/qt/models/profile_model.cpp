@@ -73,14 +73,28 @@ bool ProfileSortModel::lessThan(const QModelIndex &source_left, const QModelInde
 
 void ProfileSortModel::setFilterType(FilterType ft)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    beginFilterChange();
+#endif
     ft_ = ft;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    endFilterChange(QSortFilterProxyModel::Direction::Rows);
+#else
     invalidateFilter();
+#endif
 }
 
 void ProfileSortModel::setFilterString(QString txt)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    beginFilterChange();
+#endif
     ftext_ = ! txt.isEmpty() ? txt : "";
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    endFilterChange(QSortFilterProxyModel::Direction::Rows);
+#else
     invalidateFilter();
+#endif
 }
 
 QStringList ProfileSortModel::filterTypes()
@@ -279,9 +293,6 @@ QVariant ProfileModel::dataDisplay(const QModelIndex &index) const
             return tr("Personal");
     case COL_AUTO_SWITCH_FILTER:
     {
-        if (prof->is_global) {
-            return QString(UTF8_EM_DASH);
-        }
         return (QString(prof->auto_switch_filter));
     }
 
@@ -431,17 +442,17 @@ QVariant ProfileModel::dataBackgroundRole(const QModelIndex &index) const
         return QVariant();
 
     if (prof->status == PROF_STAT_DEFAULT && reset_default_)
-        return ColorUtils::fromColorT(&prefs.gui_text_deprecated);
+        return ColorUtils::fromColorT(&prefs.gui_filter_deprecated_bg);
 
     if (prof->status != PROF_STAT_DEFAULT && ! prof->is_global)
     {
         /* Highlights erroneous line */
         if (checkInvalid(index) || checkIfDeleted(index) || checkDuplicate(index) || ! checkNameValidity(prof->name))
-            return ColorUtils::fromColorT(&prefs.gui_text_invalid);
+            return ColorUtils::fromColorT(&prefs.gui_filter_invalid_bg);
 
         /* Highlights line, which has been duplicated by another index */
         if (checkDuplicate(index, true))
-            return ColorUtils::fromColorT(&prefs.gui_text_valid);
+            return ColorUtils::fromColorT(&prefs.gui_filter_valid_bg);
     }
 
     return QVariant();
@@ -1137,10 +1148,13 @@ bool ProfileModel::exportProfiles(QString filename, QModelIndexList items, QStri
 }
 
 /* This check runs BEFORE the file has been unzipped! */
-bool ProfileModel::acceptFile(QString fileName, int fileSize)
+bool ProfileModel::acceptFile(QString fileName, uint64_t fileSize)
 {
     if (fileName.toLower().endsWith(".zip"))
         return false;
+
+    /* Should we skip entries that are just directories? I don't believe
+     * we add them to our archive and it may simplify the logic elsewhere. */
 
     /* Arbitrary maximum config file size accepted: 256MB */
     if (fileSize > 1024 * 1024 * 256)

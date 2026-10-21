@@ -35,7 +35,7 @@
 #include <epan/packet.h>
 #include <epan/expert.h>
 #include <wiretap/wtap.h>
-#include <epan/wmem/wmem.h>
+#include <wsutil/wmem/wmem.h>
 
 #include <epan/address_types.h>
 #include <epan/addr_resolv.h>
@@ -139,7 +139,7 @@ corecapture_awdl_tag_action(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *t
   proto_tree_add_item (tree, hf_srcaddr, tvb, offset, 6, ENC_NA);
   // set source column
   set_address_tvb(&src_ether_addr, AT_ETHER, 6, tvb, offset);
-  col_add_fstr(pinfo->cinfo, COL_RES_DL_SRC, "%s",address_with_resolution_to_str(wmem_packet_scope(), &src_ether_addr)
+  col_add_fstr(pinfo->cinfo, COL_RES_DL_SRC, "%s",address_with_resolution_to_str(pinfo->pool, &src_ether_addr)
                );
   offset+=6;
   
@@ -192,7 +192,7 @@ corecapture_awdl_add_tagged_field(packet_info *pinfo, proto_tree *tree, tvbuff_t
   
   if (tree) {
     ti = proto_tree_add_item(orig_tree, hf_tlv_tag, tvb, offset, tag_len + CC_AWDL_HDR_LENGTH, ENC_NA);
-    proto_item_append_text(ti, ": %s", val_to_str_ext(tag_no, &cc_awdl_tlv_type_ext, "Unknown (%d)"));
+    proto_item_append_text(ti, ": %s", val_to_str_ext(pinfo->pool, tag_no, &cc_awdl_tlv_type_ext, "Unknown (%d)"));
     tree = proto_item_add_subtree(ti, ett_cc_awdl_tag);
   }
   
@@ -214,7 +214,7 @@ corecapture_awdl_add_tagged_field(packet_info *pinfo, proto_tree *tree, tvbuff_t
     proto_tree_add_item(tree, hf_awdl_tag_data, tag_tvb, 0, tag_len, ENC_NA);
     expert_add_info_format(pinfo, ti_tag, &ei_cc_awdl_tag_data,
                            "Dissector for CC AWDL tag (%s) code not implemented",
-                           val_to_str_ext(tag_no, &cc_awdl_tlv_type_ext, "(%d)"));
+                           val_to_str_ext(pinfo->pool, tag_no, &cc_awdl_tlv_type_ext, "(%d)"));
     proto_item_append_text(ti, ": Undecoded");
   }
   else if (parsed > 0 && (unsigned int) parsed < tag_len)
@@ -328,7 +328,7 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
   
   
   proto_tree_add_item (corecapture_tree, hf_info2, tvb, offset, 64, ENC_ASCII | ENC_NA);
-  infotext = tvb_get_stringzpad(wmem_packet_scope(), tvb, offset, 64, ENC_ASCII | ENC_NA);
+  infotext = tvb_get_stringzpad(pinfo->pool, tvb, offset, 64, ENC_ASCII | ENC_NA);
   col_add_fstr (pinfo->cinfo, COL_INFO, "CC: %s ", infotext);
   offset+=64;
   
@@ -380,7 +380,7 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
   }
   
   if (pl_type== CC_AWDL_PL_STRING) {
-    longtext = tvb_get_stringz_enc(wmem_packet_scope(), tvb, offset, NULL, ENC_ASCII | ENC_NA);
+    longtext = tvb_get_stringz_enc(pinfo->pool, tvb, offset, NULL, ENC_ASCII | ENC_NA);
     // remove newline after text
     size_t last_char = strlen(longtext)-1;
     if (longtext[last_char]=='\n') {

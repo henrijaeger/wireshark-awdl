@@ -18,7 +18,7 @@ ADD_CUSTOM_CMAKE_INCLUDE()
 set(WIRESHARK_WIDGET_HEADERS
 	widgets/additional_toolbar.h
 	widgets/apply_line_edit.h
-	widgets/byte_view_text.h
+	widgets/base_data_source_view.h
 	widgets/capture_filter_combo.h
 	widgets/capture_filter_edit.h
 	widgets/clickable_label.h
@@ -39,8 +39,12 @@ set(WIRESHARK_WIDGET_HEADERS
 	widgets/filter_expression_toolbar.h
 	widgets/find_line_edit.h
 	widgets/follow_stream_text.h
+	widgets/hex_data_source_view.h
 	widgets/interface_toolbar_lineedit.h
+	widgets/json_data_source_view.h
 	widgets/label_stack.h
+	widgets/info_banner_widget.h
+	widgets/learn_card_widget.h
 	widgets/overlay_scroll_bar.h
 	widgets/packet_list_header.h
 	widgets/path_selection_edit.h
@@ -48,6 +52,7 @@ set(WIRESHARK_WIDGET_HEADERS
 	widgets/profile_tree_view.h
 	widgets/qcp_axis_ticker_elided.h
 	widgets/qcp_axis_ticker_si.h
+	widgets/qcp_spacer_legend_item.h
 	widgets/qcp_string_legend_item.h
 	widgets/range_syntax_lineedit.h
 	widgets/resize_header_view.h
@@ -63,6 +68,7 @@ set(WIRESHARK_WIDGET_HEADERS
 	widgets/traffic_types_list.h
 	widgets/wireless_timeline.h
 	widgets/wireshark_file_dialog.h
+	widgets/customplot.h
 )
 
 set(WIRESHARK_3RD_PARTY_WIDGET_HEADERS
@@ -92,6 +98,7 @@ set(WIRESHARK_UTILS_HEADERS
 	utils/variant_pointer.h
 	utils/wireshark_mime_data.h
 	utils/wireshark_zip_helper.h
+	utils/workspace_state.h
 )
 
 set(WIRESHARK_MODEL_HEADERS
@@ -147,7 +154,6 @@ set(WIRESHARK_QT_HEADERS
 	bluetooth_device_dialog.h
 	bluetooth_devices_dialog.h
 	bluetooth_hci_summary_dialog.h
-	byte_view_tab.h
 	capture_comment_dialog.h
 	capture_file_dialog.h
 	capture_file_properties_dialog.h
@@ -163,6 +169,7 @@ set(WIRESHARK_QT_HEADERS
 	conversation_dialog.h
 	conversation_hash_tables_dialog.h
 	credentials_dialog.h
+	data_source_tab.h
 	decode_as_dialog.h
 	display_filter_expression_dialog.h
 	dissector_tables_dialog.h
@@ -190,6 +197,7 @@ set(WIRESHARK_QT_HEADERS
 	funnel_text_dialog.h
 	geometry_state_dialog.h
 	glib_mainloop_on_qeventloop.h
+	graph.h
 	gsm_map_summary_dialog.h
 	iax2_analysis_dialog.h
 	import_text_dialog.h
@@ -197,6 +205,7 @@ set(WIRESHARK_QT_HEADERS
 	interface_toolbar_reader.h
 	interface_toolbar.h
 	io_console_dialog.h
+	io_graph.h
 	io_graph_action.h
 	io_graph_dialog.h
 	layout_preferences_frame.h
@@ -222,6 +231,10 @@ set(WIRESHARK_QT_HEADERS
 	packet_format_stack.h
 	packet_list.h
 	packet_range_group_box.h
+	plot.h
+	plot_action.h
+	plot_dialog.h
+	marker_dialog.h
 	preference_editor_frame.h
 	preferences_dialog.h
 	print_dialog.h
@@ -265,6 +278,7 @@ set(WIRESHARK_QT_HEADERS
 	uat_frame.h
 	voip_calls_dialog.h
 	welcome_page.h
+	welcome_page_preferences_frame.h
 	wireless_frame.h
 	wireshark_application.h
 	wireshark_dialog.h
@@ -288,7 +302,6 @@ endif()
 set(WIRESHARK_WIDGET_SRCS
 	widgets/additional_toolbar.cpp
 	widgets/apply_line_edit.cpp
-	widgets/byte_view_text.cpp
 	widgets/capture_filter_combo.cpp
 	widgets/capture_filter_edit.cpp
 	widgets/clickable_label.cpp
@@ -309,8 +322,12 @@ set(WIRESHARK_WIDGET_SRCS
 	widgets/filter_expression_toolbar.cpp
 	widgets/find_line_edit.cpp
 	widgets/follow_stream_text.cpp
+	widgets/hex_data_source_view.cpp
 	widgets/interface_toolbar_lineedit.cpp
+	widgets/json_data_source_view.cpp
 	widgets/label_stack.cpp
+	widgets/info_banner_widget.cpp
+	widgets/learn_card_widget.cpp
 	widgets/overlay_scroll_bar.cpp
 	widgets/packet_list_header.cpp
 	widgets/path_selection_edit.cpp
@@ -318,6 +335,7 @@ set(WIRESHARK_WIDGET_SRCS
 	widgets/profile_tree_view.cpp
 	widgets/qcp_axis_ticker_elided.cpp
 	widgets/qcp_axis_ticker_si.cpp
+	widgets/qcp_spacer_legend_item.cpp
 	widgets/qcp_string_legend_item.cpp
 	widgets/range_syntax_lineedit.cpp
 	widgets/resize_header_view.cpp
@@ -333,6 +351,7 @@ set(WIRESHARK_WIDGET_SRCS
 	widgets/traffic_types_list.cpp
 	widgets/wireless_timeline.cpp
 	widgets/wireshark_file_dialog.cpp
+	widgets/customplot.cpp
 )
 
 set(WIRESHARK_3RD_PARTY_WIDGET_SRCS
@@ -359,6 +378,7 @@ set(WIRESHARK_UTILS_SRCS
 	utils/stock_icon.cpp
 	utils/wireshark_mime_data.cpp
 	utils/wireshark_zip_helper.cpp
+	utils/workspace_state.cpp
 )
 
 set(WIRESHARK_MODEL_SRCS
@@ -411,7 +431,6 @@ set(WIRESHARK_QT_SRC
 	bluetooth_device_dialog.cpp
 	bluetooth_devices_dialog.cpp
 	bluetooth_hci_summary_dialog.cpp
-	byte_view_tab.cpp
 	capture_comment_dialog.cpp
 	capture_file_dialog.cpp
 	capture_file_properties_dialog.cpp
@@ -427,6 +446,7 @@ set(WIRESHARK_QT_SRC
 	conversation_dialog.cpp
 	conversation_hash_tables_dialog.cpp
 	credentials_dialog.cpp
+	data_source_tab.cpp
 	decode_as_dialog.cpp
 	display_filter_expression_dialog.cpp
 	dissector_tables_dialog.cpp
@@ -482,6 +502,8 @@ set(WIRESHARK_QT_SRC
 	packet_format_stack.cpp
 	packet_list.cpp
 	packet_range_group_box.cpp
+	plot_action.cpp
+	marker_dialog.cpp
 	preference_editor_frame.cpp
 	preferences_dialog.cpp
 	print_dialog.cpp
@@ -525,6 +547,7 @@ set(WIRESHARK_QT_SRC
 	uat_frame.cpp
 	voip_calls_dialog.cpp
 	welcome_page.cpp
+	welcome_page_preferences_frame.cpp
 	wireless_frame.cpp
 	wireshark_application.cpp
 	wireshark_dialog.cpp
@@ -548,12 +571,16 @@ endif()
 set(WIRESHARK_QT_TAP_SRC
 	${CMAKE_CURRENT_SOURCE_DIR}/expert_info_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/funnel_statistics.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/graph.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/gsm_map_summary_dialog.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/io_graph.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/io_graph_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/lte_mac_statistics_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/lte_rlc_statistics_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/mtp3_summary_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/multicast_statistics_dialog.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/plot.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/plot_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/rtp_stream_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/sctp_all_assocs_dialog.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/sctp_assoc_analyse_dialog.cpp
@@ -629,6 +656,7 @@ set(WIRESHARK_QT_UI
 	packet_format_group_box.ui
 	packet_format_json_group_box.ui
 	packet_range_group_box.ui
+	plot_dialog.ui
 	preference_editor_frame.ui
 	preferences_dialog.ui
 	print_dialog.ui
@@ -660,7 +688,7 @@ set(WIRESHARK_QT_UI
 	uat_frame.ui
 	voip_calls_dialog.ui
 	welcome_page.ui
-	widgets/splash_overlay.ui
+	welcome_page_preferences_frame.ui
 	wireless_frame.ui
 	wireshark_main_window.ui
 )
@@ -678,11 +706,14 @@ set(WIRESHARK_QT_TS
 	wireshark_en.ts # lupdate -pluralonly
 	wireshark_es.ts
 	wireshark_fr.ts
+	wireshark_ga_IE.ts
 	wireshark_hu.ts
+	wireshark_id.ts
 	wireshark_it.ts
 	wireshark_ja_JP.ts
 	wireshark_ko.ts
 	wireshark_pl.ts
+	wireshark_pt_BR.ts
 	wireshark_ru.ts
 	wireshark_sv.ts
 	wireshark_tr_TR.ts
@@ -715,6 +746,41 @@ add_custom_command(
 		${CMAKE_SOURCE_DIR}/AUTHORS
 )
 
+# Generate translatable strings from JSON data files for lupdate
+GENERATE_JSON_TR_STRINGS(
+	INPUT   ${CMAKE_SOURCE_DIR}/resources/json/slides.json
+	OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/slide_tr_strings.cpp
+	CONTEXT InfoBannerWidget
+	EXTRACT slides:tag,title,description,description_sub,body_text,button_label,url
+)
+
+GENERATE_JSON_TR_STRINGS(
+	INPUT   ${CMAKE_SOURCE_DIR}/resources/json/learn_card.json
+	OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/learn_card_tr_strings.cpp
+	CONTEXT LearnCardWidget
+	EXTRACT links:label,short_label,tooltip
+	        buttons:label,tooltip
+)
+
+# JSON data resources
+set(_json_qrc_files
+	"        <file alias=\"slides.json\">${CMAKE_SOURCE_DIR}/resources/json/slides.json</file>\n")
+string(APPEND _json_qrc_files
+	"        <file alias=\"learn_card.json\">${CMAKE_SOURCE_DIR}/resources/json/learn_card.json</file>\n")
+if(CUSTOM_SLIDES_JSON AND EXISTS "${CUSTOM_SLIDES_JSON}")
+	string(APPEND _json_qrc_files
+		"        <file alias=\"slides_custom.json\">${CUSTOM_SLIDES_JSON}</file>\n")
+	message(STATUS "Custom banner slides: ${CUSTOM_SLIDES_JSON}")
+endif()
+file(GLOB_RECURSE _banner_images "${CMAKE_SOURCE_DIR}/resources/json/banners/*")
+foreach(_img ${_banner_images})
+	cmake_path(RELATIVE_PATH _img BASE_DIRECTORY "${CMAKE_SOURCE_DIR}/resources/json/banners/" OUTPUT_VARIABLE _img_name)
+	string(APPEND _json_qrc_files
+		"        <file alias=\"banners/${_img_name}\">${_img}</file>\n")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/json_resource.qrc"
+	"<RCC>\n    <qresource prefix=\"/json\">\n${_json_qrc_files}    </qresource>\n</RCC>\n")
+
 # Drop the file modification time of source files from generated files
 # to help with reproducible builds. We do not use QFileInfo.lastModified
 # so this has no unwanted side effects. This mtime started appearing in
@@ -727,14 +793,21 @@ add_custom_command(
 set(CMAKE_AUTORCC_OPTIONS --format-version 1)
 list(APPEND CMAKE_AUTORCC_OPTIONS -compress-algo zlib)
 
+if (APPLE)
+	set(WS_ICON_QRC "wsicon_mac.qrc")
+else()
+	set(WS_ICON_QRC "wsicon.qrc")
+endif()
+
 qt_add_resources(WIRESHARK_QT_QRC
 	../../resources/about.qrc
 	../../resources/languages/languages.qrc
 	../../resources/layout.qrc
 	../../resources/stock_icons.qrc
-	../../resources/wsicon.qrc
+	${CMAKE_SOURCE_DIR}/resources/${WS_ICON_QRC}
 	${CMAKE_CURRENT_BINARY_DIR}/i18n.qrc
 	${CMAKE_CURRENT_BINARY_DIR}/authors.qrc
+	${CMAKE_CURRENT_BINARY_DIR}/json_resource.qrc
 	OPTIONS ${CMAKE_AUTORCC_OPTIONS}
 )
 
@@ -803,6 +876,10 @@ add_library(qtui OBJECT
 	${WIRESHARK_QT_NONGENERATED_SRC}
 	${WIRESHARK_3RD_PARTY_WIDGET_SRCS}
 
+	# Generated translation markers for JSON data (lupdate only)
+	${CMAKE_CURRENT_BINARY_DIR}/slide_tr_strings.cpp
+	${CMAKE_CURRENT_BINARY_DIR}/learn_card_tr_strings.cpp
+
 	# For AUTOUIC and AUTORCC.
 	${WIRESHARK_QT_UI}
 	${WIRESHARK_QT_QRC}
@@ -823,6 +900,9 @@ if(USE_qt6)
 	endif()
 	if(Qt6DBus_FOUND)
 		target_link_libraries(qtui PUBLIC Qt6::DBus)
+	endif()
+	if(Qt6Svg_FOUND)
+		target_link_libraries(qtui PUBLIC Qt6::Svg)
 	endif()
 endif()
 

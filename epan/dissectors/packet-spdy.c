@@ -599,7 +599,7 @@ static spdy_stream_info_t* spdy_assemble_data_frames(spdy_conv_t *conv_data,
     spdy_data_frame_t *df;
     uint8_t *data;
     uint32_t datalen;
-    uint32_t offset;
+    uint32_t offset, old_offset;
     wmem_list_t *dflist = si->data_frames;
     wmem_list_frame_t *frame;
     if (wmem_list_count(dflist) == 0) {
@@ -615,7 +615,9 @@ static spdy_stream_info_t* spdy_assemble_data_frames(spdy_conv_t *conv_data,
     frame = wmem_list_frame_next(wmem_list_head(dflist));
     while (frame != NULL) {
       df = (spdy_data_frame_t *)wmem_list_frame_data(frame);
-      datalen += df->length;
+      if (ckd_add(&datalen, datalen, df->length) || datalen > INT32_MAX) {
+        datalen = INT32_MAX;
+      }
       frame = wmem_list_frame_next(frame);
     }
     if (datalen != 0) {
@@ -625,10 +627,20 @@ static spdy_stream_info_t* spdy_assemble_data_frames(spdy_conv_t *conv_data,
       frame = wmem_list_frame_next(wmem_list_head(dflist));
       while (frame != NULL) {
         df = (spdy_data_frame_t *)wmem_list_frame_data(frame);
-        memcpy(data+offset, df->data, df->length);
-        offset += df->length;
+        old_offset = offset;
+        if (ckd_add(&offset, old_offset, df->length) || offset > datalen) {
+          offset = datalen;
+          memcpy(data+old_offset, df->data, datalen - old_offset);
+          break;
+        }
+        memcpy(data+old_offset, df->data, df->length);
         frame = wmem_list_frame_next(frame);
       }
+      /* This leaks the 64-bytes of tvb wrapper (not the data itself, which
+       * is wmem_file_scope() allocated.) We could call wmem_register_callback
+       * appropriately, or store the data and the length and make a tvbuffer
+       * on demand. But in the long run we probably just want to use the
+       * ordinary reassembly API. */
       tvb = tvb_new_real_data(data, datalen, datalen);
       si->assembled_data = tvb;
     }
@@ -921,10 +933,10 @@ static int dissect_spdy_data_payload(tvbuff_t *tvb,
        * Calling the default media handle if there is a content-type that
        * wasn't handled above.
        */
-      call_dissector_with_data(media_handle, next_tvb, pinfo, spdy_tree, &content_info);
+      call_dissector_with_data(media_handle, data_tvb, pinfo, spdy_tree, &content_info);
     } else {
       /* Call the default data dissector */
-      call_data_dissector(next_tvb, pinfo, spdy_tree);
+      call_data_dissector(data_tvb, pinfo, spdy_tree);
     }
 
 body_dissected:
@@ -1358,7 +1370,7 @@ static int dissect_spdy_rst_stream_payload(
                            "Invalid status code for RST_STREAM: %u", rst_status);
   }
 
-  str = val_to_str(rst_status, rst_stream_status_names, "Unknown (%d)");
+  str = val_to_str(pinfo->pool, rst_status, rst_stream_status_names, "Unknown (%d)");
 
   proto_item_append_text(frame_tree, ", Status: %s", str);
 
@@ -1414,7 +1426,7 @@ static int dissect_spdy_settings_payload(
     offset += 1;
 
     /* Set ID. */
-    setting_id_str = val_to_str(tvb_get_ntoh24(tvb, offset), setting_id_names, "Unknown(%d)");
+    setting_id_str = val_to_str(pinfo->pool, tvb_get_ntoh24(tvb, offset), setting_id_names, "Unknown(%d)");
 
     proto_tree_add_item(setting_tree, hf_spdy_setting_id, tvb, offset, 3, ENC_BIG_ENDIAN);
     offset += 3;
@@ -1471,7 +1483,7 @@ static int dissect_spdy_goaway_payload(tvbuff_t *tvb,
 
   /* Add status to info column. */
   proto_item_append_text(frame_tree, " Status=%s)",
-                  val_to_str(goaway_status, rst_stream_status_names, "Unknown (%d)"));
+                  val_to_str(pinfo->pool, goaway_status, rst_stream_status_names, "Unknown (%d)"));
 
   return frame->length;
 }
@@ -1523,7 +1535,7 @@ static int dissect_spdy_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
 
   /* Add control bit. */
   control_bit = tvb_get_uint8(tvb, offset) & 0x80;
-  proto_tree_add_item(spdy_tree, hf_spdy_control_bit, tvb, offset, 2, ENC_NA);
+  proto_tree_add_item(spdy_tree, hf_spdy_control_bit, tvb, offset, 2, ENC_BIG_ENDIAN);
 
   /* Process first four bytes of frame, formatted depending on control bit. */
   if (control_bit) {
@@ -1553,7 +1565,7 @@ static int dissect_spdy_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
   }
 
   /* Add frame info. */
-  frame_type_name = val_to_str(frame.type, frame_type_names, "Unknown(%d)");
+  frame_type_name = val_to_str(pinfo->pool, frame.type, frame_type_names, "Unknown(%d)");
   col_append_sep_str(pinfo->cinfo, COL_INFO, ", ", frame_type_name);
 
   proto_item_append_text(spdy_tree, ": %s", frame_type_name);

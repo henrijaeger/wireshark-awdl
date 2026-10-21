@@ -14,11 +14,11 @@
 
 #include "epan/epan_dissect.h"
 #include <epan/addr_resolv.h>
-#include "epan/rtp_pt.h"
 
 #include "epan/dfilter/dfilter.h"
 
 #include "epan/dissectors/packet-rtp.h"
+#include "epan/dissectors/packet-rtp_pt.h"
 
 #include <ui/rtp_media.h>
 
@@ -914,7 +914,10 @@ void RtpAnalysisDialog::saveCsv(RtpAnalysisDialog::StreamDirection direction)
     if (file_path.isEmpty()) return;
 
     QFile save_file(file_path);
-    save_file.open(QFile::WriteOnly);
+    if (!save_file.open(QFile::WriteOnly)) {
+        // XXX - Warning dialog on failure?
+        return;
+    }
 
     switch (direction) {
     case dir_one_:
@@ -950,6 +953,7 @@ void RtpAnalysisDialog::saveCsv(RtpAnalysisDialog::StreamDirection direction)
         }
         break;
     }
+    // XXX - Check for failure and warn?
 }
 
 bool RtpAnalysisDialog::eventFilter(QObject *, QEvent *event)

@@ -41,6 +41,7 @@ endmacro()
 ADD_MAN_PAGE(wireshark   1)
 ADD_MAN_PAGE(tshark      1)
 ADD_MAN_PAGE(stratoshark 1)
+ADD_MAN_PAGE(strato      1)
 
 ADD_MAN_PAGE(androiddump 1)
 ADD_MAN_PAGE(capinfos    1)
@@ -48,16 +49,17 @@ ADD_MAN_PAGE(captype     1)
 ADD_MAN_PAGE(ciscodump   1)
 ADD_MAN_PAGE(dumpcap     1)
 ADD_MAN_PAGE(editcap     1)
+ADD_MAN_PAGE(etwdump     1)
+ADD_MAN_PAGE(falcodump   1)
 ADD_MAN_PAGE(mergecap    1)
 ADD_MAN_PAGE(randpkt     1)
 ADD_MAN_PAGE(randpktdump 1)
-ADD_MAN_PAGE(etwdump     1)
 ADD_MAN_PAGE(rawshark    1)
 ADD_MAN_PAGE(reordercap  1)
+ADD_MAN_PAGE(sharkd      1)
 ADD_MAN_PAGE(sshdig      1)
 ADD_MAN_PAGE(sshdump     1)
 ADD_MAN_PAGE(text2pcap   1)
-ADD_MAN_PAGE(falcodump   1)
 ADD_MAN_PAGE(udpdump     1)
 ADD_MAN_PAGE(wifidump    1)
 
@@ -203,6 +205,7 @@ set(WSUG_FILES
 	wsug_src/wsug_use.adoc
 	wsug_src/wsug_work.adoc
 	wsug_src/capinfos-h.txt
+	wsug_src/captype-h.txt
 	wsug_src/dumpcap-h.txt
 	wsug_src/editcap-F.txt
 	wsug_src/editcap-T.txt
@@ -352,6 +355,7 @@ set(WSUG_GRAPHICS
 	wsug_src/images/ws-stats-lte-mac-traffic.png
 	wsug_src/images/ws-stats-lte-rlc-traffic.png
 	wsug_src/images/ws-stats-packet-lengths.png
+	wsug_src/images/ws-stats-plots.png
 	wsug_src/images/ws-stats-srt-smb2.png
 	wsug_src/images/ws-stats-wlan-traffic.png # GTK+
 	wsug_src/images/ws-statusbar-empty.png
@@ -393,6 +397,7 @@ set(WSDG_FILES
 	wsdg_src/wsdg_tests.adoc
 	wsdg_src/wsdg_tools.adoc
 	wsdg_src/wsdg_userinterface.adoc
+	wsdg_src/wsdg_wiretap.adoc
 	wsdg_src/wsdg_works.adoc
 	${COMMON_GUIDE_FILES}
 )

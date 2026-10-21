@@ -10,9 +10,22 @@
 #include "netxray.h"
 
 #include <string.h>
-#include "wtap-int.h"
+
+#include <wsutil/array.h>
+#include <wsutil/pint.h>
+
+#include "wtap_module.h"
 #include "file_wrappers.h"
 #include "atm.h"
+
+/*
+ * Sniffer Basic (NetXRay)/Windows Sniffer Pro
+ *
+ * Network Associates' Sniffer Basic (formerly NetXRay from Cinco Networks)
+ * file format is now supported, at least for Ethernet and token-ring.
+ * Network Associates' Windows Sniffer Pro appears to use a variant of that
+ * format; it's supported to the same extent.
+*/
 
 /* Capture file header, *including* magic number, is padded to 128 bytes. */
 #define	CAPTUREFILE_HEADER_SIZE	128
@@ -570,8 +583,8 @@ netxray_open(wtap *wth, int *err, char **err_info)
 	/*
 	 * Figure out the time stamp units and start time stamp.
 	 */
-	start_timestamp = (double)pletoh32(&hdr.timelo)
-	    + (double)pletoh32(&hdr.timehi)*4294967296.0;
+	start_timestamp = (double)pletohu32(&hdr.timelo)
+	    + (double)pletohu32(&hdr.timehi)*4294967296.0;
 	if (is_old) {
 		ticks_per_sec = 1000.0;
 		wth->file_tsprec = WTAP_TSPREC_MSEC;
@@ -632,7 +645,7 @@ netxray_open(wtap *wth, int *err, char **err_info)
 					bug reports).
 				*/
 				if (hdr.timeunit == 2) {
-					ticks_per_sec = pletoh32(hdr.realtick);
+					ticks_per_sec = pletohu32(hdr.realtick);
 				}
 				else {
 					ticks_per_sec = TpS[hdr.timeunit];
@@ -871,7 +884,7 @@ netxray_open(wtap *wth, int *err, char **err_info)
 	wth->subtype_seek_read = netxray_seek_read;
 	wth->file_encap = file_encap;
 	wth->snapshot_length = 0;	/* not available in header */
-	netxray->start_time = pletoh32(&hdr.start_time);
+	netxray->start_time = pletohu32(&hdr.start_time);
 	netxray->ticks_per_sec = ticks_per_sec;
 	netxray->start_timestamp = start_timestamp;
 	netxray->version_major = version_major;
@@ -984,9 +997,9 @@ netxray_open(wtap *wth, int *err, char **err_info)
 	 * XXX: Remember 'start_offset' to help testing for 'short file' at EOF
 	 */
 	netxray->wrapped      = false;
-	netxray->nframes      = pletoh32(&hdr.nframes);
-	netxray->start_offset = pletoh32(&hdr.start_offset);
-	netxray->end_offset   = pletoh32(&hdr.end_offset);
+	netxray->nframes      = pletohu32(&hdr.nframes);
+	netxray->start_offset = pletohu32(&hdr.start_offset);
+	netxray->end_offset   = pletohu32(&hdr.end_offset);
 
 	/* Seek to the beginning of the data records. */
 	if (file_seek(wth->fh, netxray->start_offset, SEEK_SET, err) == -1) {
@@ -1487,7 +1500,7 @@ netxray_process_rec_header(wtap *wth, FILE_T fh, wtap_rec *rec,
 			if (hdr.hdr_2_x.xxx[9] & 0x04)
 				rec->rec_header.packet_header.pseudo_header.atm.flags |= ATM_RAW_CELL;
 			rec->rec_header.packet_header.pseudo_header.atm.vpi = hdr.hdr_2_x.xxx[11];
-			rec->rec_header.packet_header.pseudo_header.atm.vci = pletoh16(&hdr.hdr_2_x.xxx[12]);
+			rec->rec_header.packet_header.pseudo_header.atm.vci = pletohu16(&hdr.hdr_2_x.xxx[12]);
 			rec->rec_header.packet_header.pseudo_header.atm.channel =
 			    (hdr.hdr_2_x.xxx[15] & 0x10)? 1 : 0;
 			rec->rec_header.packet_header.pseudo_header.atm.cells = 0;
@@ -1615,12 +1628,12 @@ netxray_process_rec_header(wtap *wth, FILE_T fh, wtap_rec *rec,
 		break;
 	}
 
-	rec->rec_type = REC_TYPE_PACKET;
+	wtap_setup_packet_rec(rec, wth->file_encap);
 	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	if (netxray->version_major == 0) {
 		rec->presence_flags = WTAP_HAS_TS;
-		t = (double)pletoh32(&hdr.old_hdr.timelo)
-		    + (double)pletoh32(&hdr.old_hdr.timehi)*4294967296.0;
+		t = (double)pletohu32(&hdr.old_hdr.timelo)
+		    + (double)pletohu32(&hdr.old_hdr.timehi)*4294967296.0;
 		t /= netxray->ticks_per_sec;
 		t -= netxray->start_timestamp;
 		rec->ts.secs = netxray->start_time + (long)t;
@@ -1630,13 +1643,16 @@ netxray_process_rec_header(wtap *wth, FILE_T fh, wtap_rec *rec,
 		 * We subtract the padding from the packet size, so our caller
 		 * doesn't see it.
 		 */
-		packet_size = pletoh16(&hdr.old_hdr.len);
+		packet_size = pletohu16(&hdr.old_hdr.len);
+		if (packet_size < padding) {
+			padding = packet_size;
+		}
 		rec->rec_header.packet_header.caplen = packet_size - padding;
 		rec->rec_header.packet_header.len = rec->rec_header.packet_header.caplen;
 	} else {
 		rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
-		t = (double)pletoh32(&hdr.hdr_1_x.timelo)
-		    + (double)pletoh32(&hdr.hdr_1_x.timehi)*4294967296.0;
+		t = (double)pletohu32(&hdr.hdr_1_x.timelo)
+		    + (double)pletohu32(&hdr.hdr_1_x.timehi)*4294967296.0;
 		t /= netxray->ticks_per_sec;
 		t -= netxray->start_timestamp;
 		rec->ts.secs = netxray->start_time + (time_t)t;
@@ -1646,9 +1662,12 @@ netxray_process_rec_header(wtap *wth, FILE_T fh, wtap_rec *rec,
 		 * We subtract the padding from the packet size, so our caller
 		 * doesn't see it.
 		 */
-		packet_size = pletoh16(&hdr.hdr_1_x.incl_len);
+		packet_size = pletohu16(&hdr.hdr_1_x.incl_len);
+		if (packet_size < padding) {
+			padding = packet_size;
+		}
 		rec->rec_header.packet_header.caplen = packet_size - padding;
-		rec->rec_header.packet_header.len = pletoh16(&hdr.hdr_1_x.orig_len) - padding;
+		rec->rec_header.packet_header.len = pletohu16(&hdr.hdr_1_x.orig_len) - padding;
 	}
 
 	return padding;
@@ -1762,6 +1781,7 @@ netxray_dump_1_1(wtap_dumper *wdh, const wtap_rec *rec,
 	/* We can only write packet records. */
 	if (rec->rec_type != REC_TYPE_PACKET) {
 		*err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+		*err_info = wtap_unwritable_rec_type_err_string(rec);
 		return false;
 	}
 
@@ -1961,6 +1981,7 @@ netxray_dump_2_0(wtap_dumper *wdh, const wtap_rec *rec,
 	/* We can only write packet records. */
 	if (rec->rec_type != REC_TYPE_PACKET) {
 		*err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+		*err_info = wtap_unwritable_rec_type_err_string(rec);
 		return false;
 	}
 

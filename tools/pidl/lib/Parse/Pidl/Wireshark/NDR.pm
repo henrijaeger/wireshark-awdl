@@ -414,13 +414,19 @@ sub ElementLevel($$$$$$$$)
 					$t = $l->{DATA_TYPE};
 				}
 
+				if ($param ne 0) {
+					$self->{conformance}->{dissectorparams}->{$myname}->{USED} = 1;
+				}
 				$self->pidl_code("offset = $ifname\_dissect_struct_" . $t . "(tvb,offset,pinfo,tree,di,drep,$hf,$param);");
 
 				return;
 			}
 
 			$call =~ s/\@HF\@/$hf/g;
-			$call =~ s/\@PARAM\@/$param/g;
+			my $replacements = ($call =~ s/\@PARAM\@/$param/g);
+			if ($param ne 0 and $replacements ne 0) {
+				$self->{conformance}->{dissectorparams}->{$myname}->{USED} = 1;
+			}
 			$self->pidl_code($call);
 		}
 	} elsif ($_->{TYPE} eq "SUBCONTEXT") {
@@ -449,6 +455,7 @@ sub ElementLevel($$$$$$$$)
 
 		$self->pidl_code("subtvb = tvb_new_subset_length_caplen(tvb, offset, (const int)size, -1);");
 		if ($param ne 0) {
+			$self->{conformance}->{dissectorparams}->{$myname}->{USED} = 1;
 			$self->pidl_code("$myname\_(subtvb, 0, pinfo, tree, di, drep, $param);");
 		} else {
 			$self->pidl_code("$myname\_(subtvb, 0, pinfo, tree, di, drep);");
@@ -468,21 +475,23 @@ sub SwitchType($$;$)
 {
 	my ($e, $type, $nodiscriminant) = @_;
 
-	my $switch_dt =  getType($type);
 	my $switch_type = undef;
-	if ($switch_dt->{DATA}->{TYPE} eq "ENUM") {
-		$switch_type = Parse::Pidl::Typelist::enum_type_fn($switch_dt->{DATA});
-	} elsif ($switch_dt->{DATA}->{TYPE} eq "BITMAP") {
-		$switch_type = Parse::Pidl::Typelist::bitmap_type_fn($switch_dt->{DATA});
-	} elsif ($switch_dt->{DATA}->{TYPE} eq "SCALAR") {
-		if (defined $e->{SWITCH_TYPE}) {
-			$switch_type = "$e->{SWITCH_TYPE}";
-		} else {
-			$switch_type = "$switch_dt->{DATA}->{NAME}";
-		}
-	} elsif (not defined $e->{SWITCH_TYPE}) {
+	if (not defined($type)) {
 		$switch_type = $nodiscriminant;
-	}
+	} else {
+                my $switch_dt =  getType($type);
+                if ($switch_dt->{DATA}->{TYPE} eq "ENUM") {
+                        $switch_type = Parse::Pidl::Typelist::enum_type_fn($switch_dt->{DATA});
+                } elsif ($switch_dt->{DATA}->{TYPE} eq "BITMAP") {
+                        $switch_type = Parse::Pidl::Typelist::bitmap_type_fn($switch_dt->{DATA});
+                } elsif ($switch_dt->{DATA}->{TYPE} eq "SCALAR") {
+                        if (defined $e->{SWITCH_TYPE}) {
+                                $switch_type = "$e->{SWITCH_TYPE}";
+                        } else {
+                                $switch_type = "$switch_dt->{DATA}->{NAME}";
+                        }
+                }
+        }
 
 	return $switch_type
 }
@@ -495,7 +504,7 @@ sub Element($$$$$$)
 
 	my ($call_code, $moreparam);
 	my $param = 0;
-	if (defined $isoruseswitch) {
+	if (defined $isoruseswitch and @$isoruseswitch) {
 		my $type = $isoruseswitch->[0];
 		my $name = $isoruseswitch->[1];
 
@@ -511,7 +520,7 @@ sub Element($$$$$$)
 		} else {
 			$moreparam = "";
 		}
-		if (($e->{PROPERTIES}->{switch_is} eq "") && ($switchvars{$name}) &&
+		if ((not has_property($e, "switch_is")) && ($switchvars{$name}) &&
 			#not a "native" type
 			(!($type =~ /^uint(8|16|1632|32|3264|64)/))) {
 			$param = $name;
@@ -651,18 +660,18 @@ sub Function($$$)
 	} elsif ($fn->{RETURN_TYPE} eq "NTSTATUS") {
 		$self->pidl_code("offset = dissect_ntstatus(tvb, offset, pinfo, tree, di, drep, hf\_$ifname\_status, &status);\n");
 		$self->pidl_code("if (status != 0)");
-		$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Error: %s\", val_to_str_ext(status, &NT_errors_ext, \"Unknown NT status 0x%08x\"));\n");
+		$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Error: %s\", val_to_str_ext(pinfo->pool, status, &NT_errors_ext, \"Unknown NT status 0x%08x\"));\n");
 		$return_types{$ifname}->{"status"} = ["NTSTATUS", "NT Error"];
 	} elsif ($fn->{RETURN_TYPE} eq "WERROR") {
 		$self->pidl_code("offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf\_$ifname\_werror, &status);\n");
 		$self->pidl_code("if (status != 0)");
-		$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Error: %s\", val_to_str_ext(status, &WERR_errors_ext, \"Unknown DOS error 0x%08x\"));\n");
+		$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Error: %s\", val_to_str_ext(pinfo->pool, status, &WERR_errors_ext, \"Unknown DOS error 0x%08x\"));\n");
 
 		$return_types{$ifname}->{"werror"} = ["WERROR", "Windows Error"];
 	} elsif ($fn->{RETURN_TYPE} eq "HRESULT") {
 		$self->pidl_code("offset = dissect_ndr_uint32(tvb, offset, pinfo, tree, di, drep, hf\_$ifname\_hresult, &status);\n");
 		$self->pidl_code("if (status != 0)");
-		$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Error: %s\", val_to_str_ext(status, &HRES_errors_ext, \"Unknown HRES error 0x%08x\"));\n");
+		$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Error: %s\", val_to_str_ext(pinfo->pool, status, &HRES_errors_ext, \"Unknown HRES error 0x%08x\"));\n");
 		$return_types{$ifname}->{"hresult"} = ["HRESULT", "HRES Windows Error"];
 	} elsif (my $type = getType($fn->{RETURN_TYPE})) {
 		if ($type->{DATA}->{TYPE} eq "ENUM") {
@@ -670,7 +679,7 @@ sub Function($$$)
 
 			$self->pidl_code("offset = $return_dissect(tvb, offset, pinfo, tree, di, drep, hf\_$ifname\_$fn->{RETURN_TYPE}_status, &status);");
 			$self->pidl_code("if (status != 0)");
-			$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Status: %s\", val_to_str(status, $ifname\_$fn->{RETURN_TYPE}\_vals, \"Unknown " . $fn->{RETURN_TYPE} . " error 0x%08x\"));\n");
+			$self->pidl_code("\tcol_append_fstr(pinfo->cinfo, COL_INFO, \", Status: %s\", val_to_str(pinfo->pool, status, $ifname\_$fn->{RETURN_TYPE}\_vals, \"Unknown " . $fn->{RETURN_TYPE} . " error 0x%08x\"));\n");
 			$return_types{$ifname}->{$fn->{RETURN_TYPE}."_status"} = [$fn->{RETURN_TYPE}, $fn->{RETURN_TYPE}];
 		} elsif ($type->{DATA}->{TYPE} eq "SCALAR") {
 			$self->pidl_code("offset = dissect_ndr_$fn->{RETURN_TYPE}(tvb, offset, pinfo, tree, di, drep, hf\_$ifname\_$fn->{RETURN_TYPE}_status, &status);");
@@ -747,6 +756,9 @@ sub Struct($$$$)
 		if (has_property($_, "switch_is")) {
 			my $varswitch = $_->{PROPERTIES}->{switch_is};
 			$switch_info = $varswitchs->{$varswitch};
+			if (not @$switch_info) {
+				warning($_->{ORIGINAL}, "`$v' switch_is discriminant `$varswitch' not found. (Only single identifiers are supported, not expressions as in MIDL.)");
+			}
 		}
 
 		$res.="\t".$self->Element($_, $name, $ifname, $switch_info, %switch_hash)."\n\n";

@@ -824,7 +824,7 @@ dissect_smtp_response(tvbuff_t *tvb, packet_info *pinfo, proto_tree *smtp_tree, 
               (multiline_state != SMTP_MULTILINE_END))
           {
             ti = proto_tree_add_item(smtp_tree, hf_smtp_response, tvb,
-              offset, next_offset - offset, ENC_ASCII | ENC_NA);
+              offset, next_offset - offset, ENC_ASCII);
             cmdresp_tree = proto_item_add_subtree(ti, ett_smtp_cmdresp);
 
             code_item = proto_tree_add_uint(cmdresp_tree, hf_smtp_rsp_code, tvb, offset, 3, code);
@@ -1139,7 +1139,7 @@ dissect_smtp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
               spd_frame_data->pdu_type = SMTP_PDU_CMD;
               session_state->smtp_state = SMTP_STATE_READING_DATA;
               session_state->data_seen = true;
-            } else if (g_ascii_strncasecmp(line, "BDAT", 4) == 0) {
+            } else if ((linelen > 5) && (g_ascii_strncasecmp(line, "BDAT", 4) == 0)) {
               /*
                * BDAT command.
                * This is a command, but everything that comes after it,

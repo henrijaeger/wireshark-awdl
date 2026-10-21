@@ -4750,25 +4750,6 @@ dissect_homeplug_av_gp_cm_atten_char_ind(ptvcursor_t *cursor, packet_info *pinfo
 
     avg = 0.0f;
 
-    if (!ptvcursor_tree(cursor)) {
-        ptvcursor_advance(cursor, 1);
-        sectype = tvb_get_uint8(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
-        ptvcursor_advance(cursor, 1);
-        if (sectype != HOMEPLUG_AV_GP_SECURITY_TYPE_PUBLIC_KEY) {
-            ptvcursor_advance(cursor, 6+8+17+17+1);
-            numgroups = tvb_get_uint8(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
-            ptvcursor_advance(cursor, 1);
-            for (Counter_groups = 0; Counter_groups < numgroups; ++Counter_groups) {
-                val = tvb_get_uint8(ptvcursor_tvbuff(cursor), ptvcursor_current_offset(cursor));
-                avg += val;
-                ptvcursor_advance(cursor,1);
-            }
-            avg /= numgroups;
-            col_append_fstr(pinfo->cinfo, COL_INFO, " (Groups = %d, Avg. Attenuation = %.2f dB)", numgroups, avg);
-        }
-        return;
-    }
-
     ptvcursor_add(cursor, hf_homeplug_av_gp_cm_atten_char_apptype, 1, ENC_NA);
     sectype = tvb_get_uint8(ptvcursor_tvbuff(cursor),ptvcursor_current_offset(cursor));
 
@@ -4798,8 +4779,11 @@ dissect_homeplug_av_gp_cm_atten_char_ind(ptvcursor_t *cursor, packet_info *pinfo
                                             ptvcursor_tvbuff(cursor),
                                             ptvcursor_current_offset(cursor), 1, val,
                                             HOMEPLUG_AV_GP_CM_ATTEN_CHAR_AAG_FORMAT, Counter_groups + 1, val );
+                avg += val;
                 ptvcursor_advance(cursor, 1);
             }
+            avg /= numgroups;
+            col_append_fstr(pinfo->cinfo, COL_INFO, " (Groups = %d, Avg. Attenuation = %.2f dB)", numgroups, avg);
         }
         ptvcursor_pop_subtree(cursor);
     }
@@ -5936,7 +5920,7 @@ info_column_filler_initial(uint8_t homeplug_av_mmver,
     /* if packet is vendor specific - display vendor OUI */
     if (homeplug_av_oui) {
         col_append_sep_str(pinfo->cinfo, COL_INFO, ", ",
-                           val_to_str(homeplug_av_oui, homeplug_av_vendors_oui_vals, "OUI:0x%x"));
+                           val_to_str(pinfo->pool, homeplug_av_oui, homeplug_av_vendors_oui_vals, "OUI:0x%x"));
     }
 
     /* Info depends on type and oui */
@@ -5944,13 +5928,13 @@ info_column_filler_initial(uint8_t homeplug_av_mmver,
     {
     case HOMEPLUG_AV_OUI_ST_IOTECHA:
         col_append_sep_str(pinfo->cinfo, COL_INFO, ", ",
-                           val_to_str_ext(homeplug_av_mmtype,
+                           val_to_str_ext(pinfo->pool, homeplug_av_mmtype,
                                           &homeplug_av_mmtype_st_iotecha_vals_ext,
                                           "Unknown 0x%x"));
         break;
     case HOMEPLUG_AV_OUI_QCA:
         col_append_sep_str(pinfo->cinfo, COL_INFO, ", ",
-                           val_to_str_ext(homeplug_av_mmtype,
+                           val_to_str_ext(pinfo->pool, homeplug_av_mmtype,
                                           &homeplug_av_mmtype_qualcomm_vals_ext,
                                           "Unknown 0x%x"));
         break;
@@ -5958,7 +5942,7 @@ info_column_filler_initial(uint8_t homeplug_av_mmver,
     case HOMEPLUG_AV_OUI_NONE:
         /* if oui is unknown, trying to describe as general MME */
         col_append_sep_str(pinfo->cinfo, COL_INFO, ", ",
-                           val_to_str_ext(homeplug_av_mmtype,
+                           val_to_str_ext(pinfo->pool, homeplug_av_mmtype,
                                           &homeplug_av_mmtype_general_vals_ext,
                                           "Unknown 0x%x"));
         break;

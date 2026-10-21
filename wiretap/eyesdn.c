@@ -8,11 +8,13 @@
 
 #include "config.h"
 #include "eyesdn.h"
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+#include <wsutil/pint.h>
 
 static int eyesdn_file_type_subtype = -1;
 
@@ -188,21 +190,16 @@ read_eyesdn_rec(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 	if (!esc_read(fh, hdr, EYESDN_HDR_LENGTH, err, err_info))
 		return false;
 
+	wtap_setup_packet_rec(rec, WTAP_ENCAP_UNKNOWN);
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
+
 	/* extract information from header */
-	usecs = pntoh24(&hdr[0]);
-#ifdef TV64BITS
-	secs = hdr[3];
-#else
-	secs = 0;
-#endif
-	secs = (secs << 8) | hdr[4];
-	secs = (secs << 8) | hdr[5];
-	secs = (secs << 8) | hdr[6];
-	secs = (secs << 8) | hdr[7];
+	usecs = pntohu24(&hdr[0]);
+	secs = pntohu40(&hdr[3]);
 
 	channel = hdr[8];
 	direction = hdr[9];
-	pkt_len = pntoh16(&hdr[10]);
+	pkt_len = pntohu16(&hdr[10]);
 
 	switch(direction >> 1) {
 
@@ -296,8 +293,6 @@ read_eyesdn_rec(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 		return false;
 	}
 
-	rec->rec_type = REC_TYPE_PACKET;
-	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS;
 	rec->ts.secs = secs;
 	rec->ts.nsecs = usecs * 1000;
@@ -310,6 +305,7 @@ read_eyesdn_rec(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 	pd = ws_buffer_start_ptr(&rec->data);
 	if (!esc_read(fh, pd, pkt_len, err, err_info))
 		return false;
+	ws_buffer_increase_length(&rec->data, pkt_len);
 	return true;
 }
 
@@ -387,6 +383,7 @@ static bool eyesdn_dump(wtap_dumper *wdh, const wtap_rec *rec,
 	/* We can only write packet records. */
 	if (rec->rec_type != REC_TYPE_PACKET) {
 		*err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+		*err_info = wtap_unwritable_rec_type_err_string(rec);
 		return false;
 	}
 
@@ -450,17 +447,11 @@ static bool eyesdn_dump(wtap_dumper *wdh, const wtap_rec *rec,
 		return false;
 	}
 
-	phton24(&buf[0], usecs);
-
-	buf[3] = (uint8_t)0;
-	buf[4] = (uint8_t)(0xff & (secs >> 24));
-	buf[5] = (uint8_t)(0xff & (secs >> 16));
-	buf[6] = (uint8_t)(0xff & (secs >> 8));
-	buf[7] = (uint8_t)(0xff & (secs >> 0));
-
-	buf[8] = (uint8_t) channel;
-	buf[9] = (uint8_t) (origin?1:0) + (protocol << 1);
-	phtons(&buf[10], size);
+	phtonu24(&buf[0], usecs);				/* 0-2 */
+	phtonu40(&buf[3], secs);					/* 3-7 */
+	phtonu8(&buf[8], channel);				/* 8 */
+	phtonu8(&buf[9], (origin?1:0) + (protocol << 1));	/* 9 */
+	phtonu16(&buf[10], size);				/* 10-11 */
 
 	/* start flag */
 	if (!wtap_dump_file_write(wdh, &start_flag, sizeof start_flag, err))

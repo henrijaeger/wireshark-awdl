@@ -17,8 +17,9 @@
 #include <unistd.h>
 #endif
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include <wsutil/buffer.h>
+#include <wsutil/pint.h>
 #include "file_wrappers.h"
 #include <stdlib.h>
 #include <string.h>
@@ -52,21 +53,22 @@ static int mp2t_file_type_subtype = -1;
 void register_mp2t(void);
 
 static bool
-mp2t_read_packet(mp2t_filetype_t *mp2t, FILE_T fh, int64_t offset,
-                 wtap_rec *rec, int *err,
+mp2t_read_packet(wtap *wth, FILE_T fh, int64_t offset, wtap_rec *rec, int *err,
                  char **err_info)
 {
+    mp2t_filetype_t *mp2t;
     uint64_t tmp;
+
+    mp2t = (mp2t_filetype_t*) wth->priv;
 
     /*
      * MP2T_SIZE will always be less than WTAP_MAX_PACKET_SIZE_STANDARD, so
      * we don't have to worry about the packet being too big.
      */
-    ws_buffer_assure_space(&rec->data, MP2T_SIZE);
-    if (!wtap_read_bytes_or_eof(fh, ws_buffer_start_ptr(&rec->data), MP2T_SIZE, err, err_info))
+    if (!wtap_read_bytes_or_eof_buffer(fh, &rec->data, MP2T_SIZE, err, err_info))
         return false;
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, wth->file_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 
     /* XXX - relative, not absolute, time stamps */
@@ -118,7 +120,7 @@ mp2t_read(wtap *wth, wtap_rec *rec, int *err,
 
     *data_offset = file_tell(wth->fh);
 
-    if (!mp2t_read_packet(mp2t, wth->fh, *data_offset, rec, err, err_info)) {
+    if (!mp2t_read_packet(wth, wth->fh, *data_offset, rec, err, err_info)) {
         return false;
     }
 
@@ -136,15 +138,11 @@ static bool
 mp2t_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
         int *err, char **err_info)
 {
-    mp2t_filetype_t *mp2t;
-
     if (-1 == file_seek(wth->random_fh, seek_off, SEEK_SET, err)) {
         return false;
     }
 
-    mp2t = (mp2t_filetype_t*) wth->priv;
-
-    if (!mp2t_read_packet(mp2t, wth->random_fh, seek_off, rec, err, err_info)) {
+    if (!mp2t_read_packet(wth, wth->random_fh, seek_off, rec, err, err_info)) {
         if (*err == 0)
             *err = WTAP_ERR_SHORT_READ;
         return false;
@@ -158,10 +156,10 @@ mp2t_read_pcr(uint8_t *buffer)
     uint64_t base;
     uint64_t ext;
 
-    base = pntoh40(buffer);
+    base = pntohu40(buffer);
     base >>= 7;
 
-    ext = pntoh16(&buffer[4]);
+    ext = pntohu16(&buffer[4]);
     ext &= 0x01ff;
 
     return (base * 300 + ext);
@@ -207,7 +205,7 @@ mp2t_find_next_pcr(wtap *wth, uint8_t trailer_len,
 
         /* We have a PCR value! */
         *pcr = mp2t_read_pcr(&buffer[6]);
-        *pid = 0x01ff & pntoh16(&buffer[1]);
+        *pid = 0x01ff & pntohu16(&buffer[1]);
         found = true;
     }
 
@@ -460,6 +458,7 @@ static bool mp2t_dump(wtap_dumper *wdh, const wtap_rec *rec,
     /* We can only write packet records. */
     if (rec->rec_type != REC_TYPE_PACKET) {
         *err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+        *err_info = wtap_unwritable_rec_type_err_string(rec);
         return false;
     }
 

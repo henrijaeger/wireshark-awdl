@@ -33,7 +33,7 @@
 #include <epan/packet.h>
 #include <epan/expert.h>
 #include <wiretap/wtap.h>
-#include <epan/wmem/wmem.h>
+#include <wsutil/wmem/wmem.h>
 
 #include <epan/address_types.h>
 #include <epan/addr_resolv.h>
@@ -114,7 +114,7 @@ static int dissect_corecapture(tvbuff_t *tvb, packet_info *pinfo,
   ti = proto_tree_add_item (corecapture_tree, hf_cc_frame_type, tvb, offset, 4, ENC_LITTLE_ENDIAN);
   guint32 frame_type = tvb_get_uint32(tvb, 0, ENC_LITTLE_ENDIAN);
   
-  proto_item_append_text(ti, ": %s", val_to_str_ext(frame_type, &cc_frame_type_ext, "Unknown (%d)"));
+  proto_item_append_text(ti, ": %s", val_to_str_ext(pinfo->pool, frame_type, &cc_frame_type_ext, "Unknown (%d)"));
   offset+=4;
   proto_tree_add_item (corecapture_tree, hf_cc_frame_additional, tvb, offset, 4, ENC_LITTLE_ENDIAN);
   offset+=4;

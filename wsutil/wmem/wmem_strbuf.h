@@ -35,9 +35,6 @@ extern "C" {
  *      nulls.
  *  alloc_size is the size of the raw buffer pointed to by str, regardless of
  *      what string is actually being stored (i.e. the buffer contents)
- *  max_size is the maximum permitted alloc_size (NOT the maximum permitted len,
- *      which must be one shorter than alloc_size to permit null-termination).
- *      When max_size is 0 (the default), no maximum is enforced.
  */
 struct _wmem_strbuf_t {
     /* read-only fields */
@@ -53,34 +50,29 @@ typedef struct _wmem_strbuf_t wmem_strbuf_t;
 
 WS_DLL_PUBLIC
 wmem_strbuf_t *
-wmem_strbuf_new_sized(wmem_allocator_t *allocator, size_t alloc_size)
-G_GNUC_MALLOC;
+wmem_strbuf_new_sized(wmem_allocator_t *allocator, size_t alloc_size);
 
 WS_DLL_PUBLIC
 wmem_strbuf_t *
-wmem_strbuf_new(wmem_allocator_t *allocator, const char *str)
-G_GNUC_MALLOC;
+wmem_strbuf_new(wmem_allocator_t *allocator, const char *str);
 
 #define wmem_strbuf_create(allocator) \
     wmem_strbuf_new(allocator, "")
 
 WS_DLL_PUBLIC
 wmem_strbuf_t *
-wmem_strbuf_new_len(wmem_allocator_t *allocator, const char *str, size_t len)
-G_GNUC_MALLOC;
+wmem_strbuf_new_len(wmem_allocator_t *allocator, const char *str, size_t len);
 
 WS_DLL_PUBLIC
 wmem_strbuf_t *
-wmem_strbuf_dup(wmem_allocator_t *allocator, const wmem_strbuf_t *strbuf)
-G_GNUC_MALLOC;
+wmem_strbuf_dup(wmem_allocator_t *allocator, const wmem_strbuf_t *strbuf);
 
 WS_DLL_PUBLIC
 void
 wmem_strbuf_append(wmem_strbuf_t *strbuf, const char *str);
 
-/* Appends up to append_len bytes (as allowed by strbuf->max_size) from
- * str. Ensures that strbuf is null terminated afterwards but will copy
- * embedded nulls. */
+/* Appends up to append_len bytes from str. Ensures that strbuf
+ * is null terminated afterwards but will copy embedded nulls. */
 WS_DLL_PUBLIC
 void
 wmem_strbuf_append_len(wmem_strbuf_t *strbuf, const char *str, size_t append_len);

@@ -15,7 +15,6 @@
 #ifndef __NETWORK_INSTRUMENTS_H__
 #define __NETWORK_INSTRUMENTS_H__
 
-#include <glib.h>
 #include "wtap.h"
 
 wtap_open_return_val observer_open(wtap *wth, int *err, char **err_info);
@@ -106,8 +105,6 @@ typedef struct tlv_header
 /*                                          0x0106 */
 
 typedef struct tlv_time_info {
-    uint16_t type;
-    uint16_t length;
     uint32_t time_format;
 } tlv_time_info;
 

@@ -2452,7 +2452,7 @@ static int dissect_tcpip_port_information(packet_info *pinfo, proto_tree *tree, 
       if (attribute_version == true)
       {
          uint8_t length = tvb_get_uint8(tvb, offset);
-         const char* port_name = tvb_get_string_enc(wmem_packet_scope(), tvb, offset + 1, length, ENC_ASCII);
+         const char* port_name = tvb_get_string_enc(pinfo->pool, tvb, offset + 1, length, ENC_ASCII);
 
          offset += dissect_cip_string_type(pinfo, port_tree, item, tvb, offset, hf_tcpip_port_name, CIP_SHORT_STRING_TYPE);
 
@@ -2767,7 +2767,7 @@ static void dissect_item_list_identity(packet_info* pinfo, tvbuff_t* tvb, int of
    proto_tree_add_item_ret_uint(item_tree, hf_enip_lir_namelen, tvb, offset + 32, 1, ENC_LITTLE_ENDIAN, &name_length);
 
    /* Product Name */
-   proto_tree_add_item(item_tree, hf_enip_lir_name, tvb, offset + 33, name_length, ENC_ASCII | ENC_NA);
+   proto_tree_add_item(item_tree, hf_enip_lir_name, tvb, offset + 33, name_length, ENC_ASCII);
 
    /* Append product name to info column */
    col_append_fstr(pinfo->cinfo, COL_INFO, ", %s", tvb_format_text(pinfo->pool, tvb, offset + 33, name_length));
@@ -2816,7 +2816,7 @@ static void dissect_item_list_services_response(packet_info* pinfo, tvbuff_t* tv
    proto_tree_add_bitmask(item_tree, tvb, offset + 2, hf_enip_lsr_capaflags, ett_lsrcf, capability_bits, ENC_LITTLE_ENDIAN);
 
    /* Name of service */
-   proto_tree_add_item(item_tree, hf_enip_lsr_servicename, tvb, offset + 4, 16, ENC_ASCII | ENC_NA);
+   proto_tree_add_item(item_tree, hf_enip_lsr_servicename, tvb, offset + 4, 16, ENC_ASCII);
 
    /* Append service name to info column */
    col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
@@ -3522,7 +3522,7 @@ dissect_enip_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 
    /* Add encapsulation command to info column */
    col_append_sep_fstr(pinfo->cinfo, COL_INFO, " | ", "%s (%s)",
-      val_to_str(encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)"),
+      val_to_str(pinfo->pool, encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)"),
       pkt_type_str );
 
    /*
@@ -3572,7 +3572,7 @@ dissect_enip_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 
    /* Append session and command to the protocol tree */
    proto_item_append_text( ti, ", Session: 0x%08X, %s", tvb_get_letohl( tvb, 4 ),
-      val_to_str( encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)" ) );
+      val_to_str(pinfo->pool,  encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)" ) );
 
    /*
    ** For some commands we want to add some info to the info column
@@ -3733,7 +3733,7 @@ dissect_dlr(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
    /* Add frame type to col info */
    col_add_str(pinfo->cinfo, COL_INFO,
-       val_to_str(dlr_frametype, dlr_frame_type_vals, "Unknown (0x%04x)") );
+       val_to_str(pinfo->pool, dlr_frametype, dlr_frame_type_vals, "Unknown (0x%04x)") );
 
    if ( dlr_frametype == DLR_FT_BEACON )
    {
@@ -4478,7 +4478,7 @@ proto_register_enip(void)
 
       { &hf_tcpip_port_count, { "Port Count", "cip.tcpip.port_count", FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL } },
       { &hf_tcpip_port_name, { "Port Name", "cip.tcpip.port_name", FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL } },
-      { &hf_tcpip_port_number, { "Port Number", "cip.tcpip.port_number", FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL } },
+      { &hf_tcpip_port_number, { "Port Number", "cip.tcpip.port_number", FT_UINT16, BASE_PT_TCP, NULL, 0, NULL, HFILL } },
       { &hf_tcpip_port_protocol, { "Protocol", "cip.tcpip.protocol", FT_UINT8, BASE_DEC | BASE_EXT_STRING, &ipproto_val_ext, 0, NULL, HFILL } },
       { &hf_tcpip_port_admin_state, { "Admin State", "cip.tcpip.admin_state", FT_BOOLEAN, BASE_NONE, TFS(&tfs_open_closed), 0, NULL, HFILL } },
 
@@ -5604,7 +5604,7 @@ int dissect_lldp_cip_tlv(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
       {
          // The string is all the data, minus Subtype (1 byte).
          int string_len = total_len - 1;
-         proto_tree_add_item(tree, hf_elink_interface_label, tvb, offset, string_len, ENC_ASCII | ENC_NA);
+         proto_tree_add_item(tree, hf_elink_interface_label, tvb, offset, string_len, ENC_ASCII);
          break;
       }
 

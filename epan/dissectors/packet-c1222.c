@@ -367,7 +367,9 @@ static uat_t *c1222_uat;
       fieldname##_allocated = fieldname##_len; \
       fieldname[0] = 0x06;  /* create absolute OID tag */ \
       fieldname[1] = (fieldname##_len - 2) & 0xff;  \
-      memcpy(&(fieldname[2]), c1222_baseoid, c1222_baseoid_len); \
+      if (c1222_baseoid != NULL) { \
+        memcpy(&(fieldname[2]), c1222_baseoid, c1222_baseoid_len); \
+      } \
       tvb_memcpy(tvb, &(fieldname[c1222_baseoid_len+2]), start_offset+2, length-2); \
       break; \
     case 0x06:  /* absolute OID */ \
@@ -456,7 +458,7 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
         *offset += 10;
         *length -= 12;
         proto_item_set_text(tree, "C12.22 EPSEM: %s (id %d, user \"%s\")",
-                val_to_str(cmd,commandnames,"Unknown (0x%02x)"), user_id, user_name);
+                val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"), user_id, user_name);
       } else {
         expert_add_info_format(pinfo, tree, &ei_c1222_command_truncated, "C12.22 LOGON command truncated");
       }
@@ -472,10 +474,10 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
           *offset += 2;
           *length -= 2;
           proto_item_set_text(tree, "C12.22 EPSEM: %s (password \"%s\", id %d)",
-                  val_to_str(cmd,commandnames,"Unknown (0x%02x)"), password, user_id);
+                  val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"), password, user_id);
         } else {
           proto_item_set_text(tree, "C12.22 EPSEM: %s (password \"%s\")",
-                  val_to_str(cmd,commandnames,"Unknown (0x%02x)"), password);
+                  val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"), password);
         }
       } else {
         expert_add_info_format(pinfo, tree, &ei_c1222_command_truncated, "C12.22 SECURITY command truncated");
@@ -492,7 +494,7 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
           *offset += auth_len;
           *length -= auth_len + 1;
           proto_item_set_text(tree, "C12.22 EPSEM: %s (%d bytes: %s)",
-              val_to_str(cmd,commandnames,"Unknown (0x%02x)"), auth_len, auth_req);
+              val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"), auth_len, auth_req);
         } else {
           expert_add_info_format(pinfo, tree, &ei_c1222_command_truncated, "C12.22 AUTHENTICATE command truncated");
         }
@@ -505,8 +507,8 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
         table = tvb_get_ntohs(tvb, *offset);
         proto_tree_add_uint(tree, hf_c1222_read_table, tvb, *offset, 2, table);
         proto_item_set_text(tree, "C12.22 EPSEM: %s (%s-%d)",
-                val_to_str(cmd,commandnames,"Unknown (0x%02x)"),
-                val_to_str((table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
+                val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"),
+                val_to_str(pinfo->pool, (table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
         *offset += 2;
         *length -= 2;
       } else {
@@ -526,8 +528,8 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
         *offset += 2;
         *length -= 2;
         proto_item_set_text(tree, "C12.22 EPSEM: %s (%s-%d)",
-                val_to_str(cmd,commandnames,"Unknown (0x%02x)"),
-                val_to_str((table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
+                val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"),
+                val_to_str(pinfo->pool, (table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
       } else {
         expert_add_info_format(pinfo, tree, &ei_c1222_command_truncated, "C12.22 READ command truncated");
       }
@@ -569,13 +571,13 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
 
           if (table == 7) {/* is it a procedure call? */
             proto_item_set_text(tree, "C12.22 EPSEM: %s (%s-%d, %s-%d)",
-                    val_to_str(cmd,commandnames,"Unknown (0x%02x)"),
-                    val_to_str((table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF,
-                    val_to_str((procedure_num >> 8) & 0x08, procflags,"Unknown (0x%04x)"), procedure_num & 0x7FF);
+                    val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"),
+                    val_to_str(pinfo->pool, (table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF,
+                    val_to_str(pinfo->pool, (procedure_num >> 8) & 0x08, procflags,"Unknown (0x%04x)"), procedure_num & 0x7FF);
           } else {
             proto_item_set_text(tree, "C12.22 EPSEM: %s (%s-%d)",
-                    val_to_str(cmd,commandnames,"Unknown (0x%02x)"),
-                    val_to_str((table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
+                    val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"),
+                    val_to_str(pinfo->pool, (table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
           }
           *offset += 1;
           *length -= 1;
@@ -607,8 +609,8 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
           proto_tree_add_checksum(tree, tvb, *offset, hf_c1222_write_chksum, hf_c1222_write_chksum_status,
                                   &ei_c1222_bad_checksum, pinfo, calcsum, ENC_NA, PROTO_CHECKSUM_VERIFY);
           proto_item_set_text(tree, "C12.22 EPSEM: %s (%s-%d)",
-                  val_to_str(cmd,commandnames,"Unknown (0x%02x)"),
-                  val_to_str((table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
+                  val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"),
+                  val_to_str(pinfo->pool, (table >> 8) & 0xF8, tableflags,"Unknown (0x%04x)"), table & 0x7FF);
           *offset += 1;
           *length -= 1;
         } else {
@@ -625,7 +627,7 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
         *offset += 1;
         *length -= 1;
         proto_item_set_text(tree, "C12.22 EPSEM: %s (%d seconds)",
-            val_to_str(cmd,commandnames,"Unknown (0x%02x)"), wait_seconds);
+            val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"), wait_seconds);
       } else {
         expert_add_info_format(pinfo, tree, &ei_c1222_command_truncated, "C12.22 WAIT command truncated");
       }
@@ -641,7 +643,7 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
         *offset += 1;
         *length -= 1;
         proto_item_set_text(tree, "C12.22 EPSEM: %s (pkt size %d, num pkts %d, with %d baud rates)",
-                val_to_str(cmd,commandnames,"Unknown (0x%02x)"), packet_size, nbr_packet, numrates);
+                val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"), packet_size, nbr_packet, numrates);
       } else {
         expert_add_info_format(pinfo, tree, &ei_c1222_command_truncated, "C12.22 NEGOTIATE command truncated");
       }
@@ -665,7 +667,7 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
         *offset += 1;
         *length -= 1;
         proto_item_set_text(tree, "C12.22 EPSEM: %s (traffic to %d s, inter-char to %d s, response to %d s, %d retries)",
-                val_to_str(cmd,commandnames,"Unknown (0x%02x)"), traffic, inter_char, resp_to, nbr_retries);
+                val_to_str(pinfo->pool, cmd,commandnames,"Unknown (0x%02x)"), traffic, inter_char, resp_to, nbr_retries);
       } else {
         expert_add_info_format(pinfo, tree, &ei_c1222_command_truncated, "C12.22 NEGOTIATE command truncated");
       }
@@ -673,7 +675,7 @@ parse_c1222_detailed(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int cm
 
     default:
       /* don't do anything */
-      proto_item_set_text(tree, "C12.22 EPSEM: %s", val_to_str(cmd, commandnames, "Unknown (0x%02x)"));
+      proto_item_set_text(tree, "C12.22 EPSEM: %s", val_to_str(pinfo->pool, cmd, commandnames, "Unknown (0x%02x)"));
       if (*length) {
         proto_tree_add_item(tree, hf_c1222_data, tvb, *offset, *length, ENC_NA);
       }
@@ -749,10 +751,10 @@ get_ber_len_size(uint32_t n)
  * \param maxsize is the maximum number of bytes we're allowed to write
  * \returns length of encoded value in bytes
  */
-static int
-encode_ber_len(uint8_t *ptr, uint32_t n, int maxsize)
+static uint32_t
+encode_ber_len(uint8_t *ptr, uint32_t n, uint32_t maxsize)
 {
-  int len = get_ber_len_size(n);
+  uint32_t len = get_ber_len_size(n);
   if (len > maxsize) return 0;
   if (len == 1) {
     *ptr = 0x7f & n;
@@ -821,7 +823,7 @@ static bool
 canonify_unencrypted_header(unsigned char *buff, uint32_t *offset, uint32_t buffsize)
 {
   const TOP_ELEMENT_CONTROL *t = canonifyTable;
-  uint32_t len, allocated;
+  uint32_t len, allocated, ret;
 
   for (t = canonifyTable; t->element != NULL; t++)
   {
@@ -832,8 +834,13 @@ canonify_unencrypted_header(unsigned char *buff, uint32_t *offset, uint32_t buff
     if (*(t->element) != NULL) {
       if (t->addtag) {
         /* recreate original tag and length */
+        if (buffsize < *offset + 1)
+            return false;
         buff[(*offset)++] = t->tag;
-        (*offset) += encode_ber_len(&buff[*offset], len, 4);
+        ret = encode_ber_len(&buff[*offset], len, MIN(buffsize - *offset, 4));
+        if (ret == 0)
+            return false;
+        (*offset) += ret;
       }
       if (t->truncate) {
         len = 3+2*get_ber_len_size(len);

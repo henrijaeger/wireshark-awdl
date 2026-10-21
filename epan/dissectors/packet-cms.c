@@ -319,10 +319,9 @@ static int dissect_cms_OCTET_STRING(bool implicit_tag _U_, tvbuff_t *tvb, int of
 struct cms_private_data {
   const char *object_identifier_id;
   tvbuff_t *content_tvb;
+  proto_tree *top_tree;
+  proto_tree *cap_tree;
 };
-
-static proto_tree *top_tree;
-static proto_tree *cap_tree;
 
 #define HASH_SHA1 "1.3.14.3.2.26"
 
@@ -379,7 +378,12 @@ cms_verify_msg_digest(proto_item *pi, tvbuff_t *content, const char *alg, tvbuff
   int i= 0, buffer_size = 0;
 
   /* we only support two algorithms at the moment  - if we do add SHA2
-     we should add a registration process to use a registration process */
+     we should add a registration process and use it */
+
+  if (alg == NULL) {
+    proto_item_append_text(pi, " [unable to verify]");
+    return;
+  }
 
   if(strcmp(alg, HASH_SHA1) == 0) {
     gcry_md_hash_buffer(GCRY_MD_SHA1, digest_buf, tvb_get_ptr(content, 0, tvb_captured_length(content)), tvb_captured_length(content));
@@ -397,7 +401,7 @@ cms_verify_msg_digest(proto_item *pi, tvbuff_t *content, const char *alg, tvbuff
        (tvb_memeql(tvb, offset, digest_buf, buffer_size) != 0)) {
       proto_item_append_text(pi, " [incorrect, should be ");
       for(i = 0; i < buffer_size; i++)
-	proto_item_append_text(pi, "%02X", digest_buf[i]);
+        proto_item_append_text(pi, "%02X", digest_buf[i]);
 
       proto_item_append_text(pi, "]");
     }
@@ -457,11 +461,12 @@ static const ber_sequence_t ContentInfo_sequence[] = {
 
 int
 dissect_cms_ContentInfo(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  top_tree = tree;
+  struct cms_private_data *cms_data = cms_get_private_data(actx->pinfo);
+  cms_data->top_tree = tree;
     offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    ContentInfo_sequence, hf_index, ett_cms_ContentInfo);
 
-  top_tree = NULL;
+  cms_data->top_tree = NULL;
 
 
   return offset;
@@ -520,7 +525,7 @@ dissect_cms_T_eContent(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_,
   if(cms_data->content_tvb) {
     proto_item_set_text(actx->created_item, "eContent (%u bytes)", tvb_reported_length(cms_data->content_tvb));
 
-    call_ber_oid_callback(cms_data->object_identifier_id, cms_data->content_tvb, 0, actx->pinfo, top_tree ? top_tree : tree, NULL);
+    call_ber_oid_callback(cms_data->object_identifier_id, cms_data->content_tvb, 0, actx->pinfo, cms_data->top_tree ? cms_data->top_tree : tree, NULL);
   }
 
 
@@ -1687,13 +1692,14 @@ dissect_cms_KeyWrapAlgorithm(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 static int
 dissect_cms_RC2ParameterVersion(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   uint32_t length = 0;
+  struct cms_private_data *cms_data = cms_get_private_data(actx->pinfo);
 
     offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
                                                 &length);
 
 
-  if(cap_tree != NULL)
-    proto_item_append_text(cap_tree, " (%d bits)", length);
+  if(cms_data->cap_tree != NULL)
+    proto_item_append_text(cms_data->cap_tree, " (%d bits)", length);
 
 
   return offset;
@@ -1772,7 +1778,7 @@ dissect_cms_T_capability(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U
   if(cms_data->object_identifier_id) {
     name = oid_resolved_from_string(actx->pinfo->pool, cms_data->object_identifier_id);
     proto_item_append_text(tree, " %s", name ? name : cms_data->object_identifier_id);
-    cap_tree = tree;
+    cms_data->cap_tree = tree;
   }
 
 
@@ -1800,8 +1806,15 @@ static const ber_sequence_t SMIMECapability_sequence[] = {
 
 static int
 dissect_cms_SMIMECapability(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
+  struct cms_private_data *cms_data = cms_get_private_data(actx->pinfo);
+  cms_data->cap_tree = NULL;
+
+    offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    SMIMECapability_sequence, hf_index, ett_cms_SMIMECapability);
+
+
+  cms_data->cap_tree = NULL;
+
 
   return offset;
 }

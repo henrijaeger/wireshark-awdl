@@ -462,6 +462,9 @@ WS_DLL_PUBLIC dissector_handle_t dissector_table_get_dissector_handle(dissector_
 WS_DLL_PUBLIC ftenum_t dissector_table_get_type(dissector_table_t dissector_table);
 
 /** Mark a dissector table as allowing "Decode As"
+ *
+ * XXX - Why is this WS_DLL_PUBLIC? This is called by register_decode_as, and
+ * anything that marks a table as allowing "Decode As" should call that instead.
  */
 WS_DLL_PUBLIC void dissector_table_allow_decode_as(dissector_table_t dissector_table);
 
@@ -828,22 +831,77 @@ register_final_registration_routine(void (*func)(void));
 extern void
 final_registration_all_protocols(void);
 
-/*
+// XXX Should we move frame_data.encoding here?
+typedef enum {
+    DS_MEDIA_TYPE_APPLICATION_OCTET_STREAM,
+    DS_MEDIA_TYPE_APPLICATION_JSON,
+} data_source_media_type_e;
+
+struct data_source;
+
+/**
  * Add a new data source to the list of data sources for a frame, given
- * the tvbuff for the data source and its name.
+ * the tvbuff for the data source and its name. The media type will be
+ * set to DS_MEDIA_TYPE_APPLICATION_OCTET_STREAM.
+ * @param pinfo Packet info.
+ * @param tvb The tvbuff to associate with the data source.
+ * @param name A display-freindly name of the data source.
+ * @return An opaque pointer to the data source.
  */
-WS_DLL_PUBLIC void add_new_data_source(packet_info *pinfo, tvbuff_t *tvb,
+WS_DLL_PUBLIC struct data_source* add_new_data_source(packet_info *pinfo, tvbuff_t *tvb,
     const char *name);
+
+/**
+ * Set the name for the data source.
+ * @param pinfo pinfo from whose pool to allocate a copy of the data source
+ * @param src The data source.
+ * @param name new name for the data source
+ */
+WS_DLL_PUBLIC void set_data_source_name(packet_info *pinfo, struct data_source *src, const char *name);
+
+/**
+ * Set the media type for the data source. This will be used as a hint
+ * to display the source's tvbuff.
+ * @param src The data source.
+ * @param media_type A valid media type.
+ */
+WS_DLL_PUBLIC void set_data_source_media_type(struct data_source *src, data_source_media_type_e media_type);
+
 /* Removes the last-added data source, if it turns out it wasn't needed */
 WS_DLL_PUBLIC void remove_last_data_source(packet_info *pinfo);
 
 /*
- * Return the data source name, tvb.
+ * Return the data source description.
  */
-struct data_source;
-WS_DLL_PUBLIC char *get_data_source_name(const struct data_source *src);
+WS_DLL_PUBLIC char *get_data_source_description(const struct data_source *src);
+
+/*
+ * Return the tvb for the data source.
+ */
 WS_DLL_PUBLIC tvbuff_t *get_data_source_tvb(const struct data_source *src);
-WS_DLL_PUBLIC tvbuff_t *get_data_source_tvb_by_name(packet_info *pinfo, const char *name);
+
+/**
+ * Find and return data source with the given name.
+ * @param pinfo packet_info for the packet whose data sources are to be searched
+ * @param name name of the data source
+ * @return the data source or NULL if not found
+ */
+WS_DLL_PUBLIC struct data_source *get_data_source_by_name(const packet_info *pinfo, const char *name);
+
+/**
+ * Find and return data source with the given tvb.
+ * @param pinfo packet_info for the packet whose data sources are to be searched
+ * @param tvb tvb of the data source
+ * @return the data source or NULL if not found
+ */
+WS_DLL_PUBLIC struct data_source *get_data_source_by_tvb(const packet_info *pinfo, const tvbuff_t *tvb);
+
+/**
+ * Get a data source's media type.
+ * @param src The data source.
+ * @return A media type.
+ */
+WS_DLL_PUBLIC data_source_media_type_e get_data_source_media_type(const struct data_source *src);
 
 /*
  * Free up a frame's list of data sources.
@@ -862,6 +920,11 @@ WS_DLL_PUBLIC void mark_frame_as_depended_upon(frame_data *fd, uint32_t frame_nu
 typedef struct frame_data_s
 {
     int file_type_subtype;
+    /*
+     * This might be the block from the packet's wtap_rec or it might
+     * be a modified copy of that, as, for example, the comments
+     * might have been edited but not yet saved to the file.
+     */
     wtap_block_t pkt_block;         /**< NULL if not available */
     struct epan_dissect *color_edt; /** Used strictly for "coloring rules" */
 
@@ -919,9 +982,20 @@ WS_DLL_PUBLIC void dissector_dump_heur_decodes(void);
 WS_DLL_PUBLIC void register_postdissector(dissector_handle_t handle);
 
 /*
- * Specify a set of hfids that the postdissector will need.
- * The GArray is an array of hfids (type int) and should be NULL to clear the
- * list. This function will take ownership of the memory.
+ * Specify a set of hfids that the postdissector will need on the first pass.
+ * This ensures that the fields will not be faked, and can be retrieved with
+ * proto_get_finfo_ptr_array.
+ *
+ * @note There is no way to guarantee that fields added by other postdissectors
+ * will be available. (Issue #19804) This is for postdissectors that examine
+ * fields added by other dissectors on the first linear pass, and then store
+ * their own results in persistent memory for retrieval and adding in later
+ * passes. Postdissectors that need field values on later passes should call
+ * something else, like epan_set_always_visible() (which slows dissection.)
+ *
+ * @param handle The dissector handle used to register the postdissector.
+ * @param wanted_hfids An array of hfids (type int), which should be NULL to
+ * clear the list. This function will take ownership of the array.
  */
 WS_DLL_PUBLIC void set_postdissector_wanted_hfids(dissector_handle_t handle,
     GArray *wanted_hfids);
@@ -953,9 +1027,12 @@ extern void call_all_postdissectors(tvbuff_t *tvb, packet_info *pinfo, proto_tre
 WS_DLL_PUBLIC bool postdissectors_want_hfids(void);
 
 /*
- * Prime an epan_dissect_t with all the hfids wanted by postdissectors.
+ * Prime an epan_dissect_t with all the hfids wanted by postdissectors
+ * on the first pass. Not for use in (post)dissectors or applications;
+ * only to be used by libwireshark itself, which will call this automatically
+ * when dissecting a frame that has not been visited yet.
  */
-WS_DLL_PUBLIC void
+extern void
 prime_epan_dissect_with_postdissector_wanted_hfids(epan_dissect_t *edt);
 
 /** Increment the dissection depth.
@@ -966,11 +1043,27 @@ prime_epan_dissect_with_postdissector_wanted_hfids(epan_dissect_t *edt);
 
 WS_DLL_PUBLIC void increment_dissection_depth(packet_info *pinfo);
 
+/** Increment the dissection depth by a value.
+ * This should be used to limit recursion outside the tree depth checks in
+ * call_dissector and dissector_try_heuristic.
+ * @param pinfo Packet Info.
+ * @param n The value by which to increment the depth
+ */
+
+WS_DLL_PUBLIC void increment_dissection_depth_by_n(packet_info *pinfo, unsigned n);
+
 /** Decrement the dissection depth.
  * @param pinfo Packet Info.
  */
 
 WS_DLL_PUBLIC void decrement_dissection_depth(packet_info *pinfo);
+
+/** Decrement the dissection depth by a value.
+ * @param pinfo Packet Info.
+ * @param n The value by which to decrement the depth
+ */
+
+WS_DLL_PUBLIC void decrement_dissection_depth_by_n(packet_info *pinfo, unsigned n);
 
 /** @} */
 

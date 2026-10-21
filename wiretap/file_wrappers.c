@@ -23,7 +23,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
-#include "wtap-int.h"
+#include "wtap_module.h"
 
 #include <wsutil/file_util.h>
 #include <wsutil/zlib_compat.h>
@@ -43,7 +43,7 @@
 /*
  * List of compression types supported.
  */
-static struct compression_type {
+static const struct compression_type {
     wtap_compression_type  type;
     const char            *extension;
     const char            *description;
@@ -68,7 +68,7 @@ static wtap_compression_type file_get_compression_type(FILE_T stream);
 wtap_compression_type
 wtap_name_to_compression_type(const char *name)
 {
-    for (struct compression_type *p = compression_types;
+    for (const struct compression_type *p = compression_types;
 	    p->type != WTAP_UNKNOWN_COMPRESSION; p++) {
 		if (!g_strcmp0(name, p->name))
 			return p->type;
@@ -79,7 +79,7 @@ wtap_name_to_compression_type(const char *name)
 wtap_compression_type
 wtap_extension_to_compression_type(const char *ext)
 {
-    for (struct compression_type *p = compression_types;
+    for (const struct compression_type *p = compression_types;
 	    p->type != WTAP_UNKNOWN_COMPRESSION; p++) {
 		if (!g_strcmp0(ext, p->extension))
 			return p->type;
@@ -90,7 +90,7 @@ wtap_extension_to_compression_type(const char *ext)
 bool
 wtap_can_write_compression_type(wtap_compression_type compression_type)
 {
-    for (struct compression_type *p = compression_types; p->type != WTAP_UNKNOWN_COMPRESSION; p++) {
+    for (const struct compression_type *p = compression_types; p->type != WTAP_UNKNOWN_COMPRESSION; p++) {
 		if (compression_type == p->type)
 			return p->can_write_compressed;
 	}
@@ -107,7 +107,7 @@ wtap_get_compression_type(wtap *wth)
 const char *
 wtap_compression_type_description(wtap_compression_type compression_type)
 {
-	for (struct compression_type *p = compression_types;
+	for (const struct compression_type *p = compression_types;
 	    p->type != WTAP_UNCOMPRESSED; p++) {
 		if (p->type == compression_type)
 			return p->description;
@@ -118,7 +118,7 @@ wtap_compression_type_description(wtap_compression_type compression_type)
 const char *
 wtap_compression_type_extension(wtap_compression_type compression_type)
 {
-	for (struct compression_type *p = compression_types;
+	for (const struct compression_type *p = compression_types;
 	    p->type != WTAP_UNCOMPRESSED; p++) {
 		if (p->type == compression_type)
 			return p->extension;
@@ -129,7 +129,7 @@ wtap_compression_type_extension(wtap_compression_type compression_type)
 const char *
 wtap_compression_type_name(wtap_compression_type compression_type)
 {
-	for (struct compression_type *p = compression_types;
+	for (const struct compression_type *p = compression_types;
 	    p->type != WTAP_UNCOMPRESSED; p++) {
 		if (p->type == compression_type)
 			return p->name;
@@ -144,7 +144,7 @@ wtap_get_all_compression_type_extensions_list(void)
 
 	extensions = NULL;	/* empty list, to start with */
 
-	for (struct compression_type *p = compression_types;
+	for (const struct compression_type *p = compression_types;
 	    p->type != WTAP_UNCOMPRESSED; p++)
 		extensions = g_slist_prepend(extensions, (void *)p->extension);
 
@@ -158,7 +158,7 @@ wtap_get_all_output_compression_type_names_list(void)
 
 	names = NULL;	/* empty list, to start with */
 
-	for (struct compression_type *p = compression_types;
+	for (const struct compression_type *p = compression_types;
 	    p->type != WTAP_UNCOMPRESSED; p++) {
             if (p->can_write_compressed)
                 names = g_slist_prepend(names, (void *)p->name);
@@ -2898,14 +2898,6 @@ lz4wfile_fdopen(int fd)
     state->fd = fd;
     state->size_out = 0;         /* no buffer allocated yet */
     state->want = LZ4BUFSIZE;    /* max input size (a block) */
-    state->want_out = LZ4F_compressBound(state->want, &state->lz4_prefs);
-    /*
-     * This size guarantees that we will always have enough room to
-     * write the result of LZ4F_compressUpdate (or Flush or End),
-     * so long as the output buffer is empty (i.e., we immediately
-     * write to the output file anything the compressor hands back
-     * instead of buffering.)
-     */
 
     memset(&state->lz4_prefs, 0, sizeof(LZ4F_preferences_t));
     /* Use the same prefs as the lz4 command line utility defaults. */
@@ -2924,6 +2916,15 @@ lz4wfile_fdopen(int fd)
      * We could provide an API call or perhaps two or three preset options.
      */
     state->lz4_prefs.compressionLevel = 1;
+
+    state->want_out = LZ4F_compressBound(state->want, &state->lz4_prefs);
+    /*
+     * This size guarantees that we will always have enough room to
+     * write the result of LZ4F_compressUpdate (or Flush or End),
+     * so long as the output buffer is empty (i.e., we immediately
+     * write to the output file anything the compressor hands back
+     * instead of buffering.)
+     */
 
     /* initialize stream */
     state->err = 0;              /* clear error */
@@ -3048,10 +3049,15 @@ lz4wfile_flush(LZ4WFILE_T state)
     if (state->err != 0)
         return -1;
 
+    /* If not initialized yet, nothing to flush. */
+    if (state->size_out == 0)
+        return 0;
+
     bytesWritten = LZ4F_flush(state->lz4_cctx, state->out, state->size_out, NULL);
     if (LZ4F_isError(bytesWritten)) {
         // Should never happen if size_out >= LZ4F_compressBound(0, prefsPtr)
         state->err = WTAP_ERR_INTERNAL;
+        state->err_info = LZ4F_getErrorName(bytesWritten);
         return -1;
     }
     if (!lz4_write_out(state, bytesWritten)) {
@@ -3067,17 +3073,22 @@ lz4wfile_close(LZ4WFILE_T state)
 {
     int ret = 0;
 
-    /* flush, free memory, and close file */
-    size_t bytesWritten = LZ4F_compressEnd(state->lz4_cctx, state->out, state->size_out, NULL);
-    if (LZ4F_isError(bytesWritten)) {
-        // Should never happen if size_out >= LZ4F_compressBound(0, prefsPtr)
-        ret = WTAP_ERR_INTERNAL;
+    /* If not initialized yet, nothing to flush. */
+    if (state->size_out != 0) {
+        /* flush and free memory */
+        size_t bytesWritten = LZ4F_compressEnd(state->lz4_cctx, state->out, state->size_out, NULL);
+        if (LZ4F_isError(bytesWritten)) {
+            // Should never happen if size_out >= LZ4F_compressBound(0, prefsPtr)
+            ret = WTAP_ERR_INTERNAL;
+        }
+        if (!lz4_write_out(state, bytesWritten)) {
+            ret = state->err;
+        }
+        g_free(state->out);
+        LZ4F_freeCompressionContext(state->lz4_cctx);
     }
-    if (!lz4_write_out(state, bytesWritten)) {
-        ret = state->err;
-    }
-    g_free(state->out);
-    LZ4F_freeCompressionContext(state->lz4_cctx);
+
+    /* Close file */
     if (ws_close(state->fd) == -1 && ret == 0)
         ret = errno;
     g_free(state);

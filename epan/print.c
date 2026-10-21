@@ -1261,7 +1261,6 @@ ek_write_hex(field_info *fi, write_json_data *pdata)
 static void
 ek_write_field_value(field_info *fi, write_json_data* pdata)
 {
-    char label_str[ITEM_LABEL_LENGTH];
     char *dfilter_string;
 
     /* Text label */
@@ -1275,18 +1274,27 @@ ek_write_field_value(field_info *fi, write_json_data* pdata)
                 json_dumper_value_string(pdata->dumper, fi->rep->representation);
             }
             else {
-                proto_item_fill_label(fi, label_str, NULL);
-                json_dumper_value_string(pdata->dumper, label_str);
+                json_dumper_value_string(pdata->dumper, fi->hfinfo->name);
             }
             break;
         case FT_BOOLEAN:
+            /* XXX - This is to use a JSON boolean literal, though ElasticSearch
+             * supports automatic conversion from "true" and "false" for boolean
+             * types*, so this could be handled, albeit less efficiently due to
+             * the string allocation, by the general case. (*But not from other
+             * truthy or falsy strings like "1" and "0" since 6.0. Compare:
+             * https://www.elastic.co/guide/en/elasticsearch/reference/5.0/boolean.html
+             * https://www.elastic.co/guide/en/elasticsearch/reference/6.0/boolean.html
+             * https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/boolean
+             * )
+             */
             if (fvalue_get_uinteger64(fi->value))
                 json_dumper_value_anyf(pdata->dumper, "true");
             else
                 json_dumper_value_anyf(pdata->dumper, "false");
             break;
         default:
-            dfilter_string = fvalue_to_string_repr(NULL, fi->value, FTREPR_JSON, fi->hfinfo->display);
+            dfilter_string = fvalue_to_string_repr(NULL, fi->value, FTREPR_EK, fi->hfinfo->display);
             json_dumper_value_string(pdata->dumper, dfilter_string);
             wmem_free(NULL, dfilter_string);
             break;
@@ -1633,7 +1641,7 @@ write_carrays_hex_data(uint32_t num, FILE *fh, epan_dissect_t *edt)
     uint32_t      i = 0, src_num = 0;
     GSList       *src_le;
     tvbuff_t     *tvb;
-    char         *name;
+    char         *description;
     const unsigned char *cp;
     unsigned      length;
     char          ascii[9];
@@ -1649,10 +1657,10 @@ write_carrays_hex_data(uint32_t num, FILE *fh, epan_dissect_t *edt)
 
         cp = tvb_get_ptr(tvb, 0, length);
 
-        name = get_data_source_name(src);
-        if (name) {
-            fprintf(fh, "// %s\n", name);
-            wmem_free(NULL, name);
+        description = get_data_source_description(src);
+        if (description) {
+            fprintf(fh, "// %s\n", description);
+            wmem_free(NULL, description);
         }
         if (src_num) {
             fprintf(fh, "static const unsigned char pkt%u_%u[%u] = {\n",
@@ -1924,7 +1932,7 @@ print_hex_data(print_stream_t *stream, epan_dissect_t *edt, unsigned hexdump_opt
     bool          multiple_sources;
     GSList       *src_le;
     tvbuff_t     *tvb;
-    char         *line, *name;
+    char         *line, *description;
     const unsigned char *cp;
     unsigned      length;
     struct data_source *src;
@@ -1947,9 +1955,9 @@ print_hex_data(print_stream_t *stream, epan_dissect_t *edt, unsigned hexdump_opt
         src = (struct data_source *)src_le->data;
         tvb = get_data_source_tvb(src);
         if (multiple_sources && (HEXDUMP_SOURCE_OPTION(hexdump_options) == HEXDUMP_SOURCE_MULTI)) {
-            name = get_data_source_name(src);
-            line = ws_strdup_printf("%s:", name);
-            wmem_free(NULL, name);
+            description = get_data_source_description(src);
+            line = ws_strdup_printf("%s:", description);
+            wmem_free(NULL, description);
             print_line(stream, 0, line);
             g_free(line);
         }

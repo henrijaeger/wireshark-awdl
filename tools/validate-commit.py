@@ -109,6 +109,12 @@ def extract_subject(subject):
 
 
 def verify_body(body):
+    git_cut_marker = '\n# ------------------------ >8 ------------------------\n'
+    cut_index = body.find(git_cut_marker)
+    if cut_index == -1:
+        cut_index = len(body) - 1
+    body = body[0:cut_index + 1]
+
     bodynocomments = re.sub('^#.*$', '', body, flags=re.MULTILINE)
     old_lines = bodynocomments.splitlines(True)
     is_good = True
@@ -118,7 +124,7 @@ def verify_body(body):
     cleaned_subject = extract_subject(old_lines[0])
     if len(cleaned_subject) > 80:
         # Note that this check is also invoked by the commit-msg hook.
-        print('Warning: keep lines in the commit message under 80 characters.')
+        print("Warning: the subject line '%s' is longer than 80 characters." % (cleaned_subject,))
         is_good = False
     if not is_good:
         print('''
@@ -178,8 +184,7 @@ for details.
 
 
 def verify_merge_request():
-    # Not needed if/when https://gitlab.com/gitlab-org/gitlab/-/issues/23308 is fixed.
-    gitlab_api_pfx = "https://gitlab.com/api/v4"
+    gitlab_api_pfx = os.getenv('CI_API_V4_URL')
     # gitlab.com/wireshark/wireshark = 7898047
     project_id = os.getenv('CI_MERGE_REQUEST_PROJECT_ID')
     ansi_csi = '\x1b['

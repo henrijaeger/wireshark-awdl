@@ -83,7 +83,7 @@ static BOOL g_is_live_session;
 static void WINAPI event_callback(PEVENT_RECORD ev);
 static void etw_dump_write_opn_event(PEVENT_RECORD ev, ULARGE_INTEGER timestamp);
 static void etw_dump_write_general_event(PEVENT_RECORD ev, ULARGE_INTEGER timestamp);
-static void etw_dump_write_event_head_only(PEVENT_RECORD ev, ULARGE_INTEGER timestamp);
+static void etw_dump_write_event_raw(PEVENT_RECORD ev, ULARGE_INTEGER timestamp);
 static wtap_dumper* etw_dump_open(const char* pcapng_filename, int* err, char** err_info);
 
 static DWORD GetPropertyValue(WCHAR* ProviderId, EVT_PUBLISHER_METADATA_PROPERTY_ID PropertyId, PEVT_VARIANT* Value)
@@ -155,8 +155,9 @@ wtap_open_return_val etw_dump(const char* etl_filename, const char* pcapng_filen
 
     SUPER_EVENT_TRACE_PROPERTIES super_trace_properties = { 0 };
     super_trace_properties.prop.Wnode.BufferSize = sizeof(SUPER_EVENT_TRACE_PROPERTIES);
-    super_trace_properties.prop.Wnode.ClientContext = 2;
+    super_trace_properties.prop.Wnode.ClientContext = 2; // "System" Clock Type
     super_trace_properties.prop.Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    super_trace_properties.prop.BufferSize = 200;  // 200KB (like traceview)
     super_trace_properties.prop.LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
     super_trace_properties.prop.LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
     TRACEHANDLE traceControllerHandle = (TRACEHANDLE)INVALID_HANDLE_VALUE;
@@ -175,8 +176,11 @@ wtap_open_return_val etw_dump(const char* etl_filename, const char* pcapng_filen
         int provider_idx = 0;
         char** params_array = NULL;
         int params_array_num = 0;
+        char* endptr = NULL;
+        char* endptr_exp = NULL;
         WCHAR provider_id[FILENAME_MAX] = { 0 };
         ULONG convert_level = 0;
+        ULONG64 keyword = 0;
 
         params_array = g_strsplit(params, " ", -1);
         while (params_array[params_array_num])
@@ -206,6 +210,11 @@ wtap_open_return_val etw_dump(const char* etl_filename, const char* pcapng_filen
                         if (value->Type == EvtVarTypeGuid && value->GuidVal)
                         {
                             g_provider_filters[provider_idx].ProviderId = *(value->GuidVal);
+                            /*
+                             * Set default logging values (same as traceview.exe)
+                             */
+                            g_provider_filters[provider_idx].Keyword = 0xffffffffffffffffL;  // ANY
+                            g_provider_filters[provider_idx].Level = 5;  // ALL
                         }
                         else
                         {
@@ -230,6 +239,8 @@ wtap_open_return_val etw_dump(const char* etl_filename, const char* pcapng_filen
                 provider_idx++;
                 break;
             case OPT_KEYWORD:
+                endptr = ws_optarg + strlen(ws_optarg);
+                endptr_exp = endptr;
                 if (provider_idx == 0)
                 {
                     *err = ERROR_INVALID_PARAMETER;
@@ -237,15 +248,19 @@ wtap_open_return_val etw_dump(const char* etl_filename, const char* pcapng_filen
                     return WTAP_OPEN_ERROR;
                 }
 
-                g_provider_filters[provider_idx - 1].Keyword = _strtoui64(ws_optarg, NULL, 0);
-                if (!g_provider_filters[provider_idx - 1].Keyword)
+                keyword = _strtoui64(ws_optarg, &endptr, 0);
+                if (endptr != endptr_exp)
                 {
                     *err = ERROR_INVALID_PARAMETER;
                     *err_info = ws_strdup_printf("Keyword %s cannot be converted, err is 0x%x", ws_optarg, *err);
                     return WTAP_OPEN_ERROR;
                 }
+
+                g_provider_filters[provider_idx - 1].Keyword = keyword;
                 break;
             case OPT_LEVEL:
+                endptr = ws_optarg + strlen(ws_optarg);
+                endptr_exp = endptr;
                 if (provider_idx == 0)
                 {
                     *err = ERROR_INVALID_PARAMETER;
@@ -253,14 +268,14 @@ wtap_open_return_val etw_dump(const char* etl_filename, const char* pcapng_filen
                     return WTAP_OPEN_ERROR;
                 }
 
-                convert_level = strtoul(ws_optarg, NULL, 0);
+                convert_level = strtoul(ws_optarg, &endptr, 0);
                 if (convert_level > UCHAR_MAX)
                 {
                     *err = ERROR_INVALID_PARAMETER;
                     *err_info = ws_strdup_printf("Level %s is bigger than 0xff, err is 0x%x", ws_optarg, *err);
                     return WTAP_OPEN_ERROR;
                 }
-                if (!convert_level)
+                if (endptr != endptr_exp)
                 {
                     *err = ERROR_INVALID_PARAMETER;
                     *err_info = ws_strdup_printf("Level %s cannot be converted, err is 0x%x", ws_optarg, *err);
@@ -321,11 +336,10 @@ wtap_open_return_val etw_dump(const char* etl_filename, const char* pcapng_filen
                 {
                     break;
                 }
-                *err = EnableTraceEx(
-                    &g_provider_filters[i].ProviderId,
-                    NULL,
+                *err = EnableTraceEx2(
                     traceControllerHandle,
-                    true,
+                    &g_provider_filters[i].ProviderId,
+                    EVENT_CONTROL_CODE_ENABLE_PROVIDER,
                     g_provider_filters[i].Level,
                     g_provider_filters[i].Keyword,
                     0,
@@ -612,9 +626,9 @@ void wtap_etl_rec_dump(char* etl_record, ULONG total_packet_length, ULONG origin
     wtap_rec rec = { 0 };
 
     wtap_rec_init(&rec, 2048); // Appropriate size?
+    wtap_setup_packet_rec(&rec, pkt_encap);
     rec.rec_header.packet_header.caplen = total_packet_length;
     rec.rec_header.packet_header.len = original_packet_length;
-    rec.rec_header.packet_header.pkt_encap = pkt_encap;
     rec.rec_header.packet_header.interface_id = interface_id;
     rec.presence_flags = WTAP_HAS_INTERFACE_ID;
     rec.block = wtap_block_create(WTAP_BLOCK_PACKET);
@@ -655,11 +669,11 @@ static void etw_dump_write_opn_event(PEVENT_RECORD ev, ULARGE_INTEGER timestamp)
     g_free(etl_record);
 }
 
-static void etw_dump_write_event_head_only(PEVENT_RECORD ev, ULARGE_INTEGER timestamp)
+static void etw_dump_write_event_raw(PEVENT_RECORD ev, ULARGE_INTEGER timestamp)
 {
     WTAP_ETL_RECORD* etl_record = NULL;
     ULONG total_packet_length = 0;
-    total_packet_length = wtap_etl_record_buffer_init(&etl_record, ev, false, NULL, NULL);
+    total_packet_length = wtap_etl_record_buffer_init(&etl_record, ev, true, NULL, NULL);
     wtap_etl_rec_dump((char*)etl_record, total_packet_length, total_packet_length, 0, false, timestamp, WTAP_ENCAP_ETW, NULL, 0);
     g_free(etl_record);
 }
@@ -767,7 +781,7 @@ static void etw_dump_write_general_event(PEVENT_RECORD ev, ULARGE_INTEGER timest
 
     if (!is_message_dumped && g_include_undecidable_event)
     {
-        etw_dump_write_event_head_only(ev, timestamp);
+        etw_dump_write_event_raw(ev, timestamp);
     }
 }
 

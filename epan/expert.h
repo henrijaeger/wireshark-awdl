@@ -16,7 +16,7 @@
 
 #include <epan/proto.h>
 #include <epan/packet_info.h>
-#include "value_string.h"
+#include <wsutil/value_string.h>
 #include "ws_symbol_export.h"
 
 #ifdef __cplusplus
@@ -41,8 +41,8 @@ typedef struct expert_field
 	int hf;
 } expert_field;
 
-#define EI_INIT_EI -1
-#define EI_INIT_HF -1
+#define EI_INIT_EI 0
+#define EI_INIT_HF 0
 #define EI_INIT {EI_INIT_EI, EI_INIT_HF}
 
 typedef struct expert_field_info {

@@ -1108,7 +1108,7 @@ afpstat_init(struct register_srt* srt _U_, GArray* srt_array)
 	afp_srt_table = init_srt_table("AFP Commands", NULL, srt_array, AFP_NUM_PROCEDURES, NULL, "afp.command", NULL);
 	for (i = 0; i < AFP_NUM_PROCEDURES; i++)
 	{
-		char* tmp_str = val_to_str_ext_wmem(NULL, i, &CommandCode_vals_ext, "Unknown(%u)");
+		char* tmp_str = val_to_str_ext(NULL, i, &CommandCode_vals_ext, "Unknown(%u)");
 		init_srt_table_row(afp_srt_table, i, tmp_str);
 		wmem_free(NULL, tmp_str);
 	}
@@ -4327,7 +4327,9 @@ spotlight_dissect_query_loop(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 			}
 
 			offset += 8;
+			increment_dissection_depth(pinfo);
 			offset = spotlight_dissect_query_loop(tvb, pinfo, sub_tree, offset, complex_query_type, subquery_count, toc_offset, encoding);
+			decrement_dissection_depth(pinfo);
 			count--;
 			break;
 		case SQ_TYPE_NULL:
@@ -5162,12 +5164,12 @@ dissect_afp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
 	afp_command = request_val->command;
 	col_add_fstr(pinfo->cinfo, COL_INFO, "%s %s",
-		     val_to_str_ext(afp_command, &CommandCode_vals_ext,
+		     val_to_str_ext(pinfo->pool, afp_command, &CommandCode_vals_ext,
 				"Unknown command (%u)"),
 		     atp_asp_dsi_info->reply ? "reply" : "request");
 	if (atp_asp_dsi_info->reply && atp_asp_dsi_info->code != 0) {
 		col_append_fstr(pinfo->cinfo, COL_INFO, ": %s (%d)",
-			val_to_str_ext(atp_asp_dsi_info->code, &asp_error_vals_ext,
+			val_to_str_ext(pinfo->pool, atp_asp_dsi_info->code, &asp_error_vals_ext,
 				"Unknown error (%u)"), atp_asp_dsi_info->code);
 	}
 

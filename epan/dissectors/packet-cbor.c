@@ -401,7 +401,7 @@ dissect_cbor_byte_string(tvbuff_t *tvb, packet_info *pinfo, proto_tree *cbor_tre
 		return false;
 	}
 
-	proto_item *item_data = proto_tree_add_item(subtree, hf_cbor_type_byte_string, tvb, *offset, (int)length, ENC_BIG_ENDIAN|ENC_NA);
+	proto_item *item_data = proto_tree_add_item(subtree, hf_cbor_type_byte_string, tvb, *offset, (int)length, ENC_NA);
 	*offset += (int)length;
 
 	proto_item_append_text(item, ": (%" PRIu64 " byte%s)", length, plurality(length, "", "s"));
@@ -722,7 +722,7 @@ dissect_cbor_tag(tvbuff_t *tvb, packet_info *pinfo, proto_tree *cbor_tree, int *
 		return false;
 	}
 
-	proto_item_append_text(item, ": %s (%" PRIu64 ")", val64_to_str(tag, tag64_vals, "Unknown"), tag);
+	proto_item_append_text(item, ": %s (%" PRIu64 ")", val64_to_str_wmem(pinfo->pool, tag, tag64_vals, "Unknown"), tag);
 	proto_item_set_end(item, tvb, *offset);
 
 	return true;

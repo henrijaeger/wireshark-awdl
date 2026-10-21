@@ -910,6 +910,7 @@ dissect_dwell(tvbuff_t *tvb, proto_tree *seg_tree, int offset)
 	/* Optional or conditional fields, in accordance to presence mask */
 	if (SET(mask, D28)) {
 		proto_tree_add_item(seg_tree, hf_4607_dwell_sensor_heading, tvb, offset, 2, ENC_BIG_ENDIAN);
+		offset += 2;
 	}
 	if (SET(mask, D29)) {
 		proto_tree_add_item(seg_tree, hf_4607_dwell_sensor_pitch, tvb, offset, 2, ENC_BIG_ENDIAN);
@@ -1054,7 +1055,7 @@ dissect_stanag4607(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* da
 	/* Put type of first segment in the info column */
 	first_segment = tvb_get_uint8(tvb, 32);
 	col_add_str(pinfo->cinfo, COL_INFO,
-			val_to_str(first_segment, stanag4607_segment_vals, "Unknown (0x%02x)"));
+			val_to_str(pinfo->pool, first_segment, stanag4607_segment_vals, "Unknown (0x%02x)"));
 
 	/* Put the timestamp, if available in the time column */
 	if (PLATFORM_LOCATION_SEGMENT == first_segment) {

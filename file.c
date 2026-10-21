@@ -231,7 +231,10 @@ ws_epan_new(capture_file *cf)
         cap_file_provider_get_frame_ts,
         cap_file_provider_get_interface_name,
         cap_file_provider_get_interface_description,
-        cap_file_provider_get_modified_block
+        cap_file_provider_get_modified_block,
+        cap_file_provider_get_process_id,
+        cap_file_provider_get_process_name,
+        cap_file_provider_get_process_uuid,
     };
 
     return epan_new(&cf->provider, &funcs);
@@ -793,7 +796,6 @@ cf_continue_tail(capture_file *cf, volatile int to_read, wtap_rec *rec,
         int *err, fifo_string_cache_t *frame_dup_cache, GChecksum *frame_cksum)
 {
     char             *err_info;
-    volatile int      newly_displayed_packets = 0;
     epan_dissect_t    edt;
     bool              create_proto_tree;
     unsigned          tap_flags;
@@ -873,9 +875,7 @@ cf_continue_tail(capture_file *cf, volatile int to_read, wtap_rec *rec,
                    aren't any packets left to read) exit. */
                 break;
             }
-            if (read_record(cf, rec, cf->dfcode, &edt, cinfo, data_offset, frame_dup_cache, frame_cksum)) {
-                newly_displayed_packets++;
-            }
+            read_record(cf, rec, cf->dfcode, &edt, cinfo, data_offset, frame_dup_cache, frame_cksum);
             to_read--;
         }
         wtap_rec_reset(rec);
@@ -1212,12 +1212,6 @@ add_packet_to_packet_list(frame_data *fdata, capture_file *cf,
     }
 #endif
 
-    if (!fdata->visited) {
-        /* This is the first pass, so prime the epan_dissect_t with the
-           hfids postdissectors want on the first pass. */
-        prime_epan_dissect_with_postdissector_wanted_hfids(edt);
-    }
-
     /* Initialize passed_dfilter here so that dissectors can hide packets. */
     /* XXX We might want to add a separate "visible" bit to frame_data instead. */
     fdata->passed_dfilter = 1;
@@ -1324,9 +1318,16 @@ read_record(capture_file *cf, wtap_rec *rec, dfilter_t *dfcode,
         fdata = frame_data_sequence_add(cf->provider.frames, &fdlocal);
 
         cf->count++;
-        if (rec->block != NULL)
+        if (rec->block != NULL) {
+            uint64_t dropcount = 0;
+
             cf->packet_comment_count += wtap_block_count_option(rec->block, OPT_COMMENT);
-         cf->f_datalen = offset + fdlocal.cap_len;
+            if (wtap_block_get_uint64_option_value(rec->block, OPT_PKT_DROPCOUNT, &dropcount) == WTAP_OPTTYPE_SUCCESS) {
+                cf->drops_known = true;
+                cf->drops += (uint32_t)dropcount;
+            }
+        }
+        cf->f_datalen = offset + fdlocal.cap_len;
 
         // Should we check if the frame data is a duplicate, and thus, ignore
         // this frame?
@@ -2101,7 +2102,7 @@ cf_reftime_packets(capture_file* cf)
                 cf->provider.ref = fdata;
 
             /* Get the time elapsed between the first packet and this one. */
-            fdata->frame_ref_num = (fdata != cf->provider.ref) ? cf->provider.ref->num : 0;
+            fdata->frame_ref_num = cf->provider.ref->num;
             nstime_delta(&rel_ts, &fdata->abs_ts, &cf->provider.ref->abs_ts);
 
             /* If it's greater than the current elapsed time, set the elapsed
@@ -5013,8 +5014,12 @@ cf_update_section_comments(capture_file *cf, unsigned shb_idx, char **comments)
         comment = comments[i];
         if (wtap_block_get_nth_string_option_value(shb_inf, OPT_COMMENT, i, &shb_comment) != WTAP_OPTTYPE_SUCCESS) {
             /* There's no comment - add one. */
-            wtap_block_add_string_option_owned(shb_inf, OPT_COMMENT, comment);
-            cf->unsaved_changes = true;
+            if (wtap_block_add_string_option_owned(shb_inf, OPT_COMMENT, comment) != WTAP_OPTTYPE_SUCCESS) {
+                /* Should never happen? */
+                g_free(comment);
+            } else {
+                cf->unsaved_changes = true;
+            }
         } else {
             /* See if the comment has changed or not */
             if (strcmp(shb_comment, comment) != 0) {

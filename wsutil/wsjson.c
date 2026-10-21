@@ -101,16 +101,13 @@ json_parse_len(const char *buf, size_t len, jsmntok_t *tokens, unsigned int max_
     return jsmn_parse(&p, buf, len, tokens, max_tokens);
 }
 
-static
 jsmntok_t *json_get_next_object(jsmntok_t *cur)
 {
-    int i;
-    jsmntok_t *next = cur+1;
-
-    for (i = 0; i < cur->size; i++) {
-        next = json_get_next_object(next);
+    for (size_t tokens_remaining = 1; tokens_remaining > 0; tokens_remaining--) {
+        tokens_remaining += cur->size;
+        cur++;
     }
-    return next;
+    return cur;
 }
 
 jsmntok_t *json_get_object(const char *buf, jsmntok_t *parent, const char *name)
@@ -199,6 +196,27 @@ bool json_get_double(char *buf, jsmntok_t *parent, const char *name, double *val
             cur->size == 1 && (cur+1)->type == JSMN_PRIMITIVE) {
             buf[(cur+1)->end] = '\0';
             *val = g_ascii_strtod(&buf[(cur+1)->start], NULL);
+            if (errno != 0)
+                return false;
+            return true;
+        }
+        cur = json_get_next_object(cur);
+    }
+    return false;
+}
+
+bool json_get_int(char *buf, jsmntok_t *parent, const char *name, int64_t *val)
+{
+    int i;
+    jsmntok_t *cur = parent+1;
+
+    for (i = 0; i < parent->size; i++) {
+        if (cur->type == JSMN_STRING &&
+            !strncmp(&buf[cur->start], name, cur->end - cur->start)
+            && strlen(name) == (size_t)(cur->end - cur->start) &&
+            cur->size == 1 && (cur+1)->type == JSMN_PRIMITIVE) {
+            buf[(cur+1)->end] = '\0';
+            *val = g_ascii_strtoll(&buf[(cur+1)->start], NULL, 10);
             if (errno != 0)
                 return false;
             return true;

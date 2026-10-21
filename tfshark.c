@@ -61,7 +61,7 @@
 #include <epan/stat_tap_ui.h>
 #include <epan/ex-opt.h>
 
-#include <wiretap/wtap-int.h>
+#include <wiretap/wtap_module.h>
 #include <wiretap/file_wrappers.h>
 
 #include <epan/funnel.h>
@@ -263,6 +263,7 @@ main(int argc, char *argv[])
     static const struct ws_option long_options[] = {
         {"help", ws_no_argument, NULL, 'h'},
         {"version", ws_no_argument, NULL, 'v'},
+        LONGOPT_WSLOG
         {0, 0, 0, 0 }
     };
     bool                 arg_error = false;
@@ -322,7 +323,7 @@ main(int argc, char *argv[])
     ws_log_init(vcmdarg_err);
 
     /* Early logging command-line initialization. */
-    ws_log_parse_args(&argc, argv, vcmdarg_err, WS_EXIT_INVALID_OPTION);
+    ws_log_parse_args(&argc, argv, optstring, long_options, vcmdarg_err, WS_EXIT_INVALID_OPTION);
 
     ws_noisy("Finished log init and parsing command line log arguments");
 
@@ -746,8 +747,12 @@ main(int argc, char *argv[])
                     goto clean_exit;
                 }
                 break;
-            default:
             case '?':        /* Bad flag - print usage message */
+            default:
+                /* wslog arguments are okay */
+                if (ws_log_is_wslog_arg(opt))
+                    break;
+
                 print_usage(stderr);
                 exit_status = WS_EXIT_INVALID_OPTION;
                 goto clean_exit;
@@ -912,7 +917,10 @@ main(int argc, char *argv[])
        have registered its field array so we can have a tap filter
        with one of MATE's late-registered fields as part of the
        filter. */
-    start_requested_stats();
+    if (!start_requested_stats()) {
+        exit_status = WS_EXIT_INVALID_OPTION;
+        goto clean_exit;
+    }
 
     /* Process the packets in the file */
     TRY {
@@ -975,6 +983,9 @@ tfshark_epan_new(capture_file *cf)
         no_interface_name,
         NULL,
         NULL,
+        NULL,
+        NULL,
+        NULL,
     };
 
     return epan_new(&cf->provider, &funcs);
@@ -1007,10 +1018,6 @@ process_packet_first_pass(capture_file *cf, epan_dissect_t *edt,
            filter. */
         if (cf->rfcode)
             epan_dissect_prime_with_dfilter(edt, cf->rfcode);
-
-        /* This is the first pass, so prime the epan_dissect_t with the
-           hfids postdissectors want on the first pass. */
-        prime_epan_dissect_with_postdissector_wanted_hfids(edt);
 
         frame_data_set_before_dissect(&fdlocal, &cf->elapsed_time,
                 &cf->provider.ref, cf->provider.prev_dis);
@@ -1072,10 +1079,6 @@ process_packet_second_pass(capture_file *cf, epan_dissect_t *edt,
            filter. */
         if (cf->dfcode)
             epan_dissect_prime_with_dfilter(edt, cf->dfcode);
-
-        /* This is the first and only pass, so prime the epan_dissect_t
-           with the hfids postdissectors want on the first pass. */
-        prime_epan_dissect_with_postdissector_wanted_hfids(edt);
 
         col_custom_prime_edt(edt, &cf->cinfo);
 
@@ -1190,7 +1193,7 @@ full_file_read(capture_file *cf, wtap_rec *rec, int *err, char **err_info)
         buffer_size += block_size;
     }
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, cf->provider.wth->file_encap);
     rec->presence_flags = 0; /* yes, we have no bananas^Wtime stamp */
     rec->ts.secs = 0;
     rec->ts.nsecs = 0;

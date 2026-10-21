@@ -37,13 +37,11 @@ typedef struct _wmem_array_t wmem_array_t;
 WS_DLL_PUBLIC
 wmem_array_t *
 wmem_array_sized_new(wmem_allocator_t *allocator, size_t elem_size,
-                     unsigned alloc_count)
-G_GNUC_MALLOC;
+                     unsigned alloc_count);
 
 WS_DLL_PUBLIC
 wmem_array_t *
-wmem_array_new(wmem_allocator_t *allocator, const size_t elem_size)
-G_GNUC_MALLOC;
+wmem_array_new(wmem_allocator_t *allocator, const size_t elem_size);
 
 WS_DLL_PUBLIC
 void
@@ -83,6 +81,10 @@ wmem_array_get_raw(wmem_array_t *array);
 WS_DLL_PUBLIC
 unsigned
 wmem_array_get_count(wmem_array_t *array);
+
+WS_DLL_PUBLIC
+wmem_allocator_t*
+wmem_array_get_allocator(wmem_array_t* array);
 
 /* Truncates the underlying array to the elements contained within
  * (including null terminator if set), frees the wmem_array_t

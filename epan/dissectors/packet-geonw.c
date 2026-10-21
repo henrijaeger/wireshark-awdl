@@ -66,6 +66,7 @@
 #include <epan/tap.h>
 #include <epan/etypes.h>
 #include <epan/unit_strings.h>
+#include <epan/exceptions.h>
 
 #include <wsutil/utf8_entities.h>
 
@@ -1248,7 +1249,7 @@ dissect_sec_intx(tvbuff_t *tvb, int *offset, packet_info *pinfo, proto_tree *tre
     ti = proto_tree_add_item(tree, hf_sgeonw_intx, tvb, start, (*offset) - start, ENC_NA);
     subtree = proto_item_add_subtree(ti, ett_sgeonw_intx);
     proto_tree_add_bits_item(subtree, hf_sgeonw_var_len_det, tvb, start << 3, (*offset) - start, ENC_NA);
-    if ((hf != hf_sgeonw_app_id) || ((*offset) - start) > 4) {
+    if ((hf != hf_sgeonw_app_id) && ((*offset) - start) > 4) {
         proto_tree_add_uint64_bits_format_value(subtree, hf, tvb, (start << 3) + (*offset) - start,
             (((*offset) - start) << 3) - ((*offset) - start), tmp_val, ENC_BIG_ENDIAN, "%" PRIu64, tmp_val);
     }
@@ -1914,27 +1915,25 @@ dissect_sec_payload(tvbuff_t *tvb, int *offset, packet_info *pinfo, proto_tree *
         field_tree = proto_item_add_subtree(ti, ett_sgeonw_field);
         proto_tree_add_item(field_tree, hf_sgeonw_payload_field_type, tvb, *offset, 1, ENC_BIG_ENDIAN);
         *offset += 1;
+        param_len = dissect_sec_var_len(tvb, offset, pinfo, field_tree);
         switch(tmp_val) {
             case unsecured:
             case signed_pl:
-                param_len = dissect_sec_var_len(tvb, offset, pinfo, field_tree);
                 if (param_len) {
                     tvbuff_t *next_tvb = tvb_new_subset_length(tvb, *offset, param_len);
                     p_add_proto_data(pinfo->pool, pinfo, proto_geonw, SEC_TVB_KEY, next_tvb);
                 }
-                *offset += param_len;
                 break;
             case encrypted:
             case signed_and_encrypted:
-                param_len = dissect_sec_var_len(tvb, offset, pinfo, field_tree);
                 proto_tree_add_item(field_tree, hf_sgeonw_opaque, tvb, *offset, param_len, ENC_NA);
-                *offset += param_len;
                 break;
             default:
                 // Opaque
-                param_len = dissect_sec_var_len(tvb, offset, pinfo, field_tree);
                 proto_tree_add_item(field_tree, hf_sgeonw_opaque, tvb, *offset, param_len, ENC_NA);
-                *offset += param_len;
+        }
+        if (ckd_add(offset, *offset, param_len)) {
+            THROW(ReportedBoundsError);
         }
         proto_item_set_end(ti, tvb, *offset);
     }
@@ -2300,7 +2299,7 @@ dissect_geonw_internal(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
         // HT
         proto_tree_add_item_ret_uint(geonw_ch_tree, hf_geonw_ch_header_type, tvb, offset, 1, ENC_BIG_ENDIAN, &header_type);
         geonwh->gnw_htype = header_type;
-        col_add_str(pinfo->cinfo, COL_INFO, val_to_str(header_type, ch_header_type_names, "Unknown (%u)"));
+        col_add_str(pinfo->cinfo, COL_INFO, val_to_str(pinfo->pool, header_type, ch_header_type_names, "Unknown (%u)"));
         offset += 1;
 
         if (!skip_bh) {

@@ -548,14 +548,14 @@ def dependency_compute(items, dependency, map_fn = lambda t: t, ignore_fn = lamb
     item_ord = []
     item_cyc = []
     x = {}  # already emitted
-    #print '# Dependency computation'
+    #print('# Dependency computation')
     for t in items:
         if map_fn(t) in x:
-            #print 'Continue: %s : %s' % (t, (map_fn(t))
+            #print('Continue: %s : %s' % (t, (map_fn(t))))
             continue
         stack = [t]
         stackx = {t : dependency.get(t, [])[:]}
-        #print 'Push: %s : %s' % (t, str(stackx[t]))
+        #print('Push: %s : %s' % (t, str(stackx[t])))
         while stack:
             if stackx[stack[-1]]:  # has dependencies
                 d = stackx[stack[-1]].pop(0)
@@ -567,18 +567,18 @@ def dependency_compute(items, dependency, map_fn = lambda t: t, ignore_fn = lamb
                     c = [d] + c[0:c.index(d)+1]
                     c.reverse()
                     item_cyc.append(c)
-                    #print 'Cyclic: %s ' % (' -> '.join(c))
+                    #print('Cyclic: %s ' % (' -> '.join(c)))
                     continue
                 stack.append(d)
                 stackx[d] = dependency.get(d, [])[:]
-                #print 'Push: %s : %s' % (d, str(stackx[d]))
+                #print('Push: %s : %s' % (d, str(stackx[d])))
             else:
-                #print 'Pop: %s' % (stack[-1])
+                #print('Pop: %s' % (stack[-1]))
                 del stackx[stack[-1]]
                 e = map_fn(stack.pop())
                 if e in x:
                     continue
-                #print 'Add: %s' % (e)
+                #print('Add: %s' % (e))
                 item_ord.append(e)
                 x[e] = True
     return (item_ord, item_cyc)
@@ -1562,10 +1562,11 @@ class EthCtx:
                     break
 
         if len(cycle_funcs) > 1:
+            # The cycle always begins and ends with the same type, so
+            # subtract one.
             out += f'''\
   // {' -> '.join(cycle_funcs)}
-  actx->pinfo->dissection_depth += {len(cycle_funcs) - 1};
-  increment_dissection_depth(actx->pinfo);
+  increment_dissection_depth_by_n(actx->pinfo, {len(cycle_funcs) - 1});
 '''
 
         if self.conform.get_fn_presence(self.eth_type[tname]['ref'][0]):
@@ -1588,9 +1589,10 @@ class EthCtx:
                     break
 
         if len(cycle_funcs) > 1:
+            # The cycle always begins and ends with the same type, so
+            # subtract one, as above
             out += f'''\
-  actx->pinfo->dissection_depth -= {len(cycle_funcs) - 1};
-  decrement_dissection_depth(actx->pinfo);
+  decrement_dissection_depth_by_n(actx->pinfo, {len(cycle_funcs) - 1});
 '''
 
         if self.conform.get_fn_presence(self.eth_type[tname]['ref'][0]):
@@ -1706,6 +1708,22 @@ class EthCtx:
                 fempty = False
         self.output.file_close(fx, discard=fempty)
 
+    #--- eth_output_reg_vs -----------------------------------------------------
+    def eth_output_reg_vs(self):
+        fx = self.output.file_open('reg_vs')
+        fempty = True
+        for t in self.eth_export_ord:
+            if (self.eth_type[t]['export'] & EF_VALS) and self.eth_type[t]['val'].eth_has_vals():
+                if not self.eth_type[t]['export'] & EF_TABLE:
+                    if self.eth_type[t]['export'] & EF_WS_DLL:
+                        if self.eth_type[t]['vals_ext']:
+                            fx.write("  register_external_value_string_ext(\"%s\", &%s);\n" % (self.eth_vals_nm(t), self.eth_vals_nm(t)))
+                        else:
+                            fx.write("  register_external_value_string(\"%s\", %s);\n" % (self.eth_vals_nm(t), self.eth_vals_nm(t)))
+                        fempty = False
+
+        self.output.file_close(fx, discard=fempty)
+
     #--- eth_output_export ------------------------------------------------------
     def eth_output_export(self):
         fx = self.output.file_open('exp', ext='h')
@@ -1714,10 +1732,7 @@ class EthCtx:
                 fx.write(self.eth_type[t]['val'].eth_type_enum(t, self))
             if (self.eth_type[t]['export'] & EF_VALS) and self.eth_type[t]['val'].eth_has_vals():
                 if not self.eth_type[t]['export'] & EF_TABLE:
-                    if self.eth_type[t]['export'] & EF_WS_DLL:
-                        fx.write("WS_DLL_PUBLIC ")
-                    else:
-                        fx.write("extern ")
+                    fx.write("extern ")
                     if self.eth_type[t]['val'].HasConstraint() and self.eth_type[t]['val'].constr.Needs64b(self) \
                        and self.eth_type[t]['val'].type == 'IntegerType':
                         fx.write("const val64_string %s[];\n" % (self.eth_vals_nm(t)))
@@ -2196,6 +2211,7 @@ class EthCtx:
             self.eth_output_hf_arr()
             self.eth_output_ett_arr()
             self.eth_output_export()
+            self.eth_output_reg_vs()
             self.eth_output_val()
             self.eth_output_valexp()
             self.eth_output_dis_hnd()
@@ -2316,6 +2332,9 @@ class EthCnf:
 
     def omit_assignment(self, type, ident, module):
         if self.ectx.conform.use_item('OMIT_ASSIGNMENT', ident):
+            return True
+        mident = "$%s$%s" % (module, ident)
+        if self.ectx.conform.use_item('OMIT_ASSIGNMENT', mident):
             return True
         if self.ectx.conform.use_item('OMIT_ASSIGNMENT', '*') or \
            self.ectx.conform.use_item('OMIT_ASSIGNMENT', '*'+type) or \
@@ -4124,8 +4143,7 @@ class SeqType (SqType):
             autotag = True
             lst = self.all_components()
             for e in (self.elt_list):
-                if e.val.HasOwnTag(): autotag = False
-                break
+                if e.val.HasOwnTag(): autotag = False; break
         # expand COMPONENTS OF
         if self.need_components():
             if components_available:
@@ -4968,6 +4986,20 @@ class OpenType (Type):
         t = self.single_type()
         if t:
             ectx.eth_dep_add(ident, t)
+        else:
+            # It's an OpenType, which means a type field or a variable-type
+            # value [set] field, and we don't have a constraint that limits
+            # us to a single type. That means that this is "one whose set of
+            # values is the complete set of all possible values that can be
+            # specified using ASN.1." [Rec. ITU-T X.681 14.2] Also see X.680
+            # 3.8.57 NOTE 2.
+            #
+            # Determining all the possible types that could follow is likely
+            # impossible at this point and might be very hard even after
+            # everything is parsed. There *might* be cycles. In a conservative
+            # approach, just claim that the OpenType depends on itself, which
+            # will create a cyclical dependency for sure just in case.
+            ectx.eth_dep_add(ident, ident)
 
     def eth_tname(self):
         t = self.single_type()
@@ -5364,7 +5396,7 @@ class UTCTime (RestrictedCharacterStringType):
     def eth_type_default_body(self, ectx, tname):
         if (ectx.Ber()):
             body = ectx.eth_fn_call('dissect_%(ER)s_%(STRING_TYPE)s', ret='offset',
-                                    par=(('%(IMPLICIT_TAG)s', '%(ACTX)s', '%(TREE)s', '%(TVB)s', '%(OFFSET)s', '%(HF_INDEX)s', 'NULL', 'NULL'),))
+                                    par=(('%(IMPLICIT_TAG)s', '%(ACTX)s', '%(TREE)s', '%(TVB)s', '%(OFFSET)s', '%(HF_INDEX)s', '%(VAL_PTR)s', 'NULL'),))
             return body
         else:
             return RestrictedCharacterStringType.eth_type_default_body(self, ectx, tname)

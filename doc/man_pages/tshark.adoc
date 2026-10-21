@@ -221,7 +221,7 @@ fills up, *TShark* will switch writing to the next file and so on.
 
 The created filenames are based on the filename given with the *-w* option,
 the number of the file and on the creation date and time,
-e.g. outfile_00001_20250714120117.pcap, outfile_00002_20250714120523.pcap, ...
+e.g. outfile_00001_20260714120117.pcap, outfile_00002_20260714120523.pcap, ...
 
 With the __files__ option it's also possible to form a "ring buffer".
 This will fill up new files until the number of files specified,
@@ -264,7 +264,7 @@ for standard output, or `stderr` for standard error.
 
 *nametimenum*:__value__ Choose between two save filename templates.  If
 __value__ is 1, make running file number part before start time part; this is
-the original and default behaviour (e.g. log_00001_20250714164426.pcap).  If
+the original and default behaviour (e.g. log_00001_20260714164426.pcap).  If
 __value__ is greater than 1, make start time part before running number part
 (e.g. log_20210828164426_00001.pcap).  The latter makes alphabetical sorting
 order equal to creation time order, and keeps related multiple file sets in
@@ -311,9 +311,13 @@ may differ from *-a packets:*<capture packet count>.
 -C  <configuration profile>::
 +
 --
-Run with the given configuration profile. If used in conjunction with
---global-profile, then the global profile with the associated name
-would be used.
+Run with the given configuration profile.
+
+If used in conjunction with --global-profile, the specified profile will be loaded from the global configuration directory instead of the user's personal configuration directory.
+(typically on UN*X'/usr/share/wireshark/profiles', On Windows, the directory is a profiles subdirectory of the directory in which Wireshark was installed, e.g., C:\Program Files\Wireshark\profiles.
+On macOS, when running from an app bundle, it is the Contents/Resources/share/wireshark/profiles subdirectory within the app bundle.)
+
+This option is useful in shared environments or automated testing setups where consistent configurations are needed, and user-specific settings should be avoided.
 --
 
 -D|--list-interfaces::
@@ -451,7 +455,7 @@ There is one record per line.  The fields are tab-delimited.
 
 [horizontal]
 Field 1:: layer type, e.g. "tcp.port"
-Field 2:: selector in decimal
+Field 2:: selector in the base for display
 Field 3:: "decode as" name, e.g. "http"
 
 *defaultprefs*  Dumps a default preferences file to stdout. This report
@@ -1471,9 +1475,9 @@ Example: *-z flow,tcp,network* will show data flow for all TCP frames
 *-z* follow,__prot__,__mode__,__filter__[,__range__]::
 +
 --
-Displays the contents of a TCP or UDP stream between two nodes. The data
-sent by the second node is prefixed with a tab to differentiate it from the
-data sent by the first node.
+Displays the contents of a stream between two nodes. The data sent by the
+second node is prefixed with a tab to differentiate it from the data sent
+by the first node.
 
 __prot__ specifies the transport protocol.  It can be one of:
 
@@ -1481,6 +1485,7 @@ __prot__ specifies the transport protocol.  It can be one of:
   udp   UDP
   dccp  DCCP
   tls   TLS or SSL
+  dtls  DTLS
   http  HTTP streams
   http2 HTTP/2 streams
   quic  QUIC streams
@@ -1513,7 +1518,7 @@ __filter__ specifies the stream to be displayed. There are three formats:
   stream-index,substream-index
 
 The first format specifies IP addresses and TCP, UDP, or DCCP port pairs.
-(TCP ports are used for TLS, HTTP, and HTTP2; UDP ports are used for QUIC,
+(TCP ports are used for TLS, HTTP, and HTTP2; UDP ports are used for DTLS, QUIC,
 MP2T, and MPEG-PS.) Note that this format will include all streams multiplexed
 on the same address and port 5-tuple for transports with substreams such
 as HTTP/2, QUIC, and MP2T. In addition, for QUIC this format will include
@@ -1521,7 +1526,7 @@ all connections sharing the same 5-tuple, and will not follow connection
 migration.
 
 The second format specifies stream indices, and is used for TCP, UDP, DCCP,
-TLS, and HTTP. (TLS and HTTP use TCP stream indices.)
+TLS, DTLS, and HTTP. (HTTP uses TCP stream indices.)
 
 The third format, specifying streams and substreams, is used for HTTP/2,
 QUIC, MP2T, and MPEG-PES due to their use of multiplexing. (TCP stream and

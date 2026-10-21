@@ -30,7 +30,7 @@
 #include "packet-x509if.h"
 #include "packet-x509sat.h"
 #include "packet-ldap.h"
-#include "packet-pkcs1.h"
+#include "packet-pkixalgs.h"
 #if defined(HAVE_LIBGNUTLS)
 #include <gnutls/gnutls.h>
 #endif
@@ -50,6 +50,9 @@ static int x509af_eo_tap;
 static int proto_x509af;
 static int hf_x509af_algorithm_id;
 static int hf_x509af_extension_id;
+static int hf_x509af_subjectPublicKey_dh;
+static int hf_x509af_subjectPublicKey_dsa;
+static int hf_x509af_subjectPublicKey_rsa;
 static int hf_x509af_x509af_Certificate_PDU;      /* Certificate */
 static int hf_x509af_SubjectPublicKeyInfo_PDU;    /* SubjectPublicKeyInfo */
 static int hf_x509af_CertificatePair_PDU;         /* CertificatePair */
@@ -129,6 +132,7 @@ static int hf_x509af_g;                           /* INTEGER */
 
 /* Initialize the subtree pointers */
 static int ett_pkix_crl;
+static int ett_x509af_SubjectPublicKey;
 static int ett_x509af_Certificate;
 static int ett_x509af_T_signedCertificate;
 static int ett_x509af_SubjectName;
@@ -217,18 +221,12 @@ dissect_x509af_T_algorithmId(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offse
     offset = dissect_ber_object_identifier_str(implicit_tag, actx, tree, tvb, offset, hf_x509af_algorithm_id, &actx->external.direct_reference);
 
 
-  if (algorithm_id) {
-    wmem_free(wmem_file_scope(), (void*)algorithm_id);
-  }
-
   if(actx->external.direct_reference) {
     algorithm_id = (const char *)wmem_strdup(wmem_file_scope(), actx->external.direct_reference);
 
     name = oid_resolved_from_string(actx->pinfo->pool, actx->external.direct_reference);
 
     proto_item_append_text(tree, " (%s)", name ? name : actx->external.direct_reference);
-  } else {
-    algorithm_id = NULL;
   }
 
 
@@ -254,6 +252,11 @@ static const ber_sequence_t AlgorithmIdentifier_sequence[] = {
 
 int
 dissect_x509af_AlgorithmIdentifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  if (algorithm_id) {
+    wmem_free(wmem_file_scope(), (void*)algorithm_id);
+    algorithm_id = NULL;
+  }
+
   offset = dissect_ber_sequence(implicit_tag, actx, tree, tvb, offset,
                                    AlgorithmIdentifier_sequence, hf_index, ett_x509af_AlgorithmIdentifier);
 
@@ -265,13 +268,14 @@ dissect_x509af_AlgorithmIdentifier(bool implicit_tag _U_, tvbuff_t *tvb _U_, int
 static int
 dissect_x509af_T_utcTime(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   char *outstr, *newstr;
-  uint32_t tvblen;
+  int old_offset = offset;
 
   /* the 2-digit year can only be in the range 1950..2049 https://tools.ietf.org/html/rfc5280#section-4.1.2.5.1 */
-  offset = dissect_ber_UTCTime(implicit_tag, actx, tree, tvb, offset, hf_index, &outstr, &tvblen);
+  offset = dissect_ber_UTCTime(implicit_tag, actx, tree, tvb, offset, -1, &outstr, NULL);
+
   if (hf_index > 0 && outstr) {
     newstr = wmem_strconcat(actx->pinfo->pool, outstr[0] < '5' ? "20": "19", outstr, NULL);
-    proto_tree_add_string(tree, hf_index, tvb, offset - tvblen, tvblen, newstr);
+    proto_tree_add_string(tree, hf_index, tvb, old_offset, offset - old_offset, newstr);
   }
 
 
@@ -361,17 +365,23 @@ static int
 dissect_x509af_T_subjectPublicKey(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   tvbuff_t *bs_tvb = NULL;
 
-  dissect_ber_bitstring(false, actx, NULL, tvb, offset,
-                        NULL, 0, hf_index, -1, &bs_tvb);
+  offset = dissect_ber_bitstring(false, actx, tree, tvb, offset,
+                                 NULL, 0, hf_index, -1, &bs_tvb);
 
   /* See RFC 3279 for possible subjectPublicKey values given an Algorithm ID.
    * The contents of subjectPublicKey are always explicitly tagged. */
   if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.113549.1.1.1")) { /* id-rsa */
-    offset += dissect_pkcs1_RSAPublicKey(false, bs_tvb, 0, actx, tree, hf_index);
+    proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_x509af_SubjectPublicKey);
+    dissect_pkixalgs_RSAPublicKey(false, bs_tvb, 0, actx, subtree, hf_x509af_subjectPublicKey_rsa);
 
-  } else {
-    offset = dissect_ber_bitstring(false, actx, tree, tvb, offset,
-                                   NULL, 0, hf_index, -1, NULL);
+  } else if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.10040.4.1")) { /* id-dsa */
+    proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_x509af_SubjectPublicKey);
+    dissect_pkixalgs_DSAPublicKey(false, bs_tvb, 0, actx, subtree, hf_x509af_subjectPublicKey_dsa);
+
+  } else if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.10046.2.1")) { /* dhpublicnumber */
+    proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_x509af_SubjectPublicKey);
+    dissect_pkixalgs_DHPublicKey(false, bs_tvb, 0, actx, subtree, hf_x509af_subjectPublicKey_dh);
+
   }
 
 
@@ -528,7 +538,6 @@ dissect_x509af_Certificate(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset 
     eo_info->payload = tvb_new_subset_length(tvb, start_offset, offset - start_offset);
     tap_queue_packet(x509af_eo_tap, actx->pinfo, eo_info);
   }
-
 
 
   return offset;
@@ -985,7 +994,7 @@ x509af_eo_packet(void *tapdata, packet_info *pinfo, epan_dissect_t *edt _U_, con
     entry->pkt_num = pinfo->num;
 
     // There should be a commonName
-    char *name = strstr(eo_info->subjectname, "id-at-commonName=");
+    const char *name = eo_info->subjectname ? strstr(eo_info->subjectname, "id-at-commonName=") : NULL;
     if (name) {
       name += strlen("id-at-commonName=");
       entry->hostname = g_strndup(name, strcspn(name, ","));
@@ -1061,6 +1070,18 @@ void proto_register_x509af(void) {
     { &hf_x509af_extension_id,
       { "Extension Id", "x509af.extension.id",
         FT_OID, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+    { &hf_x509af_subjectPublicKey_dh,
+      { "DH Public Key", "x509af.subjectPublicKey.dh",
+        FT_BYTES, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+    { &hf_x509af_subjectPublicKey_dsa,
+      { "DSA Public Key", "x509af.subjectPublicKey.dsa",
+        FT_BYTES, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+    { &hf_x509af_subjectPublicKey_rsa,
+      { "RSA Public Key", "x509af.subjectPublicKey.rsa",
+        FT_NONE, BASE_NONE, NULL, 0,
         NULL, HFILL }},
     { &hf_x509af_x509af_Certificate_PDU,
       { "Certificate", "x509af.Certificate_element",
@@ -1371,6 +1392,7 @@ void proto_register_x509af(void) {
   /* List of subtrees */
   static int *ett[] = {
     &ett_pkix_crl,
+    &ett_x509af_SubjectPublicKey,
     &ett_x509af_Certificate,
     &ett_x509af_T_signedCertificate,
     &ett_x509af_SubjectName,

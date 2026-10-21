@@ -16,7 +16,7 @@
 #include <epan/addr_resolv.h>
 #include <epan/range.h>
 #include <epan/to_str.h>
-#include <epan/value_string.h>
+#include <wsutil/value_string.h>
 
 #include <ui/recent.h>
 #include <ui/util.h>
@@ -128,7 +128,7 @@ const QString address_to_display_qstring(const _address *address)
 const QString val_to_qstring(const uint32_t val, const value_string *vs, const char *fmt)
 {
     QString val_qstr;
-    char* gchar_p = val_to_str_wmem(NULL, val, vs, fmt);
+    char* gchar_p = val_to_str(NULL, val, vs, fmt);
     val_qstr = gchar_p;
     wmem_free(NULL, gchar_p);
 
@@ -138,7 +138,7 @@ const QString val_to_qstring(const uint32_t val, const value_string *vs, const c
 const QString val_ext_to_qstring(const uint32_t val, value_string_ext *vse, const char *fmt)
 {
     QString val_qstr;
-    char* gchar_p = val_to_str_ext_wmem(NULL, val, vse, fmt);
+    char* gchar_p = val_to_str_ext(NULL, val, vse, fmt);
     val_qstr = gchar_p;
     wmem_free(NULL, gchar_p);
 
@@ -354,5 +354,51 @@ void storeLastDir(QString dir)
     /* XXX - printable? */
     if (dir.length() > 0)
         set_last_open_dir(qUtf8Printable(dir));
+}
+
+bool filePathsMatch(const QString &path1, const QString &path2)
+{
+    QFileInfo fi1(path1);
+    QFileInfo fi2(path2);
+
+    if (fi1.exists() && fi2.exists()) {
+        return fi1 == fi2;
+    }
+
+    QString abs1 = fi1.absoluteFilePath();
+    QString abs2 = fi2.absoluteFilePath();
+
+#if defined(Q_OS_WIN)
+    return abs1.compare(abs2, Qt::CaseInsensitive) == 0;
+#endif
+
+    Qt::CaseSensitivity cs = Qt::CaseSensitive;
+
+#ifdef _PC_CASE_SENSITIVE
+    // Determine case sensitivity from the actual filesystem.
+    // Try the paths themselves first, then their parent directories.
+    // Default to case-insensitive since platforms that define
+    // _PC_CASE_SENSITIVE (macOS, FreeBSD) are typically
+    // case-insensitive by default (APFS, HFS+).
+    QString probe;
+    if (fi1.exists())
+        probe = abs1;
+    else if (fi2.exists())
+        probe = abs2;
+    else if (QFileInfo(fi1.absolutePath()).exists())
+        probe = fi1.absolutePath();
+    else if (QFileInfo(fi2.absolutePath()).exists())
+        probe = fi2.absolutePath();
+
+    if (probe.isEmpty()) {
+        cs = Qt::CaseInsensitive;
+    } else {
+        auto ret = pathconf(probe.toUtf8().constData(), _PC_CASE_SENSITIVE);
+        if (ret != 1)
+            cs = Qt::CaseInsensitive;
+    }
+#endif
+
+    return abs1.compare(abs2, cs) == 0;
 }
 

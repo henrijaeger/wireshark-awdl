@@ -28,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 #include <wsutil/802_11-utils.h>
@@ -148,6 +148,10 @@ commview_ncf_read_packet(FILE_T fh, wtap_rec *rec,
 
 	if(!commview_ncf_read_header(&cv_hdr, fh, err, err_info))
 		return false;
+
+	wtap_setup_packet_rec(rec, WTAP_ENCAP_UNKNOWN);
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
+
 	/*
 	 * The maximum value of cv_hdr.data_len is 65535, which is less
 	 * than WTAP_MAX_PACKET_SIZE_STANDARD will ever be, so we don't need to
@@ -314,8 +318,6 @@ commview_ncf_read_packet(FILE_T fh, wtap_rec *rec,
 	tm.tm_sec = cv_hdr.seconds;
 	tm.tm_isdst = -1;
 
-	rec->rec_type = REC_TYPE_PACKET;
-	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS;
 
 	rec->rec_header.packet_header.len = cv_hdr.data_len;
@@ -438,6 +440,7 @@ commview_ncf_dump(wtap_dumper *wdh, const wtap_rec *rec,
 	/* We can only write packet records. */
 	if (rec->rec_type != REC_TYPE_PACKET) {
 		*err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+		*err_info = wtap_unwritable_rec_type_err_string(rec);
 		return false;
 	}
 
@@ -790,6 +793,9 @@ commview_ncfx_read_packet(FILE_T fh, wtap_rec *rec,
 	if (!commview_ncfx_read_header(&cv_hdr, fh, err, err_info))
 		return false;
 
+	wtap_setup_packet_rec(rec, WTAP_ENCAP_UNKNOWN);
+	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
+
 	/* Amount of data remaining in the record, after the header */
 	length_remaining = cv_hdr.data_len - COMMVIEW_NCFX_HEADER_SIZE;
 
@@ -1012,8 +1018,6 @@ commview_ncfx_read_packet(FILE_T fh, wtap_rec *rec,
 	tm.tm_sec = cv_hdr.seconds;
 	tm.tm_isdst = -1;
 
-	rec->rec_type = REC_TYPE_PACKET;
-	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS;
 
 	if (length_remaining > WTAP_MAX_PACKET_SIZE_STANDARD) {
@@ -1202,6 +1206,7 @@ commview_ncfx_dump(wtap_dumper *wdh, const wtap_rec *rec,
 	/* We can only write packet records. */
 	if (rec->rec_type != REC_TYPE_PACKET) {
 		*err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+		*err_info = wtap_unwritable_rec_type_err_string(rec);
 		return false;
 	}
 

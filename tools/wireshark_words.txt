@@ -7,6 +7,7 @@
 1xrtt
 20west
 29west
+2bytes
 32apsk
 3gpp2
 3pcap
@@ -77,6 +78,7 @@ airpcap
 airtel
 alarmlog
 alcap
+alcat
 alcatel
 algérie
 aliased
@@ -97,6 +99,7 @@ amsterdam
 anacap
 analysed
 analysing
+analytics
 analyzers
 analyzes
 andsp
@@ -120,6 +123,7 @@ apphdr
 appid
 appkey
 applctrl
+applevtalt
 applicability
 appname
 approx
@@ -205,6 +209,8 @@ backedup
 backend
 backhaul
 backoff
+backout
+backw
 bacnet
 bangladesh
 barbados
@@ -226,6 +232,7 @@ behaviour
 behaviours
 beijing
 belgacom
+berbgbr
 berhad
 berkeley
 bgpsec
@@ -279,6 +286,7 @@ btatt
 btbredr
 btcommon
 bthci
+btl2cap
 btmesh
 btsdp
 btsnoop
@@ -337,6 +345,7 @@ ccpch
 ccsds
 ccsid
 cctrch
+cdiag
 cdma2000
 cdmacallmode
 cdmachanneldata
@@ -378,6 +387,7 @@ chennai
 chinese
 chipset
 chksum
+chlauth
 chmod
 choco
 chocolatey
@@ -486,6 +496,7 @@ congctrl
 connectionless
 connid
 connp
+conntag
 conout
 const
 constr
@@ -498,7 +509,7 @@ convolutional
 convs
 convtypes
 coord
-Coord3D
+coord3d
 coords
 coprocessor
 copycss
@@ -506,15 +517,18 @@ copyfile
 corba
 corbin
 corosync
+correl
 correlator
 corrigendum
 cosem
 couchbase
 coverity
+cp56time
 cp56time2a
 cpdlc
 cpich
 cplusplus
+cpmcistate
 cppcheck
 cpstate
 cpubus
@@ -532,6 +546,7 @@ croatian
 crtcs
 crypto
 cryptographic
+cs02b
 csapi
 cseds
 ctime
@@ -576,6 +591,7 @@ dcmake
 dcname
 dcomp
 dct3trace
+ddstlv
 deact
 deactivated
 deactivating
@@ -679,6 +695,7 @@ desegmenting
 deselect
 deserialize
 designator
+destdir
 destip
 destport
 determinant
@@ -712,7 +729,7 @@ dicom
 differentiator
 diffie
 diffserv
-Digicel
+digicel
 digin
 digitech
 digitel
@@ -746,6 +763,7 @@ dlmap
 dlmapc
 dlsch
 dlstatus
+dlvol
 dmacros
 dmefs
 dmepi
@@ -782,17 +800,18 @@ drsuapi
 dsmcc
 dstmode
 dstport
+dszza
 dtnum
 dtwin
 dumpcap
 duple
 duplications
 durations
-düsseldorf
 dword
 dwords
 dyntatom
 dzgre
+düsseldorf
 e2node
 eapol
 earcfn
@@ -807,6 +826,7 @@ econet
 ecpri
 ed137a
 ed137b
+edhoc
 editcap
 edonkey
 eeprom
@@ -886,7 +906,8 @@ errored
 errorlog
 errorportinfo
 erspan
-España
+esipa
+españa
 esperanto
 essar
 estonia
@@ -906,6 +927,7 @@ ettarr
 etwdump
 etype
 eucjpms
+euicc
 europe
 eutra
 eutran
@@ -1001,6 +1023,7 @@ fragmenter
 frags
 framenum
 framenumber
+framests
 frametype
 frcrpt
 freebsd
@@ -1008,6 +1031,7 @@ friday
 frontend
 fruid
 fsctl
+fsinfo
 fstst
 ftenum
 ftserver
@@ -1065,7 +1089,9 @@ github
 gitlab
 givei
 globals
+glonass
 gluster
+glusterfs
 gmail
 gmprs
 gnbdu
@@ -1136,7 +1162,7 @@ hfill,
 hfindex
 hfinfo
 hfname
-HI2Operations
+hi2operations
 histogram
 historizing
 hitachi
@@ -1170,6 +1196,7 @@ hytec
 iabtnl
 ibsdh
 icapability
+iccid
 icelandic
 icmpv
 icontrol
@@ -1254,6 +1281,7 @@ inmarsat
 inoage
 inode
 inodes
+inout
 inspiron
 installers
 instantiate
@@ -1376,6 +1404,8 @@ keyset
 keysyms
 keytab
 knxip
+koi8r
+koi8u
 kolkata
 korean
 krb5kdc
@@ -1485,6 +1515,7 @@ lz4frame
 macaddr
 macaddress
 macau
+macce
 macos
 macosx
 macros
@@ -1552,7 +1583,6 @@ metermod
 meterset
 metre
 metres
-México
 mfgfield
 mgmtmsg
 miami
@@ -1603,7 +1633,6 @@ monmap
 monterrey
 moscow
 motorola
-móviles
 mozilla
 mp4ves
 mpath
@@ -1613,16 +1642,24 @@ mplstp
 mpquic
 mpsse
 mptcp
+mqauth
+mqbacf
 mqcacf
+mqcach
+mqcfstatus
+mqcft
 mqcmd
+mqgacf
 mqiacf
 mqiach
 mqiamo
 mqrccf
 mrcpv
+mrpic
 msbuild
 mscldap
 msgasy
+msgasync
 msgflag
 msgid
 msglen
@@ -1630,7 +1667,7 @@ msgreq
 msgsend
 msgtype
 msisdn
-MSM7627A
+msm7627a
 mtftp
 mtime
 mtrace
@@ -1672,7 +1709,10 @@ mycaptures
 mydns
 myhost
 mysql
+méxico
+móviles
 n3iwf
+n3nan
 n3qai
 nacks
 nagle
@@ -1760,6 +1800,7 @@ nordic
 nordig
 noreply
 norge
+normalise
 normalised
 nortel
 notarized
@@ -1958,6 +1999,7 @@ pdsch
 pdulength
 pdustatus
 peeraddr
+peeripproto
 peerkey
 peips
 pentapartial
@@ -2023,6 +2065,7 @@ postfix
 powercontrol
 pppdump
 pppoe
+pproxy
 prach
 pradesh
 preambles
@@ -2112,6 +2155,7 @@ qam16
 qam64
 qcustomplot
 qmgmt
+qmopt
 qnet6
 qnsview
 qosinfo
@@ -2126,6 +2170,7 @@ quadro
 quadruplet
 quadruplets
 qualcomm
+quals
 quantifiers
 quantization
 quantized
@@ -2164,6 +2209,7 @@ rcsta
 rctxinfo
 rdata
 rdeth
+rdpdr
 rdpmt
 rdpudp
 rdstls
@@ -2538,9 +2584,11 @@ smime
 sminfo
 smpdirected
 smpte
+smreq
 smrse
 smscb
 sname
+snapdir
 snaplen
 snarf
 snow3g
@@ -2622,6 +2670,7 @@ steinigke
 stevens
 stmin
 stnode
+strato
 stratoshark
 strawberryperl
 strbuf
@@ -2629,6 +2678,7 @@ strcmp
 strdup
 streamid
 strfunc
+stringified
 stringz
 stringzpad
 strlen
@@ -2692,6 +2742,7 @@ superseding
 superset
 suppfeat
 svalidator
+svalue
 svcparam
 svcparams
 sverige
@@ -2747,16 +2798,14 @@ tdd128
 tdd384
 tdd768
 technica
-Tektronix
+tektronix
 telco
 telecel
 telecom
-télécom
-Telecomunicaciones
+telecomunicaciones
 telecomunicazioni
 telefonica
-Telefónica
-Teléfonos
+telefónica
 telekom
 telem
 telematic
@@ -2771,6 +2820,7 @@ telia
 telkom
 telnet
 telstra
+teléfonos
 teredo
 terminations
 tesla
@@ -2801,6 +2851,7 @@ tipcv
 titlebar
 tlvlen
 tlvtype
+tmflags
 tname
 tobago
 toggled
@@ -2822,6 +2873,7 @@ tostring
 totemsrp
 touchlink
 touchpad
+tovol
 toyota
 traceroute
 traff
@@ -2848,6 +2900,7 @@ truphone
 trustdom
 truthiness
 tshark
+tsnnme
 tspace
 tspec
 tsprec
@@ -2879,6 +2932,7 @@ type2mimo
 type3
 typedef
 typeof
+télécom
 uarfcn
 uaudp
 uavcan
@@ -2902,6 +2956,7 @@ uinteger
 ulmap
 ulong
 ulsch
+ulvol
 umask
 unack
 unacked
@@ -2988,6 +3043,7 @@ uninstallation
 uninstalled
 uninstaller
 uninterruptable
+uninterruptible
 unintuitive
 unistim
 universitaet
@@ -3071,6 +3127,7 @@ uploaded
 uploading
 uploads
 uptime
+uring
 urlencoded
 urllib
 urnti
@@ -3086,6 +3143,7 @@ userdata
 userinfo
 userlist
 userplane
+ushort
 utf8mb
 utf8string
 utilization
@@ -3158,6 +3216,7 @@ vrfid
 vserver
 vsomeip
 vtotal
+vtstatus
 vxlan
 waitpid
 wakeup
@@ -3208,7 +3267,7 @@ wscbor
 wslua
 wsluarm
 wsutil
-X32bit
+x32bit
 x509ce
 x509if
 x509sat

@@ -1581,8 +1581,7 @@ dissect_rdp_clientNetworkData(tvbuff_t *tvb, int offset, packet_info *pinfo, pro
         channel->channelType = find_known_channel_by_name(channel->strptr);
       }
 
-      char channelName[8] = { 0 };
-      tvb_get_raw_bytes_as_string(tvb, offset, channelName, 8);
+      char *channelName = tvb_get_string_enc(pinfo->pool, tvb, offset, 8, ENC_ASCII);
 
       proto_tree *channel_tree = proto_tree_add_subtree_format(next_tree, tvb, offset, 12, ett_rdp_channelDef, NULL, "channel %s", channelName);
       if (channel)
@@ -3194,7 +3193,7 @@ dissect_rdpNegFailure(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree 
   proto_tree_add_item_ret_uint(tree, hf_rdp_negFailure_failureCode, tvb, offset, 4, ENC_LITTLE_ENDIAN, &failureCode);
   offset += 4;
   col_append_fstr(pinfo->cinfo, COL_INFO, ", failureCode %s",
-                  val_to_str(failureCode, failure_code_vals, "Unknown (0x%08x)"));
+                  val_to_str(pinfo->pool, failureCode, failure_code_vals, "Unknown (0x%08x)"));
   return offset;
 }
 

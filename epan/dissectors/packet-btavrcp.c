@@ -183,6 +183,7 @@ static int hf_btavrcp_feature_uid_persistency;
 static int hf_btavrcp_feature_number_of_items;
 static int hf_btavrcp_feature_cover_art;
 static int hf_btavrcp_reassembled;
+static int hf_btavrcp_reassembled_too_long_fragment;
 static int hf_btavrcp_current_path;
 static int hf_btavrcp_response_time;
 static int hf_btavrcp_command_in_frame;
@@ -652,7 +653,7 @@ dissect_attribute_entries(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         offset += 2;
         proto_tree_add_item(entry_tree, hf_btavrcp_setting_value_length, tvb, offset, 2, ENC_BIG_ENDIAN);
         offset += 2;
-        proto_tree_add_item(entry_tree, hf_btavrcp_setting_value, tvb, offset, value_length, ENC_UTF_8 | ENC_NA);
+        proto_tree_add_item(entry_tree, hf_btavrcp_setting_value, tvb, offset, value_length, ENC_UTF_8);
         offset += value_length;
     }
 
@@ -818,7 +819,7 @@ dissect_item_mediaplayer(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, in
     displayable_name_length = tvb_get_ntohs(tvb, offset);
     offset += 2;
 
-    proto_tree_add_item(ptree, hf_btavrcp_displayable_name, tvb, offset, displayable_name_length, ENC_UTF_8 | ENC_NA);
+    proto_tree_add_item(ptree, hf_btavrcp_displayable_name, tvb, offset, displayable_name_length, ENC_UTF_8);
     offset += displayable_name_length;
 
     return offset;
@@ -863,7 +864,7 @@ dissect_item_media_element(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     displayable_name_length = tvb_get_ntohs(tvb, offset);
     offset += 2;
 
-    proto_tree_add_item(ptree, hf_btavrcp_displayable_name, tvb, offset, displayable_name_length, ENC_UTF_8 | ENC_NA);
+    proto_tree_add_item(ptree, hf_btavrcp_displayable_name, tvb, offset, displayable_name_length, ENC_UTF_8);
     offset += displayable_name_length;
 
     proto_tree_add_item(ptree, hf_btavrcp_number_of_attributes, tvb, offset, 1, ENC_BIG_ENDIAN);
@@ -917,7 +918,7 @@ dissect_item_folder(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int off
     displayable_name_length = tvb_get_ntohs(tvb, offset);
     offset += 2;
 
-    proto_tree_add_item(ptree, hf_btavrcp_displayable_name, tvb, offset, displayable_name_length, ENC_UTF_8 | ENC_NA);
+    proto_tree_add_item(ptree, hf_btavrcp_displayable_name, tvb, offset, displayable_name_length, ENC_UTF_8);
     offset += displayable_name_length;
 
     return offset;
@@ -1192,24 +1193,43 @@ dissect_vendor_dependent(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 wmem_tree_insert32(fragment->fragments, fragment->count, data_fragment);
             }
             /* reassembling*/
+            /* XXX - Use the standard reassembly API; among other things, to
+             * handle depended upon frames. */
             length = 0;
             if  (fragment->state == 2) {
-                unsigned    i_length = 0;
+                unsigned    i_length = 0, new_i_length;
                 uint8_t    *reassembled;
+                bool        too_long = false;
 
                 for (i_frame = 1; i_frame <= fragment->count; ++i_frame) {
                     data_fragment = (data_fragment_t *)wmem_tree_lookup32_le(fragment->fragments, i_frame);
-                    length += data_fragment->length;
+                    if (data_fragment) {
+                        if (ckd_add(&length, length, data_fragment->length) || length > INT32_MAX) {
+                            // Unsigned lengths are not yet fully supported (#20103, but
+                            // also possibly a Qt limitation.)
+                            length = INT32_MAX;
+                            break;
+                        }
+                    }
                 }
 
                 reassembled = (uint8_t *) wmem_alloc(pinfo->pool, length);
 
                 for (i_frame = 1; i_frame <= fragment->count; ++i_frame) {
                     data_fragment = (data_fragment_t *)wmem_tree_lookup32_le(fragment->fragments, i_frame);
-                    memcpy(reassembled + i_length,
-                            data_fragment->data,
-                            data_fragment->length);
-                    i_length += data_fragment->length;
+                    if (data_fragment) {
+                        if (ckd_add(&new_i_length, i_length, data_fragment->length) || new_i_length > (unsigned)length) {
+                            memcpy(reassembled + i_length,
+                                    data_fragment->data,
+                                    length - i_length);
+                            too_long = true;
+                            break;
+                        }
+                        memcpy(reassembled + i_length,
+                                data_fragment->data,
+                                data_fragment->length);
+                        i_length = new_i_length;
+                    }
                 }
 
                 next_tvb = tvb_new_child_real_data(tvb, reassembled, length, length);
@@ -1220,6 +1240,10 @@ dissect_vendor_dependent(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
                 pitem = proto_tree_add_item(tree, hf_btavrcp_reassembled, tvb, offset, 0, ENC_NA);
                 proto_item_set_generated(pitem);
+
+                if (too_long) {
+                    proto_item_set_generated(proto_tree_add_boolean(tree, hf_btavrcp_reassembled_too_long_fragment, tvb, 0, 0, true));
+                }
             }
         }
     }
@@ -1386,7 +1410,7 @@ dissect_vendor_dependent(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     attribute_name_length = tvb_get_ntohs(tvb, offset);
                     offset += 1;
 
-                    proto_tree_add_item(tree, hf_btavrcp_attribute_name, tvb, offset, attribute_name_length, ENC_UTF_8 | ENC_NA);
+                    proto_tree_add_item(tree, hf_btavrcp_attribute_name, tvb, offset, attribute_name_length, ENC_UTF_8);
                     offset += attribute_name_length;
                 }
             }
@@ -1426,7 +1450,7 @@ dissect_vendor_dependent(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                     attribute_value_length = tvb_get_ntohs(tvb, offset);
                     offset += 1;
 
-                    proto_tree_add_item(tree, hf_btavrcp_attribute_value, tvb, offset, attribute_value_length, ENC_UTF_8 | ENC_NA);
+                    proto_tree_add_item(tree, hf_btavrcp_attribute_value, tvb, offset, attribute_value_length, ENC_UTF_8);
                     offset += attribute_value_length;
                 }
             }
@@ -3103,6 +3127,11 @@ proto_register_btavrcp(void)
         { &hf_btavrcp_reassembled,
             { "Reassembled",                     "btavrcp.reassembled",
             FT_NONE, BASE_NONE, NULL, 0x00,
+            NULL, HFILL }
+        },
+        { &hf_btavrcp_reassembled_too_long_fragment,
+            { "Reassembled PDU too long",        "btavrcp.reassembled.too_long_fragment",
+            FT_BOOLEAN, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_btavrcp_response_time,

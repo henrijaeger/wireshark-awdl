@@ -6,6 +6,21 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+/*
+ * VMS TCPTRACE
+ *
+ * DEC/Compaq/HP/VMS Software VMS's TCPIPTRACE/TCPTRACE format is supported.
+ * This is the capture program that comes with TCP/IP or UCX as supplied by
+ * VMS Software, Hewlett Packard Enterprise/HP, Compaq, or Digital Equipment
+ * Corporation.
+ *
+ * Under UCX 4.x, it is invoked as TCPIPTRACE.  Under TCPIP 5.x, it is invoked
+ * as TCPTRACE.
+ *
+ * TCPTRACE produces an ASCII text based format that has changed slightly over
+ * time.
+*/
+
 /* Notes:
  *   TCPIPtrace TCP fragments don't have the header line.  So, we are never
  *   to look for that line for the first line of a packet except the first
@@ -15,7 +30,7 @@
  */
 #include "config.h"
 #include "vms.h"
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 #include <wsutil/strtoi.h>
@@ -130,9 +145,9 @@ static bool vms_read(wtap *wth, wtap_rec *rec, int *err,
     char **err_info, int64_t *data_offset);
 static bool vms_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
     int *err, char **err_info);
-static bool parse_single_hex_dump_line(char* rec, uint8_t *buf,
-    long byte_offset, int in_off, int remaining_bytes);
-static bool parse_vms_packet(FILE_T fh, wtap_rec *rec, int *err,
+static bool parse_single_hex_dump_line(char* rec, Buffer *buf,
+    int in_off, int remaining_bytes);
+static bool parse_vms_packet(wtap *wth, FILE_T fh, wtap_rec *rec, int *err,
     char **err_info);
 
 static int vms_file_type_subtype = -1;
@@ -272,7 +287,7 @@ static bool vms_read(wtap *wth, wtap_rec *rec, int *err,
     *data_offset = offset;
 
     /* Parse the packet */
-    return parse_vms_packet(wth->fh, rec, err, err_info);
+    return parse_vms_packet(wth, wth->fh, rec, err, err_info);
 }
 
 /* Used to read packets in random-access fashion */
@@ -282,7 +297,7 @@ static bool vms_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
     if (file_seek(wth->random_fh, seek_off - 1, SEEK_SET, err) == -1)
         return false;
 
-    if (!parse_vms_packet(wth->random_fh, rec, err, err_info)) {
+    if (!parse_vms_packet(wth, wth->random_fh, rec, err, err_info)) {
         if (*err == 0)
             *err = WTAP_ERR_SHORT_READ;
         return false;
@@ -317,7 +332,7 @@ isdumpline( char *line )
 
 /* Parses a packet record. */
 static bool
-parse_vms_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
+parse_vms_packet(wtap *wth, FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 {
     char    line[VMS_LINE_LENGTH + 1];
     int     num_items_scanned;
@@ -332,7 +347,6 @@ parse_vms_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
     static const char months[] = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC";
     uint32_t i;
     int     offset = 0;
-    uint8_t *pd;
 
     tm.tm_year = 1970;
     tm.tm_mon = 0;
@@ -421,7 +435,7 @@ parse_vms_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
     tm.tm_year -= 1900;
     tm.tm_isdst = -1;
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, wth->file_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->presence_flags = WTAP_HAS_TS;
     rec->ts.secs = mktime(&tm);
@@ -431,7 +445,6 @@ parse_vms_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 
     /* Make sure we have enough room for the packet */
     ws_buffer_assure_space(&rec->data, pkt_len);
-    pd = ws_buffer_start_ptr(&rec->data);
 
     /* Convert the ASCII hex dump to binary data */
     for (i = 0; i < pkt_len; i += 16) {
@@ -457,7 +470,7 @@ parse_vms_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
             while (line[offset] && !g_ascii_isxdigit(line[offset]))
                 offset++;
         }
-        if (!parse_single_hex_dump_line(line, pd, i,
+        if (!parse_single_hex_dump_line(line, &rec->data,
                                         offset, pkt_len - i)) {
             *err = WTAP_ERR_BAD_FILE;
             *err_info = g_strdup("vms: hex dump not valid");
@@ -500,21 +513,21 @@ parse_vms_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
  * Returns true if good hex dump, false if bad.
  */
 static bool
-parse_single_hex_dump_line(char* rec, uint8_t *buf, long byte_offset,
-               int in_off, int remaining_bytes) {
+parse_single_hex_dump_line(char* rec, Buffer *buf, int in_off,
+                           int remaining_bytes) {
 
     int        i;
     char        *s;
-    int        value;
+    unsigned long value;
     static const int offsets[16] = {39,37,35,33,28,26,24,22,17,15,13,11,6,4,2,0};
     char lbuf[3] = {0,0,0};
-
+    uint8_t *pd;
 
     /* Get the byte_offset directly from the record */
     s = rec;
-    value = (int)strtoul(s + 45 + in_off, NULL, 16);    /* XXX - error check? */
+    value = strtoul(s + 45 + in_off, NULL, 16);    /* XXX - error check? */
 
-    if (value != byte_offset) {
+    if (value != ws_buffer_length(buf)) {
         return false;
     }
 
@@ -524,13 +537,14 @@ parse_single_hex_dump_line(char* rec, uint8_t *buf, long byte_offset,
     /* Read the octets right to left, as that is how they are displayed
      * in VMS.
      */
-
+    pd = ws_buffer_end_ptr(buf);
     for (i = 0; i < remaining_bytes; i++) {
         lbuf[0] = rec[offsets[i] + in_off];
         lbuf[1] = rec[offsets[i] + 1 + in_off];
 
-        buf[byte_offset + i] = (uint8_t) strtoul(lbuf, NULL, 16);
+        pd[i] = (uint8_t) strtoul(lbuf, NULL, 16);
     }
+    ws_buffer_increase_length(buf, remaining_bytes);
 
     return true;
 }

@@ -71,6 +71,49 @@ capture_file cfile;
 static uint32_t cum_bytes;
 static frame_data ref_frame;
 
+/*
+ * The leading + ensures that getopt_long() does not permute the argv[]
+ * entries.
+ *
+ * We have to make sure that the first getopt_long() preserves the content
+ * of argv[] for the subsequent getopt_long() call.
+ *
+ * We use getopt_long() in both cases to ensure that we're using a routine
+ * whose permutation behavior we can control in the same fashion on all
+ * platforms, and so that, if we ever need to process a long argument before
+ * doing further initialization, we can do so.
+ *
+ * Glibc and Solaris libc document that a leading + disables permutation
+ * of options, regardless of whether POSIXLY_CORRECT is set or not; *BSD
+ * and macOS don't document it, but do so anyway.
+ *
+ * We do *not* use a leading - because the behavior of a leading - is
+ * platform-dependent.
+ */
+
+static const struct ws_option long_options[] = {
+    {"api", ws_required_argument, NULL, 'a'},
+    {"foreground", ws_no_argument, NULL, LONGOPT_FOREGROUND},
+    {"help", ws_no_argument, NULL, 'h'},
+    {"version", ws_no_argument, NULL, 'v'},
+    {"config-profile", ws_required_argument, NULL, 'C'},
+    LONGOPT_WSLOG
+    {0, 0, 0, 0 }
+};
+
+const struct ws_option* sharkd_long_options(void)
+{
+    return long_options;
+}
+
+const char* sharkd_optstring(void)
+{
+#define OPTSTRING "+" "a:hmvC:"
+    static const char optstring[] = OPTSTRING;
+
+    return optstring;
+}
+
 static void
 print_current_user(void)
 {
@@ -108,7 +151,7 @@ main(int argc, char *argv[])
     ws_log_init(vcmdarg_err);
 
     /* Early logging command-line initialization. */
-    ws_log_parse_args(&argc, argv, vcmdarg_err, SHARKD_INIT_FAILED);
+    ws_log_parse_args(&argc, argv, sharkd_optstring(), sharkd_long_options(), vcmdarg_err, SHARKD_INIT_FAILED);
 
     ws_noisy("Finished log init and parsing command line log arguments");
 
@@ -206,7 +249,10 @@ sharkd_epan_new(capture_file *cf)
         cap_file_provider_get_frame_ts,
         cap_file_provider_get_interface_name,
         cap_file_provider_get_interface_description,
-        cap_file_provider_get_modified_block
+        cap_file_provider_get_modified_block,
+        cap_file_provider_get_process_id,
+        cap_file_provider_get_process_name,
+        cap_file_provider_get_process_uuid,
     };
 
     return epan_new(&cf->provider, &funcs);
@@ -244,10 +290,6 @@ process_packet(capture_file *cf, epan_dissect_t *edt, int64_t offset,
 
         if (cf->dfcode)
             epan_dissect_prime_with_dfilter(edt, cf->dfcode);
-
-        /* This is the first and only pass, so prime the epan_dissect_t
-           with the hfids postdissectors want on the first pass. */
-        prime_epan_dissect_with_postdissector_wanted_hfids(edt);
 
         frame_data_set_before_dissect(&fdlocal, &cf->elapsed_time,
                 &cf->provider.ref, cf->provider.prev_dis);
@@ -370,6 +412,35 @@ load_cap_file(capture_file *cf, int max_packet_count, int64_t max_byte_count)
     return err;
 }
 
+void
+cf_close(capture_file *cf)
+{
+    if (cf->state == FILE_CLOSED || cf->state == FILE_READ_PENDING)
+        return; /* Nothing to do */
+
+    if (cf->provider.wth) {
+        wtap_close(cf->provider.wth);
+        cf->provider.wth = NULL;
+    }
+
+    /* We have no file open... */
+    if (cf->filename != NULL) {
+        /* If it's a temporary file, remove it. */
+        if (cf->is_tempfile)
+            ws_unlink(cf->filename);
+        g_free(cf->filename);
+        cf->filename = NULL;
+    }
+
+    if (cf->provider.frames != NULL) {
+        free_frame_data_sequence(cf->provider.frames);
+        cf->provider.frames = NULL;
+    }
+
+    /* We have no file open. */
+    cf->state = FILE_CLOSED;
+}
+
 cf_status_t
 cf_open(capture_file *cf, const char *fname, unsigned int type, bool is_tempfile, int *err)
 {
@@ -380,7 +451,9 @@ cf_open(capture_file *cf, const char *fname, unsigned int type, bool is_tempfile
     if (wth == NULL)
         goto fail;
 
-    /* The open succeeded.  Fill in the information for this file. */
+    /* The open succeeded.  Close whatever capture file we had open,
+       and fill in the information for this file. */
+    cf_close(cf);
 
     cf->provider.wth = wth;
     cf->f_datalen = 0; /* not used, but set it anyway */
@@ -434,6 +507,12 @@ int
 sharkd_load_cap_file(void)
 {
     return load_cap_file(&cfile, 0, 0);
+}
+
+int
+sharkd_load_cap_file_with_limits(int max_packet_count, int64_t max_byte_count)
+{
+    return load_cap_file(&cfile, max_packet_count, max_byte_count);
 }
 
 frame_data *
@@ -542,7 +621,7 @@ sharkd_retap(void)
             break;
 
         fdata->ref_time = false;
-        fdata->frame_ref_num = (framenum != 1) ? 1 : 0;
+        fdata->frame_ref_num = 1;
         fdata->prev_dis_num = framenum - 1;
         epan_dissect_run_with_taps(&edt, cfile.cd_t, &rec, fdata, cinfo);
         wtap_rec_reset(&rec);
@@ -606,7 +685,7 @@ sharkd_filter(const char *dftext, uint8_t **result)
         epan_dissect_prime_with_dfilter(&edt, dfcode);
 
         fdata->ref_time = false;
-        fdata->frame_ref_num = (framenum != 1) ? 1 : 0;
+        fdata->frame_ref_num = 1;
         fdata->prev_dis_num = prev_dis_num;
         epan_dissect_run(&edt, cfile.cd_t, &rec, fdata, NULL);
 

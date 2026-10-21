@@ -134,6 +134,7 @@ typedef struct _gtp_hdr {
 #define GTP_MSG_END_MARKER          0xFE /* 254 */
 #define GTP_MSG_TPDU                0xFF
 
+/* Used by custom dissector */
 extern value_string_ext cause_type_ext;
 
 static const value_string gtp_sel_mode_vals[] = {
@@ -166,10 +167,14 @@ typedef struct session_args {
     uint32_t last_teid;
     address last_ip;
     uint8_t last_cause;
+    const char *imsi;
 } session_args_t;
 
 /* Relation between frame -> session */
 extern wmem_map_t* session_table;
+
+/* Relation between session -> IMSI */
+extern wmem_map_t* session_imsi;
 
 /* Relation between <teid,ip> -> frame */
 extern wmem_map_t* frame_map;
@@ -187,6 +192,9 @@ bool ip_exists(address ip, wmem_list_t *ip_list);
 void fill_map(wmem_list_t *teid_list, wmem_list_t *ip_list, uint32_t frame);
 
 bool is_cause_accepted(uint8_t cause, uint32_t version);
+
+/* Add teid map to IMSI from ex NGAP where both are known. */
+void gtp_add_teid_imsi(uint32_t teid, const char* imsi);
 
 WS_DLL_PUBLIC
 int decode_qos_umts(tvbuff_t * tvb, int offset, packet_info * pinfo, proto_tree * tree, const char * qos_str, uint8_t type);

@@ -3987,8 +3987,7 @@ static const per_sequence_t EnumeratedParameter_sequence[] = {
 static int
 dissect_h225_EnumeratedParameter(tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   // EnumeratedParameter -> Content -> Content/compound -> EnumeratedParameter
-  actx->pinfo->dissection_depth += 3;
-  increment_dissection_depth(actx->pinfo);
+  increment_dissection_depth_by_n(actx->pinfo, 3);
   gef_ctx_t *parent_gefx;
 
   parent_gefx = gef_ctx_get(actx->private_data);
@@ -3996,8 +3995,7 @@ dissect_h225_EnumeratedParameter(tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *
   offset = dissect_per_sequence(tvb, offset, actx, tree, hf_index,
                                    ett_h225_EnumeratedParameter, EnumeratedParameter_sequence);
 
-  actx->pinfo->dissection_depth -= 3;
-  decrement_dissection_depth(actx->pinfo);
+  decrement_dissection_depth_by_n(actx->pinfo, 3);
   actx->private_data = parent_gefx;
   return offset;
 }
@@ -4012,8 +4010,7 @@ static const per_sequence_t GenericData_sequence[] = {
 int
 dissect_h225_GenericData(tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   // GenericData -> GenericData/parameters -> EnumeratedParameter -> Content -> Content/nested -> GenericData
-  actx->pinfo->dissection_depth += 5;
-  increment_dissection_depth(actx->pinfo);
+  increment_dissection_depth_by_n(actx->pinfo, 5);
   void *priv_data = actx->private_data;
   gef_ctx_t *gefx;
 
@@ -4026,8 +4023,7 @@ dissect_h225_GenericData(tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_
   offset = dissect_per_sequence(tvb, offset, actx, tree, hf_index,
                                    ett_h225_GenericData, GenericData_sequence);
 
-  actx->pinfo->dissection_depth -= 5;
-  decrement_dissection_depth(actx->pinfo);
+  decrement_dissection_depth_by_n(actx->pinfo, 5);
   actx->private_data = priv_data;
   return offset;
 }
@@ -11637,6 +11633,21 @@ void proto_register_h225(void) {
   oid_add_from_string("Version 4","0.0.8.2250.0.4");
   oid_add_from_string("Version 5","0.0.8.2250.0.5");
   oid_add_from_string("Version 6","0.0.8.2250.0.6");
+
+  register_external_value_string("T_h323_message_body_vals", T_h323_message_body_vals);
+  register_external_value_string("h225_ReleaseCompleteReason_vals", h225_ReleaseCompleteReason_vals);
+  register_external_value_string("FacilityReason_vals", FacilityReason_vals);
+  register_external_value_string("h225_RasMessage_vals", h225_RasMessage_vals);
+  register_external_value_string("GatekeeperRejectReason_vals", GatekeeperRejectReason_vals);
+  register_external_value_string("RegistrationRejectReason_vals", RegistrationRejectReason_vals);
+  register_external_value_string("UnregRequestReason_vals", UnregRequestReason_vals);
+  register_external_value_string("UnregRejectReason_vals", UnregRejectReason_vals);
+  register_external_value_string("AdmissionRejectReason_vals", AdmissionRejectReason_vals);
+  register_external_value_string("BandRejectReason_vals", BandRejectReason_vals);
+  register_external_value_string("LocationRejectReason_vals", LocationRejectReason_vals);
+  register_external_value_string("DisengageReason_vals", DisengageReason_vals);
+  register_external_value_string("DisengageRejectReason_vals", DisengageRejectReason_vals);
+  register_external_value_string("InfoRequestNakReason_vals", InfoRequestNakReason_vals);
 }
 
 

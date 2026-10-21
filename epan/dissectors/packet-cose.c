@@ -318,7 +318,8 @@ static ei_register_info expertitems[] = {
     {&ei_value_partial_decode, { "cose.partial_decode", PI_MALFORMED, PI_WARN, "Value is only partially decoded", EXPFILL}},
 };
 
-unsigned cose_param_key_hash(const void *ptr) {
+/* Compatible with GHashFunc signature. */
+static unsigned cose_param_key_hash(const void *ptr) {
     const cose_param_key_t *obj = (const cose_param_key_t *)ptr;
     unsigned val = 0;
     if (obj->principal) {
@@ -330,7 +331,8 @@ unsigned cose_param_key_hash(const void *ptr) {
     return val;
 }
 
-gboolean cose_param_key_equal(const void *a, const void *b) {
+/* Compatible with GEqualFunc signature. */
+static gboolean cose_param_key_equal(const void *a, const void *b) {
     const cose_param_key_t *aobj = (const cose_param_key_t *)a;
     const cose_param_key_t *bobj = (const cose_param_key_t *)b;
 
@@ -354,7 +356,8 @@ gboolean cose_param_key_equal(const void *a, const void *b) {
     return match;
 }
 
-void cose_param_key_free(void *ptr) {
+/* Compatible with GDestroyNotify signature. */
+static void cose_param_key_free(void *ptr) {
     cose_param_key_t *obj = (cose_param_key_t *)ptr;
     if (obj->principal) {
         g_variant_unref(obj->principal);
@@ -371,9 +374,9 @@ static const cose_hash_props_t cose_hash_props_list[] = {
     {-44, GCRY_MD_SHA512, 64},
     {-43, GCRY_MD_SHA384, 48},
     {-18, GCRY_MD_SHAKE128, 32},
-    {-17, GCRY_MD_SHA512, 32}, // trucated
+    {-17, GCRY_MD_SHA512, 32}, // truncated
     {-16, GCRY_MD_SHA256, 32},
-    {-15, GCRY_MD_SHA256, 16}, // trucated
+    {-15, GCRY_MD_SHA256, 16}, // truncated
     {-14, GCRY_MD_SHA1, 20},
 };
 /// Derived lookup map

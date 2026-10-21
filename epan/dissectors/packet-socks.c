@@ -156,6 +156,7 @@ typedef struct {
 } sock_state_t;
 
 typedef struct {
+    conversation_t *proxy_conv;
     enum ClientState clientState;
     enum ServerState serverState;
     int     version;
@@ -930,7 +931,7 @@ display_ping_and_tracert(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tr
     int           linelen;
 
                 /* handle the end command */
-    if ( pinfo->destport == TCP_PORT_SOCKS){
+    if ( pinfo->destport == pinfo->match_uint){
         col_append_str(pinfo->cinfo, COL_INFO, ", Terminate Request");
 
         proto_tree_add_item(tree, (hash_info->command  == PING_COMMAND) ? hf_socks_ping_end_command : hf_socks_traceroute_end_command, tvb, offset, 1, ENC_NA);
@@ -976,6 +977,7 @@ static void call_next_dissector(tvbuff_t *tvb, int offset, packet_info *pinfo,
 /* the payload, and restore the pinfo port after that is done.      */
 
     uint32_t *ptr;
+    uint16_t save_port;
     uint16_t save_can_desegment;
     struct tcp_analysis *tcpd=NULL;
 
@@ -989,16 +991,21 @@ static void call_next_dissector(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 /*XXX may want to load dest address here */
 
-        if (pinfo->destport == TCP_PORT_SOCKS) {
+        if (pinfo->destport == pinfo->match_uint) {
             ptr = &pinfo->destport;
         } else {
             ptr = &pinfo->srcport;
         }
 
+        save_port = *ptr;
         *ptr = hash_info->port;
 
-        tcpd = get_tcp_conversation_data(NULL, pinfo);
-/* 2003-09-18 JCFoster Fixed problem with socks tunnel in socks tunnel */
+        if (hash_info->proxy_conv == NULL) {
+            hash_info->proxy_conv = conversation_new(pinfo->num, &pinfo->src, &pinfo->dst,
+                CONVERSATION_TCP /* CONVERSATION_SOCKS? */, pinfo->srcport, pinfo->destport, 0);
+        }
+
+        tcpd = get_tcp_conversation_data(hash_info->proxy_conv, pinfo);
 
         state_info->in_socks_dissector_flag = 1; /* avoid recursive overflow */
         CLEANUP_PUSH(clear_in_socks_dissector_flag, state_info);
@@ -1012,7 +1019,7 @@ static void call_next_dissector(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
         CLEANUP_CALL_AND_POP;
 
-        *ptr = TCP_PORT_SOCKS;
+        *ptr = save_port;
     }
 }
 

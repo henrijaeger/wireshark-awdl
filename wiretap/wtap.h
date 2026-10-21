@@ -11,6 +11,7 @@
 
 #include <wireshark.h>
 #include <time.h>
+#include <wsutil/array.h>
 #include <wsutil/buffer.h>
 #include <wsutil/nstime.h>
 #include <wsutil/inet_addr.h>
@@ -325,7 +326,7 @@ extern "C" {
 #define WTAP_TSPREC_PER_PACKET -1  /* as a per-file value, means per-packet */
 /*
  * These values are the number of digits of precision after the integral part.
- * Thry're the same as WS_TSPREC values; we define them here so that
+ * They're the same as WS_TSPREC values; we define them here so that
  * tools/make-enums.py sees them.
  */
 #define WTAP_TSPREC_SEC         0
@@ -376,13 +377,12 @@ extern "C" {
  *
  * NOTE: do not use pseudo-header structures to hold information
  * used by the code to read a particular capture file type; to
- * keep that sort of state information, add a new structure for
- * that private information to "wtap-int.h", add a pointer to that
- * type of structure to the "capture" member of the "struct wtap"
- * structure, and allocate one of those structures and set that member
- * in the "open" routine for that capture file type if the open
- * succeeds.  See various other capture file type handlers for examples
- * of that.
+ * keep that sort of state information, define a private structure
+ * to hold that information in your code, and allocate one of those
+ * structures and set the "priv" member of the wth strucure to
+ * point to the allocated structure in the "open" routine for that
+ * capture file type if the open succeeds.  See various other capture
+ * file type handlers for examples of that.
  */
 
 
@@ -1367,8 +1367,9 @@ typedef struct {
     (ll_dependent_errors))
 
 typedef struct {
-    unsigned  record_type;      /* the type of record this is - file type-specific value */
-    uint32_t  record_len;       /* length of the record */
+    int      file_type_subtype; /* the type of file this is for */
+    unsigned record_type;       /* the type of record this is - file type-specific value */
+    uint32_t record_len;        /* length of the record */
 } wtap_ft_specific_header;
 
 typedef struct {
@@ -1392,19 +1393,10 @@ typedef struct {
 } wtap_systemd_journal_export_header;
 
 typedef struct {
-    uint32_t  length;           /* length of the record */
     uint32_t  pen;              /* private enterprise number */
+    uint32_t  length;           /* length of the Custom Data plus options */
     bool      copy_allowed;     /* CB can be written */
-    union {
-        struct nflx {
-            uint32_t  type;             /* block type */
-            uint32_t  skipped;          /* Used if type == BBLOG_TYPE_SKIPPED_BLOCK */
-        } nflx_custom_data_header;
-    } custom_data_header;
 } wtap_custom_block_header;
-
-#define BBLOG_TYPE_EVENT_BLOCK   1
-#define BBLOG_TYPE_SKIPPED_BLOCK 2
 
 /*
  * The largest nstime.secs value that can be put into an unsigned
@@ -1438,6 +1430,7 @@ typedef struct wtap_rec {
     int       tsprec;            /* WTAP_TSPREC_ value for this record */
     nstime_t  ts_rel_cap;        /* time stamp relative from capture start */
     bool      ts_rel_cap_valid;  /* is ts_rel_cap valid and can be used? */
+    const char *rec_type_name;   /* name of this record type */
     union {
         wtap_packet_header packet_header;
         wtap_ft_specific_header ft_specific_header;
@@ -1450,7 +1443,7 @@ typedef struct wtap_rec {
      * XXX - some if not all of the rec_header information may belong
      * here, or may already be here.  Eliminating rec_header in favor
      * of this might simplify the process of adding new record/block
-     * types.
+     * types.  For example, some of it might belong in block->mandatory_data.
      *
      * It also has a type field that's somewhat equivalent to rec_type.
      *
@@ -1565,6 +1558,9 @@ typedef struct wtap_dump_params {
                                                  This array may grow since the dumper was opened and will subsequently
                                                  be written before newer packets are written in wtap_dump. */
     const GArray *mevs_growing;             /**< Meta events that will be written while writing packets, or NULL.
+                                                 This array may grow since the dumper was opened and will subsequently
+                                                 be written before newer packets are written in wtap_dump. */
+    const GArray *dpibs_growing;            /**< DPIBs that will be written while writing packets, or NULL.
                                                  This array may grow since the dumper was opened and will subsequently
                                                  be written before newer packets are written in wtap_dump. */
     bool        dont_copy_idbs;             /**< XXX - don't copy IDBs; this should eventually always be the case. */
@@ -1969,6 +1965,54 @@ void wtap_rec_reset(wtap_rec *rec);
 WS_DLL_PUBLIC
 void wtap_rec_cleanup(wtap_rec *rec);
 
+/**
+ * Return an error string for WTAP_ERR_UNWRITABLE_REC_TYPE.
+ */
+WS_DLL_PUBLIC
+char *wtap_unwritable_rec_type_err_string(const wtap_rec *rec);
+
+/**
+ * Set up a wtap_rec for a packet (REC_TYPE_PACKET).
+ */
+WS_DLL_PUBLIC
+void wtap_setup_packet_rec(wtap_rec *rec, int encap);
+
+/**
+ * Set up a wtap_rec for a file-type specific event
+ * (REC_TYPE_FT_SPECIFIC_EVENT);
+ */
+WS_DLL_PUBLIC
+void wtap_setup_ft_specific_event_rec(wtap_rec *rec, int file_type_subtype,
+                                      unsigned record_type);
+
+/**
+ * Set up a wtap_rec for a file-type specific report
+ * (REC_TYPE_FT_SPECIFIC_REPORT);
+ */
+WS_DLL_PUBLIC
+void wtap_setup_ft_specific_report_rec(wtap_rec *rec, int file_type_subtype,
+                                       unsigned record_type);
+
+/**
+ * Set up a wtap_rec for a system call (REC_TYPE_SYSCALL).
+ */
+WS_DLL_PUBLIC
+void wtap_setup_syscall_rec(wtap_rec *rec);
+
+/**
+ * Set up a wtap_rec for a systemd journal export entry
+ * (REC_TYPE_SYSTEMD_JOURNAL_EXPORT).
+ */
+WS_DLL_PUBLIC
+void wtap_setup_systemd_journal_export_rec(wtap_rec *rec);
+
+/**
+ * Set up a wtap_rec for a custom block (REC_TYPE_CUSTOM_BLOCK).
+ */
+WS_DLL_PUBLIC
+void wtap_setup_custom_block_rec(wtap_rec *rec, uint32_t pen,
+                                 uint32_t payload_length, bool copy_allowed);
+
 /*
  * Types of compression for a file, including "none".
  */
@@ -2080,6 +2124,10 @@ unsigned wtap_file_get_shb_global_interface_id(wtap *wth, unsigned shb_num, uint
  */
 WS_DLL_PUBLIC
 wtapng_iface_descriptions_t *wtap_file_get_idb_info(wtap *wth);
+
+
+WS_DLL_PUBLIC
+wtapng_dpib_lookup_info_t * wtap_file_get_dpib_lookup_info(wtap *wth);
 
 /**
  * @brief Gets next interface description.
@@ -2373,14 +2421,14 @@ bool wtap_dump(wtap_dumper *, const wtap_rec *, int *err, char **err_info);
 WS_DLL_PUBLIC
 bool wtap_dump_flush(wtap_dumper *, int *);
 WS_DLL_PUBLIC
-int wtap_dump_file_type_subtype(wtap_dumper *wdh);
+int wtap_dump_file_type_subtype(const wtap_dumper *wdh);
 WS_DLL_PUBLIC
-int64_t wtap_get_bytes_dumped(wtap_dumper *);
+int64_t wtap_get_bytes_dumped(const wtap_dumper *);
 WS_DLL_PUBLIC
 void wtap_set_bytes_dumped(wtap_dumper *wdh, int64_t bytes_dumped);
 struct addrinfo;
 WS_DLL_PUBLIC
-bool wtap_addrinfo_list_empty(addrinfo_lists_t *addrinfo_lists);
+bool wtap_addrinfo_list_empty(const addrinfo_lists_t *addrinfo_lists);
 WS_DLL_PUBLIC
 bool wtap_dump_set_addrinfo_list(wtap_dumper *wdh, addrinfo_lists_t *addrinfo_lists);
 WS_DLL_PUBLIC
@@ -2738,6 +2786,10 @@ void wtap_cleanup(void);
 #define WTAP_ERR_TIME_STAMP_NOT_SUPPORTED     -27
     /**< We don't support writing that record's time stamp to that
          file type  */
+
+#define WTAP_ERR_REC_MALFORMED		      -28
+	 /**< Packet being read is of a known type, but is malformed so it will be skipped.
+	     This can be used instead of WTAP_ERR_BAD_FILE to not stop reading of a file */
 
 #ifdef __cplusplus
 }

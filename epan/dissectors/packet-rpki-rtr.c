@@ -19,6 +19,7 @@
 #include "packet-tcp.h"
 #include "packet-tls.h"
 #include <epan/expert.h>
+#include <epan/exceptions.h>
 #include <epan/asn1.h>
 #include <epan/tfs.h>
 #include <wsutil/array.h>
@@ -54,7 +55,6 @@ static int hf_rpkirtr_retry_interval;
 static int hf_rpkirtr_expire_interval;
 static int hf_rpkirtr_subject_key_identifier;
 static int hf_rpkirtr_subject_public_key_info;
-static int hf_rpkirtr_aspa_provider_as_count;
 static int hf_rpkirtr_aspa_customer_asn;
 static int hf_rpkirtr_aspa_provider_asn;
 
@@ -155,9 +155,10 @@ static int dissect_rpkirtr_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
 
     proto_item *ti = NULL, *ti_flags, *ti_type;
     proto_tree *rpkirtr_tree = NULL, *flags_tree = NULL;
-    int offset = 0;
-    uint8_t pdu_type, version;
+    unsigned offset = 0;
+    uint32_t pdu_type, version;
     unsigned length;
+    char* str_pdu_type;
 
     while (tvb_reported_length_remaining(tvb, offset) > 0) {
 
@@ -165,17 +166,14 @@ static int dissect_rpkirtr_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
 
         rpkirtr_tree = proto_item_add_subtree(ti, ett_rpkirtr);
 
-        proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_version, tvb, offset, 1, ENC_BIG_ENDIAN);
-        version = tvb_get_uint8(tvb, offset);
+        proto_tree_add_item_ret_uint(rpkirtr_tree, hf_rpkirtr_version, tvb, offset, 1, ENC_BIG_ENDIAN, &version);
         offset += 1;
 
-        ti_type = proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_pdu_type, tvb, offset, 1, ENC_BIG_ENDIAN);
-        pdu_type = tvb_get_uint8(tvb, offset);
-        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, val_to_str(pdu_type, rtr_pdu_type_vals, "Unknown (%d)"));
-        proto_item_append_text(ti, " (%s)", val_to_str(pdu_type, rtr_pdu_type_vals, "Unknown %d"));
+        ti_type = proto_tree_add_item_ret_uint(rpkirtr_tree, hf_rpkirtr_pdu_type, tvb, offset, 1, ENC_BIG_ENDIAN, &pdu_type);
+        str_pdu_type = val_to_str(pinfo->pool, pdu_type, rtr_pdu_type_vals, "Unknown (%d)");
+        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, str_pdu_type);
+        proto_item_append_text(ti, " (%s)", str_pdu_type);
         offset += 1;
-
-        length = tvb_get_ntohl(tvb, offset);
 
         switch (pdu_type) {
             case RPKI_RTR_SERIAL_NOTIFY_PDU: /* Serial Notify (0) */
@@ -317,26 +315,24 @@ static int dissect_rpkirtr_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
                     /* Error about wrong version... */
                     expert_add_info(pinfo, ti_type, &ei_rpkirtr_wrong_version_aspa);
                 } else {
-                    proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_reserved, tvb, offset, 2, ENC_NA);
-                    offset += 2;
+                    // draft-ietf-sidrops-8210bis-21
+                    // flags 1B Announce/Widthdraw
+                    ti_flags = proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_flags, tvb, offset, 1, ENC_BIG_ENDIAN);
+                    flags_tree = proto_item_add_subtree(ti_flags, ett_flags);
+                    proto_tree_add_item(flags_tree, hf_rpkirtr_flags_aw, tvb, offset, 1, ENC_BIG_ENDIAN);
+                    offset += 1;
+                    // zero 1B
+                    proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_reserved, tvb, offset, 1, ENC_NA);
+                    offset += 1;
+                    // length 4B
                     proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_length, tvb, offset, 4, ENC_BIG_ENDIAN);
+                    unsigned aspa_length = tvb_get_ntohl(tvb, offset);
                     offset += 4;
-                    ti_flags = proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_flags, tvb, offset, 1, ENC_BIG_ENDIAN);
-                    flags_tree = proto_item_add_subtree(ti_flags, ett_flags_nd);
-                    proto_tree_add_item(flags_tree, hf_rpkirtr_flags_ar, tvb, offset, 1, ENC_BIG_ENDIAN);
-                    offset += 1;
-                    ti_flags = proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_flags, tvb, offset, 1, ENC_BIG_ENDIAN);
-                    flags_tree = proto_item_add_subtree(ti_flags, ett_flags_nd);
-                    proto_tree_add_item(flags_tree, hf_rpkirtr_flags_arafi, tvb, offset, 1, ENC_BIG_ENDIAN);
-                    offset += 1;
-
-                    unsigned cnt_asns;
-                    proto_tree_add_item_ret_uint(rpkirtr_tree, hf_rpkirtr_aspa_provider_as_count, tvb, offset, 2, ENC_BIG_ENDIAN, &cnt_asns);
-                    offset += 2;
-
+                    unsigned cnt_asns = (aspa_length-12)/4;
+                    // customer AS (4B)
                     proto_tree_add_item(rpkirtr_tree, hf_rpkirtr_aspa_customer_asn, tvb, offset, 4, ENC_BIG_ENDIAN);
                     offset += 4;
-
+                    // provider AS's (4B*cnt_asns)
                     proto_tree *providers_tree = proto_item_add_subtree(rpkirtr_tree, ett_providers);
                     for (unsigned i = 0; i < cnt_asns; i++) {
                         proto_tree_add_item(providers_tree, hf_rpkirtr_aspa_provider_asn, tvb, offset, 4, ENC_BIG_ENDIAN);
@@ -346,12 +342,19 @@ static int dissect_rpkirtr_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
                 break;
             default:
                 /* No default ? At least sanity check the length*/
+                offset += 2; // Depends on the PDU type
+                proto_tree_add_item_ret_uint(rpkirtr_tree, hf_rpkirtr_length,           tvb, offset, 4, ENC_BIG_ENDIAN, &length);
                 if (length > tvb_reported_length(tvb)) {
+                    /* XXX - I don't believe this ever gets called, because
+                     * tcp_dissect_pdus and get_rpkirtr_pdu_len guarantee
+                     * that the tvb reported length matches the field here. */
                     expert_add_info(pinfo, ti_type, &ei_rpkirtr_bad_length);
                     return tvb_reported_length(tvb);
                 }
-
-                offset += length;
+                /* Since we don't add a field to the tree... */
+                if (ckd_add(&offset, offset, length)) {
+                    THROW(ReportedBoundsError);
+                }
                 break;
         }
     }
@@ -504,11 +507,6 @@ proto_register_rpkirtr(void)
             { "Subject Public Key Info", "rpki-rtr.subject_public_key_info",
             FT_NONE, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
-        },
-        { &hf_rpkirtr_aspa_provider_as_count,
-            { "ASPA Provider AS Count", "rpki-rtr.aspa_ascount",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
-            "The Provider AS Count is the number of 32-bit Provider Autonomous System Numbers in the PDU", HFILL }
         },
         { &hf_rpkirtr_aspa_customer_asn,
             { "ASPA Customer ASN", "rpki-rtr.aspa_customer_asn",

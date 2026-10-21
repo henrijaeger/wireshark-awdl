@@ -6523,6 +6523,9 @@ double QCPAxisTicker::cleanMantissa(double input) const
 QCPAxisTickerDateTime::QCPAxisTickerDateTime() :
   mDateTimeFormat(QLatin1String("hh:mm:ss\ndd.MM.yy")),
   mDateTimeSpec(Qt::LocalTime),
+# if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+  mTimeZone(QTimeZone::LocalTime),
+# endif
   mDateStrategy(dsNone)
 {
   setTickCount(4);
@@ -6586,6 +6589,23 @@ void QCPAxisTickerDateTime::setDateTimeFormat(const QString &format)
 void QCPAxisTickerDateTime::setDateTimeSpec(Qt::TimeSpec spec)
 {
   mDateTimeSpec = spec;
+# if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+  switch (spec) {
+  case Qt::LocalTime:
+    mTimeZone = QTimeZone(QTimeZone::LocalTime);
+    break;
+  case Qt::OffsetFromUTC:
+    // There's no offset to be used
+    qWarning() << "QCPAxisTickerDateTime treating QT::OffsetFromUTC as QT::UTC";
+    // FALLTHROUGH
+  case Qt::UTC:
+    mTimeZone = QTimeZone(QTimeZone::UTC);
+    break;
+  default:
+    // If it's Qt::TimeZone, ignore and hope setTimeZone is/was called
+    break;
+  }
+# endif
 }
 
 # if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
@@ -6715,7 +6735,9 @@ QString QCPAxisTickerDateTime::getTickLabel(double tick, const QLocale &locale, 
 {
   Q_UNUSED(precision)
   Q_UNUSED(formatChar)
-# if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+# if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+  return locale.toString(keyToDateTime(tick).toTimeZone(mTimeZone), mDateTimeFormat);
+# elif QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
   if (mDateTimeSpec == Qt::TimeZone)
     return locale.toString(keyToDateTime(tick).toTimeZone(mTimeZone), mDateTimeFormat);
   else
@@ -6823,8 +6845,23 @@ double QCPAxisTickerDateTime::dateTimeToKey(const QDate &date, Qt::TimeSpec time
   return QDateTime(date, QTime(0, 0), timeSpec).toTime_t();
 # elif QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
   return QDateTime(date, QTime(0, 0), timeSpec).toMSecsSinceEpoch()/1000.0;
-# else
+# elif QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
   return date.startOfDay(timeSpec).toMSecsSinceEpoch()/1000.0;
+# else
+  switch (timeSpec) {
+  case Qt::TimeZone:
+    // No QTimeZone was passed in, so this is treated as Qt::LocalTime in
+    // the deprecated function:
+    // https://doc.qt.io/qt-6/qdatetime-obsolete.html
+  case Qt::LocalTime:
+    return date.startOfDay().toMSecsSinceEpoch()/1000.0;
+  case Qt::OffsetFromUTC:
+    // No offset was passed in, treating as zero per deprecated function.
+  case Qt::UTC:
+    return date.startOfDay(QTimeZone(QTimeZone::UTC)).toMSecsSinceEpoch()/1000.0;
+  default:
+    Q_UNREACHABLE();
+  }
 # endif
 }
 /* end of 'src/axis/axistickerdatetime.cpp' */
@@ -20626,7 +20663,14 @@ void QCPColorScaleAxisRectPrivate::draw(QCPPainter *painter)
     mirrorVert = mParentColorScale->mColorAxis.data()->rangeReversed() && (mParentColorScale->type() == QCPAxis::atLeft || mParentColorScale->type() == QCPAxis::atRight);
   }
 
+# if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+  Qt::Orientations orient;
+  orient.setFlag(Qt::Horizontal, mirrorHorz);
+  orient.setFlag(Qt::Vertical, mirrorVert);
+  painter->drawImage(rect().adjusted(0, -1, 0, -1), mGradientImage.flipped(orient));
+# else
   painter->drawImage(rect().adjusted(0, -1, 0, -1), mGradientImage.mirrored(mirrorHorz, mirrorVert));
+# endif
   QCPAxisRect::draw(painter);
 }
 
@@ -21914,7 +21958,7 @@ void QCPGraph::getOptimizedScatterData(QVector<QCPGraphData> *scatterData, QCPGr
     {
       // determine value pixel span and add as many points in interval to maintain certain vertical data density (this is specific to scatter plot):
       //   [ However, make sure that the span is at least 1 pixel ]
-      double valuePixelSpan = qAbs(valueAxis->coordToPixel(minValue)-valueAxis->coordToPixel(maxValue));
+      double valuePixelSpan = qMax(1.0, qAbs(valueAxis->coordToPixel(minValue)-valueAxis->coordToPixel(maxValue)));
       double pointsToAdd = valuePixelSpan/4.0; // add approximately one data point for every 4 value pixels
       int dataModulo = qMax(1, qRound(intervalDataCount/pointsToAdd));
       QCPGraphDataContainer::const_iterator intervalIt = currentIntervalStart;
@@ -26668,7 +26712,14 @@ void QCPColorMap::updateLegendIcon(Qt::TransformationMode transformMode, const Q
   {
     bool mirrorX = (keyAxis()->orientation() == Qt::Horizontal ? keyAxis() : valueAxis())->rangeReversed();
     bool mirrorY = (valueAxis()->orientation() == Qt::Vertical ? valueAxis() : keyAxis())->rangeReversed();
+# if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    Qt::Orientations orient;
+    orient.setFlag(Qt::Horizontal, mirrorX);
+    orient.setFlag(Qt::Vertical, mirrorY);
+    mLegendIcon = QPixmap::fromImage(mMapImage.flipped(orient)).scaled(thumbSize, Qt::KeepAspectRatio, transformMode);
+# else
     mLegendIcon = QPixmap::fromImage(mMapImage.mirrored(mirrorX, mirrorY)).scaled(thumbSize, Qt::KeepAspectRatio, transformMode);
+#endif
   }
 }
 
@@ -26896,7 +26947,14 @@ void QCPColorMap::draw(QCPPainter *painter)
                                   coordsToPixels(mMapData->keyRange().upper, mMapData->valueRange().upper)).normalized();
     localPainter->setClipRect(tightClipRect, Qt::IntersectClip);
   }
+# if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+  Qt::Orientations orient;
+  orient.setFlag(Qt::Horizontal, mirrorX);
+  orient.setFlag(Qt::Vertical, mirrorY);
+  localPainter->drawImage(imageRect, mMapImage.flipped(orient));
+# else
   localPainter->drawImage(imageRect, mMapImage.mirrored(mirrorX, mirrorY));
+# endif
   if (mTightBoundary)
     localPainter->setClipRegion(clipBackup);
   localPainter->setRenderHint(QPainter::SmoothPixmapTransform, smoothBackup);
@@ -30321,7 +30379,16 @@ void QCPItemPixmap::updateScaledPixmap(QRect finalRect, bool flipHorz, bool flip
     {
       mScaledPixmap = mPixmap.scaled(finalRect.size()*devicePixelRatio, mAspectRatioMode, mTransformationMode);
       if (flipHorz || flipVert)
+# if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+      {
+        Qt::Orientations orient;
+        orient.setFlag(Qt::Horizontal, flipHorz);
+        orient.setFlag(Qt::Vertical, flipVert);
+        mScaledPixmap = QPixmap::fromImage(mScaledPixmap.toImage().flipped(orient));
+      }
+# else
         mScaledPixmap = QPixmap::fromImage(mScaledPixmap.toImage().mirrored(flipHorz, flipVert));
+# endif
 #ifdef QCP_DEVICEPIXELRATIO_SUPPORTED
       mScaledPixmap.setDevicePixelRatio(devicePixelRatio);
 #endif
@@ -30596,13 +30663,13 @@ double QCPItemTracer::selectTest(const QPointF &pos, bool onlySelectable, QVaria
 
   QPointF center(position->pixelPosition());
   double w = mSize/2.0;
-  QRect clip = clipRect();
+  QRectF clip(clipRect());
   switch (mStyle)
   {
     case tsNone: return -1;
     case tsPlus:
     {
-      if (clipRect().intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w)).toRect()))
+      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w))))
         return qSqrt(qMin(QCPVector2D(pos).distanceSquaredToLine(center+QPointF(-w, 0), center+QPointF(w, 0)),
                           QCPVector2D(pos).distanceSquaredToLine(center+QPointF(0, -w), center+QPointF(0, w))));
       break;
@@ -30614,7 +30681,7 @@ double QCPItemTracer::selectTest(const QPointF &pos, bool onlySelectable, QVaria
     }
     case tsCircle:
     {
-      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w)).toRect()))
+      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w))))
       {
         // distance to border:
         double centerDist = QCPVector2D(center-pos).length();
@@ -30632,7 +30699,7 @@ double QCPItemTracer::selectTest(const QPointF &pos, bool onlySelectable, QVaria
     }
     case tsSquare:
     {
-      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w)).toRect()))
+      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w))))
       {
         QRectF rect = QRectF(center-QPointF(w, w), center+QPointF(w, w));
         bool filledRect = mBrush.style() != Qt::NoBrush && mBrush.color().alpha() != 0;
@@ -30655,13 +30722,13 @@ void QCPItemTracer::draw(QCPPainter *painter)
   painter->setBrush(mainBrush());
   QPointF center(position->pixelPosition());
   double w = mSize/2.0;
-  QRect clip = clipRect();
+  QRectF clip(clipRect());
   switch (mStyle)
   {
     case tsNone: return;
     case tsPlus:
     {
-      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w)).toRect()))
+      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w))))
       {
         painter->drawLine(QLineF(center+QPointF(-w, 0), center+QPointF(w, 0)));
         painter->drawLine(QLineF(center+QPointF(0, -w), center+QPointF(0, w)));
@@ -30678,13 +30745,13 @@ void QCPItemTracer::draw(QCPPainter *painter)
     }
     case tsCircle:
     {
-      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w)).toRect()))
+      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w))))
         painter->drawEllipse(center, w, w);
       break;
     }
     case tsSquare:
     {
-      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w)).toRect()))
+      if (clip.intersects(QRectF(center-QPointF(w, w), center+QPointF(w, w))))
         painter->drawRect(QRectF(center-QPointF(w, w), center+QPointF(w, w)));
       break;
     }

@@ -24,13 +24,12 @@
 #include <wsutil/report_message.h>
 #include <wsutil/filesystem.h>
 #include <wsutil/strtoi.h>
-#ifdef HAVE_LIBXML2
+#include <wsutil/pint.h>
 #include <libxml/tree.h>
 #include <libxml/parser.h>
 #include <libxml/xpath.h>
-#endif
 #include "file_wrappers.h"
-#include "wtap-int.h"
+#include "wtap_module.h"
 
 static const uint8_t ttl_magic[] = { 'T', 'T', 'L', ' ' };
 
@@ -38,6 +37,7 @@ static int ttl_file_type_subtype = -1;
 
 #define TTL_ADDRESS_NAME_PREFS      "file_format_ttl_names"
 #define TTL_ADDRESS_MASTER_PREFS    "file_format_ttl_masters"
+#define TTL_MAX_CORRUPTED_BLOCKS    1024
 
 void register_ttl(void);
 static bool ttl_read(wtap* wth, wtap_rec* rec, int* err, char** err_info, int64_t* data_offset);
@@ -227,6 +227,11 @@ uint16_t ttl_get_master_address(GHashTable* ht, uint16_t addr) {
                 return (addr - 1);
             }
             break;
+        case TTL_LOGGER_DEVICE_TDA4x:
+            if (function == TTL_LOGGER_TDA4x_FUNCTION_FLEXRAY1B) {
+                return (addr - 1);
+            }
+            break;
         case TTL_LOGGER_DEVICE_FPGAA:
             if (function == TTL_LOGGER_FPGAA_FUNCTION_FLEXRAY1B) {
                 return (addr - 1);
@@ -236,18 +241,18 @@ uint16_t ttl_get_master_address(GHashTable* ht, uint16_t addr) {
             switch (function) {
             case TTL_LOGGER_FPGAB_FUNCTION_ETHA_CH2:
             case TTL_LOGGER_FPGAB_FUNCTION_ETHB_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHA_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHB_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHC_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHD_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHE_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHF_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHG_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHH_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHI_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHJ_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHK_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHL_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6b_CH2:
                 return (addr - 14);
             default:
                 break;
@@ -498,6 +503,9 @@ int ttl_get_address_iface_type(uint16_t addr) {
             case TTL_LOGGER_TDA4x_FUNCTION_CAN9:
             case TTL_LOGGER_TDA4x_FUNCTION_CAN10:
             case TTL_LOGGER_TDA4x_FUNCTION_CAN11:
+            case TTL_LOGGER_TDA4x_FUNCTION_CAN12:
+            case TTL_LOGGER_TDA4x_FUNCTION_CAN13:
+            case TTL_LOGGER_TDA4x_FUNCTION_CAN14:
                 return WTAP_ENCAP_SOCKETCAN;
             default:
                 break;
@@ -517,6 +525,9 @@ int ttl_get_address_iface_type(uint16_t addr) {
             case TTL_LOGGER_FPGAA_FUNCTION_CAN9:
             case TTL_LOGGER_FPGAA_FUNCTION_CAN10:
             case TTL_LOGGER_FPGAA_FUNCTION_CAN11:
+            case TTL_LOGGER_FPGAA_FUNCTION_CAN12:
+            case TTL_LOGGER_FPGAA_FUNCTION_CAN13:
+            case TTL_LOGGER_FPGAA_FUNCTION_CAN14:
                 return WTAP_ENCAP_SOCKETCAN;
             case TTL_LOGGER_FPGAA_FUNCTION_LIN1:
             case TTL_LOGGER_FPGAA_FUNCTION_LIN2:
@@ -547,32 +558,32 @@ int ttl_get_address_iface_type(uint16_t addr) {
             switch (function) {
             case TTL_LOGGER_FPGAB_FUNCTION_ETHA_CH1:
             case TTL_LOGGER_FPGAB_FUNCTION_ETHB_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHA_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHB_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHC_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHD_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHE_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHF_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHG_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHH_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHI_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHJ_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHK_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHL_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6b_CH1:
             case TTL_LOGGER_FPGAB_FUNCTION_ETHA_CH2:
             case TTL_LOGGER_FPGAB_FUNCTION_ETHB_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHA_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHB_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHC_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHD_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHE_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHF_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHG_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHH_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHI_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHJ_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHK_CH2:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHL_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5b_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6a_CH2:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6b_CH2:
                 return WTAP_ENCAP_ETHERNET;
             default:
                 break;
@@ -1081,6 +1092,14 @@ const char* ttl_get_function_name(uint16_t addr) {
                 return "Serial5";
             case TTL_LOGGER_TDA4x_FUNCTION_SERIAL6:
                 return "Serial6";
+            case TTL_LOGGER_TDA4x_FUNCTION_SERIAL7:
+                return "Serial7";
+            case TTL_LOGGER_TDA4x_FUNCTION_SERIAL8:
+                return "Serial8";
+            case TTL_LOGGER_TDA4x_FUNCTION_SERIAL9:
+                return "Serial9";
+            case TTL_LOGGER_TDA4x_FUNCTION_SERIAL10:
+                return "Serial10";
             case TTL_LOGGER_TDA4x_FUNCTION_ANALOGIN1:
                 return "AnalogIn1";
             case TTL_LOGGER_TDA4x_FUNCTION_ANALOGIN2:
@@ -1101,6 +1120,17 @@ const char* ttl_get_function_name(uint16_t addr) {
                 return "KL15";
             case TTL_LOGGER_TDA4x_FUNCTION_KL30IN:
                 return "KL30";
+            case TTL_LOGGER_TDA4x_FUNCTION_FLEXRAY1A:
+            case TTL_LOGGER_TDA4x_FUNCTION_FLEXRAY1B:
+            case TTL_LOGGER_TDA4x_FUNCTION_FLEXRAY1AB:
+                return "FlexRay1";
+            case TTL_LOGGER_TDA4x_FUNCTION_CAN12:
+                return "CAN12";
+            case TTL_LOGGER_TDA4x_FUNCTION_CAN13:
+                return "CAN13";
+            case TTL_LOGGER_TDA4x_FUNCTION_CAN14:
+                return "CAN14";
+
             default:
                 break;
             }
@@ -1178,6 +1208,20 @@ const char* ttl_get_function_name(uint16_t addr) {
                 return "Serial5";
             case TTL_LOGGER_FPGAA_FUNCTION_SERIAL6:
                 return "Serial6";
+            case TTL_LOGGER_FPGAA_FUNCTION_SERIAL7:
+                return "Serial7";
+            case TTL_LOGGER_FPGAA_FUNCTION_SERIAL8:
+                return "Serial8";
+            case TTL_LOGGER_FPGAA_FUNCTION_SERIAL9:
+                return "Serial9";
+            case TTL_LOGGER_FPGAA_FUNCTION_SERIAL10:
+                return "Serial10";
+            case TTL_LOGGER_FPGAA_FUNCTION_CAN12:
+                return "CAN12";
+            case TTL_LOGGER_FPGAA_FUNCTION_CAN13:
+                return "CAN13";
+            case TTL_LOGGER_FPGAA_FUNCTION_CAN14:
+                return "CAN14";
             default:
                 break;
             }
@@ -1190,42 +1234,42 @@ const char* ttl_get_function_name(uint16_t addr) {
             case TTL_LOGGER_FPGAB_FUNCTION_ETHB_CH1:
             case TTL_LOGGER_FPGAB_FUNCTION_ETHB_CH2:
                 return "EthernetB";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHA_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHA_CH2:
-                return "AutomotiveEthernetA";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHB_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHB_CH2:
-                return "AutomotiveEthernetB";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHC_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHC_CH2:
-                return "AutomotiveEthernetC";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHD_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHD_CH2:
-                return "AutomotiveEthernetD";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHE_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHE_CH2:
-                return "AutomotiveEthernetE";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHF_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHF_CH2:
-                return "AutomotiveEthernetF";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHG_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHG_CH2:
-                return "AutomotiveEthernetG";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHH_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHH_CH2:
-                return "AutomotiveEthernetH";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHI_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHI_CH2:
-                return "AutomotiveEthernetI";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHJ_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHJ_CH2:
-                return "AutomotiveEthernetJ";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHK_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHK_CH2:
-                return "AutomotiveEthernetK";
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHL_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHL_CH2:
-                return "AutomotiveEthernetL";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1a_CH2:
+                return "AutomotiveEthernet1a";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1b_CH2:
+                return "AutomotiveEthernet1b";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2a_CH2:
+                return "AutomotiveEthernet2a";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2b_CH2:
+                return "AutomotiveEthernet2b";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3a_CH2:
+                return "AutomotiveEthernet3a";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3b_CH2:
+                return "AutomotiveEthernet3b";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4a_CH2:
+                return "AutomotiveEthernet4a";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4b_CH2:
+                return "AutomotiveEthernet4b";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5a_CH2:
+                return "AutomotiveEthernet5a";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5b_CH2:
+                return "AutomotiveEthernet5b";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6a_CH2:
+                return "AutomotiveEthernet6a";
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6b_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6b_CH2:
+                return "AutomotiveEthernet6b";
             default:
                 break;
             }
@@ -1572,7 +1616,7 @@ static const ttl_addr_to_iface_entry_t* ttl_lookup_interface_int(wtap* wth, uint
 
 static void
 ttl_init_rec(wtap_rec* rec, uint64_t timestamp, uint16_t addr, int pkt_encap, uint32_t iface_id, uint32_t caplen, uint32_t len) {
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, pkt_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->presence_flags = WTAP_HAS_CAP_LEN | WTAP_HAS_INTERFACE_ID | WTAP_HAS_TS;
     rec->tsprec = WTAP_TSPREC_USEC;
@@ -1583,7 +1627,6 @@ ttl_init_rec(wtap_rec* rec, uint64_t timestamp, uint16_t addr, int pkt_encap, ui
 
     rec->ts_rel_cap_valid = false;
 
-    rec->rec_header.packet_header.pkt_encap = pkt_encap;
     rec->rec_header.packet_header.interface_id = iface_id;
 
     wtap_block_add_uint32_option(rec->block, OPT_PKT_QUEUE, addr);
@@ -1727,11 +1770,6 @@ ttl_read_can_data_entry(wtap_rec* rec, int* err, char** err_info, ttl_read_t* in
         }
         can_id = GUINT32_FROM_LE(can_id);
         size -= sizeof(uint32_t);
-
-        if (size == 0 && !(status & TTL_CAN_STATUS_RTR_BIT_MASK)) {
-            /* No more data, and it's not a remote transmission frame */
-            return TTL_CORRUPTED;
-        }
     }
 
     if (error_code) {
@@ -1783,14 +1821,11 @@ ttl_read_can_data_entry(wtap_rec* rec, int* err, char** err_info, ttl_read_t* in
         if (status & TTL_CAN_STATUS_ESI_BIT_MASK) canfd_flags |= CANFD_ESI;
     }
 
-    can_header[0] = (can_id & 0xff000000) >> 24;
-    can_header[1] = (can_id & 0x00ff0000) >> 16;
-    can_header[2] = (can_id & 0x0000ff00) >> 8;
-    can_header[3] = (can_id & 0x000000ff);
-    can_header[4] = len;
-    can_header[5] = canfd_flags;
-    can_header[6] = 0;
-    can_header[7] = 0;
+    phtonu32(&can_header[0], can_id);
+    phtonu8(&can_header[4], len);
+    phtonu8(&can_header[5], canfd_flags);
+    phtonu8(&can_header[6], 0);
+    phtonu8(&can_header[7], 0);
 
     ws_buffer_append(&rec->data, can_header, sizeof(can_header));
 
@@ -1987,10 +2022,15 @@ ttl_check_segmented_message_recursion(const ttl_read_t* in, int* err, char** err
 
     if (in->validity != VALIDITY_BUF) {
         *err = WTAP_ERR_INTERNAL;
-        *err_info = ws_strdup("tt_fix_segmented_message_entry_payload: input buffer is not valid");
+        *err_info = ws_strdup("ttl_check_segmented_message_recursion: input buffer is not valid");
         return false;
     }
 
+    if (sizeof(ttl_entryheader_t) > in->size - in->cur_pos) {
+        *err = WTAP_ERR_INTERNAL;
+        *err_info = ws_strdup("ttl_check_segmented_message_recursion: input buffer too short");
+        return false;
+    }
     memcpy(&header, in->buf + in->cur_pos, sizeof(ttl_entryheader_t));
     fix_endianness_ttl_entryheader(&header);
 
@@ -2011,14 +2051,23 @@ ttl_fix_segmented_message_entry_timestamp(const ttl_read_t* in, uint64_t timesta
 
     if (in->validity != VALIDITY_BUF) {
         *err = WTAP_ERR_INTERNAL;
-        *err_info = ws_strdup("tt_fix_segmented_message_entry_payload: input buffer is not valid");
+        *err_info = ws_strdup("ttl_fix_segmented_message_entry_timestamp: input buffer is not valid");
         return false;
     }
 
+    if (sizeof(ttl_entryheader_t) > in->size - in->cur_pos) {
+        goto buf_too_small;
+    }
     memcpy(&header, in->buf + in->cur_pos, sizeof(ttl_entryheader_t));
     fix_endianness_ttl_entryheader(&header);
 
     if ((header.size_type >> 12) == TTL_BUS_DATA_ENTRY) {
+        if (sizeof(uint64_t) > in->size - (in->cur_pos + sizeof(ttl_entryheader_t))) {
+        buf_too_small:
+            *err = WTAP_ERR_INTERNAL;
+            *err_info = ws_strdup("ttl_fix_segmented_message_entry_timestamp: input buffer too short");
+            return false;
+        }
         timestamp = GUINT64_TO_LE(timestamp);
         memcpy(in->buf + in->cur_pos + sizeof(ttl_entryheader_t), &timestamp, sizeof(uint64_t));
     }
@@ -2086,12 +2135,13 @@ static ttl_result_t ttl_read_segmented_message_entry(wtap* wth, wtap_rec* rec, i
             item->type = GUINT32_FROM_LE(item->type);
             size -= sizeof(uint32_t);
 
-            /* If the reassebled size is too big, we go on as usual, but without a buffer.
+            /* If the reassembled size is too big, we go on as usual, but without a buffer.
              * This way we avoid problems with segments later.
              */
             if (item->size <= WTAP_MAX_PACKET_SIZE_STANDARD) {
                 item->buf = g_try_malloc(item->size);
                 if (item->buf == NULL) {
+                    g_free(item);
                     *err = WTAP_ERR_INTERNAL;
                     *err_info = ws_strdup("ttl_read_segmented_message_entry: cannot allocate memory");
                     return TTL_ERROR;
@@ -2214,6 +2264,9 @@ static ttl_result_t ttl_read_entry(wtap* wth, wtap_rec* rec, int* err, char** er
         /*
          * We probably have a corrupted file, try to recover our alignment
          * by skipping to the next block.
+         *
+         * Note this doesn't read bytes, so wth->fh->eof might not get set
+         * even offset is past the end of the file.
          */
         return TTL_CORRUPTED;
     }
@@ -2266,7 +2319,6 @@ static ttl_result_t ttl_read_entry(wtap* wth, wtap_rec* rec, int* err, char** er
 
 }
 
-#ifdef HAVE_LIBXML2
 static bool
 ttl_xml_node_get_number(xmlNodePtr node, xmlXPathContextPtr ctx, double *ret) {
     xmlXPathObjectPtr result;
@@ -2383,7 +2435,6 @@ ttl_process_xml_config(ttl_t* ttl, const char* text, int size) {
     xmlFreeDoc(doc);
     return true;
 }
-#endif  /* HAVE_LIBXML2 */
 
 /* Maximum supported line length of preference files */
 #define MAX_LINELEN     1024
@@ -2420,12 +2471,12 @@ ttl_is_master_slave_relation_correct(uint16_t master, uint16_t slave) {
         case TTL_LOGGER_DEVICE_FPGAB:
             switch (function) {
             case TTL_LOGGER_FPGAB_FUNCTION_ETHA_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHA_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHC_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHE_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHG_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHI_CH1:
-            case TTL_LOGGER_FPGAB_FUNCTION_AETHK_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH1a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH2a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH3a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH4a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH5a_CH1:
+            case TTL_LOGGER_FPGAB_FUNCTION_AETH6a_CH1:
                 return (slave == (master + 1));
             default:
                 break;
@@ -2684,8 +2735,14 @@ ttl_open(wtap* wth, int* err, char** err_info) {
     if (memcmp(header.magic, ttl_magic, sizeof(ttl_magic))) {
         return WTAP_OPEN_NOT_MINE;
     }
-
     /* This seems to be a TLL! */
+
+    /* Check for valid block size */
+    if (header.block_size < sizeof(ttl_entryheader_t)) {
+        *err = WTAP_ERR_BAD_FILE;
+        *err_info = ws_strdup("ttl: entry block size cannot be smaller than an entry header");
+        return WTAP_OPEN_ERROR;
+    }
     /* Check for a valid header length */
     if (header.header_size < sizeof(ttl_fileheader_t)) {
         *err = WTAP_ERR_BAD_FILE;
@@ -2717,7 +2774,6 @@ ttl_open(wtap* wth, int* err, char** err_info) {
                 return WTAP_OPEN_ERROR;
             }
             offset += TTL_LOGFILE_INFO_SIZE;
-#ifdef HAVE_LIBXML2
             unsigned int xml_len = header.header_size - offset;
             if (xml_len != 0) {
                 unsigned char* xml = g_try_malloc(xml_len);
@@ -2738,7 +2794,6 @@ ttl_open(wtap* wth, int* err, char** err_info) {
                 g_free(xml);
                 offset += xml_len;
             }
-#endif  /* HAVE_LIBXML2 */
         }
     }
 
@@ -2770,6 +2825,8 @@ ttl_next_block(const ttl_t* ttl, int64_t pos) {
         return pos;
     }
 
+    // ttl_open should assure this
+    ws_assert(ttl->block_size >= sizeof(ttl_entryheader_t));
     return pos + ttl->block_size - ((pos - ttl->header_size) % ttl->block_size);
 }
 
@@ -2777,6 +2834,7 @@ static bool ttl_read(wtap* wth, wtap_rec* rec, int* err, char** err_info, int64_
     ttl_read_t      input;
     int64_t         pos, end;
     ttl_result_t    res;
+    unsigned        corrupted_blocks = 0;
 
     input.fh = wth->fh;
     input.validity = VALIDITY_FH;
@@ -2787,6 +2845,11 @@ static bool ttl_read(wtap* wth, wtap_rec* rec, int* err, char** err_info, int64_
 
         res = ttl_read_entry(wth, rec, err, err_info, &input, pos, end);
         if (G_UNLIKELY(res == TTL_CORRUPTED)) {
+            if (++corrupted_blocks > TTL_MAX_CORRUPTED_BLOCKS) {
+                *err = WTAP_ERR_BAD_FILE;
+                *err_info = ws_strdup("ttl: too many consecutive corrupted blocks");
+                return false;
+            }
             ws_warning("ttl_read(): Unaligned block found, skipping to next block offset: 0x%" PRIx64, end);
             report_warning("Found unaligned TTL block. Skipping to the next one.");
             if (file_seek(wth->fh, end, SEEK_SET, err) < 0) {

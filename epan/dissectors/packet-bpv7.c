@@ -609,8 +609,8 @@ void bp_block_primary_free(wmem_allocator_t *alloc, bp_block_primary_t *obj) {
     bp_eid_free(obj->rep_nodeid);
     wmem_free(alloc, obj->frag_offset);
     wmem_free(alloc, obj->total_len);
-    wmem_free(alloc, obj->sec.data_i);
-    wmem_free(alloc, obj->sec.data_c);
+    wmem_map_destroy(obj->sec.data_i, true, true);
+    wmem_map_destroy(obj->sec.data_c, true, true);
     wmem_free(alloc, obj);
 }
 
@@ -936,12 +936,12 @@ proto_item * proto_tree_add_cbor_eid(proto_tree *tree, int hfindex, int hfindex_
     const int eid_start = *offset;
 
     wscbor_chunk_t *chunk = wscbor_chunk_read(pinfo->pool, tvb, offset);
-    wscbor_require_array_size(chunk, 2, 2);
     if (!chunk) {
         proto_item_set_len(item_eid, *offset - eid_start);
         expert_add_info(pinfo, item_eid, &ei_eid_struct_invalid);
         return item_eid;
     }
+    wscbor_require_array_size(chunk, 2, 2);
 
     chunk = wscbor_chunk_read(pinfo->pool, tvb, offset);
     const uint64_t *scheme = wscbor_require_uint64(alloc_eid, chunk);
@@ -1202,7 +1202,7 @@ static int dissect_block_primary(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     field_ix++;
     block->crc_type = (crc_type ? *crc_type : BP_CRC_NONE);
     if (crc_type) {
-        proto_item_append_text(item_block, ", CRC Type: %s", val64_to_str(*crc_type, crc_vals, "%" PRIu64));
+        proto_item_append_text(item_block, ", CRC Type: %s", val64_to_str_wmem(pinfo->pool, *crc_type, crc_vals, "%" PRIu64));
     }
 
     proto_tree_add_cbor_eid(tree_block, hf_primary_dst_eid, hf_primary_dst_uri, pinfo, tvb, &offset, block->dst_eid);
@@ -1382,7 +1382,7 @@ static int dissect_block_canonical(tvbuff_t *tvb, packet_info *pinfo, proto_tree
     field_ix++;
     block->crc_type = (crc_type ? *crc_type : BP_CRC_NONE);
     if (crc_type) {
-        proto_item_append_text(item_block, ", CRC Type: %s", val64_to_str(*crc_type, crc_vals, "%" PRIu64));
+        proto_item_append_text(item_block, ", CRC Type: %s", val64_to_str_wmem(pinfo->pool, *crc_type, crc_vals, "%" PRIu64));
     }
 
     chunk = wscbor_chunk_read(pinfo->pool, tvb, &offset);
@@ -1712,13 +1712,13 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
                 && (primary->dst_eid->uri.type != AT_NONE)) {
             // conversation starts in either order
             address *addra, *addrb;
-            if (cmp_address(&(primary->src_nodeid->uri), &(primary->dst_eid->uri)) < 0) {
-                addra = &(primary->src_nodeid->uri);
-                addrb = &(primary->dst_eid->uri);
+            if (cmp_address(&(pinfo->src), &(pinfo->dst)) < 0) {
+                addra = &(pinfo->src);
+                addrb = &(pinfo->dst);
             }
             else {
-                addra = &(primary->dst_eid->uri);
-                addrb = &(primary->src_nodeid->uri);
+                addra = &(pinfo->dst);
+                addrb = &(pinfo->src);
             }
 
             conversation_element_t *conv_el = wmem_alloc_array(pinfo->pool, conversation_element_t, 3);
@@ -2075,7 +2075,7 @@ static int dissect_status_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
                             status_buf);
     }
     if (reason_code) {
-        proto_item_append_text(item_admin, ", Reason: %s", val64_to_str(*reason_code, status_report_reason_vals, "%" PRIu64));
+        proto_item_append_text(item_admin, ", Reason: %s", val64_to_str_wmem(pinfo->pool, *reason_code, status_report_reason_vals, "%" PRIu64));
     }
 
     proto_item_set_len(item_status, offset - chunk_status->start);

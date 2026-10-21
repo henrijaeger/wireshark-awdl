@@ -51,9 +51,11 @@ static int ett_decrypted_pbe;
 
 static expert_field ei_pkcs12_octet_string_expected;
 
+/* We might want to make this a preference */
+#define MAX_ITER_COUNT 10000000U
 
 static const char *object_identifier_id;
-static int iteration_count;
+static unsigned iteration_count;
 static tvbuff_t *salt;
 static const char *password;
 static bool try_null_password;
@@ -83,8 +85,8 @@ generate_key_or_iv(packet_info *pinfo, unsigned int id, tvbuff_t *salt_tvb, unsi
   gcry_md_hd_t md;
   gcry_mpi_t num_b1 = NULL;
   size_t pwlen;
-  char hash[20], buf_b[64], buf_i[128], *p;
-  char *salt_p;
+  uint8_t hash[20], buf_b[64], buf_i[128], *p;
+  uint8_t *salt_p;
   int salt_size;
   size_t cur_keylen;
   size_t n;
@@ -93,7 +95,10 @@ generate_key_or_iv(packet_info *pinfo, unsigned int id, tvbuff_t *salt_tvb, unsi
   cur_keylen = 0;
 
   salt_size = tvb_captured_length(salt_tvb);
-  salt_p = (char *)tvb_memdup(pinfo->pool, salt_tvb, 0, salt_size);
+  if (salt_size == 0) {
+    return false;
+  }
+  salt_p = (uint8_t *)tvb_memdup(pinfo->pool, salt_tvb, 0, salt_size);
 
   if (pw == NULL)
     pwlen = 0;
@@ -218,6 +223,10 @@ int PBE_decrypt_data(dissector_t dissector, const char *description, tvbuff_t *e
 	}
 
 	encryption_algorithm = x509af_get_last_algorithm_id();
+	if (encryption_algorithm == NULL) {
+		proto_item_append_text(item, " [Unknown encryption algorithm]");
+		return false;
+	}
 
 	/* these are the only encryption schemes we understand for now */
 	if(!strcmp(encryption_algorithm, PKCS12_PBE_3DES_SHA1_OID)) {
@@ -244,6 +253,42 @@ int PBE_decrypt_data(dissector_t dissector, const char *description, tvbuff_t *e
 
 	if((iteration_count == 0) || (salt == NULL)) {
 		proto_item_append_text(item, " [Insufficient parameters]");
+		return false;
+	}
+
+        /* Put some kind of sanity check limit on the iteration_count to avoid
+         * taking forever repeatedly hashing. RFC 8018 says:
+         * "This document follows the recommendations made in FIPS
+         * Special Publication 800-132 [NISTSP132], which says
+         *
+         *    The iteration count shall be selected as large as possible, as
+         *    long as the time required to generate the key using the entered
+         *    password is acceptable for the users. [...] A minimum iteration
+         *    count of 1,000 is recommended.  For especially critical keys, or
+         *    for very powerful systems or systems where user-perceived
+         *    performance is not critical, an iteration count of 10,000,000 may
+         *    be appropriate."
+         * https://datatracker.ietf.org/doc/html/rfc8018#section-4.2
+         *
+         * (Note NIST announced a decision to revise SP 800-132 in May 2023:
+         * https://csrc.nist.gov/News/2023/decision-to-revise-nist-sp-800-132
+         * although as of Dec 2025 has not published a draft.)
+         *
+         * Presumably "user-perceived performance is not critical" does not
+         * apply to us, although there may be "especially critical keys."
+         */
+        if (iteration_count > MAX_ITER_COUNT) {
+		proto_item_append_text(item, " [Iteration count exceeds max (%u > %u)]", iteration_count, MAX_ITER_COUNT);
+		return false;
+        }
+
+        if (encrypted_tvb == NULL) {
+		proto_item_append_text(item, " [Null input buffer]");
+		return false;
+        }
+	datalen = tvb_captured_length(encrypted_tvb);
+	if (!datalen) {
+		proto_item_append_text(item, " [Zero-length input buffer]");
 		return false;
 	}
 
@@ -280,7 +325,6 @@ int PBE_decrypt_data(dissector_t dissector, const char *description, tvbuff_t *e
 		  }
 	}
 
-	datalen = tvb_captured_length(encrypted_tvb);
 	clear_data = (char *)wmem_alloc(pinfo->pool, datalen);
 
 	err = gcry_cipher_decrypt (cipher, clear_data, datalen, (char *)tvb_memdup(pinfo->pool, encrypted_tvb, 0, datalen), datalen);

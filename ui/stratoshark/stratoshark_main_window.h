@@ -52,7 +52,6 @@
 
 #include <QMainWindow>
 #include <QPointer>
-#include <QTextCodec>
 
 #ifdef _WIN32
 # include <QTimer>
@@ -67,7 +66,7 @@
 #include "main_window.h"
 
 class AccordionFrame;
-class ByteViewTab;
+class DataSourceTab;
 class CaptureOptionsDialog;
 class PrintDialog;
 class FileSetDialog;
@@ -145,7 +144,6 @@ private:
 
     Ui::StratosharkMainWindow *main_ui_;
     QFont mono_font_;
-    QMap<QString, QTextCodec *> text_codec_map_;
     QWidget *previous_focus_;
     FileSetDialog *file_set_dialog_;
     QActionGroup *show_hide_actions_;
@@ -195,8 +193,6 @@ private:
 #endif // Q_OS_WIN
     bool testCaptureFileClose(QString before_what, FileCloseContext context = Default);
     void captureStop();
-
-    void findTextCodecs();
 
     void initMainToolbarIcons();
     void initShowHideMainWidgets();
@@ -434,6 +430,8 @@ private slots:
     void openStatisticsTreeDialog(const char *abbr);
     void statCommandIOGraph(const char *, void *);
     void showIOGraphDialog(io_graph_item_unit_t, QString);
+
+    void showPlotDialog(const QString& y_field = QString(), bool filtered = false);
 
     void externalMenuItemTriggered();
 

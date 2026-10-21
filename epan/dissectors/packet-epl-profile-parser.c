@@ -32,7 +32,6 @@
 #include <wsutil/wslog.h>
 #include <epan/wmem_scopes.h>
 
-#if defined HAVE_LIBXML2
 #include <libxml/xmlversion.h>
 
 #if defined LIBXML_XPATH_ENABLED \
@@ -77,8 +76,6 @@ static struct xpath {
 
 
 #endif /* LIBXML_XPATH_ENABLED && LIBXML_SAX1_ENABLED && LIBXML_TREE_ENABLED */
-
-#endif /* HAVE_LIBXML2 */
 
 struct datatype {
 	uint16_t id;
@@ -131,7 +128,7 @@ struct epl_wmem_iarray {
 	uint8_t is_sorted :1;
 };
 
-static epl_wmem_iarray_t *epl_wmem_iarray_new(wmem_allocator_t *allocator, const unsigned elem_size, GEqualFunc cmp) G_GNUC_MALLOC;
+static epl_wmem_iarray_t *epl_wmem_iarray_new(wmem_allocator_t *allocator, const unsigned elem_size, GEqualFunc cmp);
 static void epl_wmem_iarray_insert(epl_wmem_iarray_t *iarr, uint32_t where, range_admin_t *data);
 static void epl_wmem_iarray_sort_and_compact(epl_wmem_iarray_t *iarr);
 
@@ -568,13 +565,11 @@ populate_object_list(xmlNodeSetPtr nodes, void *_profile)
 
 #else  /* ! PARSE_XDD */
 
-#ifdef HAVE_LIBXML2
 struct profile *
 epl_xdd_load(struct profile *profile _U_, const char *xml_file _U_)
 {
 	return NULL;
 }
-#endif  /* HAVE_LIBXML2 */
 
 #endif  /* ! PARSE_XDD */
 

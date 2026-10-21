@@ -39,7 +39,7 @@
 
 #include "conversation.h"
 #include "except.h"
-#include "packet.h"
+#include <epan/packet.h>
 #include "prefs.h"
 #include "column-info.h"
 #include "tap.h"
@@ -63,7 +63,6 @@
 #include "secrets.h"
 #include "funnel.h"
 #include "wscbor.h"
-#include <dtd.h>
 
 #ifdef HAVE_PLUGINS
 #include <wsutil/plugins.h>
@@ -100,10 +99,8 @@
 #include <brotli/decode.h>
 #endif
 
-#ifdef HAVE_LIBXML2
 #include <libxml/xmlversion.h>
 #include <libxml/parser.h>
-#endif
 
 #ifndef _WIN32
 #include <signal.h>
@@ -275,15 +272,12 @@ epan_init(register_cb cb, void *client_data, bool load_plugins)
 		wireshark_abort_on_too_many_items = false;
 	}
 
-	/*
-	 * proto_init -> register_all_protocols -> g_async_queue_new which
-	 * requires threads to be initialized. This happens automatically with
-	 * GLib 2.32, before that g_thread_init must be called. But only since
-	 * GLib 2.24, multiple invocations are allowed. Check for an earlier
-	 * invocation just in case.
-	 */
 	/* initialize memory allocation subsystem */
 	wmem_init_scopes();
+
+	/* initialize the tables that store value_strings for
+	   outside of dissectors */
+	value_string_externals_init();
 
 	/* initialize the GUID to name mapping table */
 	guids_init();
@@ -325,10 +319,9 @@ epan_init(register_cb cb, void *client_data, bool load_plugins)
 	}
 #endif
 #endif
-#ifdef HAVE_LIBXML2
+
 	xmlInitParser();
 	LIBXML_TEST_VERSION;
-#endif
 
 #ifndef _WIN32
 	// We might receive a SIGPIPE due to maxmind_db.
@@ -451,16 +444,15 @@ epan_cleanup(void)
 	cleanup_enabled_and_disabled_lists();
 	stats_tree_cleanup();
 	funnel_cleanup();
-	dtd_location(NULL);
 #ifdef HAVE_LUA
 	wslua_cleanup();
 #endif
 #ifdef HAVE_LIBGNUTLS
 	gnutls_global_deinit();
 #endif
-#ifdef HAVE_LIBXML2
+
 	xmlCleanupParser();
-#endif
+
 	except_deinit();
 	addr_resolv_cleanup();
 
@@ -477,6 +469,7 @@ epan_cleanup(void)
 	plugins_cleanup(libwireshark_plugins);
 	libwireshark_plugins = NULL;
 #endif
+	value_string_externals_cleanup();
 }
 
 struct epan_session {
@@ -534,12 +527,47 @@ epan_get_frame_ts(const epan_t *session, uint32_t frame_num)
 	if (session && session->funcs.get_frame_ts)
 		abs_ts = session->funcs.get_frame_ts(session->prov, frame_num);
 
-	if (!abs_ts) {
-		/* This can happen if frame_num doesn't have a ts */
-		ws_debug("!!! couldn't get frame ts for %u !!!\n", frame_num);
-	}
-
+	/* abs_ts will be null if we don't have a session, the session
+	   doesn't have a function to return time stamps, or that
+	   function returns null, e.g. because the frame doesn't
+	   *have* a time stamp. */
 	return abs_ts;
+}
+
+int32_t
+epan_get_process_id(const epan_t *session, uint32_t process_info_id, unsigned section_number)
+{
+	if (session->funcs.get_process_id)
+		return session->funcs.get_process_id(session->prov, process_info_id, section_number);
+
+	/* NOTE:
+	 * On UNIX and UNIX-like operating systems, `0` is valid process id
+	 * value, and it is reserved for the kernel.
+	 * On other operating systems, the kernel process id can be mapped
+	 * to a different integer value.
+	 * The common underlying assumption is that on every operating system,
+	 * the value `-1` is not mapped to any valid process id, and hence
+	 * can represent the "not found" case.
+	 */
+	return -1;
+}
+
+const char *
+epan_get_process_name(const epan_t *session, uint32_t process_info_id, unsigned section_number)
+{
+	if (session->funcs.get_process_name)
+		return session->funcs.get_process_name(session->prov, process_info_id, section_number);
+
+	return NULL;
+}
+
+const uint8_t *
+epan_get_process_uuid(const epan_t *session, uint32_t process_info_id, unsigned section_number, size_t *uuid_size)
+{
+	if (session->funcs.get_process_uuid)
+		return session->funcs.get_process_uuid(session->prov, process_info_id, section_number, uuid_size);
+
+	return NULL;
 }
 
 void
@@ -662,11 +690,9 @@ epan_dissect_run(epan_dissect_t *edt, int file_type_subtype,
 	 * registered to a fake tap. */
 	wslua_prime_dfilter(edt); /* done before entering wmem scope */
 #endif
-	wmem_enter_packet_scope();
 	dissect_record(edt, file_type_subtype, rec, fd, cinfo);
 
 	/* free all memory allocated */
-	wmem_leave_packet_scope();
 	wtap_block_unref(rec->block);
 	rec->block = NULL;
 }
@@ -675,13 +701,11 @@ void
 epan_dissect_run_with_taps(epan_dissect_t *edt, int file_type_subtype,
 	wtap_rec *rec, frame_data *fd, column_info *cinfo)
 {
-	wmem_enter_packet_scope();
 	tap_queue_init(edt);
 	dissect_record(edt, file_type_subtype, rec, fd, cinfo);
 	tap_push_tapped_queue(edt);
 
 	/* free all memory allocated */
-	wmem_leave_packet_scope();
 	wtap_block_unref(rec->block);
 	rec->block = NULL;
 }
@@ -693,11 +717,9 @@ epan_dissect_file_run(epan_dissect_t *edt, wtap_rec *rec,
 #ifdef HAVE_LUA
 	wslua_prime_dfilter(edt); /* done before entering wmem scope */
 #endif
-	wmem_enter_packet_scope();
 	dissect_file(edt, rec, fd, cinfo);
 
 	/* free all memory allocated */
-	wmem_leave_packet_scope();
 	wtap_block_unref(rec->block);
 	rec->block = NULL;
 }
@@ -706,13 +728,11 @@ void
 epan_dissect_file_run_with_taps(epan_dissect_t *edt, wtap_rec *rec,
 	frame_data *fd, column_info *cinfo)
 {
-	wmem_enter_packet_scope();
 	tap_queue_init(edt);
 	dissect_file(edt, rec, fd, cinfo);
 	tap_push_tapped_queue(edt);
 
 	/* free all memory allocated */
-	wmem_leave_packet_scope();
 	wtap_block_unref(rec->block);
 	rec->block = NULL;
 }
@@ -826,6 +846,7 @@ epan_dissect_packet_contains_field(epan_dissect_t* edt,
 void
 epan_gather_compile_info(feature_list l)
 {
+	gather_xxhash_compile_info(l);
 	gather_zlib_compile_info(l);
 	gather_zlib_ng_compile_info(l);
 	gather_pcre2_compile_info(l);
@@ -918,11 +939,7 @@ epan_gather_compile_info(feature_list l)
 #endif /* HAVE_SNAPPY */
 
 	/* libxml2 */
-#ifdef HAVE_LIBXML2
 	with_feature(l, "libxml2 %s", LIBXML_DOTTED_VERSION);
-#else
-	without_feature(l, "libxml2");
-#endif /* HAVE_LIBXML2 */
 
 	/* libsmi */
 #ifdef HAVE_LIBSMI
@@ -938,6 +955,7 @@ epan_gather_compile_info(feature_list l)
 void
 epan_gather_runtime_info(feature_list l)
 {
+	gather_xxhash_runtime_info(l);
 	gather_zlib_runtime_info(l);
 	gather_pcre2_runtime_info(l);
 

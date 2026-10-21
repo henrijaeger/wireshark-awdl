@@ -24,6 +24,7 @@
 #include <wsutil/crc16-plain.h> /* For FP Payload CRC. */
 #include <wsutil/crc11.h> /* For FP EDCH header CRC. */
 #include <wsutil/pint.h>
+#include <wsutil/ws_roundup.h>
 
 #include "packet-umts_fp.h"
 #include "packet-nbap.h"
@@ -229,6 +230,7 @@ static expert_field ei_fp_spare_extension;
 static expert_field ei_fp_no_per_frame_info;
 static expert_field ei_fp_no_per_conv_channel_info;
 static expert_field ei_fp_invalid_frame_count;
+static expert_field ei_fp_invalid_ddi_count;
 
 static dissector_handle_t rlc_bcch_handle;
 static dissector_handle_t mac_fdd_dch_handle;
@@ -263,10 +265,10 @@ struct edch_t1_subframe_info
 /* E-DCH (T2) channel header information */
 struct edch_t2_subframe_info
 {
-    uint8_t subframe_number;
-    uint8_t number_of_mac_is_pdus;
-    uint8_t number_of_mac_is_sdus[16];
-    uint8_t mac_is_lchid[16][16];
+    uint8_t  subframe_number;
+    uint8_t  number_of_mac_is_pdus;
+    uint8_t  number_of_mac_is_sdus[16];
+    uint8_t  mac_is_lchid[16][16];
     uint16_t mac_is_length[16][16];
 };
 
@@ -633,7 +635,7 @@ static bool verify_control_frame_crc(tvbuff_t * tvb, packet_info * pinfo, proto_
     uint8_t crc = 0;
     uint8_t * data = NULL;
     /* Get data. */
-    data = (uint8_t *)tvb_memdup(wmem_packet_scope(), tvb, 0, tvb_reported_length(tvb));
+    data = (uint8_t *)tvb_memdup(pinfo->pool, tvb, 0, tvb_reported_length(tvb));
     /* Include only FT flag bit in CRC calculation. */
     data[0] = data[0] & 1;
     /* Calculate crc7 sum. */
@@ -653,7 +655,7 @@ static bool verify_header_crc(tvbuff_t * tvb, packet_info * pinfo, proto_item * 
     uint8_t crc = 0;
     uint8_t * data = NULL;
     /* Get data of header with first byte removed. */
-    data = (uint8_t *)tvb_memdup(wmem_packet_scope(), tvb, 1, header_length-1);
+    data = (uint8_t *)tvb_memdup(pinfo->pool, tvb, 1, header_length-1);
     /* Calculate crc7 sum. */
     crc = crc7update(0, data, header_length-1);
     crc = crc7finalize(crc); /* finalize crc */
@@ -673,7 +675,7 @@ static bool verify_header_crc_edch(tvbuff_t * tvb, packet_info * pinfo, proto_it
     /* First create new subset of header with first byte removed. */
     tvbuff_t * headtvb = tvb_new_subset_length(tvb, 1, header_length-1);
     /* Get data of header with first byte removed. */
-    data = (uint8_t *)tvb_memdup(wmem_packet_scope(), headtvb, 0, header_length-1);
+    data = (uint8_t *)tvb_memdup(pinfo->pool, headtvb, 0, header_length-1);
     /* Remove first 4 bits of the remaining data which are Header CRC cont. */
     data[0] = data[0] & 0x0f;
     crc = crc11_307_noreflect_noxor(data, header_length-1);
@@ -707,8 +709,8 @@ dissect_tb_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     proto_item_set_text(tree_ti, "TB data for %u chans", p_fp_info->num_chans);
     data_tree = proto_item_add_subtree(tree_ti, ett_fp_data);
 
-    if (p_fp_info->num_chans >= MAX_MAC_FRAMES) {
-        expert_add_info_format(pinfo, data_tree, &ei_fp_invalid_frame_count, "Invalid Number of channels (max is %u)", MAX_MAC_FRAMES);
+    if (p_fp_info->num_chans >= MAX_FP_CHANS) {
+        expert_add_info_format(pinfo, data_tree, &ei_fp_invalid_frame_count, "Invalid Number of channels (max is %u)", MAX_FP_CHANS);
         return offset;
     }
 
@@ -721,9 +723,7 @@ dissect_tb_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 /* Advance bit offset */
                 crci_bit_offset += p_fp_info->chan_tf_size[chan];
                 /* Pad out to next byte */
-                if (crci_bit_offset % 8) {
-                    crci_bit_offset += (8 - (crci_bit_offset % 8));
-                }
+                crci_bit_offset = WS_ROUNDUP_8(crci_bit_offset);
             }
         }
     }
@@ -796,9 +796,7 @@ dissect_tb_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             data_bits  += p_fp_info->chan_tf_size[chan];
 
             /* Pad out to next byte */
-            if (bit_offset % 8) {
-                bit_offset += (8 - (bit_offset % 8));
-            }
+            bit_offset = WS_ROUNDUP_8(bit_offset);
         }
     }
 
@@ -875,9 +873,7 @@ dissect_macd_pdu_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         bit_offset += length;
 
         /* Pad out to next byte */
-        if (bit_offset % 8) {
-            bit_offset += (8 - (bit_offset % 8));
-        }
+        bit_offset = WS_ROUNDUP_8(bit_offset);
     }
 
     /* Data tree should cover entire length */
@@ -1029,7 +1025,7 @@ dissect_spare_extension_and_crc(tvbuff_t *tvb, packet_info *pinfo,
         if (preferences_payload_checksum) {
             flags = PROTO_CHECKSUM_VERIFY;
             if ((unsigned)offset > header_length) {
-                uint8_t * data = (uint8_t *)tvb_memdup(wmem_packet_scope(), tvb, header_length, offset-header_length);
+                uint8_t * data = (uint8_t *)tvb_memdup(pinfo->pool, tvb, header_length, offset-header_length);
                 calc_crc = crc16_8005_noreflect_noxor(data, offset-header_length);
             }
         }
@@ -2650,7 +2646,7 @@ dissect_e_dch_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
         rlcinf = (rlc_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_rlc, 0);
         if (!rlcinf) {
-            rlcinf = wmem_new0(wmem_packet_scope(), rlc_info);
+            rlcinf = wmem_new0(pinfo->pool, rlc_info);
         }
 
         header_crc_pi = proto_tree_add_uint_format(tree, hf_fp_edch_header_crc, tvb,
@@ -2740,6 +2736,7 @@ dissect_e_dch_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             for (i=0; i < subframes[n].number_of_mac_es_pdus; i++) {
                 uint64_t ddi;
                 uint64_t n_pdus;    /*Size of the PDU*/
+                int no_ddi_entries = MIN(p_fp_info->no_ddi_entries, MAX_EDCH_DDIS);
 
                 proto_item *ddi_ti;
                 int ddi_size = -1;
@@ -2753,7 +2750,7 @@ dissect_e_dch_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 /********************************/
                 /* Look up data in higher layers*/
                 /* Look up the size from this DDI value */
-                for (p=0; p < p_fp_info->no_ddi_entries; p++) {
+                for (p=0; p < no_ddi_entries; p++) {
                     if (ddi == p_fp_info->edch_ddi[p]) {
                         ddi_size = p_fp_info->edch_macd_pdu_size[p];
 
@@ -2804,7 +2801,7 @@ dissect_e_dch_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
             macinf = (umts_mac_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_mac, 0);
             if (!macinf) {
-                macinf = wmem_new0(wmem_packet_scope(), umts_mac_info);
+                macinf = wmem_new0(pinfo->pool, umts_mac_info);
             }
             /* Add subframe subtree */
             subframe_ti = proto_tree_add_string_format(tree, hf_fp_edch_subframe, tvb, offset, 0,
@@ -2819,24 +2816,18 @@ dissect_e_dch_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 proto_item  *ti;
                 int         macd_idx;
                 proto_tree  *maces_tree = NULL;
+                int         no_ddi_entries = MIN(p_fp_info->no_ddi_entries, MAX_EDCH_DDIS);
 
-                /** TODO: Merge these two loops? **/
-                /* Look up mac-d pdu size for this ddi */
-                for (m=0; m < p_fp_info->no_ddi_entries; m++) {
+                /* Look up mac-d pdu size and logicalchannel id for this DDI */
+                for (m=0; m < no_ddi_entries; m++) {
                     if (subframes[n].ddi[i] == p_fp_info->edch_ddi[m]) {
                         size = p_fp_info->edch_macd_pdu_size[m];
-                        break;
-                    }
-                }
-                /* Look up logicalchannel id for this DDI value */
-                for (m=0; m < p_fp_info->no_ddi_entries; m++) {
-                    if (subframes[n].ddi[i] == p_fp_info->edch_ddi[m]) {
                         lchid = p_fp_info->edch_lchId[m];
                         break;
                     }
                 }
 
-                if (m == p_fp_info->no_ddi_entries) {
+                if (m == no_ddi_entries) {
                     /* Not found.  Oops */
                     expert_add_info(pinfo, NULL, &ei_fp_unable_to_locate_ddi_entry);
                     return;
@@ -2919,9 +2910,7 @@ dissect_e_dch_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                 mac_d_pdus_in_subframe += subframes[n].number_of_mac_d_pdus[i];
 
                 /* Pad out to next byte */
-                if (bit_offset % 8) {
-                    bit_offset += (8 - (bit_offset % 8));
-                }
+                bit_offset = WS_ROUNDUP_8(bit_offset);
             }
 
             if (tree) {
@@ -3055,12 +3044,17 @@ dissect_e_dch_t2_or_common_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto
                                                                  ett_fp_edch_macis_descriptors);
 
         /* Find a sequence of descriptors for each MAC-is PDU in this subframe */
-        for (pdu_no=0; pdu_no < subframes[n].number_of_mac_is_pdus; pdu_no++) {
+        for (pdu_no=0; pdu_no < subframes[n].number_of_mac_is_pdus && pdu_no < 16; pdu_no++) {
             proto_item *f_ti = NULL;
 
             subframes[n].number_of_mac_is_sdus[pdu_no] = 0;
 
             do {
+                if (subframes[n].number_of_mac_is_sdus[pdu_no] == 16) {
+                    expert_add_info_format(pinfo, f_ti, &ei_fp_mac_is_sdus_miscount, "Found too many (%u) MAC-is SDUs - max tracked is 16", macis_sdus_found);
+                    break;
+                }
+
                 /* Check we haven't gone past the limit */
                 if (macis_sdus_found++ > total_macis_sdus) {
                     expert_add_info_format(pinfo, f_ti, &ei_fp_mac_is_sdus_miscount, "Found too many (%u) MAC-is SDUs - header said there were %u", macis_sdus_found, (uint16_t)total_macis_sdus);
@@ -3101,7 +3095,6 @@ dissect_e_dch_t2_or_common_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto
                 f_ti = proto_tree_add_item(subframe_macis_descriptors_tree, hf_fp_edch_macis_flag, tvb, offset, 1, ENC_BIG_ENDIAN);
 
                 subframes[n].number_of_mac_is_sdus[pdu_no]++;
-
                 offset++;
             } while (F == 0);
         }
@@ -3130,7 +3123,7 @@ dissect_e_dch_t2_or_common_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto
             }
 
             /* Call MAC for this PDU if configured to */
-            if (preferences_call_mac_dissectors) {
+            if (preferences_call_mac_dissectors && data) {
                 p_add_proto_data(wmem_file_scope(), pinfo, proto_umts_mac, 0, mac_is_info);
                 call_dissector_with_data(mac_fdd_edch_type2_handle, tvb_new_subset_remaining(tvb, offset), pinfo, top_level_tree, data);
             }
@@ -3199,11 +3192,11 @@ dissect_hsdsch_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 
         rlcinf = (rlc_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_rlc, 0);
         if (!rlcinf) {
-            rlcinf = wmem_new0(wmem_packet_scope(), rlc_info);
+            rlcinf = wmem_new0(pinfo->pool, rlc_info);
         }
         macinf = (umts_mac_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_mac, 0);
         if (!macinf) {
-            macinf = wmem_new0(wmem_packet_scope(), umts_mac_info);
+            macinf = wmem_new0(pinfo->pool, umts_mac_info);
         }
 
         /**************************************/
@@ -3424,11 +3417,11 @@ dissect_hsdsch_type_2_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree
 
         rlcinf = (rlc_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_rlc, 0);
         if (!rlcinf) {
-            rlcinf = wmem_new0(wmem_packet_scope(), rlc_info);
+            rlcinf = wmem_new0(pinfo->pool, rlc_info);
         }
         macinf = (umts_mac_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_mac, 0);
         if (!macinf) {
-            macinf = wmem_new0(wmem_packet_scope(), umts_mac_info);
+            macinf = wmem_new0(pinfo->pool, umts_mac_info);
         }
 
         /********************************/
@@ -3684,11 +3677,11 @@ void dissect_hsdsch_common_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto
 
         rlcinf = (rlc_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_rlc, 0);
         if (!rlcinf) {
-            rlcinf = wmem_new0(wmem_packet_scope(), rlc_info);
+            rlcinf = wmem_new0(pinfo->pool, rlc_info);
         }
         macinf = (umts_mac_info *)p_get_proto_data(wmem_file_scope(), pinfo, proto_umts_mac, 0);
         if (!macinf) {
-            macinf = wmem_new0(wmem_packet_scope(), umts_mac_info);
+            macinf = wmem_new0(pinfo->pool, umts_mac_info);
         }
         /********************************/
         /* HS-DCH type 2 data here      */
@@ -3891,7 +3884,7 @@ void dissect_hsdsch_common_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto
 /* Validates the header CRC in a Control FP frame */
 /* Should only be used in heuristic dissectors! */
 static bool
-check_control_frame_crc_for_heur(tvbuff_t * tvb)
+check_control_frame_crc_for_heur(wmem_allocator_t* allocator, tvbuff_t * tvb)
 {
     uint8_t crc = 0;
     uint8_t calc_crc = 0;
@@ -3903,7 +3896,7 @@ check_control_frame_crc_for_heur(tvbuff_t * tvb)
 
     crc = tvb_get_uint8(tvb, 0) >> 1;
     /* Get data. */
-    data = (uint8_t *)tvb_memdup(wmem_packet_scope(), tvb, 0, tvb_reported_length(tvb));
+    data = (uint8_t *)tvb_memdup(allocator, tvb, 0, tvb_reported_length(tvb));
     /* Include only FT flag bit in CRC calculation. */
     data[0] = data[0] & 1;
     calc_crc = crc7update(0, data, tvb_reported_length(tvb));
@@ -3963,7 +3956,7 @@ check_payload_crc_for_heur(tvbuff_t *tvb, uint16_t header_length)
 /* Validates the header CRC in a E-DCH Data FP frame */
 /* Should only be used in heuristic dissectors! */
 static bool
-check_edch_header_crc_for_heur(tvbuff_t *tvb, uint16_t header_length)
+check_edch_header_crc_for_heur(wmem_allocator_t* allocator, tvbuff_t *tvb, uint16_t header_length)
 {
     uint16_t crc = 0;
     uint16_t calc_crc = 0;
@@ -3974,7 +3967,7 @@ check_edch_header_crc_for_heur(tvbuff_t *tvb, uint16_t header_length)
 
     crc = (tvb_get_bits8(tvb, 0, 7) << 4) + tvb_get_bits8(tvb, 8, 4);
     /* Get data of header excluding the first byte */
-    data = (uint8_t *)tvb_memdup(wmem_packet_scope(), tvb, 1, header_length-1);
+    data = (uint8_t *)tvb_memdup(allocator, tvb, 1, header_length-1);
     /*Zero the part in the second byte which contains part of the CRC*/
     data[0] = data[0] & 0x0f;
 
@@ -3995,12 +3988,12 @@ generate_ue_id_for_heur(packet_info *pinfo)
         /* srcXor: [ ------- Source Address ------- ] (4 bytes)*/
         /*                         XOR                         */
         /*         [  Source Port  ][  Source Port  ] (4 bytes)*/
-        int srcXor = pntoh32(pinfo->src.data) ^ ((pinfo->srcport << 16) | (pinfo->srcport));
+        int srcXor = pntohu32(pinfo->src.data) ^ ((pinfo->srcport << 16) | (pinfo->srcport));
 
         /* dstXor: [ ---- Destination  Address ---- ] (4 bytes)*/
         /*                         XOR                         */
         /*         [ - Dest Port - ][ - Dest Port - ] (4 bytes)*/
-        int dstXor = pntoh32(pinfo->dst.data) ^ ((pinfo->destport << 16) | (pinfo->destport));
+        int dstXor = pntohu32(pinfo->dst.data) ^ ((pinfo->destport << 16) | (pinfo->destport));
         return srcXor ^ dstXor;
     }
     else {
@@ -5186,7 +5179,7 @@ heur_dissect_fp_edch_type_1(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         return false;
     }
 
-    if (!check_edch_header_crc_for_heur(tvb, total_header_length)) {
+    if (!check_edch_header_crc_for_heur(pinfo->pool, tvb, total_header_length)) {
         return false;
     }
     if (!check_payload_crc_for_heur(tvb, total_header_length)) {
@@ -5303,7 +5296,7 @@ heur_dissect_fp_unknown_format(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
     }
 
     /* Checking Header CRC*/
-    if (!check_control_frame_crc_for_heur(tvb)) {
+    if (!check_control_frame_crc_for_heur(pinfo->pool, tvb)) {
         /* The CRC is incorrect */
         return false;
     }
@@ -5517,7 +5510,7 @@ fp_set_per_packet_inf_from_conv(conversation_t *p_conv,
             }
             macinf = wmem_new0(wmem_file_scope(), umts_mac_info);
             rlcinf = wmem_new0(wmem_file_scope(), rlc_info);
-            fpi->no_ddi_entries = fp_edch_channel_info->no_ddi_entries;
+            fpi->no_ddi_entries = MIN(fp_edch_channel_info->no_ddi_entries, MAX_EDCH_DDIS);
             for (i=0; i<fpi->no_ddi_entries; i++) {
                 fpi->edch_ddi[i] = fp_edch_channel_info->edch_ddi[i];    /*Set the DDI value*/
                 fpi->edch_macd_pdu_size[i] = fp_edch_channel_info->edch_macd_pdu_size[i];    /*Set the PDU size*/
@@ -5916,6 +5909,7 @@ dissect_fp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         int n;
         proto_item *ddi_config_ti;
         proto_tree *ddi_config_tree;
+        int no_ddi_entries = MIN(p_fp_info->no_ddi_entries, MAX_EDCH_DDIS);
 
         ddi_config_ti = proto_tree_add_string_format(fp_tree, hf_fp_ddi_config, tvb, offset, 0,
                                                      "", "DDI Config (");
@@ -5923,7 +5917,7 @@ dissect_fp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         ddi_config_tree = proto_item_add_subtree(ddi_config_ti, ett_fp_ddi_config);
 
         /* Add each entry */
-        for (n=0; n < p_fp_info->no_ddi_entries; n++) {
+        for (n=0; n < no_ddi_entries; n++) {
             proto_item_append_text(ddi_config_ti, "%s%u->%ubits",
                                    (n == 0) ? "" : "  ",
                                    p_fp_info->edch_ddi[n], p_fp_info->edch_macd_pdu_size[n]);
@@ -5936,6 +5930,9 @@ dissect_fp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
 
         }
         proto_item_append_text(ddi_config_ti, ")");
+        if (p_fp_info->no_ddi_entries > MAX_EDCH_DDIS) {
+            expert_add_info_format(pinfo, ddi_config_ti, &ei_fp_invalid_ddi_count, "Invalid Number of E-DCH DDIs (max is %u)", MAX_EDCH_DDIS);
+        }
     }
 
     /*************************************/
@@ -7054,6 +7051,7 @@ void proto_register_fp(void)
         { &ei_fp_no_per_frame_info, { "fp.no_per_frame_info", PI_UNDECODED, PI_ERROR, "Can't dissect FP frame because no per-frame info was attached!", EXPFILL }},
         { &ei_fp_no_per_conv_channel_info, { "fp.no_per_conv_channel_info", PI_UNDECODED, PI_ERROR, "Can't dissect this FP stream because no per-conversation channel info was attached!", EXPFILL }},
         { &ei_fp_invalid_frame_count, { "fp.invalid_frame_count", PI_MALFORMED, PI_ERROR, "Invalid frame count", EXPFILL }},
+        { &ei_fp_invalid_ddi_count, { "fp.invalid_ddi_count", PI_MALFORMED, PI_ERROR, "Invalid E-DCH DDI count", EXPFILL }},
     };
 
     module_t *fp_module;

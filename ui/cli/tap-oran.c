@@ -28,6 +28,7 @@ enum {
     NUM_FRAMES_COLUMN,
     LARGEST_PDU_COLUMN,
     SECTIONS_COLUMN,
+    SECTION_IDS_COLUMN,
     EXTENSIONS_COLUMN,
     HIGHEST_SLOT_COLUMN,
     MISSING_SNS_COLUMN,
@@ -38,17 +39,18 @@ enum {
     NUM_FLOW_COLUMNS
 };
 
-static const char *flow_titles[] = { " Plane    ",
-                                     "eAxC ID",
-                                     "Direction    ",
-                                     "Frames   ",
-                                     "Largest PDU   ",
-                                     "Section Types        ",
+static const char *flow_titles[] = { " Plane",
+                                     "eAxC ID ",
+                                     "Direction  ",
+                                     "Frames ",
+                                     "Largest PDU  ",
+                                     "Section Types                ",
+                                     "Section IDs        ",
                                      "Extensions",
                                      "Highest Slot",
                                      "Missing SNs   ",
-                                     "PRBs ",
-                                     "Zero-PRBs       ",
+                                     "PRBs",
+                                     "Zero-PRBs      ",
                                      "REs ",
                                      "Zero-REs"
                                    };
@@ -66,6 +68,8 @@ typedef struct oran_row_data {
     uint32_t      num_res;
     uint32_t      num_prbs_zero;
     uint32_t      num_res_zero;
+
+    bool          section_ids_present[4096];  /* sectionId is 12 bits */
 } oran_row_data;
 
 /* Top-level struct for ORAN FH statistics */
@@ -80,7 +84,18 @@ static void
 oran_stat_reset(void *phs)
 {
     oran_stat_t *oran_stat = (oran_stat_t *)phs;
+    g_list_free_full(oran_stat->flow_list, g_free);
     oran_stat->flow_list = NULL;
+}
+
+
+/* Free memory used by tap */
+static void
+oran_stat_finish(void *phs)
+{
+    oran_stat_t *oran_stat = (oran_stat_t *)phs;
+    g_list_free_full(oran_stat->flow_list, g_free);
+    g_free(oran_stat);
 }
 
 
@@ -139,6 +154,11 @@ oran_stat_packet(void *phs, packet_info *pinfo _U_, epan_dissect_t *edt _U_,
             row->base_info.section_types[s] = si->section_types[s];
         }
     }
+
+    for (unsigned int t=0; t < si->num_section_ids; t++) {
+        row->section_ids_present[si->section_ids[t]] = true;
+    }
+
     for (unsigned int e=0; e <= HIGHEST_EXTTYPE; e++) {
         if (si->extensions[e]) {
             row->base_info.extensions[e] = si->extensions[e];
@@ -203,69 +223,89 @@ oran_stat_draw(void *phs)
 
     /* Deref the struct */
     oran_stat_t *hs = (oran_stat_t*)phs;
-    GList *list = hs->flow_list, *tmp = NULL;
+    GList *tmp = NULL;
 
     /* TODO: sort rows by eAxC (ascending), Plane (control first), direction (DL first) */
-    list = g_list_sort(list, (GCompareFunc)compare_flows);
+    hs->flow_list = g_list_sort(hs->flow_list, (GCompareFunc)compare_flows);
 
     /* Show column titles */
     for (i=0; i < NUM_FLOW_COLUMNS; i++) {
         printf("%s  ", flow_titles[i]);
     }
     /* Divider before rows */
-    printf("\n=======================================================================================================================================================================\n");
+    printf("\n============================================================================================================================================================================================\n");
 
     /* Write a row for each flow */
-    for (tmp = list; tmp; tmp=tmp->next) {
+    for (tmp = hs->flow_list; tmp; tmp=tmp->next) {
 
         oran_row_data *row = (oran_row_data*)tmp->data;
-        char sections[64];
+        char sections[32];
         int sections_offset = 0;
         sections[0] = '\0';
 
-        char extensions[128];
+        char extensions[17];
         int extensions_offset = 0;
         extensions[0] = '-';
         extensions[1] = '\0';
 
+        char section_ids[28];
+        int section_ids_offset = 0;
+        section_ids[0] = '-';
+        section_ids[1] = '\0';
 
         /* Some fields only apply to c-plane */
         if (!row->base_info.userplane) {
             /* Note which sections are used */
-            for (unsigned int s=0; s < SEC_C_MAX_INDEX; s++) {
+            for (unsigned int s=0; s < SEC_C_MAX_INDEX && (extensions_offset < 17-3); s++) {
                 if (row->base_info.section_types[s]) {
-                    sections_offset += snprintf(sections+sections_offset, 64-sections_offset, "%u ", s);
+                    sections_offset += snprintf(sections+sections_offset, 17-sections_offset-1, "%u ", s);
                 }
             }
 
             /* Note which extensions are used */
-            for (unsigned int e=1; e <= HIGHEST_EXTTYPE; e++) {
+            for (unsigned int e=1; e <= HIGHEST_EXTTYPE && (extensions_offset < 17-3); e++) {
                 if (row->base_info.extensions[e]) {
-                    extensions_offset += snprintf(extensions+extensions_offset, 128-extensions_offset, "%u ", e);
+                    extensions_offset += snprintf(extensions+extensions_offset, 17-extensions_offset-1, "%u ", e);
                 }
             }
         }
 
+        /* Section IDs */
+        for (unsigned id=0; (id < 4096) && (section_ids_offset < 28-1); id++) {
+            if (row->section_ids_present[id]) {
+                section_ids_offset += snprintf(section_ids+section_ids_offset, 28-section_ids_offset-1, "%u ", id);
+            }
+        }
+
         /* Print this row */
-        printf("%s %11u %16s %11u %15u %18s %18s %13u %12u %8u %11u %11u %10u\n",
+        printf("%6s %8u %11s %9u %13u %17s %28s %18s %13u %12u",
                (row->base_info.userplane) ? "U" : "C",
                row->base_info.eaxc,
-               (row->base_info.uplink) ? "Uplink" : "Downlink",
+               (row->base_info.uplink) ? "UL" : "DL",
                row->num_frames,
                row->largest_pdu,
                sections,
+               section_ids,
                extensions,
                row->highest_slot,
-               row->missing_sns,
-               row->num_prbs,
-               row->num_prbs_zero,
-               row->num_res,
-               row->num_res_zero);
+               row->missing_sns);
+
+        if (row->base_info.userplane) {
+            /* U-Plane only */
+            printf(" %8u %10u %10u %10u\n",
+                   row->num_prbs,
+                   row->num_prbs_zero,
+                   row->num_res,
+                   row->num_res_zero);
+        }
+        else {
+            printf("\n");
+        }
     }
 }
 
 /* Create a new ORAN stats struct */
-static void oran_stat_init(const char *opt_arg, void *userdata _U_)
+static bool oran_stat_init(const char *opt_arg, void *userdata _U_)
 {
     oran_stat_t    *hs;
     const char    *filter = NULL;
@@ -285,16 +325,18 @@ static void oran_stat_init(const char *opt_arg, void *userdata _U_)
     hs = g_new0(oran_stat_t, 1);
 
     error_string = register_tap_listener("oran-fh-cus", hs,
-                                         filter, 0,
+                                         filter, TL_REQUIRES_NOTHING,
                                          oran_stat_reset,
                                          oran_stat_packet,
                                          oran_stat_draw,
-                                         NULL);
+                                         oran_stat_finish);
     if (error_string) {
         g_string_free(error_string, TRUE);
         g_free(hs);
-        exit(1);
+        return false;
     }
+
+    return true;
 }
 
 static stat_tap_ui oran_stat_ui = {

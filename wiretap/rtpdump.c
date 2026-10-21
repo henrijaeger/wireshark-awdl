@@ -49,7 +49,7 @@
 #include "config.h"
 #include "rtpdump.h"
 
-#include <wtap-int.h>
+#include <wtap_module.h>
 #include <file_wrappers.h>
 #include <wsutil/exported_pdu_tlvs.h>
 #include <wsutil/inet_addr.h>
@@ -210,11 +210,13 @@ rtpdump_open(wtap *wth, int *err, char **err_info)
         : WTAP_OPEN_ERROR;               \
 } G_STMT_END
 
-    if (!wtap_read_bytes(wth->fh, &start_time.secs, 4, err, err_info)) FAIL;
-    start_time.secs = g_ntohl(start_time.secs);
+    uint32_t u32;
 
-    if (!wtap_read_bytes(wth->fh, &start_time.nsecs, 4, err, err_info)) FAIL;
-    start_time.nsecs = g_ntohl(start_time.nsecs) * 1000;
+    if (!wtap_read_bytes(wth->fh, &u32, 4, err, err_info)) FAIL;
+    start_time.secs = (time_t)g_ntohl(u32);
+
+    if (!wtap_read_bytes(wth->fh, &u32, 4, err, err_info)) FAIL;
+    start_time.nsecs = (int)g_ntohl(u32) * 1000;
 
     if (!wtap_read_bytes(wth->fh, &bin_addr, 4, err, err_info)) FAIL;
     if (!wtap_read_bytes(wth->fh, &bin_port, 2, err, err_info)) FAIL;
@@ -290,7 +292,11 @@ rtpdump_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
     offset = g_ntohl(offset);
 
     /* Set length to remaining length of packet data */
-    length -= hdr_len;
+    if (ckd_sub(&length, length, hdr_len)) {
+        *err = WTAP_ERR_BAD_FILE;
+        *err_info = ws_strdup("rtpdump: total length should include 8-byte header");
+        return false;
+    }
 
     ws_buffer_append_buffer(&rec->data, &priv->epdu_headers);
     if (plen == 0) {
@@ -304,14 +310,17 @@ rtpdump_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
     }
     epdu_len = wtap_buffer_append_epdu_end(&rec->data);
 
+    wtap_setup_packet_rec(rec, wth->file_encap);
+
     /* Offset is milliseconds since the start of recording */
     ts.secs = offset / 1000;
     ts.nsecs = (offset % 1000) * 1000000;
     nstime_sum(&rec->ts, &priv->start_time, &ts);
     rec->presence_flags |= WTAP_HAS_TS | WTAP_HAS_CAP_LEN;
-    rec->rec_header.packet_header.caplen = epdu_len + plen;
-    rec->rec_header.packet_header.len = epdu_len + length;
-    rec->rec_type = REC_TYPE_PACKET;
+    /* The result lengths cannot overflow as they are 32-bit, the
+     * values in the rtpdump header are 16-bit, and epdu_len is small. */
+    rec->rec_header.packet_header.caplen = epdu_len + length;
+    rec->rec_header.packet_header.len = epdu_len + plen;
 
     return wtap_read_bytes_buffer(fh, &rec->data, length, err, err_info);
 }

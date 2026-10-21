@@ -14,9 +14,11 @@
 
 #include <epan/packet.h>
 #include <epan/expert.h>
+#include <epan/proto_data.h>
 #include <epan/uat.h>
 
 #include <wsutil/wsgcrypt.h>
+#include <wsutil/ws_padding_to.h>
 
 #include "packet-eapol.h"
 #include "packet-mka.h"
@@ -46,6 +48,9 @@
 #define BASIC_PARAMSET_BODY_LENGTH   28
 #define DISTRIBUTED_SAK_AES128_BODY_LEN 28
 #define DISTRIBUTED_SAK_AES256_BODY_LEN 52
+
+/* key for p_[add|get]_proto_data */
+#define CKN_KEY 0
 
 void proto_register_mka(void);
 void proto_reg_handoff_mka(void);
@@ -512,18 +517,13 @@ dissect_basic_paramset(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb, 
 
   mka_add_ckn_info(basic_param_set_tree, tvb, offset, ckn_len);
 
-  /* initialize the private_info hash if not already initialized */
-  if (NULL == pinfo->private_table) {
-      pinfo->private_table = g_hash_table_new(g_str_hash, g_str_equal);
-  }
-
   /* look up the CAK/CKN in the CKN table, and add a private hash table entry if it does not yet exist there */
   const uint8_t *ckn = tvb_memdup(NULL, tvb, offset, ckn_len);
   if (NULL != ckn) {
     mka_ckn_info_t *rec = ckn_info_lookup((uint8_t *)ckn, ckn_len);
     if (NULL != rec) {
       /* add the record to the private hash table for this packet to tell ourselves about the CKN and its keys later on */
-      g_hash_table_insert(pinfo->private_table, "ckn", rec);
+      p_add_proto_data(pinfo->pool, pinfo, proto_mka, CKN_KEY, rec);
     }
 
     g_free((void *)ckn);
@@ -531,9 +531,8 @@ dissect_basic_paramset(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb, 
 
   offset += ckn_len;
 
-  if (basic_param_set_len % 4) {
-    int padding_len = (4 - (basic_param_set_len % 4));
-
+  unsigned padding_len = WS_PADDING_TO_4(basic_param_set_len);
+  if (padding_len != 0) {
     proto_tree_add_item(basic_param_set_tree, hf_mka_padding, tvb, offset, padding_len, ENC_NA);
 
     offset += padding_len;
@@ -671,6 +670,7 @@ dissect_distributed_sak(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb,
   uint16_t distributed_sak_len;
   proto_tree *distributed_sak_tree;
   proto_item *ti;
+  unsigned padding_len;
 
   distributed_sak_len = (tvb_get_ntohs(tvb, offset + 2)) & 0x0fff;
   ti = proto_tree_add_item(mka_tree, hf_mka_distributed_sak_set, tvb, offset, distributed_sak_len + 4, ENC_NA);
@@ -703,7 +703,7 @@ dissect_distributed_sak(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb,
     if (distributed_sak_len == DISTRIBUTED_SAK_AES256_BODY_LEN) {
       wrappedlen = WRAPPED_KEY_LEN(AES256_KEY_LEN);
 
-      proto_tree_add_item(distributed_sak_tree, hf_mka_macsec_cipher_suite, tvb, offset, CIPHER_SUITE_LEN, ENC_NA);
+      proto_tree_add_item(distributed_sak_tree, hf_mka_macsec_cipher_suite, tvb, offset, CIPHER_SUITE_LEN, ENC_BIG_ENDIAN);
       offset += CIPHER_SUITE_LEN;
     }
 
@@ -714,64 +714,62 @@ dissect_distributed_sak(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb,
 
     /* Attempt to unwrap the key using the KEK for the CKN. */
     /* Fetch the KEK for the CKN in the basic parameter set. */
-    if (NULL != pinfo->private_table) {
-      mka_ckn_info_t *rec = g_hash_table_lookup(pinfo->private_table, "ckn");
-      if (NULL == rec) {
-        ws_info("no record for CKN");
-        goto out;
-      }
+    mka_ckn_info_t *rec = p_get_proto_data(pinfo->pool, pinfo, proto_mka, CKN_KEY);
+    if (NULL == rec) {
+      ws_info("no record for CKN");
+      goto out;
+    }
 
-      /* Look up the CKN and if found in the table, use the KEK associated with it. */
-      ws_debug("CKN entry name: %s", rec->name);
+    /* Look up the CKN and if found in the table, use the KEK associated with it. */
+    ws_debug("CKN entry name: %s", rec->name);
 
-      /* If no KEK available, skip the decode. */
-      mka_ckn_info_key_t *key = &(rec->key);
-      if ((NULL == key) || (0 == key->kek_len)) {
-        goto out;
-      }
+    /* If no KEK available, skip the decode. */
+    mka_ckn_info_key_t *key = &(rec->key);
+    if ((NULL == key) || (0 == key->kek_len)) {
+      goto out;
+    }
 
-      /* Open the cipher context. */
-      gcry_cipher_hd_t hd;
-      if (gcry_cipher_open(&hd, GCRY_CIPHER_AES, GCRY_CIPHER_MODE_AESWRAP, 0)) {
-        ws_warning("failed to open cipher context");
-        goto out;
-      }
+    /* Open the cipher context. */
+    gcry_cipher_hd_t hd;
+    if (gcry_cipher_open(&hd, GCRY_CIPHER_AES, GCRY_CIPHER_MODE_AESWRAP, 0)) {
+      ws_warning("failed to open cipher context");
+      goto out;
+    }
 
-      if (gcry_cipher_setkey(hd, key->kek, key->kek_len)) {
-          ws_warning("failed to set KEK");
-          gcry_cipher_close(hd);
-          goto out;
-      }
-
-      /* Unwrap the key with the KEK. */
-      uint8_t *sak = key->saks[distributed_an];
-      if (gcry_cipher_decrypt(hd, sak, key->kek_len, wrappedkey, (key->kek_len + 8)) ) {
-        ws_info("failed to unwrap SAK");
-        memset(sak, 0, MKA_MAX_SAK_LEN);
+    if (gcry_cipher_setkey(hd, key->kek, key->kek_len)) {
+        ws_warning("failed to set KEK");
         gcry_cipher_close(hd);
         goto out;
-      }
-
-      /* Close the cipher context. */
-      gcry_cipher_close(hd);
-
-      if (ws_log_msg_is_active(WS_LOG_DOMAIN, LOG_LEVEL_DEBUG)) {
-        if (AES256_KEY_LEN == key->kek_len) {
-          ws_debug("unwrapped sak: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-                          sak[0], sak[1], sak[2], sak[3], sak[4], sak[5], sak[6], sak[7],
-                          sak[8], sak[9], sak[10], sak[11], sak[12], sak[13], sak[14], sak[15],
-                          sak[16], sak[17], sak[18], sak[19], sak[20], sak[21], sak[22], sak[23],
-                          sak[24], sak[25], sak[26], sak[27], sak[28], sak[29], sak[30], sak[31]);
-        } else {
-            ws_debug("unwrapped sak: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-                    sak[0], sak[1], sak[2], sak[3], sak[4], sak[5], sak[6], sak[7],
-                    sak[8], sak[9], sak[10], sak[11], sak[12], sak[13], sak[14], sak[15]);
-        }
-      }
-
-      /* Add the unwrapped SAK to the output. */
-      proto_tree_add_bytes_with_length(distributed_sak_tree, hf_mka_aes_key_wrap_unwrapped_sak, tvb, offset, 0, sak, key->kek_len);  //works, no highlights
     }
+
+    /* Unwrap the key with the KEK. */
+    uint8_t *sak = key->saks[distributed_an];
+    if (gcry_cipher_decrypt(hd, sak, wrappedlen - WRAPPED_KEY_IV_LEN, wrappedkey, wrappedlen) ) {
+      ws_info("failed to unwrap SAK");
+      memset(sak, 0, MKA_MAX_SAK_LEN);
+      gcry_cipher_close(hd);
+      goto out;
+    }
+
+    /* Close the cipher context. */
+    gcry_cipher_close(hd);
+
+    if (ws_log_msg_is_active(WS_LOG_DOMAIN, LOG_LEVEL_DEBUG)) {
+      if (WRAPPED_KEY_LEN(AES256_KEY_LEN) == wrappedlen) {
+        ws_debug("unwrapped sak: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+                        sak[0], sak[1], sak[2], sak[3], sak[4], sak[5], sak[6], sak[7],
+                        sak[8], sak[9], sak[10], sak[11], sak[12], sak[13], sak[14], sak[15],
+                        sak[16], sak[17], sak[18], sak[19], sak[20], sak[21], sak[22], sak[23],
+                        sak[24], sak[25], sak[26], sak[27], sak[28], sak[29], sak[30], sak[31]);
+      } else {
+          ws_debug("unwrapped sak: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+                  sak[0], sak[1], sak[2], sak[3], sak[4], sak[5], sak[6], sak[7],
+                  sak[8], sak[9], sak[10], sak[11], sak[12], sak[13], sak[14], sak[15]);
+      }
+    }
+
+    /* Add the unwrapped SAK to the output. */
+    proto_tree_add_bytes_with_length(distributed_sak_tree, hf_mka_aes_key_wrap_unwrapped_sak, tvb, offset, 0, sak, wrappedlen - WRAPPED_KEY_IV_LEN);  //works, no highlights
   }
   else
   {
@@ -780,9 +778,8 @@ dissect_distributed_sak(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb,
   }
 
 out:
-  if (distributed_sak_len % 4) {
-    int padding_len = (4 - (distributed_sak_len % 4));
-
+  padding_len = WS_PADDING_TO_4(distributed_sak_len);
+  if (padding_len != 0) {
     proto_tree_add_item(distributed_sak_tree, hf_mka_padding, tvb, offset, padding_len, ENC_NA);
 
     offset += padding_len;
@@ -817,9 +814,8 @@ dissect_distributed_cak(proto_tree *mka_tree, packet_info *pinfo _U_, tvbuff_t *
   mka_add_ckn_info(distributed_cak_tree, tvb, offset, cak_len);
   offset += cak_len;
 
-  if (distributed_cak_len%4) {
-    int padding_len = (4 - (distributed_cak_len % 4));
-
+  unsigned padding_len = WS_PADDING_TO_4(distributed_cak_len);
+  if (padding_len != 0) {
     proto_tree_add_item(distributed_cak_tree, hf_mka_padding, tvb, offset, padding_len, ENC_NA);
 
     offset += padding_len;
@@ -882,11 +878,11 @@ dissect_announcement(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb, in
     }
 
     ti = proto_tree_add_none_format(announcement_set_tree, hf_mka_tlv_entry, tvb, offset + offset2, tlv_length + 2, "TLV entry: %s",
-                                    val_to_str(tlv_type, macsec_tlvs, "unknown TLV type: %d"));
+                                    val_to_str(pinfo->pool, tlv_type, macsec_tlvs, "unknown TLV type: %d"));
     tlv_tree = proto_item_add_subtree(ti, ett_mka_tlv);
 
     proto_tree_add_item(tlv_tree, hf_mka_tlv_type, tvb, offset + offset2, 1, ENC_NA);
-    proto_tree_add_item(tlv_tree, hf_mka_tlv_info_string_length, tvb, offset + offset2, 2, ENC_NA);
+    proto_tree_add_item(tlv_tree, hf_mka_tlv_info_string_length, tvb, offset + offset2, 2, ENC_BIG_ENDIAN);
     offset2 += 2;
 
     if (tlv_length > 0) {
@@ -899,13 +895,13 @@ dissect_announcement(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb, in
           uint16_t cipher_suite_cap = tvb_get_uint16(tvb, offset + offset2 + tlv_item_offset, ENC_BIG_ENDIAN) & 0x0003;
 
           ti = proto_tree_add_none_format(tlv_tree, hf_mka_tlv_entry, tvb, offset + offset2, tlv_length + 2, "Cipher Suite: %s, %s",
-                                          val64_to_str(cipher_suite_id, macsec_cipher_suite_vals, "Unknown Cipher Suite (0x%" PRIx64 ")"),
-                                          val_to_str(cipher_suite_cap, macsec_capability_type_vals, "Unknown Capability (%d)"));
+                                          val64_to_str_wmem(pinfo->pool, cipher_suite_id, macsec_cipher_suite_vals, "Unknown Cipher Suite (0x%" PRIx64 ")"),
+                                          val_to_str(pinfo->pool, cipher_suite_cap, macsec_capability_type_vals, "Unknown Capability (%d)"));
           cipher_suite_entry = proto_item_add_subtree(ti, ett_mka_cipher_suite_entry);
 
-          proto_tree_add_item(cipher_suite_entry, hf_mka_tlv_cipher_suite_impl_cap, tvb, offset + offset2 + tlv_item_offset, 2, ENC_NA);
+          proto_tree_add_item(cipher_suite_entry, hf_mka_tlv_cipher_suite_impl_cap, tvb, offset + offset2 + tlv_item_offset, 2, ENC_BIG_ENDIAN);
           tlv_item_offset += 2;
-          proto_tree_add_item(cipher_suite_entry, hf_mka_macsec_cipher_suite, tvb, offset + offset2 + tlv_item_offset, 8, ENC_NA);
+          proto_tree_add_item(cipher_suite_entry, hf_mka_macsec_cipher_suite, tvb, offset + offset2 + tlv_item_offset, 8, ENC_BIG_ENDIAN);
           tlv_item_offset += 8;
         }
         break;
@@ -927,9 +923,8 @@ dissect_announcement(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb, in
 
   offset += announcement_len;
 
-  if (announcement_len%4) {
-    int padding_len = (4 - (announcement_len % 4));
-
+  unsigned padding_len = WS_PADDING_TO_4(announcement_len);
+  if (padding_len != 0) {
     proto_tree_add_item(announcement_set_tree, hf_mka_padding, tvb, offset, padding_len, ENC_NA);
     offset += padding_len;
   }
@@ -1007,9 +1002,8 @@ dissect_unknown_param_set(proto_tree *mka_tree, packet_info *pinfo _U_, tvbuff_t
 
   offset += param_set_len;
 
-  if (param_set_len%4) {
-    int padding_len = (4 - (param_set_len % 4));
-
+  unsigned padding_len = WS_PADDING_TO_4(param_set_len);
+  if (padding_len != 0) {
     proto_tree_add_item(param_set_tree, hf_mka_padding, tvb, offset, padding_len, ENC_NA);
     offset += padding_len;
   }
@@ -1091,12 +1085,6 @@ dissect_mka(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
   }
 
   proto_tree_add_item(mka_tree, hf_mka_icv, tvb, offset, icv_len, ENC_NA);
-
-  /* free any allocated entries in the private table containing CKN info */
-  if (NULL != pinfo->private_table) {
-      /* destroy the hash table that may have been created */
-      g_hash_table_destroy(pinfo->private_table);
-  }
 
   return tvb_captured_length(tvb);
 }

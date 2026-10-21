@@ -7,12 +7,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 
-if (HAVE_HFI_SECTION_INIT)
-	add_definitions(
-		-DHAVE_HFI_SECTION_INIT
-	)
-endif()
-
 add_definitions(
 		${LIBXML2_DEFINITIONS}
 		${KERBEROS_DEFINITIONS}
@@ -68,12 +62,9 @@ set(LIBWIRESHARK_PUBLIC_HEADERS
 	crc6-tvb.h
 	crc8-tvb.h
 	decode_as.h
-	diam_dict.h
 	disabled_protos.h
 	conversation_filter.h
 	dccpservicecodes.h
-	dtd.h
-	dtd_parse.h
 	dvb_chartbl.h
 	eap.h
 	eapol_keydes_types.h
@@ -132,7 +123,6 @@ set(LIBWIRESHARK_PUBLIC_HEADERS
 	register.h
 	req_resp_hdrs.h
 	rtd_table.h
-	rtp_pt.h
 	sctpppids.h
 	secrets.h
 	show_exception.h
@@ -158,12 +148,9 @@ set(LIBWIRESHARK_PUBLIC_HEADERS
 	uat.h
 	uat-int.h
 	unit_strings.h
-	value_string.h
 	wmem_scopes.h
 	wscbor.h
 	wscbor_enc.h
-	x264_prt_id.h
-	xdlc.h
 )
 
 set(LIBWIRESHARK_HEADER_FILES
@@ -267,12 +254,10 @@ set(LIBWIRESHARK_NONGENERATED_FILES
 	tvbuff_lznt1.c
 	tvbuff_rdp.c
 	uat.c
-	value_string.c
 	wscbor.c
 	wscbor_enc.c
 	unit_strings.c
 	wmem_scopes.c
-	xdlc.c
 	protobuf-helper.c
 	protobuf_lang_tree.c
 	${CMAKE_CURRENT_BINARY_DIR}/ps.c
@@ -281,16 +266,11 @@ set(LIBWIRESHARK_NONGENERATED_FILES
 set(LIBWIRESHARK_FILES ${LIBWIRESHARK_NONGENERATED_FILES})
 
 add_lex_files(LEX_FILES LIBWIRESHARK_FILES
-	diam_dict.l
-	dtd_parse.l
-	dtd_preparse.l
-	radius_dict.l
 	uat_load.l
 	protobuf_lang_scanner.l
 )
 
 add_lemon_files(LEMON_FILES LIBWIRESHARK_FILES
-	dtd_grammar.lemon
 	protobuf_lang_parser.lemon
 )
 
@@ -318,7 +298,7 @@ add_library(epan
 set_target_properties(epan PROPERTIES
 	COMPILE_DEFINITIONS "WS_BUILD_DLL"
 	LINK_FLAGS "${WS_LINK_FLAGS}"
-	VERSION "0.0.0" SOVERSION 0
+	VERSION "19.1.9" SOVERSION 19
 	INSTALL_RPATH "${LIBRARY_INSTALL_RPATH}"
 	# By default the name for a library with target name epan will be libepan,
 	# but Ethereal is now named Wireshark
@@ -352,6 +332,7 @@ target_link_libraries(epan
 		${SNAPPY_LIBRARIES}
 		${WIN_PSAPI_LIBRARY}
 		${WIN_WS2_32_LIBRARY}
+		${XXHASH_LIBRARIES}
 		${ZLIB_LIBRARIES}
 		${ZLIBNG_LIBRARIES}
 		${ZSTD_LIBRARIES}

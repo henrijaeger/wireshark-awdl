@@ -317,27 +317,22 @@ const QFont MainApplication::monospaceFont(bool zoomed) const
 void MainApplication::setMonospaceFont(const char *font_string) {
 
     if (font_string && strlen(font_string) > 0) {
-#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
-        // Qt 6's QFont::toString returns a value with 16 or 17 fields, e.g.
-        // Consolas,11,-1,5,400,0,0,0,0,0,0,0,0,0,0,1
-        // Corbel,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,Regular
-        // Qt 5's QFont::fromString expects a value with 10 or 11 fields, e.g.
-        // Consolas,10,-1,5,50,0,0,0,0,0
-        // Corbel,10,-1,5,50,0,0,0,0,0,Regular
-        // It looks like Qt6's QFont::fromString can read both forms:
-        // https://github.com/qt/qtbase/blob/6.0/src/gui/text/qfont.cpp#L2146
-        // but Qt5's cannot:
-        // https://github.com/qt/qtbase/blob/5.15/src/gui/text/qfont.cpp#L2151
-        const char *fs_ptr = font_string;
-        int field_count = 1;
-        while ((fs_ptr = strchr(fs_ptr, ',')) != NULL) {
-            fs_ptr++;
-            field_count++;
-        }
-        if (field_count <= 11) {
-#endif
-            mono_font_.fromString(font_string);
+        QString trimmedName = QString::fromUtf8(font_string).trimmed();
+#if QT_VERSION < QT_VERSION_CHECK(6, 11, 0)
+        // Qt 6.11 added two extra attributes to the comma separated list.
+        // https://doc.qt.io/qt-6/qfont.html#toString
+        // https://doc.qt.io/qt-6.10/qfont.html#toString
+        // On earlier versions, strip any attributes after 17.
+        const auto parts = trimmedName.split(QLatin1Char(','));
+        constexpr qsizetype maxAttributes = 17;
+        const qsizetype size = parts.size();
 
+        if (size > maxAttributes) {
+            // QList.first is Qt 6.0
+            trimmedName = parts.mid(0, maxAttributes).join(QLatin1Char(','));
+        }
+#endif
+        if (mono_font_.fromString(trimmedName)) {
             // Only accept the font name if it actually exists.
             if (mono_font_.family() == QFontInfo(mono_font_).family()) {
                 return;
@@ -348,8 +343,27 @@ void MainApplication::setMonospaceFont(const char *font_string) {
 #if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
         } else {
             ws_warning("Monospace font %s appears to be from Qt6 and we're running Qt5.", font_string);
+            // Qt 5 couldn't parse a Qt 6-format string (or it was malformed).
+            // Fall back: strip the extra trailing fields to the 10/11 Qt 5
+            // expects, preserving a trailing style name if present.
+            // (Qt 5.15 appears to expect the Qt 6 style, this is for even
+            // earlier.)
+            if (parts.size() >= 11) {
+                QStringList trimmed = parts.mid(0, 10);
+                if (!parts.last().isEmpty() && !parts.last().at(0).isDigit())
+                    trimmed << parts.last();
+                if (mono_font_.fromString(trimmed.join(QLatin1Char(',')))) {
+                    // Only accept the font name if it actually exists.
+                    if (mono_font_.family() == QFontInfo(mono_font_).family()) {
+                        return;
+                    } else {
+                        ws_warning("Monospace font family %s differs from its fontinfo: %s",
+                            qUtf8Printable(mono_font_.family()), qUtf8Printable(QFontInfo(mono_font_).family()));
+                    }
+                }
+            }
+#endif /* QT_VERSION < QT_VERSION_CHECK(6, 0, 0) */
         }
-#endif
     }
 
     // https://en.wikipedia.org/wiki/Category:Monospaced_typefaces
@@ -458,6 +472,10 @@ void MainApplication::setConfigurationProfile(const char *profile_name, bool wri
         write_profile_recent();
     }
 
+    // Freeze the packet list early to avoid updating column data before doing a
+    // full redissection. The packet list will be thawed when redissection is done.
+    emit freezePacketList(true);
+
     /* Set profile name and update the status bar */
     set_profile_name (profile_name);
     emit profileNameChanged(profile_name);
@@ -485,20 +503,12 @@ void MainApplication::setConfigurationProfile(const char *profile_name, bool wri
     timestamp_set_type(recent.gui_time_format);
     timestamp_set_precision(recent.gui_time_precision);
     timestamp_set_seconds_type (recent.gui_seconds_format);
-    tap_update_timer_.setInterval(prefs.tap_update_interval);
 
     prefs_to_capture_opts();
     prefs_apply_all();
 #ifdef HAVE_LIBPCAP
     update_local_interfaces();
 #endif
-
-    setMonospaceFont(prefs.gui_font_name);
-    ColorUtils::setScheme(prefs.gui_color_scheme);
-
-    // Freeze the packet list early to avoid updating column data before doing a
-    // full redissection. The packet list will be thawed when redissection is done.
-    emit freezePacketList(true);
 
     emit columnsChanged();
     emit colorsChanged();
@@ -656,6 +666,9 @@ MainApplication::MainApplication(int &argc,  char **argv) :
     if_notifier_(NULL),
     active_captures_(0),
     refresh_interfaces_pending_(false)
+#if defined(Q_OS_MAC) || defined(Q_OS_WIN)
+    , normal_icon_(windowIcon())
+#endif
 #ifdef HAVE_LIBPCAP
     , cached_if_list_(NULL)
 #endif
@@ -687,6 +700,10 @@ MainApplication::MainApplication(int &argc,  char **argv) :
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     setAttribute(Qt::AA_DisableWindowContextHelpButton);
 #endif
+
+    // We use a lot of style sheets that base their colors on the main
+    // application palette, so this works better.
+    setAttribute(Qt::AA_UseStyleSheetPropagationInWidgetStyles, true);
 
     // Throw various settings at the wall with the hope that one of them will
     // enable context menu shortcuts QTBUG-69452, QTBUG-109590
@@ -788,9 +805,10 @@ MainApplication::MainApplication(int &argc,  char **argv) :
     packet_data_timer_.start(1000);
 
     tap_update_timer_.setParent(this);
-    tap_update_timer_.setInterval(TAP_UPDATE_DEFAULT_INTERVAL);
+    // tap_update_timer interval is set when preferences are set before init
     connect(this, &MainApplication::appInitialized, &tap_update_timer_, [&]() { tap_update_timer_.start(); });
     connect(&tap_update_timer_, &QTimer::timeout, this, &MainApplication::updateTaps);
+
 
     // Application-wide style sheet
     QString app_style_sheet = qApp->styleSheet();
@@ -852,6 +870,8 @@ void MainApplication::emitAppSignal(AppSignal signal)
         emit addressResolutionChanged();
         break;
     case PreferencesChanged:
+        tap_update_timer_.setInterval(prefs.tap_update_interval);
+        setMonospaceFont(prefs.gui_font_name);
         emit preferencesChanged();
         break;
     case PacketDissectionChanged:
@@ -870,6 +890,7 @@ void MainApplication::emitAppSignal(AppSignal signal)
         emit fieldsChanged();
         break;
     case ColorsChanged:
+        ColorUtils::setScheme(prefs.gui_color_scheme);
         emit colorsChanged();
         break;
     case FreezePacketList:
@@ -1189,55 +1210,67 @@ void MainApplication::removeRecentItem(const QString &filename)
     emit updateRecentCaptureStatus(NULL, 0, false);
 }
 
-static void switchTranslator(QTranslator& myTranslator, const QString& filename,
-    const QString& searchPath)
+static void switchTranslator(QTranslator& myTranslator, const QLocale &locale, const QString& filename, const QStringList &searchPath)
 {
     mainApp->removeTranslator(&myTranslator);
-
-    if (myTranslator.load(filename, searchPath))
-        mainApp->installTranslator(&myTranslator);
+    for (const QString &path : searchPath) {
+        if (myTranslator.load(locale, filename, QStringLiteral("_"), path)) {
+            mainApp->installTranslator(&myTranslator);
+            return;
+        }
+    }
+    if (locale.language() != QLocale::C) {
+        /* Don't compare the locale itself, see:
+         * https://doc.qt.io/qt-6/qlocale.html#operator-eq-eq
+         *
+         * Note that the ordered list of languages that were tried is that of
+         * locale.uiLanguages(); the first language in that list is not
+         * necessarily locale.language(), especially on Windows (See #17221.)
+         */
+        qWarning() << "Couldn't load" << filename << "translations!" << "Searched:" << searchPath;
+    }
 }
 
 void MainApplication::loadLanguage(const QString newLanguage)
 {
     QLocale locale;
-    QString localeLanguage;
 
     if (newLanguage.isEmpty() || newLanguage == USE_SYSTEM_LANGUAGE) {
         locale = QLocale::system();
-        localeLanguage = locale.name();
     } else {
-        localeLanguage = newLanguage;
-        locale = QLocale(localeLanguage);
+        locale = QLocale(newLanguage);
     }
 
     QLocale::setDefault(locale);
-    switchTranslator(mainApp->translator,
-            QStringLiteral("wireshark_%1.qm").arg(localeLanguage), QStringLiteral(":/i18n/"));
-    if (QFile::exists(QStringLiteral("%1/%2/wireshark_%3.qm")
-            .arg(get_datafile_dir()).arg("languages").arg(localeLanguage)))
-        switchTranslator(mainApp->translator,
-                QStringLiteral("wireshark_%1.qm").arg(localeLanguage), QStringLiteral("%1/languages").arg(get_datafile_dir()));
-    if (QFile::exists(QStringLiteral("%1/wireshark_%3.qm")
-            .arg(gchar_free_to_qstring(get_persconffile_path("languages", false))).arg(localeLanguage)))
-        switchTranslator(mainApp->translator,
-                QStringLiteral("wireshark_%1.qm").arg(localeLanguage), gchar_free_to_qstring(get_persconffile_path("languages", false)));
-    if (QFile::exists(QStringLiteral("%1/qt_%2.qm")
-            .arg(get_datafile_dir()).arg(localeLanguage))) {
-        switchTranslator(mainApp->translatorQt,
-                QStringLiteral("qt_%1.qm").arg(localeLanguage), QString(get_datafile_dir()));
-    } else if (QFile::exists(QStringLiteral("%1/qt_%2.qm")
-            .arg(get_datafile_dir()).arg(localeLanguage.left(localeLanguage.lastIndexOf('_'))))) {
-        switchTranslator(mainApp->translatorQt,
-                QStringLiteral("qt_%1.qm").arg(localeLanguage.left(localeLanguage.lastIndexOf('_'))), QString(get_datafile_dir()));
-    } else {
+
+    // Search path list ordered by priority. Prefer personal configuration
+    // to global datadir to embedded resources to Qt global directory.
+    QStringList searchPath;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-        QString translationPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
+    searchPath.emplaceBack(gchar_free_to_qstring(get_persconffile_path("languages", false)));
+    searchPath.emplaceBack(QStringLiteral("%1/languages").arg(get_datafile_dir()));
+    searchPath.emplaceBack(QStringLiteral(":/i18n/"));
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    searchPath.append(QLibraryInfo::paths(QLibraryInfo::TranslationsPath));
 #else
-        QString translationPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+    searchPath.emplaceBack(QLibraryInfo::path(QLibraryInfo::TranslationsPath));
 #endif
-        switchTranslator(mainApp->translatorQt, QStringLiteral("qt_%1.qm").arg(localeLanguage), translationPath);
-    }
+#else
+    searchPath << gchar_free_to_qstring(get_persconffile_path("languages", false));
+    searchPath << QStringLiteral("%1/languages").arg(get_datafile_dir());
+    searchPath << QStringLiteral(":/i18n/");
+    searchPath << QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+#endif // QT_VERSION_CHECK(6, 0, 0)
+
+    // Translations are searched for in the reverse order in which they were
+    // installed, so install the Qt generic translator first and ours last.
+    switchTranslator(mainApp->translatorQt, locale, QStringLiteral("qt"), searchPath);
+
+    // XXX - Yes, the translation files are also wireshark_%1.qm for Stratoshark.
+    // There is a stratoshark_en.[ts|qm] file too (for plurals?) though I'm
+    // not sure if it's used properly.
+    switchTranslator(mainApp->translator, locale, QStringLiteral("wireshark"), searchPath);
 }
 
 void MainApplication::doTriggerMenuItem(MainMenuItem menuItem)

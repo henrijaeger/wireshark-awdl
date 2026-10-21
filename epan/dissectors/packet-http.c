@@ -358,6 +358,9 @@ typedef struct {
 	/* request or response streaming reassembly data */
 	http_streaming_reassembly_data_t* req_streaming_reassembly_data;
 	http_streaming_reassembly_data_t* res_streaming_reassembly_data;
+	/* request and response headers */
+	wmem_map_t *request_headers;
+	wmem_map_t *response_headers;
 } http_req_res_private_data_t;
 
  typedef struct _request_trans_t {
@@ -716,13 +719,13 @@ http_stats_tree_init(stats_tree* st)
 
 /* HTTP/Packet Counter stats packet function */
 static tap_packet_status
-http_stats_tree_packet(stats_tree* st, packet_info* pinfo _U_, epan_dissect_t* edt _U_, const void* p, tap_flags_t flags _U_)
+http_stats_tree_packet(stats_tree* st, packet_info* pinfo, epan_dissect_t* edt _U_, const void* p, tap_flags_t flags _U_)
 {
 	const http_info_value_t* v = (const http_info_value_t*)p;
 	unsigned i = v->response_code;
 	int resp_grp;
 	const char *resp_str;
-	char str[64];
+	char* str;
 
 	tick_stat_node(st, st_str_packets, 0, false);
 
@@ -751,8 +754,8 @@ http_stats_tree_packet(stats_tree* st, packet_info* pinfo _U_, epan_dissect_t* e
 
 		tick_stat_node(st, resp_str, st_node_responses, false);
 
-		snprintf(str, sizeof(str), "%u %s", i,
-			   val_to_str(i, vals_http_status_code, "Unknown (%d)"));
+		str = wmem_strdup_printf(pinfo->pool, "%u %s", i,
+			   val_to_str(pinfo->pool, i, vals_http_status_code, "Unknown (%d)"));
 		tick_stat_node(st, str, resp_grp, false);
 	} else if (v->request_method) {
 		stats_tree_tick_pivot(st,st_node_requests,v->request_method);
@@ -975,7 +978,13 @@ determine_http_location_target(wmem_allocator_t *scope, const char *base_url, co
 		}
 		/* Otherwise, it replaces the last element in the URI */
 		else {
-			char *scheme_end = strstr(base_url_no_query, "://") + 3;
+			char *scheme_end;
+
+			scheme_end = strstr(base_url_no_query, "://");
+			if (!(scheme_end)) {
+				return NULL;
+			}
+			scheme_end += strlen("://");
 			char *end_of_path = g_strrstr(scheme_end, "/");
 
 			if (end_of_path != NULL) {
@@ -1175,6 +1184,33 @@ push_res(http_conv_t *conv_data, packet_info *pinfo)
 	p_add_proto_data(wmem_file_scope(), pinfo, proto_http, HTTP_PROTO_DATA_REQRES, req_res);
 
 	return req_res;
+}
+
+dissector_handle_t
+http_upgrade_dissector(const char *protocol) {
+	return dissector_get_string_handle(upgrade_subdissector_table, protocol);
+}
+
+const char *
+http_get_header_value(packet_info* pinfo, const char *name, bool the_other_direction) {
+	conversation_t* conv = find_or_create_conversation(pinfo);
+	const http_conv_t *conv_data = (http_conv_t *)conversation_get_proto_data(conv, proto_http);
+	if (conv_data) {
+		const http_req_res_t *req_res = conv_data->req_res_tail;
+		if (req_res && req_res->private_data) {
+			const http_req_res_private_data_t *private = (http_req_res_private_data_t *)req_res->private_data;
+			if (private) {
+				wmem_map_t *headers = (conv_data->server_port == pinfo->destport && the_other_direction) || (
+					                      conv_data->server_port == pinfo->srcport && !the_other_direction)
+					                      ? private->response_headers
+					                      : private->request_headers;
+				if (headers) {
+					return wmem_map_lookup(headers, name);
+				}
+			}
+		}
+	}
+	return NULL;
 }
 
 static int
@@ -1559,7 +1595,7 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		DISSECTOR_ASSERT_HINT(header_value_map == NULL, "The header_value_map variable should be NULL while headers is NULL.");
 
 		headers = wmem_new0((streaming_chunk_mode ? wmem_file_scope() : pinfo->pool), headers_t);
-		header_value_map = wmem_map_new((streaming_chunk_mode ? wmem_file_scope() : pinfo->pool), g_str_hash, g_str_equal);
+		header_value_map = wmem_map_new(wmem_file_scope(), g_str_hash, g_str_equal);
 	}
 
 	if (streaming_chunk_mode && begin_with_chunk) {
@@ -1738,10 +1774,12 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 					curr->request_method = wmem_strdup(wmem_file_scope(), stat_info->request_method);
 					prv_data = curr->private_data;
 					prv_data->req_fwd_flow = direction;
+					prv_data->request_headers = header_value_map;
 				} else if (http_type == MEDIA_CONTAINER_HTTP_RESPONSE) {
 					curr = push_res(conv_data, pinfo);
 					prv_data = curr->private_data;
 					prv_data->req_fwd_flow = -direction;
+					prv_data->response_headers = header_value_map;
 				}
 			}
 			if (reqresp_dissector) {
@@ -2509,15 +2547,7 @@ dissecting_body:
 		 * with 101 Switching Protocols. See RFC 7230 Section 6.7.
 		 */
 		if (headers->upgrade && curr->response_code == 101) {
-			next_handle = dissector_get_string_handle(upgrade_subdissector_table, headers->upgrade);
-			if (!next_handle) {
-				char *slash_pos = strchr(headers->upgrade, '/');
-				if (slash_pos) {
-					/* Try again without version suffix. */
-					next_handle = dissector_get_string_handle(upgrade_subdissector_table,
-							wmem_strndup(pinfo->pool, headers->upgrade, slash_pos - headers->upgrade));
-				}
-			}
+			next_handle = http_upgrade_dissector(headers->upgrade);
 			server_acked = true;
 		}
 
@@ -2527,6 +2557,11 @@ dissecting_body:
 			conv_data->next_handle = next_handle;
 			copy_address_wmem(wmem_file_scope(), &conv_data->server_addr, &pinfo->src);
 			conv_data->server_port = pinfo->srcport;
+			/* Prepare structure for upgrade protocol data */
+			conv_data->upgrade_info = wmem_new0(wmem_file_scope(), http_upgrade_info_t);
+			conv_data->upgrade_info->server_port = pinfo->srcport;
+			conv_data->upgrade_info->http_version = 1;
+			conv_data->upgrade_info->get_header_value = http_get_header_value;
 		}
 	}
 
@@ -2666,7 +2701,7 @@ basic_response_dissector(packet_info *pinfo, tvbuff_t *tvb, proto_tree *tree,
 			    stat_info->response_code);
 
 	r_ti = proto_tree_add_string(tree, hf_http_response_code_desc,
-		tvb, offset, 3, val_to_str(stat_info->response_code,
+		tvb, offset, 3, val_to_str(pinfo->pool, stat_info->response_code,
 		vals_http_status_code, "Unknown (%d)"));
 
 	proto_item_set_generated(r_ti);
@@ -3262,7 +3297,7 @@ get_hf_for_header(char* header_name)
 {
 	int* hf_id = NULL;
 
-	if (header_fields_hash) {
+	if (header_fields_hash && header_name) {
 		hf_id = (int*) g_hash_table_lookup(header_fields_hash, header_name);
 	} else {
 		hf_id = NULL;
@@ -3539,18 +3574,16 @@ process_header(tvbuff_t *tvb, int offset, int next_offset,
 	 * has value_bytes_len bytes in it.
 	 */
 	value_bytes_len = line_end_offset - value_offset;
-	value_bytes = (char *)wmem_alloc((scope ? scope : pinfo->pool), value_bytes_len+1);
+	value_bytes = (char *)wmem_alloc(wmem_file_scope(), value_bytes_len+1);
 	memcpy(value_bytes, &line[value_offset - offset], value_bytes_len);
 	value_bytes[value_bytes_len] = '\0';
 	value = tvb_get_string_enc(pinfo->pool, tvb, value_offset, value_bytes_len, ENC_ASCII);
 	/* The length of the value might change after UTF-8 sanitization */
 	value_len = (int)strlen(value);
 
-	if (scope == pinfo->pool) {
-		wmem_map_insert(header_value_map, header_name, value_bytes);
-	} else if (scope) { /* (!PINFO_FD_VISITED(pinfo) && streaming_chunk_mode) */
-		wmem_map_insert(header_value_map, wmem_strdup(scope, header_name), value_bytes);
-	} /* else skip while (PINFO_FD_VISITED(pinfo) && streaming_chunk_mode) */
+	if (!PINFO_FD_VISITED(pinfo)) { /* Record header if packet was not visited yet */
+		wmem_map_insert(header_value_map, wmem_strdup(wmem_file_scope(), header_name), value_bytes);
+	}
 
 	if (hf_index == -1) {
 		/*
@@ -3812,21 +3845,9 @@ process_header(tvbuff_t *tvb, int offset, int next_offset,
 
 					/* finally add cookie to tree */
 					proto_tree_add_item(cookie_tree, hf_http_cookie_pair,
-						tvb, value_offset + f, part_len, ENC_NA|ENC_ASCII);
+						tvb, value_offset + f, part_len, ENC_ASCII);
 					f += part_len;
 				}
-			}
-			break;
-
-		case HDR_WEBSOCKET_PROTOCOL:
-			if (http_type == MEDIA_CONTAINER_HTTP_RESPONSE) {
-				conv_data->websocket_protocol = wmem_strndup(wmem_file_scope(), value, value_len);
-			}
-			break;
-
-		case HDR_WEBSOCKET_EXTENSIONS:
-			if (http_type == MEDIA_CONTAINER_HTTP_RESPONSE) {
-				conv_data->websocket_extensions = wmem_strndup(wmem_file_scope(), value, value_len);
 			}
 			break;
 
@@ -4380,7 +4401,9 @@ dissect_http_on_stream(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 			if (pinfo->can_desegment > 0)
 				pinfo->can_desegment++;
 			if (conv_data->next_handle) {
-				call_dissector_only(conv_data->next_handle, tvb_new_subset_remaining(tvb, offset), pinfo, tree, NULL);
+				conv_data->upgrade_info->from_server = pinfo->srcport == conv_data->server_port && addresses_equal(
+					                                       &pinfo->src, &conv_data->server_addr);
+				call_dissector_only(conv_data->next_handle, tvb_new_subset_remaining(tvb, offset), pinfo, tree, conv_data->upgrade_info);
 			} else {
 				call_data_dissector(tvb_new_subset_remaining(tvb, offset), pinfo, tree);
 			}
@@ -5033,6 +5056,7 @@ proto_register_http(void)
 	/* exclude "=", separating key and value should be done separately */
 	ws_mempbrk_compile(&pbrk_sub_delims, "!$&'()*+,;");
 
+	register_external_value_string("vals_http_status_code", vals_http_status_code);
 }
 
 /*

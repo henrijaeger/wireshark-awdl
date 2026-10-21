@@ -28,7 +28,7 @@
 
 #include "wsutil/mpeg-audio.h"
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include <wsutil/buffer.h>
 #include "file_wrappers.h"
 #include <stdlib.h>
@@ -238,7 +238,7 @@ mpeg_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
 	if (!wtap_read_bytes_buffer(fh, &rec->data, packet_size, err, err_info))
 		return false;
 
-	rec->rec_type = REC_TYPE_PACKET;
+	wtap_setup_packet_rec(rec, wth->file_encap);
 	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 
 	rec->presence_flags = 0; /* we may or may not have a time stamp */
@@ -277,7 +277,7 @@ mpeg_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
 	return true;
 }
 
-struct _mpeg_magic {
+const struct _mpeg_magic {
 	size_t len;
 	const char* match;
 	bool is_audio;
@@ -334,7 +334,7 @@ wtap_open_return_val
 mpeg_open(wtap *wth, int *err, char **err_info)
 {
 	char magic_buf[16];
-	struct _mpeg_magic* m;
+	const struct _mpeg_magic* m;
 	mpeg_t *mpeg;
 
 	if (!wtap_read_bytes(wth->fh, magic_buf, sizeof magic_buf,

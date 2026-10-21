@@ -2555,8 +2555,8 @@ dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             mfp->last_frame  = 0;
             mfp->tot_len     = sdulen;
             mfp->reassembled = (uint8_t *) wmem_alloc(wmem_file_scope(), sdulen);
-            tvb_memcpy(tvb, mfp->reassembled, offset, sdulen);
-            mfp->cur_off     = sdulen;
+            tvb_memcpy(tvb, mfp->reassembled, offset, length);
+            mfp->cur_off     = length;
             wmem_tree_insert32(config_data->start_fragments, pinfo->num, mfp);
         } else {
             mfp              = (sdu_reassembly_t *)wmem_tree_lookup32(config_data->start_fragments, pinfo->num);
@@ -2593,7 +2593,9 @@ dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             col_append_fstr(pinfo->cinfo, COL_INFO, "[Continuation to #%u] ", mfp->first_frame);
         }
     }
-    if (segment == 0x02 && mfp != NULL && mfp->last_frame == pinfo->num) {
+    if (segment == 0x02 && mfp != NULL && mfp->last_frame == pinfo->num && mfp->cur_off == mfp->tot_len) {
+        /* if mfp->cur_off != mfp->tot_len, there is missing data
+         * or other reassembly issues. */
         next_tvb = tvb_new_child_real_data(tvb, (uint8_t *)mfp->reassembled, mfp->tot_len, mfp->tot_len);
         add_new_data_source(pinfo, next_tvb, "Reassembled L2CAP");
     }

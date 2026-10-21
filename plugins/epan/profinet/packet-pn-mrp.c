@@ -610,6 +610,7 @@ dissect_PNMRP_PDU(tvbuff_t *tvb, int offset,
     offset = 0;
 
     for(i=0; tvb_reported_length_remaining(tvb, offset) > 0; i++) {
+        char* str_type;
 
         sub_item = proto_tree_add_item(tree, hf_pn_mrp_type, new_tvb, offset, 1, ENC_BIG_ENDIAN);
         sub_tree = proto_item_add_subtree(sub_item, ett_pn_mrp_type);
@@ -627,8 +628,9 @@ dissect_PNMRP_PDU(tvbuff_t *tvb, int offset,
         } else {
             proto_item_append_text(item, " ");
         }
-        col_append_str(pinfo->cinfo, COL_INFO, val_to_str(type, pn_mrp_block_type_vals, "Unknown TLVType 0x%x"));
-        proto_item_append_text(item, "%s", val_to_str(type, pn_mrp_block_type_vals, "Unknown TLVType 0x%x"));
+        str_type = val_to_str(pinfo->pool, type, pn_mrp_block_type_vals, "Unknown TLVType 0x%x");
+        col_append_str(pinfo->cinfo, COL_INFO, str_type);
+        proto_item_append_text(item, "%s", str_type);
 
         switch(type) {
         case 0x00:
@@ -823,7 +825,7 @@ proto_register_pn_mrp (void)
 
     { &hf_pn_mrp_link_info,
       { "MRP_LinkInfo", "pn_mrp.linkinfo",
-        FT_UINT16, BASE_HEX, NULL, 0x0000,
+        FT_UINT16, BASE_HEX, NULL, 0x0,
         NULL, HFILL }},
 
     { &hf_pn_mrp_link_info_primary_secondary,

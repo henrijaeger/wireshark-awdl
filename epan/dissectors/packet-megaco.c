@@ -988,7 +988,7 @@ nextcontext:
         }
 
         my_proto_tree_add_uint(megaco_tree, hf_megaco_Context, tvb, context_offset, context_length, ctx_id);
-        col_append_fstr(pinfo->cinfo, COL_INFO, " |=%s", val_to_str(ctx_id, megaco_context_vals, "%d"));
+        col_append_fstr(pinfo->cinfo, COL_INFO, " |=%s", val_to_str(pinfo->pool, ctx_id, megaco_context_vals, "%d"));
 
         ctx = gcp_ctx(msg,trx,ctx_id,pinfo,keep_persistent_data);
 
@@ -1772,8 +1772,15 @@ dissect_megaco_mediadescriptor(tvbuff_t *tvb, proto_tree *megaco_tree_command_li
         mediaParm = find_megaco_mediaParm_names(tvb, tvb_current_offset, tokenlen);
 
         tvb_LBRKT = tvb_find_uint8(tvb, tvb_next_offset , tvb_last_RBRKT, '{');
-        tvb_next_offset = tvb_find_uint8(tvb, tvb_current_offset+1 , tvb_last_RBRKT, '}');
-        tvb_RBRKT = tvb_next_offset;
+        if (tvb_LBRKT == -1) {
+            // Not found, use the end offset.
+            tvb_LBRKT = tvb_last_RBRKT;
+        }
+        tvb_RBRKT = tvb_find_uint8(tvb, tvb_current_offset+1 , tvb_last_RBRKT, '}');
+        if (tvb_RBRKT == -1) {
+            // Not found, use the end offset.
+            tvb_RBRKT = tvb_last_RBRKT;
+        }
 
         switch ( mediaParm ){
         case MEGACO_LOCAL_TOKEN:
@@ -2536,7 +2543,7 @@ dissect_megaco_servicechangedescriptor(tvbuff_t *tvb, packet_info* pinfo, proto_
 
             tvb_get_raw_bytes_as_stringz(tvb,tvb_current_offset,4,ServiceChangeReason_str);
             reason_valid = ws_strtoi32(ServiceChangeReason_str, NULL, &reason);
-            proto_item_append_text(item,"[ %s ]", val_to_str(reason, MEGACO_ServiceChangeReasons_vals,"Unknown (%u)"));
+            proto_item_append_text(item,"[ %s ]", val_to_str(pinfo->pool, reason, MEGACO_ServiceChangeReasons_vals,"Unknown (%u)"));
             if (!reason_valid)
                 expert_add_info(pinfo, item, &ei_megaco_reason_invalid);
             break;
@@ -2829,6 +2836,7 @@ dissect_megaco_Packagesdescriptor(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
             tvb_LBRKT = tvb_find_uint8(tvb, tvb_LBRKT,
                 tvb_packages_end_offset, '{');
 
+            /* Find the comma that delimits the next packagesItem */
             tvb_current_offset  = tvb_find_uint8(tvb, tvb_previous_offset,
                 tvb_packages_end_offset, ',');
 
@@ -2863,19 +2871,13 @@ dissect_megaco_Packagesdescriptor(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
 
             proto_tree_add_format_text(megaco_packagesdescriptor_tree, tvb, tvb_previous_offset, tokenlen);
 
-            tvb_current_offset      = tvb_find_uint8(tvb, tvb_RBRKT,
-                tvb_packages_end_offset, ',');
-
-            if (tvb_current_offset == -1 || tvb_current_offset > tvb_packages_end_offset ){
-                tvb_current_offset = tvb_packages_end_offset;
-            }
-
+            /* Move past the comma and any LWSP */
             tvb_previous_offset = megaco_tvb_skip_wsp(tvb, tvb_current_offset+1);
 
             tvb_LBRKT = tvb_previous_offset;
             tvb_RBRKT = tvb_previous_offset;
 
-        } while ( tvb_current_offset < tvb_packages_end_offset );
+        } while ( tvb_previous_offset < tvb_packages_end_offset );
     }
 
 }

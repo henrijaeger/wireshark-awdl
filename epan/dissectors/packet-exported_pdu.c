@@ -72,6 +72,7 @@ static int hf_exported_pdu_3gpp_nci;
 static int hf_exported_pdu_3gpp_cgi;
 static int hf_exported_pdu_3gpp_ecgi;
 static int hf_exported_pdu_3gpp_ncgi;
+static int hf_exported_pdu_link_dir;
 
 /* Initialize the subtree pointers */
 static int ett_exported_pdu;
@@ -124,6 +125,7 @@ static const value_string exported_pdu_tag_vals[] = {
    { EXP_PDU_TAG_COL_INFO_TEXT,         "Column Information String" },
    { EXP_PDU_TAG_USER_DATA_PDU,         "User Data PDU" },
    { EXP_PDU_TAG_3GPP_ID,               "3GPP Identity" },
+   { EXP_PDU_TAG_LINK_DIRECTION,        "Link direction" },
 
    { 0,        NULL   }
 };
@@ -155,6 +157,13 @@ static const value_string exported_pdu_p2p_dir_vals[] = {
     { P2P_DIR_SENT, "Sent" },
     { P2P_DIR_RECV, "Received" },
     { P2P_DIR_UNKNOWN, "Unknown" },
+    { 0, NULL }
+};
+
+static const value_string exported_pdu_link_dir_vals[] = {
+    { P2P_DIR_UL, "Uplink" },
+    { P2P_DIR_DL, "Downlink" },
+    { LINK_DIR_UNKNOWN, "Unknown" },
     { 0, NULL }
 };
 
@@ -269,7 +278,7 @@ dissect_exported_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
     tvbuff_t * payload_tvb = NULL;
     int offset = 0;
     uint32_t tag;
-    int tag_len;
+    int tag_len, p2p_dir, link_dir;
     int next_proto_type = -1;
     const uint8_t *proto_name = NULL;
     const uint8_t *dissector_table = NULL;
@@ -391,6 +400,7 @@ dissect_exported_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
                 break;
             case EXP_PDU_TAG_COL_PROT_TEXT:
                 proto_tree_add_item_ret_string(tag_tree, hf_exported_pdu_col_proto_str, tvb, offset, tag_len, ENC_UTF_8 | ENC_NA, pinfo->pool, &col_proto_str);
+                col_add_str(pinfo->cinfo, COL_PROTOCOL, col_proto_str);
                 break;
             case EXP_PDU_TAG_TCP_INFO_DATA:
                 {
@@ -422,11 +432,12 @@ dissect_exported_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
                 }
                 break;
             case EXP_PDU_TAG_P2P_DIRECTION:
-                pinfo->p2p_dir = tvb_get_ntohl(tvb, offset);
-                proto_tree_add_item(tag_tree, hf_exported_pdu_p2p_dir, tvb, offset, 4, ENC_NA);
+                proto_tree_add_item_ret_int(tag_tree, hf_exported_pdu_p2p_dir, tvb, offset, 4, ENC_BIG_ENDIAN, &p2p_dir);
+                pinfo->p2p_dir = p2p_dir;
                 break;
             case EXP_PDU_TAG_COL_INFO_TEXT:
                 proto_tree_add_item_ret_string(tag_tree, hf_exported_pdu_col_info_str, tvb, offset, tag_len, ENC_UTF_8 | ENC_NA, pinfo->pool, &col_info_str);
+                col_add_str(pinfo->cinfo, COL_INFO, col_info_str);
                 break;
             case EXP_PDU_TAG_USER_DATA_PDU:
                 next_proto_type = EXPORTED_PDU_NEXT_DISSECTOR_STR;
@@ -434,6 +445,10 @@ dissect_exported_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
                 break;
             case EXP_PDU_TAG_3GPP_ID:
                 dissect_3gpp_id(tvb, pinfo, tag_tree, offset, tag_len);
+                break;
+            case EXP_PDU_TAG_LINK_DIRECTION:
+                proto_tree_add_item_ret_int(tag_tree, hf_exported_pdu_link_dir, tvb, offset, 4, ENC_BIG_ENDIAN, &link_dir);
+                pinfo->link_dir = link_dir;
                 break;
             case EXP_PDU_TAG_END_OF_OPT:
                 break;
@@ -457,15 +472,10 @@ dissect_exported_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
         case EXPORTED_PDU_NEXT_DISSECTOR_STR:
             proto_handle = find_dissector(proto_name);
             if (proto_handle) {
-                if (col_proto_str) {
-                    col_add_str(pinfo->cinfo, COL_PROTOCOL, col_proto_str);
-                } else {
+                if (!col_proto_str) {
                     col_clear(pinfo->cinfo, COL_PROTOCOL);
                 }
-                if (col_info_str) {
-                    col_add_str(pinfo->cinfo, COL_INFO, col_info_str);
-                }
-                else {
+                if (!col_info_str) {
                     col_clear(pinfo->cinfo, COL_INFO);
                 }
                 call_dissector_with_data(proto_handle, payload_tvb, pinfo, tree, dissector_data);
@@ -475,15 +485,10 @@ dissect_exported_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
         {
             heur_dtbl_entry_t *heur_diss = find_heur_dissector_by_unique_short_name(proto_name);
             if (heur_diss) {
-                if (col_proto_str) {
-                    col_add_str(pinfo->cinfo, COL_PROTOCOL, col_proto_str);
-                } else {
+                if (!col_proto_str) {
                     col_clear(pinfo->cinfo, COL_PROTOCOL);
                 }
-                if (col_info_str) {
-                    col_add_str(pinfo->cinfo, COL_INFO, col_info_str);
-                }
-                else {
+                if (!col_info_str) {
                     col_clear(pinfo->cinfo, COL_INFO);
                 }
                 call_heur_dissector_direct(heur_diss, payload_tvb, pinfo, tree, dissector_data);
@@ -494,15 +499,10 @@ dissect_exported_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
         {
             dis_tbl = find_dissector_table(dissector_table);
             if (dis_tbl) {
-                if (col_proto_str) {
-                    col_add_str(pinfo->cinfo, COL_PROTOCOL, col_proto_str);
-                } else {
+                if (!col_proto_str) {
                     col_clear(pinfo->cinfo, COL_PROTOCOL);
                 }
-                if (col_info_str) {
-                    col_add_str(pinfo->cinfo, COL_INFO, col_info_str);
-                }
-                else {
+                if (!col_info_str) {
                     col_clear(pinfo->cinfo, COL_INFO);
                 }
                 dissector_try_uint_with_data(dis_tbl, dissector_table_val, payload_tvb, pinfo, tree, true, dissector_data);
@@ -712,6 +712,11 @@ proto_register_exported_pdu(void)
         { &hf_exported_pdu_3gpp_ncgi,
             { "NR Cell Global Identifier", "exported_pdu.3gpp.ncgi",
                FT_UINT64, BASE_HEX, NULL, 0,
+              NULL, HFILL }
+        },
+        { &hf_exported_pdu_link_dir,
+            { "Link direction", "exported_pdu.link_dir",
+               FT_INT32, BASE_DEC, VALS(exported_pdu_link_dir_vals), 0,
               NULL, HFILL }
         },
     };

@@ -33,7 +33,7 @@
 #include <epan/packet.h>
 #include <epan/expert.h>
 #include <wiretap/wtap.h>
-#include <epan/wmem/wmem.h>
+#include <wsutil/wmem/wmem.h>
 
 #include <epan/address_types.h>
 #include <epan/addr_resolv.h>

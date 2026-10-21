@@ -37,7 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 typedef struct daintree_sna_header {
@@ -63,7 +63,7 @@ static bool daintree_sna_read(wtap *wth, wtap_rec *rec,
 static bool daintree_sna_seek_read(wtap *wth, int64_t seek_off,
 	wtap_rec *rec, int *err, char **err_info);
 
-static bool daintree_sna_read_packet(FILE_T fh, wtap_rec *rec,
+static bool daintree_sna_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
 	int *err, char **err_info);
 
 static int daintree_sna_file_type_subtype = -1;
@@ -127,7 +127,7 @@ daintree_sna_read(wtap *wth, wtap_rec *rec,
 	*data_offset = file_tell(wth->fh);
 
 	/* parse that line and the following packet data */
-	return daintree_sna_read_packet(wth->fh, rec, err, err_info);
+	return daintree_sna_read_packet(wth, wth->fh, rec, err, err_info);
 }
 
 /* Read the capture file randomly
@@ -140,7 +140,7 @@ daintree_sna_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
 		return false;
 
 	/* parse that line and the following packet data */
-	return daintree_sna_read_packet(wth->random_fh, rec, err, err_info);
+	return daintree_sna_read_packet(wth, wth->random_fh, rec, err, err_info);
 }
 
 /* Read a header line, scan it, and fill in a struct wtap_rec.
@@ -148,10 +148,10 @@ daintree_sna_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
  * sanity-check its length against what we assume is the packet length field,
  * and copy it into a Buffer. */
 static bool
-daintree_sna_read_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
+daintree_sna_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 {
 	uint64_t seconds;
-	int useconds;
+	char useconds[10];
 	char readLine[DAINTREE_MAX_LINE_SIZE];
 	char readData[READDATA_BUF_SIZE];
 	unsigned char *str = (unsigned char *)readData;
@@ -167,15 +167,20 @@ daintree_sna_read_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 		}
 	} while (readLine[0] == COMMENT_LINE);
 
-	rec->rec_type = REC_TYPE_PACKET;
+	wtap_setup_packet_rec(rec, wth->file_encap);
 	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
 
-	if (sscanf(readLine, "%*s %18" SCNu64 ".%9d %9u %" READDATA_MAX_FIELD_SIZE "s",
-	    &seconds, &useconds, &rec->rec_header.packet_header.len, readData) != 4) {
+	memset(useconds, 0, sizeof(useconds));
+	if (sscanf(readLine, "%*s %18" SCNu64 ".%9[0-9] %9u %" READDATA_MAX_FIELD_SIZE "s",
+	    &seconds, useconds, &rec->rec_header.packet_header.len, readData) != 4) {
 		*err = WTAP_ERR_BAD_FILE;
 		*err_info = g_strdup("daintree_sna: invalid read record");
 		return false;
+	}
+
+	while (strlen(useconds) < 9) {
+		useconds[strlen(useconds)] = '0';
 	}
 
 	/* Daintree doesn't store the FCS, but pads end of packet with 0xffff, which we toss */
@@ -188,7 +193,7 @@ daintree_sna_read_packet(FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 	rec->rec_header.packet_header.len -= FCS_LENGTH;
 
 	rec->ts.secs = (time_t) seconds;
-	rec->ts.nsecs = useconds * 1000; /* convert mS to nS */
+	sscanf(useconds, "%9u", &rec->ts.nsecs);
 
 	/*
 	 * READDATA_BUF_SIZE is < WTAP_MAX_PACKET_SIZE_STANDARD, and is the maximum

@@ -10,11 +10,13 @@
 #include "snoop.h"
 
 #include <string.h>
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 #include "atm.h"
 #include <wsutil/802_11-utils.h>
+#include <wsutil/array.h>
 #include <wsutil/ws_roundup.h>
+#include <wsutil/pint.h>
 
 /* See RFC 1761 for a description of the "snoop" file format. */
 
@@ -608,7 +610,7 @@ snoop_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
 		break;
 	}
 
-	rec->rec_type = REC_TYPE_PACKET;
+	wtap_setup_packet_rec(rec, wth->file_encap);
 	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
 	rec->ts.secs = g_ntohl(hdr.ts_sec);
@@ -656,7 +658,7 @@ snoop_read_atm_pseudoheader(FILE_T fh, union wtap_pseudo_header *pseudo_header,
 		return false;
 
 	vpi = atm_phdr.vpi;
-	vci = pntoh16(&atm_phdr.vci);
+	vci = pntohu16(&atm_phdr.vci);
 
 	/*
 	 * The lower 4 bits of the first byte of the header indicate
@@ -870,6 +872,7 @@ static bool snoop_dump(wtap_dumper *wdh, const wtap_rec *rec,
 	/* We can only write packet records. */
 	if (rec->rec_type != REC_TYPE_PACKET) {
 		*err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+		*err_info = wtap_unwritable_rec_type_err_string(rec);
 		return false;
 	}
 

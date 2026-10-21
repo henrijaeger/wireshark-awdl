@@ -10,7 +10,7 @@
 #include "btsnoop.h"
 
 #include <string.h>
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 /*
@@ -202,7 +202,7 @@ static bool btsnoop_read_record(wtap *wth, FILE_T fh,
     ts = GINT64_FROM_BE(hdr.ts_usec);
     ts -= KUnixTimeBase;
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, wth->file_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
     rec->ts.secs = (unsigned)(ts / 1000000);
@@ -275,6 +275,7 @@ static bool btsnoop_dump(wtap_dumper *wdh, const wtap_rec *rec,
     /* We can only write packet records. */
     if (rec->rec_type != REC_TYPE_PACKET) {
         *err = WTAP_ERR_UNWRITABLE_REC_TYPE;
+        *err_info = wtap_unwritable_rec_type_err_string(rec);
         return false;
     }
 

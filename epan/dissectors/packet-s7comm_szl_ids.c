@@ -2326,7 +2326,7 @@ static const value_string s7comm_szl_xy78_xxxx_dis_cdiag_entry_chet_text_list_8_
     {4108, "Protection off mode"},
     {4109, "Wiring fault"},
     {4110, "Module dropped out"},
-    {4111, "External memory module not accessable "},
+    {4111, "External memory module not accessible "},
     {4112, "Operating hours counter"},
     {4113, "Generator operation"},
     {4114, "Phase control failure"},
@@ -6248,7 +6248,7 @@ s7comm_szl_xy78_xxxx_register(int proto)
         { "Display mode", "s7comm.szl.xy78.xxxx.disp_mode", FT_UINT16, BASE_HEX, NULL, 0x0,
           NULL, HFILL } },
         { &hf_s7comm_szl_xy78_xxxx_vendor,
-        { "Vendor-Id", "s7comm.szl.xy78.xxxx.vendow_high", FT_UINT16, BASE_HEX, NULL, 0x0,
+        { "Vendor-Id", "s7comm.szl.xy78.xxxx.vendor_high", FT_UINT16, BASE_HEX, NULL, 0x0,
           NULL, HFILL } },
         { &hf_s7comm_szl_xy78_xxxx_order_id,
         { "Order-Id", "s7comm.szl.xy78.xxxx.order_id", FT_STRING, BASE_NONE, NULL, 0x0,
@@ -6464,9 +6464,9 @@ s7comm_decode_szl_id_xy78_idx_xxxx(tvbuff_t *tvb,
     offset += 2;
 
     /*Name data*/
-    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_name, tvb, offset, 32, ENC_ASCII | ENC_NA);
+    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_name, tvb, offset, 32, ENC_ASCII);
     offset += 32;
-    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_short_name, tvb, offset, 32, ENC_ASCII | ENC_NA);
+    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_short_name, tvb, offset, 32, ENC_ASCII);
     offset += 32;
     proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_dnn_mode, tvb, offset, 2, ENC_LITTLE_ENDIAN);
     offset += 2;
@@ -6511,7 +6511,7 @@ s7comm_decode_szl_id_xy78_idx_xxxx(tvbuff_t *tvb,
                 chet_item_gen = proto_tree_add_uint(cdiag_entry_item_tree, hf_s7comm_szl_xy78_xxxx_dis_cdiag_entry_chet_text_list_8, tvb, offset-2, 2, chet);
                 PROTO_ITEM_SET_GENERATED(chet_item_gen);
                 proto_item_append_text(cdiag_entry_item, " / %s",
-                    val_to_str_ext(chet, &s7comm_szl_xy78_xxxx_dis_cdiag_entry_chet_text_list_8_names_ext, "unknown 0x%04x"));
+                    val_to_str_ext(pinfo->pool, chet, &s7comm_szl_xy78_xxxx_dis_cdiag_entry_chet_text_list_8_names_ext, "unknown 0x%04x"));
             } else {
                 proto_item_append_text(cdiag_entry_item, " / CHET: 0x%04x", chet);
             }
@@ -6580,17 +6580,17 @@ s7comm_decode_szl_id_xy78_idx_xxxx(tvbuff_t *tvb,
     offset += 2;
     proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_vendor, tvb, offset, 2, ENC_BIG_ENDIAN);
     offset += 2;
-    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_order_id, tvb, offset, 20, ENC_ASCII | ENC_NA);
+    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_order_id, tvb, offset, 20, ENC_ASCII);
     offset += 20;
 
     /*I&M1 data*/
     iam1_item = proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_im1, tvb, offset, 54, ENC_NA);
     iam1_item_tree = proto_item_add_subtree(iam1_item, ett_s7comm_szl_xy78_xxxx_iam1);
-    proto_tree_add_item(iam1_item_tree, hf_s7comm_szl_xy78_xxxx_iam1_function, tvb, offset, 32, ENC_ASCII | ENC_NA);
+    proto_tree_add_item(iam1_item_tree, hf_s7comm_szl_xy78_xxxx_iam1_function, tvb, offset, 32, ENC_ASCII);
     offset += 32;
-    proto_tree_add_item(iam1_item_tree, hf_s7comm_szl_xy78_xxxx_iam1_location, tvb, offset, 22, ENC_ASCII | ENC_NA);
+    proto_tree_add_item(iam1_item_tree, hf_s7comm_szl_xy78_xxxx_iam1_location, tvb, offset, 22, ENC_ASCII);
     offset += 22;
-    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_asset_id, tvb, offset, 32, ENC_ASCII | ENC_NA);
+    proto_tree_add_item(tree, hf_s7comm_szl_xy78_xxxx_asset_id, tvb, offset, 32, ENC_ASCII);
     offset += 32;
 
     /*check for TLVs*/
@@ -7818,7 +7818,7 @@ s7comm_decode_ud_cpu_szl_subfunc(tvbuff_t *tvb,
                 } /* ...for */
             }
         } else {
-            col_append_fstr(pinfo->cinfo, COL_INFO, " Return value:[%s]", val_to_str(ret_val, s7comm_item_return_valuenames, "Unknown return value:0x%02x"));
+            col_append_fstr(pinfo->cinfo, COL_INFO, " Return value:[%s]", val_to_str(pinfo->pool, ret_val, s7comm_item_return_valuenames, "Unknown return value:0x%02x"));
         }
     }
     return offset;

@@ -40,28 +40,50 @@ extern "C" {
 // Callbacks prefs routines
 
 static unsigned
-module_prefs_unstash(module_t *module, void *data)
+module_prefs_get_redissect_flags(module_t *module, void *data)
 {
     unsigned int *must_redissect_p = static_cast<unsigned int *>(data);
     pref_unstash_data_t unstashed_data;
 
-    unstashed_data.handle_decode_as = true;
+    unstashed_data.handle_decode_as = false;
 
     module->prefs_changed_flags = 0;        /* assume none of them changed */
     for (GList *pref_l = module->prefs; pref_l && pref_l->data; pref_l = gxx_list_next(pref_l)) {
         pref_t *pref = gxx_list_data(pref_t *, pref_l);
 
-        if (prefs_get_type(pref) == PREF_OBSOLETE || prefs_get_type(pref) == PREF_STATIC_TEXT) continue;
+        if (prefs_is_preference_obsolete(pref) || prefs_get_type(pref) == PREF_STATIC_TEXT) continue;
 
         unstashed_data.module = module;
-        pref_unstash(pref, &unstashed_data);
-        commandline_options_drop(module->name, prefs_get_name(pref));
+        pref_get_changed_flags(pref, &unstashed_data);
     }
 
     /* If any of them changed, indicate that we must redissect and refilter
        the current capture (if we have one), as the preference change
        could cause packets to be dissected differently. */
     *must_redissect_p |= module->prefs_changed_flags;
+
+    if (prefs_module_has_submodules(module))
+        return prefs_modules_foreach_submodules(module, module_prefs_get_redissect_flags, data);
+
+    return 0;
+}
+
+static unsigned
+module_prefs_unstash(module_t *module, void *data)
+{
+    pref_unstash_data_t unstashed_data;
+
+    unstashed_data.handle_decode_as = true;
+
+    for (GList *pref_l = module->prefs; pref_l && pref_l->data; pref_l = gxx_list_next(pref_l)) {
+        pref_t *pref = gxx_list_data(pref_t *, pref_l);
+
+        if (prefs_is_preference_obsolete(pref) || prefs_get_type(pref) == PREF_STATIC_TEXT) continue;
+
+        unstashed_data.module = module;
+        pref_unstash(pref, &unstashed_data);
+        commandline_options_drop(module->name, prefs_get_name(pref));
+    }
 
     if (prefs_module_has_submodules(module))
         return prefs_modules_foreach_submodules(module, module_prefs_unstash, data);
@@ -75,7 +97,7 @@ module_prefs_clean_stash(module_t *module, void *)
     for (GList *pref_l = module->prefs; pref_l && pref_l->data; pref_l = gxx_list_next(pref_l)) {
         pref_t *pref = gxx_list_data(pref_t *, pref_l);
 
-        if (prefs_get_type(pref) == PREF_OBSOLETE || prefs_get_type(pref) == PREF_STATIC_TEXT) continue;
+        if (prefs_is_preference_obsolete(pref) || prefs_get_type(pref) == PREF_STATIC_TEXT) continue;
 
         pref_clean_stash(pref, Q_NULLPTR);
     }
@@ -139,6 +161,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) :
     prefs_pane_to_item_[PrefsModel::typeToString(PrefsModel::Layout)] = pd_ui_->layoutFrame;
     prefs_pane_to_item_[PrefsModel::typeToString(PrefsModel::Columns)] = pd_ui_->columnFrame;
     prefs_pane_to_item_[PrefsModel::typeToString(PrefsModel::FontAndColors)] = pd_ui_->fontandcolorFrame;
+    prefs_pane_to_item_[PrefsModel::typeToString(PrefsModel::WelcomePage)] = pd_ui_->welcomePageFrame;
     prefs_pane_to_item_[PrefsModel::typeToString(PrefsModel::Capture)] = pd_ui_->captureFrame;
     prefs_pane_to_item_[PrefsModel::typeToString(PrefsModel::Expert)] = pd_ui_->expertFrame;
     prefs_pane_to_item_[PrefsModel::typeToString(PrefsModel::FilterButtons)] = pd_ui_->filterExpressonsFrame;
@@ -377,7 +400,13 @@ void PreferencesDialog::apply()
     //       "stashed" value is sometimes the last valid input, not, e.g., the
     //       input when the dialog was opened.
     // XXX - We're also too enthusiastic about setting must_redissect.
-    prefs_modules_foreach_submodules(NULL, module_prefs_unstash, (void *)&redissect_flags);
+    prefs_modules_foreach_submodules(NULL, module_prefs_get_redissect_flags, (void *)&redissect_flags);
+    if (redissect_flags & PREF_EFFECT_DISSECTION) {
+        // Freeze the packet list early to avoid updating column data before doing a
+        // full redissection. The packet list will be thawed when redissection is done.
+        mainApp->emitAppSignal(MainApplication::FreezePacketList);
+    }
+    prefs_modules_foreach_submodules(NULL, module_prefs_unstash, NULL);
 
     extcap_register_preferences();
 
@@ -392,6 +421,7 @@ void PreferencesDialog::apply()
     }
 
     pd_ui_->columnFrame->unstash();
+    pd_ui_->welcomePageFrame->unstash();
     pd_ui_->filterExpressonsFrame->acceptChanges();
     pd_ui_->expertFrame->acceptChanges();
 #ifdef HAVE_LIBGNUTLS
@@ -422,10 +452,7 @@ void PreferencesDialog::apply()
     /* Fill in capture options with values from the preferences */
     prefs_to_capture_opts();
 
-    mainApp->setMonospaceFont(prefs.gui_font_name);
-
     if (redissect_flags & (PREF_EFFECT_GUI_COLOR)) {
-        ColorUtils::setScheme(prefs.gui_color_scheme);
         mainApp->emitAppSignal(MainApplication::ColorsChanged);
     }
 
@@ -434,17 +461,13 @@ void PreferencesDialog::apply()
     }
 
     if (redissect_flags & PREF_EFFECT_DISSECTION) {
-        // Freeze the packet list early to avoid updating column data before doing a
-        // full redissection. The packet list will be thawed when redissection is done.
-        mainApp->emitAppSignal(MainApplication::FreezePacketList);
-
         /* Redissect all the packets, and re-evaluate the display filter. */
         mainApp->emitAppSignal(MainApplication::PacketDissectionChanged);
     }
 
-    if (redissect_flags) {
-        mainApp->emitAppSignal(MainApplication::PreferencesChanged);
-    }
+    write_profile_recent();
+
+    mainApp->emitAppSignal(MainApplication::PreferencesChanged);
 
     if (redissect_flags & PREF_EFFECT_GUI_LAYOUT) {
         mainApp->emitAppSignal(MainApplication::RecentPreferencesRead);

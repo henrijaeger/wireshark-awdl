@@ -20,8 +20,7 @@ PROJECT_MINOR_VERSION = $(shell grep '^set(PROJECT_MINOR_VERSION' CMakeLists.txt
 PROJECT_PATCH_VERSION = $(shell grep '^set(PROJECT_PATCH_VERSION' CMakeLists.txt | sed -e 's/set.* //' -e 's/)//')
 STRATOSHARK_MAJOR_VERSION = $(shell grep '^set(STRATOSHARK_MAJOR_VERSION' CMakeLists.txt | sed -e 's/set.* //' -e 's/)//')
 STRATOSHARK_MINOR_VERSION = $(shell grep '^set(STRATOSHARK_MINOR_VERSION' CMakeLists.txt | sed -e 's/set.* //' -e 's/)//')
-STRATOSHARK_PATCH_VERSION = $(shell grep '^set(STRATOSHARK_PATCH_VERSION' CMakeLists.txt | sed -e 's/set.* //' -e 's/)//')
-STRATOSHARK_VERSION = $(shell echo $(DEB_VERSION) | sed -e "s/$(PROJECT_MAJOR_VERSION)\.$(PROJECT_MINOR_VERSION)\.$(PROJECT_PATCH_VERSION)/$(STRATOSHARK_MAJOR_VERSION)\.$(STRATOSHARK_MINOR_VERSION)\.$(STRATOSHARK_PATCH_VERSION)/")
+STRATOSHARK_VERSION = $(shell echo $(DEB_VERSION) | sed -e "s/$(PROJECT_MAJOR_VERSION)\.$(PROJECT_MINOR_VERSION)\.$(PROJECT_PATCH_VERSION)/$(STRATOSHARK_MAJOR_VERSION)\.$(STRATOSHARK_MINOR_VERSION)\.$(PROJECT_PATCH_VERSION)/")
 
 # This has to be exported to make some magic below work.
 export DH_OPTIONS
@@ -32,11 +31,7 @@ ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
 	MAKEFLAGS += -j$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
 endif
 
-ifeq ($(MAKE),ninja)
-	DH_BUILDSYSTEM = cmake+ninja
-else
-	DH_BUILDSYSTEM = cmake
-endif
+DH_BUILDSYSTEM = cmake
 
 ifneq ($(filter pkg.wireshark.stratoshark,$(DEB_BUILD_PROFILES)),)
     CONFIGURE_SWITCHES += -DBUILD_stratoshark=ON -DBUILD_falcodump=ON
@@ -76,11 +71,7 @@ override_dh_dwz:
 
 override_dh_auto_install:
 	dh_auto_install
-ifeq ($(MAKE),ninja)
-	DESTDIR=$(CURDIR)/debian/tmp $(MAKE) -C $(CURDIR)/obj-* install-headers
-else
 	$(MAKE) DESTDIR=$(CURDIR)/debian/tmp -C $(CURDIR)/obj-* install-headers
-endif
 	rm -rf $(CURDIR)/debian/tmp/usr/share/wireshark/COPYING
 
 override_dh_install:

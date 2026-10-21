@@ -64,8 +64,8 @@ Homepage: https://www.wireshark.org/
 
 Package: wireshark-common
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libwireshark0 (>= ${binary:Version}),
- libwiretap0 (>= ${binary:Version}), debconf, libcap2-bin [linux-any]
+Depends: ${shlibs:Depends}, ${misc:Depends}, libwireshark19 (>= ${binary:Version}),
+ libwiretap16 (>= ${binary:Version}), debconf, libcap2-bin [linux-any]
 Recommends: wireshark (>= ${binary:Version}) | tshark (>= ${binary:Version})
 Breaks: wireshark (<< 2.0.0~),
         wireshark-gtk (<< 3.0.0),
@@ -110,9 +110,12 @@ Depends: ${shlibs:Depends},
          libqt6svg6,
          qt6-qpa-plugins
 # Recommends: libqt6multimedia6
-Description: system call and log analyzer - graphical interface
+Description: system call and log analyzer - graphical and console interfaces
  Stratoshark is a system call and log analyzer. It can capture and analyze
  system calls on Linux and capture and analyze log data from other sources.
+ .
+ The package provides stratoshark as the graphical interface and strato
+ as the console interface.
 
 Package: tshark
 Architecture: any
@@ -152,31 +155,31 @@ Description: network traffic analyzer - documentation
  This package contains Wireshark User's guide, Wireshark Developer's Guide
  and the Lua Reference.
 
-Package: libwireshark0
+Package: libwireshark19
 Section: libs
 Architecture: any
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends}, libwireshark-data (>= ${source:Version}),
- libwsutil0 (>= ${source:Version})
+ libwsutil17 (>= ${source:Version})
 Suggests: wireshark-doc (>= ${source:Version})
 Description: network packet dissection library -- shared library
  The libwireshark library provides the network packet dissection services
  developed by the Wireshark project.
 
-Package: libwsutil0
+Package: libwsutil17
 Section: libs
 Architecture: any
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: network packet dissection utilities library -- shared library
- The libwsutil library provides utility functions for libwireshark0.
+ The libwsutil library provides utility functions for libwireshark19.
 
 Package: libwsutil-dev
 Section: libdevel
 Architecture: any
-Depends: ${misc:Depends} , libwsutil0 (= ${binary:Version})
+Depends: ${misc:Depends} , libwsutil17 (= ${binary:Version})
 Breaks: libwireshark-dev (<< 3.7.0~)
 Replaces: libwireshark-dev (<< 3.7.0~)
 Description: network packet dissection utilities library -- development files
@@ -201,7 +204,7 @@ Description: network packet dissection library -- data files
 Package: libwireshark-dev
 Section: libdevel
 Depends: ${misc:Depends}, libwsutil-dev, libwiretap-dev,
- libwireshark0 (= ${binary:Version})
+ libwireshark19 (= ${binary:Version})
 Architecture: any
 Description: network packet dissection library -- development files
  The "libwireshark" library provides the network packet dissection services
@@ -210,7 +213,7 @@ Description: network packet dissection library -- development files
  This package contains the static library and the C header files that are
  needed for applications to use libwireshark services.
 
-Package: libwiretap0
+Package: libwiretap16
 Section: libs
 Architecture: any
 Multi-Arch: same
@@ -244,7 +247,7 @@ Description: network packet capture library -- shared library
 
 Package: libwiretap-dev
 Section: libdevel
-Depends: ${misc:Depends}, libwsutil-dev, libwiretap0 (= ${binary:Version})
+Depends: ${misc:Depends}, libwsutil-dev, libwiretap16 (= ${binary:Version})
 Architecture: any
 Description: network packet capture library -- development files
  Wiretap, part of the Wireshark project, is a library that allows one to

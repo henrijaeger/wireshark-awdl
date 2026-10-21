@@ -37,8 +37,6 @@ static dissector_handle_t eth_handle;
 static bool heuristic_first;
 static bool old_11bit_canid_encoding;
 
-static dissector_table_t lin_subdissector_table;
-
 /* Header fields */
 static int hf_cmp_header;
 static int hf_cmp_version;
@@ -1058,6 +1056,11 @@ dissect_asam_cmp_data_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_tr
         NULL
     };
 
+    /* Testing for Ethernet Padding */
+    if (tvb_get_uint8(tvb, offset + 13) == 0) {
+        return 0;
+    }
+
     ti_msg_header = proto_tree_add_item(tree, hf_cmp_msg_header, tvb, offset, 8, ENC_BIG_ENDIAN);
     asam_cmp_data_msg_header_tree = proto_item_add_subtree(ti_msg_header, ett_asam_cmp_header);
     proto_item_append_text(ti_msg_header, " %s", "- Data Message");
@@ -1339,15 +1342,7 @@ dissect_asam_cmp_data_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_tr
             lin_info.bus_id = ht_interface_config_to_bus_id(interface_id);
             lin_info.len = msg_payload_type_length;
 
-            /* LIN encodes a sleep frame by setting ID to LIN_DIAG_MASTER_REQUEST_FRAME and the first byte to 0x00 */
-            bool ignore_lin_payload = (lin_info.id == LIN_DIAG_MASTER_REQUEST_FRAME && tvb_get_uint8(sub_tvb, 0) == 0x00);
-
-            if (ignore_lin_payload || !dissector_try_uint_with_data(lin_subdissector_table, lin_info.id | (lin_info.bus_id << 16), sub_tvb, pinfo, tree, false, &lin_info)) {
-                if (ignore_lin_payload || !dissector_try_uint_with_data(lin_subdissector_table, lin_info.id, sub_tvb, pinfo, tree, false, &lin_info)) {
-                    call_data_dissector(sub_tvb, pinfo, tree);
-                }
-            }
-
+            dissect_lin_message(sub_tvb, pinfo, tree, &lin_info);
             offset += (int)msg_payload_type_length;
         }
 
@@ -1383,7 +1378,7 @@ dissect_asam_cmp_data_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_tr
         proto_tree_add_item(asam_cmp_data_msg_payload_tree, hf_cmp_flexray_frame_crc, tvb, offset, 3, ENC_BIG_ENDIAN);
         offset += 3;
 
-        proto_tree_add_item(asam_cmp_data_msg_payload_tree, hf_cmp_flexray_reserved_2, tvb, offset, 1, ENC_NA);
+        proto_tree_add_item(asam_cmp_data_msg_payload_tree, hf_cmp_flexray_reserved_2, tvb, offset, 1, ENC_BIG_ENDIAN);
         offset += 1;
 
         proto_tree_add_item_ret_uint(asam_cmp_data_msg_payload_tree, hf_cmp_flexray_data_len, tvb, offset, 1, ENC_NA, &msg_payload_type_length);
@@ -1590,6 +1585,11 @@ dissect_asam_cmp_ctrl_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_tr
         &hf_cmp_common_flag_recal,
         NULL
     };
+
+    /* Testing for Ethernet Padding */
+    if (tvb_get_uint8(tvb, offset + 13) == 0) {
+        return 0;
+    }
 
     ti_msg_header = proto_tree_add_item(tree, hf_cmp_msg_header, tvb, offset, 8, ENC_BIG_ENDIAN);
     asam_cmp_ctrl_msg_header_tree = proto_item_add_subtree(ti_msg_header, ett_asam_cmp_header);
@@ -1808,6 +1808,11 @@ dissect_asam_cmp_status_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_
         NULL
     };
 
+    /* Testing for Ethernet Padding */
+    if (tvb_get_uint8(tvb, offset + 13) == 0) {
+        return 0;
+    }
+
     ti_msg_header = proto_tree_add_item(tree, hf_cmp_msg_header, tvb, offset, 16, ENC_BIG_ENDIAN);
     asam_cmp_status_msg_header_tree = proto_item_add_subtree(ti_msg_header, ett_asam_cmp_header);
     proto_item_append_text(ti_msg_header, " %s", "- Status Message");
@@ -1885,7 +1890,7 @@ dissect_asam_cmp_status_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_
 
         if ((asam_cmp_status_msg_cm_dev_desc_length) > 0) {
             asam_cmp_status_msg_cm_dev_desc_length += (asam_cmp_status_msg_cm_dev_desc_length % 2); /* padding to 16bit */
-            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_dev_desc, tvb, offset, asam_cmp_status_msg_cm_dev_desc_length, ENC_UTF_8 | ENC_NA);
+            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_dev_desc, tvb, offset, asam_cmp_status_msg_cm_dev_desc_length, ENC_UTF_8);
             offset += (int)asam_cmp_status_msg_cm_dev_desc_length;
         }
 
@@ -1894,7 +1899,7 @@ dissect_asam_cmp_status_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_
 
         if ((asam_cmp_status_msg_cm_sn_length) > 0) {
             asam_cmp_status_msg_cm_sn_length += (asam_cmp_status_msg_cm_sn_length % 2); /* padding to 16bit */
-            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_sn, tvb, offset, asam_cmp_status_msg_cm_sn_length, ENC_UTF_8 | ENC_NA);
+            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_sn, tvb, offset, asam_cmp_status_msg_cm_sn_length, ENC_UTF_8);
             offset += (int)asam_cmp_status_msg_cm_sn_length;
         }
 
@@ -1903,7 +1908,7 @@ dissect_asam_cmp_status_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_
 
         if ((asam_cmp_status_msg_cm_hw_ver_length) > 0) {
             asam_cmp_status_msg_cm_hw_ver_length += (asam_cmp_status_msg_cm_hw_ver_length % 2); /* padding to 16bit */
-            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_hw_ver, tvb, offset, asam_cmp_status_msg_cm_hw_ver_length, ENC_UTF_8 | ENC_NA);
+            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_hw_ver, tvb, offset, asam_cmp_status_msg_cm_hw_ver_length, ENC_UTF_8);
             offset += (int)asam_cmp_status_msg_cm_hw_ver_length;
         }
 
@@ -1912,7 +1917,7 @@ dissect_asam_cmp_status_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_
 
         if ((asam_cmp_status_msg_cm_sw_ver_length) > 0) {
             asam_cmp_status_msg_cm_sw_ver_length += (asam_cmp_status_msg_cm_sw_ver_length % 2); /* padding to 16bit */
-            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_sw_ver, tvb, offset, asam_cmp_status_msg_cm_sw_ver_length, ENC_UTF_8 | ENC_NA);
+            proto_tree_add_item(asam_cmp_status_msg_payload_tree, hf_cmp_status_sw_ver, tvb, offset, asam_cmp_status_msg_cm_sw_ver_length, ENC_UTF_8);
             offset += (int)asam_cmp_status_msg_cm_sw_ver_length;
         }
 
@@ -1966,9 +1971,9 @@ dissect_asam_cmp_status_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *root_
             offset += 1;
 
             if (descr != NULL) {
-                proto_item_append_text(ti_interface, " %s, Type: %s", descr, val_to_str(ifacetype, data_msg_type_names, "Unknown (0x%x)"));
+                proto_item_append_text(ti_interface, " %s, Type: %s", descr, val_to_str(pinfo->pool, ifacetype, data_msg_type_names, "Unknown (0x%x)"));
             } else {
-                proto_item_append_text(ti_interface, " 0x%x, Type: %s", ifaceid, val_to_str(ifacetype, data_msg_type_names, "Unknown (0x%x)"));
+                proto_item_append_text(ti_interface, " 0x%x, Type: %s", ifaceid, val_to_str(pinfo->pool, ifacetype, data_msg_type_names, "Unknown (0x%x)"));
             }
 
             proto_tree_add_item(subtree, hf_cmp_iface_iface_status, tvb, offset, 1, ENC_NA);
@@ -2179,31 +2184,42 @@ dissect_asam_cmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
     proto_tree_add_item(asam_cmp_header_tree, hf_cmp_stream_seq_ctr, tvb, offset, 2, ENC_BIG_ENDIAN);
     offset += 2;
 
-    proto_item_append_text(ti_root, ", Device: 0x%04x, Type: %s", device_id, val_to_str(msg_type, msg_type_names, "Unknown (0x%x)"));
+    proto_item_append_text(ti_root, ", Device: 0x%04x, Type: %s", device_id, val_to_str(pinfo->pool, msg_type, msg_type_names, "Unknown (0x%x)"));
 
     while (tvb_reported_length_remaining(tvb, offset) >= 16) {
+        unsigned bytes_parsed = 0;
+
         switch (msg_type) {
         case CMP_MSG_TYPE_CTRL_MSG:
             col_append_str(pinfo->cinfo, COL_INFO, ", Control Msg");
-            offset += dissect_asam_cmp_ctrl_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
+            bytes_parsed = dissect_asam_cmp_ctrl_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
             break;
         case CMP_MSG_TYPE_STATUS_MSG:
             col_append_str(pinfo->cinfo, COL_INFO, ", Status Msg");
-            offset += dissect_asam_cmp_status_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
+            bytes_parsed = dissect_asam_cmp_status_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
             break;
         case CMP_MSG_TYPE_VENDOR:
             col_append_str(pinfo->cinfo, COL_INFO, ", Vendor Msg");
-            offset += dissect_asam_cmp_vendor_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
+            bytes_parsed = dissect_asam_cmp_vendor_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
             break;
         case CMP_MSG_TYPE_DATA_MSG:
             col_append_str(pinfo->cinfo, COL_INFO, ", Data Msg");
-            offset += dissect_asam_cmp_data_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
+            bytes_parsed = dissect_asam_cmp_data_msg(tvb, pinfo, tree, asam_cmp_tree, offset);
             break;
         default:
             proto_item_set_end(ti_root, tvb, offset);
             proto_item_set_end(ti_header, tvb, offset);
             return offset;
         }
+
+        offset += bytes_parsed;
+
+        /* Bytes are not being parsed, if detected as Ethernet padding, so we need to bail out. */
+        if (bytes_parsed == 0) {
+            proto_item_set_end(ti_root, tvb, offset);
+            return offset;
+        }
+
     }
 
     proto_item_set_end(ti_root, tvb, offset);
@@ -2348,7 +2364,7 @@ proto_register_asam_cmp(void) {
         { &hf_cmp_lin_pid_parity,                   { "Parity", "asam-cmp.msg.lin.pid.parity", FT_UINT8, BASE_HEX, NULL, CMP_CANFD_PID_PARITY_MASK, NULL, HFILL } },
         { &hf_cmp_lin_reserved_2,                   { "Reserved", "asam-cmp.msg.lin.res_2", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL } },
         { &hf_cmp_lin_checksum,                     { "Checksum", "asam-cmp.msg.lin.checksum", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL } },
-        { &hf_cmp_lin_data_len,                     { "Data length", "asam-cmp.msg.lin.data_len", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+        { &hf_cmp_lin_data_len,                     { "Data length", "asam-cmp.msg.lin.data_len", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL } },
 
         { &hf_cmp_lin_flag_checksum_err,            { "Checksum Error", "asam-cmp.msg.lin.flags.checksum_err", FT_BOOLEAN, 16, NULL, 0x0001, NULL, HFILL } },
         { &hf_cmp_lin_flag_col_err,                 { "Collision Error", "asam-cmp.msg.lin.flags.col_err", FT_BOOLEAN, 16, NULL, 0x0002, NULL, HFILL } },
@@ -2643,8 +2659,6 @@ proto_reg_handoff_asam_cmp(void) {
 
     dissector_add_for_decode_as("ethertype", asam_cmp_handle);
     dissector_add_for_decode_as_with_preference("udp.port", asam_cmp_handle);
-
-    lin_subdissector_table = find_dissector_table("lin.frame_id");
 }
 
   /*

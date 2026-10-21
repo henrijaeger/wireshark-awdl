@@ -34,6 +34,7 @@
 
 #include <string.h>
 #include "wtap_opttypes.h"
+#include "wtap_module.h"
 #include "wtap-int.h"
 
 #include <wsutil/filesystem.h>
@@ -43,7 +44,7 @@
 #include <wsutil/ws_assert.h>
 
 
-static const char* idb_merge_mode_strings[] = {
+static const char* const idb_merge_mode_strings[] = {
     /* IDB_MERGE_MODE_NONE */
     "none",
     /* IDB_MERGE_MODE_ALL_SAME */
@@ -521,7 +522,9 @@ create_shb_header(const merge_in_file_t *in_files, const unsigned in_file_count,
      */
     opt_str = g_string_free(comment_gstr, FALSE);
     /* XXX: We probably want to prepend (insert at index 0) instead? */
-    wtap_block_add_string_option_owned(shb_hdr, OPT_COMMENT, opt_str);
+    if (wtap_block_add_string_option_owned(shb_hdr, OPT_COMMENT, opt_str) != WTAP_OPTTYPE_SUCCESS) {
+        g_free(opt_str);
+    }
     /*
      * XXX - and how do we preserve all the OPT_SHB_HARDWARE, OPT_SHB_OS,
      * and OPT_SHB_USERAPPL values from all the previous files?
@@ -614,16 +617,27 @@ is_duplicate_idb(const wtap_block_t idb1, const wtap_block_t idb2)
         }
     }
 
-    /* XXX - what do to if we have only one value? */
-    have_idb1_value = (wtap_block_get_uint8_option_value(idb1, OPT_IDB_TSRESOL, &idb1_if_tsresol) == WTAP_OPTTYPE_SUCCESS);
-    have_idb2_value = (wtap_block_get_uint8_option_value(idb2, OPT_IDB_TSRESOL, &idb2_if_tsresol) == WTAP_OPTTYPE_SUCCESS);
-    if (have_idb1_value && have_idb2_value) {
-        ws_debug("idb1_if_tsresol == idb2_if_tsresol: %s",
-                     (idb1_if_tsresol == idb2_if_tsresol) ? "true":"false");
-        if (idb1_if_tsresol != idb2_if_tsresol) {
-            ws_debug("returning false");
-            return false;
-        }
+    /* if_tsresol not present is treated as 6. Presumably if two IDBs are
+     * otherwise the same but one has an explict if_tsresol of 6 and one
+     * has no if_tsresol, those are the same. (Wiretap or some other library
+     * might remove a TSRESOL option with value 6 when exporting packets as
+     * it's unnecessary.)
+     */
+    if (wtap_block_get_uint8_option_value(idb1, OPT_IDB_TSRESOL, &idb1_if_tsresol) != WTAP_OPTTYPE_SUCCESS) {
+        idb1_if_tsresol = 6;
+    }
+    if (wtap_block_get_uint8_option_value(idb2, OPT_IDB_TSRESOL, &idb2_if_tsresol) != WTAP_OPTTYPE_SUCCESS) {
+        idb2_if_tsresol = 6;
+    }
+    ws_debug("idb1_if_tsresol == idb2_if_tsresol: %s",
+                 (idb1_if_tsresol == idb2_if_tsresol) ? "true":"false");
+    if (idb1_if_tsresol != idb2_if_tsresol) {
+        /*
+         * Probably not the same interface, and we can't combine them
+         * in any case.
+         */
+        ws_debug("returning false");
+        return false;
     }
 
     /* XXX - what do to if we have only one value? */
@@ -1242,6 +1256,7 @@ merge_files_common(const char* out_filename, /* filename in normal output mode,
     char               *err_info = NULL;
     unsigned            err_fileno = 0;
     uint32_t            err_framenum = 0;
+    const char         *current_out_filename = NULL;
     merge_result        status = MERGE_OK;
     wtap_dumper        *pdh;
     GArray             *shb_hdrs = NULL;
@@ -1352,6 +1367,9 @@ merge_files_common(const char* out_filename, /* filename in normal output mode,
                                           pfx ? pfx : "mergecap", file_type,
                                           compression_type, &params, &err,
                                           &err_info);
+            /* Make sure we don't free temp_filename before printing any error
+             * with it. */
+            current_out_filename = temp_filename;
             if (pdh) {
                 g_ptr_array_add(temp_files, temp_filename);
             }
@@ -1359,12 +1377,15 @@ merge_files_common(const char* out_filename, /* filename in normal output mode,
             pdh = wtap_dump_open_tempfile(out_filename, out_filenamep, pfx, file_type,
                                           compression_type, &params, &err,
                                           &err_info);
+            current_out_filename = *out_filenamep;
         } else if (out_filename) {
             pdh = wtap_dump_open(out_filename, file_type, compression_type,
                                  &params, &err, &err_info);
+            current_out_filename = out_filename;
         } else {
             pdh = wtap_dump_open_stdout(file_type, compression_type, &params,
                                         &err, &err_info);
+            current_out_filename = "-";
         }
         if (pdh == NULL) {
             merge_close_in_files(open_file_count, in_files);
@@ -1377,10 +1398,10 @@ merge_files_common(const char* out_filename, /* filename in normal output mode,
             if (dsb_combined) {
                 g_array_free(dsb_combined, true);
             }
+            report_cfile_dump_open_failure(current_out_filename, err, err_info, file_type);
             if (temp_files) {
                 g_ptr_array_free(temp_files, true);
             }
-            report_cfile_dump_open_failure(out_filename, err, err_info, file_type);
             return false;
         }
 
@@ -1421,7 +1442,7 @@ merge_files_common(const char* out_filename, /* filename in normal output mode,
                 break;
 
             case MERGE_ERR_CANT_OPEN_OUTFILE:
-                report_cfile_dump_open_failure(out_filename, err, err_info, file_type);
+                report_cfile_dump_open_failure(current_out_filename, err, err_info, file_type);
                 break;
 
             case MERGE_ERR_CANT_READ_INFILE:
@@ -1434,12 +1455,12 @@ merge_files_common(const char* out_filename, /* filename in normal output mode,
                 break;
 
             case MERGE_ERR_CANT_WRITE_OUTFILE:
-                report_cfile_write_failure(in_filenames[err_fileno], out_filename,
+                report_cfile_write_failure(in_filenames[err_fileno], current_out_filename,
                         err, err_info, err_framenum, file_type);
                 break;
 
             case MERGE_ERR_CANT_CLOSE_OUTFILE:
-                report_cfile_close_failure(out_filename, err, err_info);
+                report_cfile_close_failure(current_out_filename, err, err_info);
                 break;
 
             default:

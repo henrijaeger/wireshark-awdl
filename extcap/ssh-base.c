@@ -86,6 +86,12 @@ static void extcap_log(int priority, const char *function, const char *buffer, v
 	 */
 #if LIBSSH_VERSION_INT < SSH_VERSION_INT(0,11,0)
 		level = LOG_LEVEL_INFO;
+#elif LIBSSH_VERSION_INT < SSH_VERSION_INT(0,12,1)
+		if (strncmp(function, "ssh_strict_fopen", strlen("ssh_strict_fopen")) == 0) {
+			level = LOG_LEVEL_DEBUG;
+		} else {
+			level = LOG_LEVEL_WARNING;
+		}
 #else
 		level = LOG_LEVEL_WARNING;
 #endif
@@ -121,6 +127,9 @@ ssh_session create_ssh_connection(const ssh_params_t* ssh_params, char** err_inf
 		goto failure;
 	}
 
+	ssh_options_set(sshs, SSH_OPTIONS_LOG_VERBOSITY, &ssh_params->debug);
+	ssh_set_log_callback(extcap_log);
+
 	if (ssh_options_set(sshs, SSH_OPTIONS_HOST, ssh_params->host)) {
 		*err_info = ws_strdup_printf("Can't set the host: %s", ssh_params->host);
 		goto failure;
@@ -128,13 +137,33 @@ ssh_session create_ssh_connection(const ssh_params_t* ssh_params, char** err_inf
 
 	/* Load the configurations already present in the system configuration file. */
 	/* They will be overwritten by the user-provided configurations. */
+#ifdef _WIN32
+	/* libssh < 0.11.4 tries to read C:\etc\ssh\ssh_config by default
+	 * on Windows (i.e., if the second parameter is NULL.), and later
+	 * versions try to read from %PROGRAMDATA%\ssh\ssh_config. Neither
+	 * of those is a good choice for us, since anyone can create them
+	 * if they don't exist. Just look for %HOME%\.ssh\config instead.
+	 *
+	 * libssh < 0.12.0 treats %d as "%HOME%\.ssh" (or "~/.ssh" on UN*X),
+	 * which doesn't match ssh_config(5) or openssh. Fixed in
+	 * https://gitlab.com/libssh/libssh-mirror/-/commit/ce0b616bc648e4d510bf8ea20af5572861b412a0
+	 * https://gitlab.com/libssh/libssh-mirror/-/work_items/349
+	 *
+	 * We have to check the runtime version here.
+	 */
+	const char *user_config;
+	if (NULL == ssh_version(SSH_VERSION_INT(0,12,0))) {
+		user_config = "%d/config";
+	} else {
+		user_config = "%d/.ssh/config";
+	}
+	if (ssh_options_parse_config(sshs, user_config) != 0) {
+#else
 	if (ssh_options_parse_config(sshs, NULL) != 0) {
+#endif
 		*err_info = g_strdup("Unable to load the configuration file");
 		goto failure;
 	}
-
-	ssh_options_set(sshs, SSH_OPTIONS_LOG_VERBOSITY, &ssh_params->debug);
-	ssh_set_log_callback(extcap_log);
 
 	if (ssh_params->ssh_sha1) {
 		if (ssh_options_set(sshs, SSH_OPTIONS_HOSTKEYS, HOSTKEYS_SHA1)) {

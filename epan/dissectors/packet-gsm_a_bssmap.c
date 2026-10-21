@@ -1852,7 +1852,10 @@ be_cell_id_type(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t of
                     g_free(str);
                 }
             }
-            break;
+            if (disc != 0x0c) {
+                break;
+            }
+            /* FALLTHRU */
         }
 
         if ((disc == 0x04) || (disc == 0x05) || (disc == 0x08)) break;
@@ -7568,10 +7571,9 @@ dissect_bssmap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
     str = try_val_to_str_idx_ext((uint32_t) oct, &gsm_a_bssmap_msg_strings_ext, &idx);
 
     if (sccp_msg_p && !sccp_msg_p->data.co.label) {
-        sccp_msg_p->data.co.label = wmem_strdup(wmem_file_scope(),
-                                                val_to_str_ext((uint32_t)oct,
+        sccp_msg_p->data.co.label = val_to_str_ext(wmem_file_scope(), (uint32_t)oct,
                                                 &gsm_a_bssmap_msg_strings_ext,
-                                                "BSSMAP (0x%02x)"));
+                                                "BSSMAP (0x%02x)");
     }
 
     /*
@@ -8062,17 +8064,17 @@ proto_register_gsm_a_bssmap(void)
     },
     { &hf_gsm_a_bssmap_aoip_trans_ipv4,
         { "Transport Layer Address (IPv4)","gsm_a.bssmap.aoip_trans_ipv4",
-        FT_IPv4,BASE_NONE,  NULL, 0x0,
+        FT_IPv4, BASE_NONE, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_gsm_a_bssmap_aoip_trans_ipv6,
         { "Transport Layer Address (IPv6)","gsm_a.bssmap.aoip_trans_ipv6",
-        FT_IPv6,BASE_NONE,  NULL, 0x0,
+        FT_IPv6, BASE_NONE,NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_gsm_a_bssmap_aoip_trans_port,
         { "UDP Port","gsm_a.bssmap.aoip_trans_port",
-        FT_UINT16, BASE_DEC,NULL, 0x0,
+        FT_UINT16, BASE_PT_UDP, NULL, 0x0,
         NULL, HFILL }
     },
     { &hf_gsm_a_bssmap_fi,
@@ -8420,7 +8422,7 @@ proto_register_gsm_a_bssmap(void)
     expert_module_t* expert_gsm_a_bssmap;
 
     static ei_register_info ei[] = {
-        { &ei_gsm_a_bssmap_extraneous_data, { "gsm_a_bssmap.extraneous_data", PI_PROTOCOL, PI_NOTE, "Extraneous Data, dissector bug or later version spec(report to wireshark.org)", EXPFILL }},
+        { &ei_gsm_a_bssmap_extraneous_data, { "gsm_a_bssmap.extraneous_data", PI_PROTOCOL, PI_NOTE, "Extraneous Data, dissector bug or later version spec (report to wireshark.org)", EXPFILL }},
         { &ei_gsm_a_bssmap_not_decoded_yet, { "gsm_a_bssmap.not_decoded_yet", PI_UNDECODED, PI_WARN, "Not decoded yet", EXPFILL }},
         { &ei_gsm_a_bssap_unknown_codec, { "gsm_a_bssmap.unknown_codec", PI_PROTOCOL, PI_WARN, "Unknown codec - the rest of the dissection my be suspect", EXPFILL }},
         { &ei_gsm_a_bssmap_bogus_length, { "gsm_a_bssmap.bogus_length", PI_PROTOCOL, PI_WARN, "Bogus length", EXPFILL }},

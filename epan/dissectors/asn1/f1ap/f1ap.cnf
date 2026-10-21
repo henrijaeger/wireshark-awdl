@@ -65,7 +65,7 @@ ReferenceConfiguration/referenceConfiguration referenceConfiguration-item
 #.FN_FTR ProtocolIE-ID
   if (tree) {
     proto_item_append_text(proto_item_get_parent_nth(actx->created_item, 2), ": %s",
-                           val_to_str_ext(f1ap_data->protocol_ie_id, &f1ap_ProtocolIE_ID_vals_ext, "unknown (%d)"));
+                           val_to_str_ext(actx->pinfo->pool, f1ap_data->protocol_ie_id, &f1ap_ProtocolIE_ID_vals_ext, "unknown (%d)"));
   }
 
 #.FN_PARS ProtocolIE-Field/value  FN_VARIANT=_pdu_new  TYPE_REF_FN=dissect_ProtocolIEFieldValue
@@ -211,6 +211,7 @@ id-MulticastCommonConfiguration             ProcedureCode
 id-BroadcastTransportResourceRequest        ProcedureCode
 id-DUCUAccessAndMobilityIndication          ProcedureCode
 id-SRSInformationReservationNotification    ProcedureCode
+id-CUDUMobilityInitiationRequest            ProcedureCode
 
 # ProtocolIE-ID
 id-Cause                                             ProtocolIE-ID
@@ -1055,6 +1056,10 @@ id-LocalOrigin                                       ProtocolIE-ID
 id-LTMResetInformation                               ProtocolIE-ID
 id-SRSPosPeriodicConfigHyperSFNIndex                 ProtocolIE-ID
 id-PreconfiguredSRSInformation                       ProtocolIE-ID
+id-candidatePSCellsToCancel                          ProtocolIE-ID
+id-MobilityInitiation                                ProtocolIE-ID
+id-ValidityAreaSpecificSRSInformationExtended        ProtocolIE-ID
+id-PLMNIndexNRAssistanceInfoForNetShar               ProtocolIE-ID
 
 #.END
 
@@ -1664,6 +1669,8 @@ F1U-PathFailure                                   N f1ap.ies id-F1U-PathFailure
 LocalOrigin                                       N f1ap.ies id-LocalOrigin
 LTMResetInformation                               N f1ap.ies id-LTMResetInformation
 RequestedSRSPreconfigurationCharacteristics-List  N f1ap.ies id-PreconfiguredSRSInformation
+MobilityInitiation                                N f1ap.ies id-MobilityInitiation
+PLMNIndexNR                                       N f1ap.ies id-PLMNIndexNRAssistanceInfoForNetShar
 
 #F1AP-PROTOCOL-EXTENSION
 GNB-CUSystemInformation                           N f1ap.extension id-gNB-CUSystemInformation
@@ -1699,6 +1706,7 @@ RequestedFeatureSetEntryIndex                     N f1ap.extension id-RequestedF
 RequestedP-MaxFR2                                 N f1ap.extension id-RequestedP-MaxFR2
 DRX-Config                                        N f1ap.extension id-DRX-Config
 UEAssistanceInformation                           N f1ap.extension id-UEAssistanceInformation
+NotificationInformation                           N f1ap.extension id-NotificationInformation
 BPLMN-ID-Info-List                                N f1ap.extension id-BPLMN-ID-Info-List
 CP-TransportLayerAddress                          N f1ap.extension id-TNLAssociationTransportLayerAddressgNBDU
 PortNumber                                        N f1ap.extension id-portNumber
@@ -1901,6 +1909,8 @@ ReportingIntervalIMs                              N f1ap.extension id-ReportingI
 Transmission-Bandwidth-asymmetric                 N f1ap.extension id-Transmission-Bandwidth-asymmetric
 TagIDPointer                                      N f1ap.extension id-TagIDPointer
 SRSPosPeriodicConfigHyperSFNIndex                 N f1ap.extension id-SRSPosPeriodicConfigHyperSFNIndex
+PSCellList                                        N f1ap.extension id-candidatePSCellsToCancel
+ValidityAreaSpecificSRSInformationExtended        N f1ap.extension id-ValidityAreaSpecificSRSInformationExtended
 
 #F1AP-ELEMENTARY-PROCEDURE
 Reset                                    N f1ap.proc.imsg id-Reset
@@ -2153,6 +2163,8 @@ DUCUAccessAndMobilityIndication          N f1ap.proc.imsg id-DUCUAccessAndMobili
 
 SRSInformationReservationNotification    N f1ap.proc.imsg id-SRSInformationReservationNotification
 
+CUDUMobilityInitiationRequest            N f1ap.proc.imsg id-CUDUMobilityInitiationRequest
+
 #.FN_BODY AdditionalSIBMessageList-Item/additionalSIB VAL_PTR = &param_tvb
   tvbuff_t *param_tvb = NULL;
 %(DEFAULT_BODY)s
@@ -2272,7 +2284,6 @@ SRSInformationReservationNotification    N f1ap.proc.imsg id-SRSInformationReser
         }
         break;
       case id_DLRRCMessageTransfer:
-      case id_UEContextRelease:
         switch (f1ap_data->srb_id) {
         case 0:
           col_append_str(actx->pinfo->cinfo, COL_PROTOCOL, "/");
@@ -2292,6 +2303,12 @@ SRSInformationReservationNotification    N f1ap.proc.imsg id-SRSInformationReser
         default:
           break;
         }
+        break;
+      case id_UEContextRelease:
+        /* In the UEContextReleaseCommand, the id_SRBID IE is present if the
+         * RRC container IE is present, but follows it. */
+        f1ap_data->rrc_tree = subtree;
+        f1ap_data->rrc_tvb = param_tvb;
         break;
       case id_UEContextSetup:
       case id_UEContextModification:
@@ -2325,7 +2342,41 @@ SRSInformationReservationNotification    N f1ap.proc.imsg id-SRSInformationReser
 
 #.FN_BODY SRBID VAL_PTR=&f1ap_data->srb_id
   f1ap_private_data_t *f1ap_data = f1ap_get_private_data(actx->pinfo);
+  proto_tree *subtree = f1ap_data->rrc_tree;
+  tvbuff_t *param_tvb = f1ap_data->rrc_tvb;
 %(DEFAULT_BODY)s
+  if (param_tvb) {
+    switch (f1ap_data->message_type) {
+    case INITIATING_MESSAGE:
+      switch (f1ap_data->procedure_code) {
+      case id_UEContextRelease:
+        switch (f1ap_data->srb_id) {
+        case 0:
+          col_append_str(actx->pinfo->cinfo, COL_PROTOCOL, "/");
+          col_set_fence(actx->pinfo->cinfo, COL_PROTOCOL);
+          col_set_fence(actx->pinfo->cinfo, COL_INFO);
+          call_dissector(nr_rrc_dl_ccch_handle, param_tvb, actx->pinfo, subtree);
+          break;
+        case 1:
+        case 2:
+        case 3:
+          col_append_str(actx->pinfo->cinfo, COL_PROTOCOL, "/");
+          col_set_fence(actx->pinfo->cinfo, COL_PROTOCOL);
+          col_set_fence(actx->pinfo->cinfo, COL_INFO);
+          add_nr_pdcp_meta_data(actx->pinfo, PDCP_NR_DIRECTION_DOWNLINK, f1ap_data->srb_id);
+          call_dissector(nr_pdcp_handle, param_tvb, actx->pinfo, subtree);
+          break;
+        default:
+          break;
+        }
+        break;
+      default:
+        break;
+      }
+    default:
+      break;
+    }
+  }
 
 #.FN_BODY RRCContainer-RRCSetupComplete VAL_PTR=&param_tvb
   tvbuff_t *param_tvb = NULL;
@@ -4052,6 +4103,9 @@ N6JitterInformation/n6JitterUpperBound DISPLAY=BASE_CUSTOM STRINGS=CF_FUNC(f1ap_
 #.FN_HDR SRSInformationReservationNotification
   set_message_label(actx, MTYPE_SRS_INFORMATION_RESERVATION_NOTIFICATION);
   set_stats_message_type(actx->pinfo, MTYPE_SRS_INFORMATION_RESERVATION_NOTIFICATION);
+#.FN_HDR CUDUMobilityInitiationRequest
+  set_message_label(actx, MTYPE_CU_DU_MOBILITY_INITIATION_REQUEST);
+  set_stats_message_type(actx->pinfo, MTYPE_CU_DU_MOBILITY_INITIATION_REQUEST);
 #.END
 
 #

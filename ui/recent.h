@@ -173,6 +173,18 @@ typedef struct recent_settings_tag {
     GList      *custom_colors;
     GList      *gui_additional_toolbars;
     GList      *interface_toolbars;
+
+    bool        gui_tsgd_throughput_show;            /* tcp_stream_dialog throughput checkbox */
+    bool        gui_tsgd_goodput_show;               /* tcp_stream_dialog goodput checkbox */
+    double      gui_tsgd_ma_window_size;             /* tcp_stream_dialog ma_window_size */
+
+    bool        gui_welcome_page_sidebar_learn_visible;
+    bool        gui_welcome_page_sidebar_tips_visible;
+    bool        gui_welcome_page_sidebar_tips_events;
+    bool        gui_welcome_page_sidebar_tips_sponsorship;
+    bool        gui_welcome_page_sidebar_tips_tips;
+    bool        gui_welcome_page_sidebar_tips_auto_advance;
+    unsigned    gui_welcome_page_sidebar_tips_interval;
 } recent_settings_t;
 
 /** Global recent settings. */
@@ -279,7 +291,15 @@ extern char recent_get_column_xalign(int col);
  */
 extern void recent_set_column_xalign(int col, char xalign);
 
-/* save the window and its current geometry into the geometry hashtable */
+/**
+ * @brief save the window and its current geometry into the geometry hashtable.
+ *
+ * @param name The name of the window.
+ * @param geom Pointer to the window_geometry_t structure containing the geometry data.
+ *
+ * @note This deep copies the window_geometry_t struct (including the qt_geom
+ * member) and does NOT take ownership of the original.
+ */
 extern void window_geom_save(const char *name, window_geometry_t *geom);
 
 /* load the desired geometry for this window from the geometry hashtable */

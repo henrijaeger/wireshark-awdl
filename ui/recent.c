@@ -21,7 +21,7 @@
 #include <epan/prefs.h>
 #include <epan/prefs-int.h>
 #include <epan/column.h>
-#include <epan/value_string.h>
+#include <wsutil/value_string.h>
 
 #ifdef HAVE_PCAP_REMOTE
 #include "ui/capture_opts.h"
@@ -85,6 +85,17 @@
 #define RECENT_GUI_FOLLOW_DELTA                 "gui.follow_delta"
 #define RECENT_GUI_SHOW_BYTES_DECODE            "gui.show_bytes_decode"
 #define RECENT_GUI_SHOW_BYTES_SHOW              "gui.show_bytes_show"
+#define RECENT_GUI_TSD_MA_WINDOW_SIZE           "gui.tsd_ma_window_size"
+#define RECENT_GUI_TSD_THROUGHPUT_SHOW          "gui.tsd_throughput_show"
+#define RECENT_GUI_TSD_GOODPUT_SHOW             "gui.tsd_goodput_show"
+
+#define RECENT_KEY_SIDEBAR_LEARN_VISIBLE        "gui.welcome_page.sidebar.learn_visible"
+#define RECENT_KEY_SIDEBAR_TIPS_VISIBLE         "gui.welcome_page.sidebar.tips_visible"
+#define RECENT_KEY_SIDEBAR_TIPS_EVENTS          "gui.welcome_page.sidebar.tips_events"
+#define RECENT_KEY_SIDEBAR_TIPS_SPONSORSHIP     "gui.welcome_page.sidebar.tips_sponsorship"
+#define RECENT_KEY_SIDEBAR_TIPS_TIPS            "gui.welcome_page.sidebar.tips_tips"
+#define RECENT_KEY_SIDEBAR_TIPS_AUTO_ADVANCE    "gui.welcome_page.sidebar.tips_auto_advance"
+#define RECENT_KEY_SIDEBAR_TIPS_INTERVAL        "gui.welcome_page.sidebar.tips_interval"
 
 #define RECENT_GUI_GEOMETRY                   "gui.geom."
 
@@ -264,7 +275,7 @@ window_geom_free(void *data)
 {
     window_geometry_t *geom = (window_geometry_t*)data;
     g_free(geom->key);
-    g_free(geom->qt_geom);
+    g_free((char*)geom->qt_geom); // We copied it; we can free it
     g_free(geom);
 }
 
@@ -285,6 +296,7 @@ window_geom_save(const char *name, window_geometry_t *geom)
     *work = *geom;
     key = g_strdup(name);
     work->key = key;
+    work->qt_geom = g_strdup(geom->qt_geom);
     g_hash_table_replace(window_geom_hash, key, work);
 }
 
@@ -393,7 +405,7 @@ window_geom_recent_read_pair(const char *name,
         parse_recent_boolean(value, &geom.maximized);
         geom.set_maximized = true;
     } else if (strcmp(key, "qt_geometry") == 0) {
-        geom.qt_geom = g_strdup(value);
+        geom.qt_geom = value;
     } else {
         /*
          * Silently ignore the bogus key.  We shouldn't abort here,
@@ -799,6 +811,15 @@ write_recent_boolean(FILE *rf, const char *description, const char *name,
 }
 
 static void
+write_recent_double(FILE *rf, const char *description, const char *name,
+                    double value)
+{
+    fprintf(rf, "\n# %s.\n", description);
+    char buf[G_ASCII_DTOSTR_BUF_SIZE];
+    fprintf(rf, "%s: %s\n", name, g_ascii_dtostr(buf, sizeof(buf), value));
+}
+
+static void
 write_recent_enum(FILE *rf, const char *description, const char *name,
                   const value_string *values, unsigned value)
 {
@@ -951,6 +972,34 @@ write_recent(void)
                          recent.gui_search_multiple_occurs);
     write_recent_enum(rf, "Find packet search type", RECENT_GUI_SEARCH_TYPE, search_type_values,
                       recent.gui_search_type);
+
+    write_recent_boolean(rf, "Welcome page sidebar Learn section visible",
+            RECENT_KEY_SIDEBAR_LEARN_VISIBLE,
+            recent.gui_welcome_page_sidebar_learn_visible);
+
+    write_recent_boolean(rf, "Welcome page sidebar Tips section visible",
+            RECENT_KEY_SIDEBAR_TIPS_VISIBLE,
+            recent.gui_welcome_page_sidebar_tips_visible);
+
+    write_recent_boolean(rf, "Welcome page sidebar Tips event slides",
+            RECENT_KEY_SIDEBAR_TIPS_EVENTS,
+            recent.gui_welcome_page_sidebar_tips_events);
+
+    write_recent_boolean(rf, "Welcome page sidebar Tips sponsorship slides",
+            RECENT_KEY_SIDEBAR_TIPS_SPONSORSHIP,
+            recent.gui_welcome_page_sidebar_tips_sponsorship);
+
+    write_recent_boolean(rf, "Welcome page sidebar Tips tip-of-the-day slides",
+            RECENT_KEY_SIDEBAR_TIPS_TIPS,
+            recent.gui_welcome_page_sidebar_tips_tips);
+
+    write_recent_boolean(rf, "Welcome page sidebar Tips auto advance slides",
+            RECENT_KEY_SIDEBAR_TIPS_AUTO_ADVANCE,
+            recent.gui_welcome_page_sidebar_tips_auto_advance);
+
+    fprintf(rf, "\n# Welcome page sidebar Tips slide auto-advance interval in seconds.\n");
+    fprintf(rf, RECENT_KEY_SIDEBAR_TIPS_INTERVAL ": %u\n",
+            recent.gui_welcome_page_sidebar_tips_interval);
 
     window_geom_recent_write_all(rf);
 
@@ -1222,6 +1271,16 @@ write_profile_recent(void)
     fprintf(rf, RECENT_GUI_INTERFACE_TOOLBAR_SHOW ": %s\n", string_list);
     g_free(string_list);
 
+    write_recent_double(rf, "TCP Stream Graphs Moving Average Window Size",
+            RECENT_GUI_TSD_MA_WINDOW_SIZE,
+            recent.gui_tsgd_ma_window_size);
+    write_recent_boolean(rf, "TCP Stream Graphs Dialog Throughput show (hide)",
+            RECENT_GUI_TSD_THROUGHPUT_SHOW,
+            recent.gui_tsgd_throughput_show);
+    write_recent_boolean(rf, "TCP Stream Graphs Dialog Goodput show (hide)",
+            RECENT_GUI_TSD_GOODPUT_SHOW,
+            recent.gui_tsgd_goodput_show);
+
     fclose(rf);
 
     /* XXX - catch I/O errors (e.g. "ran out of disk space") and return
@@ -1309,6 +1368,25 @@ read_set_recent_common_pair_static(char *key, const char *value,
         recent.gui_search_type = (search_type_type)str_to_val(value, search_type_values, SEARCH_TYPE_DISPLAY_FILTER);
     } else if (strcmp(key, RECENT_GUI_CUSTOM_COLORS) == 0) {
         recent.custom_colors = prefs_get_string_list(value);
+    } else if (strcmp(key, RECENT_KEY_SIDEBAR_LEARN_VISIBLE) == 0) {
+        parse_recent_boolean(value, &recent.gui_welcome_page_sidebar_learn_visible);
+    } else if (strcmp(key, RECENT_KEY_SIDEBAR_TIPS_VISIBLE) == 0) {
+        parse_recent_boolean(value, &recent.gui_welcome_page_sidebar_tips_visible);
+    } else if (strcmp(key, RECENT_KEY_SIDEBAR_TIPS_EVENTS) == 0) {
+        parse_recent_boolean(value, &recent.gui_welcome_page_sidebar_tips_events);
+    } else if (strcmp(key, RECENT_KEY_SIDEBAR_TIPS_SPONSORSHIP) == 0) {
+        parse_recent_boolean(value, &recent.gui_welcome_page_sidebar_tips_sponsorship);
+    } else if (strcmp(key, RECENT_KEY_SIDEBAR_TIPS_TIPS) == 0) {
+        parse_recent_boolean(value, &recent.gui_welcome_page_sidebar_tips_tips);
+    } else if (strcmp(key, RECENT_KEY_SIDEBAR_TIPS_AUTO_ADVANCE) == 0) {
+        parse_recent_boolean(value, &recent.gui_welcome_page_sidebar_tips_auto_advance);
+    } else if (strcmp(key, RECENT_KEY_SIDEBAR_TIPS_INTERVAL) == 0) {
+        num = strtol(value, &p, 0);
+        if (p == value || *p != '\0')
+            return PREFS_SET_SYNTAX_ERR;
+        if (num < 1)
+            num = 8; // Default value
+        recent.gui_welcome_page_sidebar_tips_interval = (unsigned)num;
     }
 
     return PREFS_SET_OK;
@@ -1322,6 +1400,7 @@ read_set_recent_pair_static(char *key, const char *value,
 {
     long num;
     int32_t num_int32;
+    double val_as_dbl;
     char *p;
     GList *col_l, *col_l_elt;
     col_width_data *cfmt;
@@ -1484,6 +1563,19 @@ read_set_recent_pair_static(char *key, const char *value,
         recent.gui_additional_toolbars = prefs_get_string_list(value);
     } else if (strcmp(key, RECENT_GUI_INTERFACE_TOOLBAR_SHOW) == 0) {
         recent.interface_toolbars = prefs_get_string_list(value);
+    } else if (strcmp(key, RECENT_GUI_TSD_THROUGHPUT_SHOW) == 0) {
+        parse_recent_boolean(value, &recent.gui_tsgd_throughput_show);
+    } else if (strcmp(key, RECENT_GUI_TSD_GOODPUT_SHOW) == 0) {
+        parse_recent_boolean(value, &recent.gui_tsgd_goodput_show);
+    } else if (strcmp(key, RECENT_GUI_TSD_MA_WINDOW_SIZE) == 0) {
+        val_as_dbl = g_ascii_strtod(value, &p);
+        if (p == value || *p != '\0') {
+            return PREFS_SET_SYNTAX_ERR;      /* number was bad */
+        }
+        if (val_as_dbl <= 0) {
+            return PREFS_SET_SYNTAX_ERR;      /* number must be positive */
+        }
+        recent.gui_tsgd_ma_window_size = val_as_dbl;
     } else {
         return PREFS_SET_NO_SUCH_PREF;
     }
@@ -1588,6 +1680,15 @@ recent_read_static(char **rf_path_return, int *rf_errno_return)
     recent.gui_profile_switch_check_count = 1000;
     recent.gui_fileopen_remembered_dir = NULL;
 
+    /* defaults for the welcome page sidebar */
+    recent.gui_welcome_page_sidebar_learn_visible = true;
+    recent.gui_welcome_page_sidebar_tips_visible = true;
+    recent.gui_welcome_page_sidebar_tips_events = true;
+    recent.gui_welcome_page_sidebar_tips_sponsorship = true;
+    recent.gui_welcome_page_sidebar_tips_tips = true;
+    recent.gui_welcome_page_sidebar_tips_auto_advance = true;
+    recent.gui_welcome_page_sidebar_tips_interval = 8;
+
     /* Construct the pathname of the user's recent common file. */
     rf_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false);
 
@@ -1643,6 +1744,11 @@ recent_read_profile_static(char **rf_path_return, int *rf_errno_return)
     recent.gui_follow_delta          = FOLLOW_DELTA_NONE;
     recent.gui_show_bytes_decode     = DecodeAsNone;
     recent.gui_show_bytes_show       = SHOW_ASCII;
+
+    /* defaults for the TCP Stream Graph Dialog */
+    recent.gui_tsgd_ma_window_size = 1.0;
+    recent.gui_tsgd_throughput_show = true;
+    recent.gui_tsgd_goodput_show = false;
 
     /* pane size of zero will autodetect */
     recent.gui_geometry_main_upper_pane   = 0;
@@ -1884,6 +1990,14 @@ void
 recent_init(void)
 {
     memset(&recent, 0, sizeof(recent_settings_t));
+
+    recent.gui_welcome_page_sidebar_learn_visible = true;
+    recent.gui_welcome_page_sidebar_tips_visible = true;
+    recent.gui_welcome_page_sidebar_tips_events = true;
+    recent.gui_welcome_page_sidebar_tips_sponsorship = true;
+    recent.gui_welcome_page_sidebar_tips_tips = true;
+    recent.gui_welcome_page_sidebar_tips_auto_advance = true;
+    recent.gui_welcome_page_sidebar_tips_interval = 8;
 }
 
 void

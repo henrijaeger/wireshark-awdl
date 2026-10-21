@@ -82,6 +82,11 @@ CertificateList/signedCertificateList/revokedCertificates/_item/userCertificate	
     tap_queue_packet(x509af_eo_tap, actx->pinfo, eo_info);
   }
 
+#.FN_HDR AlgorithmIdentifier
+  if (algorithm_id) {
+    wmem_free(wmem_file_scope(), (void*)algorithm_id);
+    algorithm_id = NULL;
+  }
 
 #.FN_PARS AlgorithmIdentifier/algorithmId
   FN_VARIANT = _str  HF_INDEX = hf_x509af_algorithm_id  VAL_PTR = &actx->external.direct_reference
@@ -91,18 +96,12 @@ CertificateList/signedCertificateList/revokedCertificates/_item/userCertificate	
 
   %(DEFAULT_BODY)s
 
-  if (algorithm_id) {
-    wmem_free(wmem_file_scope(), (void*)algorithm_id);
-  }
-
   if(actx->external.direct_reference) {
     algorithm_id = (const char *)wmem_strdup(wmem_file_scope(), actx->external.direct_reference);
 
     name = oid_resolved_from_string(actx->pinfo->pool, actx->external.direct_reference);
 
     proto_item_append_text(tree, " (%%s)", name ? name : actx->external.direct_reference);
-  } else {
-    algorithm_id = NULL;
   }
 
 #.FN_BODY AlgorithmIdentifier/parameters
@@ -116,28 +115,24 @@ CertificateList/signedCertificateList/revokedCertificates/_item/userCertificate	
 
 #.FN_BODY SubjectPublicKeyInfo/subjectPublicKey
   tvbuff_t *bs_tvb = NULL;
-# proto_tree *subtree;
 
-  dissect_ber_bitstring(false, actx, NULL, tvb, offset,
-                        NULL, 0, hf_index, -1, &bs_tvb);
+  offset = dissect_ber_bitstring(false, actx, tree, tvb, offset,
+                                 NULL, 0, hf_index, -1, &bs_tvb);
 
   /* See RFC 3279 for possible subjectPublicKey values given an Algorithm ID.
    * The contents of subjectPublicKey are always explicitly tagged. */
   if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.113549.1.1.1")) { /* id-rsa */
-    offset += dissect_pkcs1_RSAPublicKey(false, bs_tvb, 0, actx, tree, hf_index);
+    proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_x509af_SubjectPublicKey);
+    dissect_pkixalgs_RSAPublicKey(false, bs_tvb, 0, actx, subtree, hf_x509af_subjectPublicKey_rsa);
 
-# TODO: PKCS#1 only defines RSA; DH and DSA are from PKIX1Algorithms2008
-# } else if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.10040.4.1")) { /* id-dsa */
-#   subtree = proto_item_add_subtree(actx->created_item, ett_subjectpublickey);
-#   offset += dissect_DSAPublicKey(false, bs_tvb, 0, actx, subtree, hf_dsa_y);
-#
-# } else if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.10046.2.1")) { /* dhpublicnumber */
-#   subtree = proto_item_add_subtree(actx->created_item, ett_subjectpublickey);
-#   offset += dissect_DHPublicKey(false, bs_tvb, 0, actx, subtree, hf_dh_y);
-#
-  } else {
-    offset = dissect_ber_bitstring(false, actx, tree, tvb, offset,
-                                   NULL, 0, hf_index, -1, NULL);
+  } else if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.10040.4.1")) { /* id-dsa */
+    proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_x509af_SubjectPublicKey);
+    dissect_pkixalgs_DSAPublicKey(false, bs_tvb, 0, actx, subtree, hf_x509af_subjectPublicKey_dsa);
+
+  } else if (bs_tvb && !g_strcmp0(algorithm_id, "1.2.840.10046.2.1")) { /* dhpublicnumber */
+    proto_tree *subtree = proto_item_add_subtree(actx->created_item, ett_x509af_SubjectPublicKey);
+    dissect_pkixalgs_DHPublicKey(false, bs_tvb, 0, actx, subtree, hf_x509af_subjectPublicKey_dh);
+
   }
 
 #.FN_PARS Extension/extnId
@@ -164,15 +159,15 @@ CertificateList/signedCertificateList/revokedCertificates/_item/userCertificate	
   offset = dissect_ber_length(actx->pinfo, tree, tvb, offset, &len, &ind);
   offset=call_ber_oid_callback(actx->external.direct_reference, tvb, offset, actx->pinfo, tree, NULL);
 
-#.FN_BODY Time/utcTime
+#.FN_BODY Time/utcTime HF_INDEX = -1 VAL_PTR = &outstr
   char *outstr, *newstr;
-  uint32_t tvblen;
+  int old_offset = offset;
 
   /* the 2-digit year can only be in the range 1950..2049 https://tools.ietf.org/html/rfc5280#section-4.1.2.5.1 */
-  offset = dissect_ber_UTCTime(implicit_tag, actx, tree, tvb, offset, hf_index, &outstr, &tvblen);
+%(DEFAULT_BODY)s
   if (hf_index > 0 && outstr) {
     newstr = wmem_strconcat(actx->pinfo->pool, outstr[0] < '5' ? "20": "19", outstr, NULL);
-    proto_tree_add_string(tree, hf_index, tvb, offset - tvblen, tvblen, newstr);
+    proto_tree_add_string(tree, hf_index, tvb, old_offset, offset - old_offset, newstr);
   }
 
 #.FN_BODY SubjectName

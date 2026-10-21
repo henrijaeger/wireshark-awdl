@@ -47,6 +47,7 @@
 #include <epan/conversation.h>
 #include <epan/tfs.h>
 #include <epan/unit_strings.h>
+#include <epan/exceptions.h>
 #include <wiretap/wtap.h>
 
 #include "packet-gsm_a_common.h"
@@ -3477,13 +3478,13 @@ mbim_dissect_tcs(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, int* offse
                 *offset += 16;
                 proto_tree_add_item_ret_uint(subtree, hf_mbim_ms_ursp_tc_length, tvb, *offset, 1, ENC_BIG_ENDIAN, &tc_value_length);
                 *offset += 1;
-                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_app_id, tvb, *offset, tc_value_length, ENC_ASCII | ENC_NA);
+                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_app_id, tvb, *offset, tc_value_length, ENC_ASCII);
                 *offset += tc_value_length;
                 break;
             case URSP_TC_TYPE_IPV4:
-                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_ipv4, tvb, *offset, 4, ENC_NA);
+                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_ipv4, tvb, *offset, 4, ENC_BIG_ENDIAN);
                 *offset += 4;
-                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_ipv4_mask, tvb, *offset, 4, ENC_NA);
+                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_ipv4_mask, tvb, *offset, 4, ENC_BIG_ENDIAN);
                 *offset += 4;
                 break;
             case URSP_TC_TYPE_IPV6:
@@ -3545,7 +3546,7 @@ mbim_dissect_tcs(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, int* offse
             case URSP_TC_TYPE_DNN:
                 proto_tree_add_item_ret_uint(subtree, hf_mbim_ms_ursp_tc_length, tvb, *offset, 1, ENC_LITTLE_ENDIAN, &tc_value_length);
                 *offset += 1;
-                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_dnn, tvb, *offset, tc_value_length, ENC_APN_STR | ENC_NA);
+                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_dnn, tvb, *offset, tc_value_length, ENC_APN_STR);
                 *offset += tc_value_length;
                 break;
             case URSP_TC_TYPE_CONNECTION_CAPABILITY:
@@ -3560,7 +3561,7 @@ mbim_dissect_tcs(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, int* offse
             case URSP_TC_TYPE_FQDN:
                 proto_tree_add_item_ret_uint(subtree, hf_mbim_ms_ursp_tc_length, tvb, *offset, 1, ENC_LITTLE_ENDIAN, &tc_value_length);
                 *offset += 1;
-                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_fqdn, tvb, *offset, tc_value_length, ENC_APN_STR | ENC_NA);
+                proto_tree_add_item(subtree, hf_mbim_ms_ursp_tc_fqdn, tvb, *offset, tc_value_length, ENC_APN_STR);
                 *offset += tc_value_length;
                 break;
             case URSP_TC_TYPE_APPID:
@@ -3690,7 +3691,9 @@ mbim_dissect_tlv_ie(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int *of
                 break;
         }
         decrement_dissection_depth(pinfo);
-        *offset = tlv_data_offset + data_length;
+        if (ckd_add(offset, tlv_data_offset, data_length)) {
+            THROW(ReportedBoundsError);
+        }
     }
     if (padding_length) {
         proto_tree_add_item(tree, hf_mbim_tlv_ie_padding, tvb, *offset, padding_length, ENC_NA);
@@ -4480,7 +4483,7 @@ mbim_dissect_ipv4_element(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, i
         expert_add_info_format(pinfo, ti, &ei_mbim_illegal_on_link_prefix_length,
                                "Illegal On Link Prefix Length %u (max is 32)", on_link_prefix_length);
     }
-    proto_tree_add_item(tree, hf_mbim_ipv4_element_ipv4_address, tvb, *offset, 4, ENC_NA);
+    proto_tree_add_item(tree, hf_mbim_ipv4_element_ipv4_address, tvb, *offset, 4, ENC_BIG_ENDIAN);
     *offset += 4;
 }
 
@@ -4556,7 +4559,7 @@ mbim_dissect_ip_configuration_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree
     }
     if (ipv4_gateway_offset) {
         proto_tree_add_item(tree, hf_mbim_ip_configuration_info_ipv4_gateway,
-                            tvb, base_offset + ipv4_gateway_offset, 4, ENC_NA);
+                            tvb, base_offset + ipv4_gateway_offset, 4, ENC_BIG_ENDIAN);
     }
     if (ipv6_gateway_offset) {
         proto_tree_add_item(tree, hf_mbim_ip_configuration_info_ipv6_gateway,
@@ -4566,7 +4569,7 @@ mbim_dissect_ip_configuration_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree
         offset = base_offset + ipv4_dns_offset;
         for (i = 0; i < ipv4_dns_count; i++) {
             proto_tree_add_item(tree, hf_mbim_ip_configuration_info_ipv4_dns,
-                                tvb, offset, 4, ENC_NA);
+                                tvb, offset, 4, ENC_BIG_ENDIAN);
             offset += 4;
         }
     }
@@ -4991,7 +4994,7 @@ mbim_dissect_sms_cdma_record(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *
     }
     if (timestamp_offset && timestamp_size) {
         it = proto_tree_add_item(tree, hf_mbim_sms_cdma_record_timestamp, tvb, base_offset + timestamp_offset,
-                                 timestamp_size, ENC_NA|ENC_ASCII);
+                                 timestamp_size, ENC_ASCII);
         if (timestamp_size > 21) {
             expert_add_info(pinfo, it, &ei_mbim_oversized_string);
         }
@@ -5214,7 +5217,7 @@ mbim_dissect_set_ussd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int o
             case SMS_ENCODING_7BIT:
             case SMS_ENCODING_7BIT_LANG:
                 proto_tree_add_item(subtree, hf_mbim_set_ussd_ussd_payload_text,
-                                    ussd_tvb, 0, ussd_payload_length, ENC_3GPP_TS_23_038_7BITS|ENC_NA);
+                                    ussd_tvb, 0, ussd_payload_length, ENC_3GPP_TS_23_038_7BITS);
                 break;
             case SMS_ENCODING_8BIT:
                 /* XXX - ASCII, or some extended ASCII? */
@@ -5267,7 +5270,7 @@ mbim_dissect_ussd_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int 
             case SMS_ENCODING_7BIT:
             case SMS_ENCODING_7BIT_LANG:
                 proto_tree_add_item(subtree, hf_mbim_ussd_info_ussd_payload_text,
-                                    ussd_tvb, 0, ussd_payload_length, ENC_3GPP_TS_23_038_7BITS|ENC_NA);
+                                    ussd_tvb, 0, ussd_payload_length, ENC_3GPP_TS_23_038_7BITS);
                 break;
             case SMS_ENCODING_8BIT:
                 /* XXX - ASCII, or some extended ASCII? */
@@ -6505,11 +6508,21 @@ mbim_dissect_set_lte_attach_config(tvbuff_t* tvb, packet_info* pinfo, proto_tree
 }
 
 static void
-mbim_dissect_lte_attach_status(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, int offset)
+mbim_dissect_lte_attach_status(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, int offset, struct mbim_conv_info* mbim_conv)
 {
     int base_offset = offset;
     proto_tree_add_item(tree, hf_mbim_ms_lte_attach_state, tvb, offset, 4, ENC_LITTLE_ENDIAN);
     offset += 4;
+    if (SHOULD_MBIM_EX3_AND_HIGHER_BE_APPLIED(mbim_conv)) {
+        uint32_t nw_error = tvb_get_letohl(tvb, offset);
+        if (nw_error == 0) {
+            proto_tree_add_uint_format_value(tree, hf_mbim_packet_service_info_nw_error, tvb, offset, 4, nw_error, "Success (0)");
+        }
+        else {
+            proto_tree_add_uint(tree, hf_mbim_packet_service_info_nw_error, tvb, offset, 4, nw_error);
+        }
+        offset += 4;
+    }
     mbim_dissect_lte_attach_context(tvb, pinfo, tree, offset, base_offset, false);
 }
 
@@ -7223,18 +7236,26 @@ mbim_dissect_ms_apdu_info(tvbuff_t* tvb, packet_info *pinfo, proto_tree* tree, i
     if (response_offset && response_length) {
         proto_item *item;
         proto_tree *sub_tree;
+        tvbuff_t *response_tvb;
+
+        /* Combine the response APDU and status */
+        response_tvb = tvb_new_composite();
+        tvb_composite_append(response_tvb, tvb_new_subset_length(tvb, base_offset + response_offset, response_length));
+        tvb_composite_append(response_tvb, tvb_new_subset_length(tvb, base_offset, 2));
+        tvb_composite_finalize(response_tvb);
+        add_new_data_source(pinfo, response_tvb, "UICC response");
 
         item = proto_tree_add_item(tree, hf_mbim_ms_uicc_response, tvb, base_offset + response_offset, response_length, ENC_NA);
         if (mbim_uicc_apdu_dissector == UICC_APDU_GSM_SIM) {
             if (gsm_sim_rsp_handle) {
                 sub_tree = proto_item_add_subtree(item, ett_mbim_buffer);
-                call_dissector(gsm_sim_rsp_handle, tvb_new_subset_length(tvb, base_offset + response_offset, response_length), pinfo, sub_tree);
+                call_dissector(gsm_sim_rsp_handle, response_tvb, pinfo, sub_tree);
             }
         } else {
             if (iso7816_handle) {
                 sub_tree = proto_item_add_subtree(item, ett_mbim_buffer);
                 pinfo->p2p_dir = P2P_DIR_RECV;
-                call_dissector(iso7816_handle, tvb_new_subset_length(tvb, base_offset + response_offset, response_length), pinfo, sub_tree);
+                call_dissector(iso7816_handle, response_tvb, pinfo, sub_tree);
             }
         }
     }
@@ -7326,7 +7347,7 @@ mbim_dissect_ms_app_info_elements(tvbuff_t* tvb, packet_info* pinfo _U_, proto_t
         proto_tree_add_item(tree, hf_mbim_ms_app_info_app_id, tvb, base_offset + app_id_offset, app_id_size, ENC_NA);
     }
     if (app_name_offset && app_name_size) {
-        proto_tree_add_item(tree, hf_mbim_ms_app_info_app_name, tvb, base_offset + app_name_offset, app_name_size, ENC_UTF_8 | ENC_NA);
+        proto_tree_add_item(tree, hf_mbim_ms_app_info_app_name, tvb, base_offset + app_name_offset, app_name_size, ENC_UTF_8);
     }
     if (num_pins) {
         proto_tree_add_item(tree, hf_mbim_ms_app_info_pin_ref, tvb, base_offset + pin_ref_offset, pin_ref_size, ENC_NA);
@@ -7485,7 +7506,7 @@ mbim_dissect_ms_access_binary(tvbuff_t* tvb, packet_info* pinfo _U_, proto_tree*
     }
     if (local_pin_offset && local_pin_size) {
         proto_tree_add_item(tree, hf_mbim_ms_access_binary_local_pin, tvb, base_offset + local_pin_offset,
-            local_pin_size, ENC_UTF_8 | ENC_NA);
+            local_pin_size, ENC_UTF_8);
     }
     if (binary_data_offset && binary_data_size) {
         proto_tree_add_item(tree, hf_mbim_ms_access_binary_binary_data, tvb, base_offset + binary_data_offset,
@@ -9350,7 +9371,7 @@ dissect_mbim_control(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *
                                 mbim_dissect_lte_attach_config_info(frag_tvb, pinfo, subtree, offset);
                                 break;
                             case MBIM_CID_MS_LTE_ATTACH_STATUS:
-                                mbim_dissect_lte_attach_status(frag_tvb, pinfo, subtree, offset);
+                                mbim_dissect_lte_attach_status(frag_tvb, pinfo, subtree, offset, mbim_conv);
                                 break;
                             case MBIM_CID_MS_SYS_CAPS:
                                 if (msg_type == MBIM_COMMAND_DONE) {

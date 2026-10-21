@@ -419,8 +419,9 @@ csnStreamDissector(proto_tree *tree, csnStream_t* ar, const CSN_DESCR* pDescr, t
             pui8 = pui8DATA(data, pDescr->offset);
             do
             {
-              *pui8++ = tvb_get_bits8(tvb, bit_offset, no_of_bits);
+              *pui8 = tvb_get_bits8(tvb, bit_offset, no_of_bits);
               proto_tree_add_uint_bits_format_value(tree, *(pDescr->hf_ptr), tvb, bit_offset, no_of_bits, *pui8, ENC_BIG_ENDIAN, " (Count %d)", i++);
+              pui8++;
               bit_offset += no_of_bits;
             } while (--nCount > 0);
           }
@@ -1346,6 +1347,7 @@ csnStreamDissector(proto_tree *tree, csnStream_t* ar, const CSN_DESCR* pDescr, t
          * REMARK: recursive way to specify an array but an iterative implementation!
          */
         int16_t no_of_bits        = pDescr->i;
+        uint32_t nSizeArray = (uint32_t)((uintptr_t)pDescr->aux_fn);
         uint8_t ElementCount = 0;
 
         pui8  = pui8DATA(data, pDescr->offset);
@@ -1357,8 +1359,13 @@ csnStreamDissector(proto_tree *tree, csnStream_t* ar, const CSN_DESCR* pDescr, t
           remaining_bits_len--;
 
           /* extract and store no_of_bits long element from bitstream */
-          *pui8++   = tvb_get_bits8(tvb, bit_offset, no_of_bits);
           ElementCount++;
+          if (ElementCount > nSizeArray)
+          {
+            /* error: too many elements in recursive array. Increase its size! */
+            return ProcessError(tree , ar->pinfo, tvb, bit_offset, CSN_ERROR_STREAM_NOT_SUPPORTED, &ei_csn1_stream_not_supported, pDescr);
+          }
+          *pui8++   = tvb_get_bits8(tvb, bit_offset, no_of_bits);
 
           if (remaining_bits_len < 0)
           {

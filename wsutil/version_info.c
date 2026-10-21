@@ -28,6 +28,10 @@
 #include <gmodule.h>
 #include <pcre2.h>
 
+#ifdef HAVE_XXHASH
+#include <xxhash.h>
+#endif
+
 #ifdef HAVE_ZLIB
 #include <zlib.h>
 #endif
@@ -223,6 +227,16 @@ gather_pcre2_compile_info(feature_list l)
 }
 
 void
+gather_xxhash_compile_info(feature_list l)
+{
+#ifdef HAVE_XXHASH
+	with_feature(l, "xxhash " XXHASH_VERSION_STRING);
+#else
+	without_feature(l, "xxhash");
+#endif /* HAVE_XXHASH */
+}
+
+void
 gather_zlib_compile_info(feature_list l)
 {
 #ifdef HAVE_ZLIB
@@ -403,15 +417,19 @@ get_compiler_info(GString *str)
 			 * though the MSVC compiler toolset in VS2017 delivers many new
 			 * features and conformance improvements it is a minor version,
 			 * compatible update from 14.00 in VS2015 to 14.10 in VS2017.
+			 *
+			 * https://learn.microsoft.com/en-us/cpp/overview/compiler-versions
 			 */
 			#if COMPILER_MINOR_VERSION < 10
 				#define VS_VERSION	"2015"
 			#elif COMPILER_MINOR_VERSION < 20
 				#define VS_VERSION	"2017"
 			#elif COMPILER_MINOR_VERSION < 30
-			#define VS_VERSION	"2019"
-			#else
+				#define VS_VERSION	"2019"
+			#elif COMPILER_MINOR_VERSION < 50
 				#define VS_VERSION	"2022"
+			#else
+				#define VS_VERSION	"2026"
 			#endif
 		#else
 			/*
@@ -516,6 +534,15 @@ gather_pcre2_runtime_info(feature_list l)
 	buf_pcre2[size] = '\0';
 	with_feature(l, "PCRE2 %s", buf_pcre2);
 	g_free(buf_pcre2);
+}
+
+void
+gather_xxhash_runtime_info(feature_list l)
+{
+	(void)l;
+#if defined(HAVE_XXHASH)
+	with_feature(l, "xxhash %u", XXH_versionNumber());
+#endif
 }
 
 void
@@ -674,7 +701,7 @@ const char *
 get_copyright_info(void)
 {
 	return
-		"Copyright 1998-2025 Gerald Combs <gerald@wireshark.org> and contributors.";
+		"Copyright 1998-2026 Gerald Combs <gerald@wireshark.org> and contributors.";
 }
 
 const char *

@@ -10,8 +10,18 @@
 #include "radcom.h"
 
 #include <string.h>
-#include "wtap-int.h"
+
+#include <wsutil/pint.h>
+
+#include "wtap_module.h"
 #include "file_wrappers.h"
+
+/*
+ * RADCOM WAN/LAN Analyzers
+ *
+ * Olivier Abad has added code to read Ethernet and LAPB captures from
+ * RADCOM WAN/LAN Analyzers (see https://web.archive.org/web/20031231213434/http://www.radcom-inc.com/).
+*/
 
 struct frame_date {
 	uint16_t	year;
@@ -182,10 +192,10 @@ wtap_open_return_val radcom_open(wtap *wth, int *err, char **err_info)
 	wth->file_tsprec = WTAP_TSPREC_USEC;
 
 #if 0
-	tm.tm_year = pletoh16(&start_date.year)-1900;
+	tm.tm_year = pletohu16(&start_date.year)-1900;
 	tm.tm_mon = start_date.month-1;
 	tm.tm_mday = start_date.day;
-	sec = pletoh32(&start_date.sec);
+	sec = pletohu32(&start_date.sec);
 	tm.tm_hour = sec/3600;
 	tm.tm_min = (sec%3600)/60;
 	tm.tm_sec = sec%60;
@@ -297,7 +307,7 @@ radcom_read_rec(wtap *wth, FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 	if (!wtap_read_bytes_or_eof(fh, &hdr, sizeof hdr, err, err_info))
 		return false;
 
-	data_length = pletoh16(&hdr.data_length);
+	data_length = pletohu16(&hdr.data_length);
 	if (data_length == 0) {
 		/*
 		 * The last record appears to have 0 in its "data_length"
@@ -307,28 +317,28 @@ radcom_read_rec(wtap *wth, FILE_T fh, wtap_rec *rec, int *err, char **err_info)
 		*err = 0;
 		return false;
 	}
-	length = pletoh16(&hdr.length);
-	real_length = pletoh16(&hdr.real_length);
+	length = pletohu16(&hdr.length);
+	real_length = pletohu16(&hdr.real_length);
 	/*
 	 * The maximum value of length is 65535, which is less than
 	 * WTAP_MAX_PACKET_SIZE_STANDARD will ever be, so we don't need to check
 	 * it.
 	 */
 
-	rec->rec_type = REC_TYPE_PACKET;
+	wtap_setup_packet_rec(rec, wth->file_encap);
 	rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
 	rec->presence_flags = WTAP_HAS_TS|WTAP_HAS_CAP_LEN;
 
-	tm.tm_year = pletoh16(&hdr.date.year)-1900;
+	tm.tm_year = pletohu16(&hdr.date.year)-1900;
 	tm.tm_mon = (hdr.date.month&0x0f)-1;
 	tm.tm_mday = hdr.date.day;
-	sec = pletoh32(&hdr.date.sec);
+	sec = pletohu32(&hdr.date.sec);
 	tm.tm_hour = sec/3600;
 	tm.tm_min = (sec%3600)/60;
 	tm.tm_sec = sec%60;
 	tm.tm_isdst = -1;
 	rec->ts.secs = mktime(&tm);
-	rec->ts.nsecs = pletoh32(&hdr.date.usec) * 1000;
+	rec->ts.nsecs = pletohu32(&hdr.date.usec) * 1000;
 
 	switch (wth->file_encap) {
 

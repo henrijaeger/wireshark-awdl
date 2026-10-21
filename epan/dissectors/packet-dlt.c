@@ -14,7 +14,9 @@
 /*
  * For further information about the "Diagnostic Log and Trace" (DLT) protocol see:
  * - GENIVI Alliance (https://covesa.global/ and https://github.com/GENIVI/)
- * - AUTOSAR (https://www.autosar.org) -> AUTOSAR_SWS_DiagnosticLogAndTrace.pdf
+ * - AUTOSAR (https://www.autosar.org):
+ *     https://www.autosar.org/fileadmin/standards/R24-11/CP/AUTOSAR_CP_SWS_DiagnosticLogAndTrace.pdf
+ *     https://www.autosar.org/fileadmin/standards/R24-11/FO/AUTOSAR_FO_PRS_LogAndTraceProtocol.pdf
  */
 
 /* This dissector currently only supports Version 1 of DLT. */
@@ -477,7 +479,7 @@ sanitize_buffer(uint8_t *buf, int length, uint32_t str_encoding) {
 }
 
 static uint32_t
-dissector_dlt_verbose_variable_info(tvbuff_t *tvb, uint32_t offset, const unsigned encoding, uint8_t **name_string, uint8_t **unit_string) {
+dissector_dlt_verbose_variable_info(tvbuff_t *tvb, packet_info* pinfo, uint32_t offset, const unsigned encoding, uint8_t **name_string, uint8_t **unit_string) {
     uint16_t vari_name_length = tvb_get_uint16(tvb, offset, encoding);
     offset += 2;
 
@@ -485,12 +487,12 @@ dissector_dlt_verbose_variable_info(tvbuff_t *tvb, uint32_t offset, const unsign
     offset += 2;
 
     if (name_string != NULL) {
-        *name_string = tvb_get_stringzpad(wmem_packet_scope(), tvb, offset, vari_name_length, ENC_UTF_8);
+        *name_string = tvb_get_stringzpad(pinfo->pool, tvb, offset, vari_name_length, ENC_UTF_8);
     }
     offset += vari_name_length;
 
     if (unit_string != NULL) {
-        *unit_string = tvb_get_stringzpad(wmem_packet_scope(), tvb, offset, vari_unit_length, ENC_UTF_8);
+        *unit_string = tvb_get_stringzpad(pinfo->pool, tvb, offset, vari_unit_length, ENC_UTF_8);
     }
     offset += vari_unit_length;
 
@@ -502,7 +504,7 @@ dissect_dlt_verbose_parameter_bool(tvbuff_t *tvb, packet_info *pinfo, proto_tree
     uint8_t *vari_name_string = NULL;
     uint8_t *vari_unit_string = NULL;
     if ((type_info & DLT_MSG_VERB_PARAM_VARI) == DLT_MSG_VERB_PARAM_VARI) {
-        offset = dissector_dlt_verbose_variable_info(tvb, offset, encoding, &vari_name_string, &vari_unit_string);
+        offset = dissector_dlt_verbose_variable_info(tvb, pinfo, offset, encoding, &vari_name_string, &vari_unit_string);
     }
 
     if (length != 1 || tvb_captured_length_remaining(tvb, offset) < length) {
@@ -538,7 +540,7 @@ dissect_dlt_verbose_parameter_int(tvbuff_t *tvb, packet_info *pinfo, proto_tree 
     uint8_t *vari_name_string = NULL;
     uint8_t *vari_unit_string = NULL;
     if ((type_info & DLT_MSG_VERB_PARAM_VARI) == DLT_MSG_VERB_PARAM_VARI) {
-        offset = dissector_dlt_verbose_variable_info(tvb, offset, encoding, &vari_name_string, &vari_unit_string);
+        offset = dissector_dlt_verbose_variable_info(tvb, pinfo, offset, encoding, &vari_name_string, &vari_unit_string);
     }
 
     if (tvb_captured_length_remaining(tvb, offset) < length) {
@@ -587,7 +589,7 @@ dissect_dlt_verbose_parameter_uint(tvbuff_t *tvb, packet_info *pinfo, proto_tree
     uint8_t *vari_name_string = NULL;
     uint8_t *vari_unit_string = NULL;
     if ((type_info & DLT_MSG_VERB_PARAM_VARI) == DLT_MSG_VERB_PARAM_VARI) {
-        offset = dissector_dlt_verbose_variable_info(tvb, offset, encoding, &vari_name_string, &vari_unit_string);
+        offset = dissector_dlt_verbose_variable_info(tvb, pinfo, offset, encoding, &vari_name_string, &vari_unit_string);
     }
 
     if (tvb_captured_length_remaining(tvb, offset) < length) {
@@ -637,7 +639,7 @@ dissect_dlt_verbose_parameter_float(tvbuff_t *tvb, packet_info *pinfo, proto_tre
     uint8_t *vari_name_string = NULL;
     uint8_t *vari_unit_string = NULL;
     if ((type_info & DLT_MSG_VERB_PARAM_VARI) == DLT_MSG_VERB_PARAM_VARI) {
-        offset = dissector_dlt_verbose_variable_info(tvb, offset, encoding, &vari_name_string, &vari_unit_string);
+        offset = dissector_dlt_verbose_variable_info(tvb, pinfo, offset, encoding, &vari_name_string, &vari_unit_string);
     }
 
     if (tvb_captured_length_remaining(tvb, offset) < length) {
@@ -684,7 +686,7 @@ dissect_dlt_verbose_parameter_raw_data(tvbuff_t *tvb, packet_info *pinfo, proto_
     uint8_t *vari_name_string = NULL;
     uint8_t *vari_unit_string = NULL;
     if ((type_info & DLT_MSG_VERB_PARAM_VARI) == DLT_MSG_VERB_PARAM_VARI) {
-        offset = dissector_dlt_verbose_variable_info(tvb, offset, encoding, &vari_name_string, &vari_unit_string);
+        offset = dissector_dlt_verbose_variable_info(tvb, pinfo, offset, encoding, &vari_name_string, &vari_unit_string);
     }
 
     if (tvb_captured_length_remaining(tvb, offset) < 2) {
@@ -731,7 +733,7 @@ dissect_dlt_verbose_parameter_string(tvbuff_t *tvb, packet_info *pinfo, proto_tr
     uint8_t *vari_name_string = NULL;
     uint8_t *vari_unit_string = NULL;
     if ((type_info & DLT_MSG_VERB_PARAM_VARI) == DLT_MSG_VERB_PARAM_VARI) {
-        offset = dissector_dlt_verbose_variable_info(tvb, offset, encoding, &vari_name_string, &vari_unit_string);
+        offset = dissector_dlt_verbose_variable_info(tvb, pinfo, offset, encoding, &vari_name_string, &vari_unit_string);
     }
 
     if (tvb_captured_length_remaining(tvb, offset) < 2) {
@@ -766,7 +768,7 @@ dissect_dlt_verbose_parameter_string(tvbuff_t *tvb, packet_info *pinfo, proto_tr
     proto_item *ti = NULL;
     if ( buf != NULL && tmp_length > 0) {
         sanitize_buffer(buf, tmp_length, str_encoding);
-        ti = proto_tree_add_item(tree, hf_dlt_string, tvb, offset, str_len, ENC_ASCII | ENC_NA);
+        ti = proto_tree_add_item(tree, hf_dlt_string, tvb, offset, str_len, ENC_ASCII);
         col_append_fstr(pinfo->cinfo, COL_INFO, " %s", buf);
     } else {
         expert_dlt_parsing_error(tree, pinfo, tvb, offset, str_len);
@@ -898,23 +900,23 @@ dissect_dlt_non_verbose_payload_message(tvbuff_t *tvb, packet_info *pinfo _U_, p
     if (msg_type_info_comb == DLT_MSG_TYPE_INFO_CTRL_REQ) {
         switch (message_id) {
         case DLT_SERVICE_ID_SET_LOG_LEVEL:
-            proto_tree_add_item(tree, hf_dlt_service_application_id, tvb, offset, 4, ENC_ASCII | ENC_NA);
-            proto_tree_add_item(tree, hf_dlt_service_context_id, tvb, offset + 4, 4, ENC_ASCII | ENC_NA );
+            proto_tree_add_item(tree, hf_dlt_service_application_id, tvb, offset, 4, ENC_ASCII);
+            proto_tree_add_item(tree, hf_dlt_service_context_id, tvb, offset + 4, 4, ENC_ASCII );
             proto_tree_add_item(tree, hf_dlt_service_new_log_level, tvb, offset + 8, 1, ENC_NA);
             proto_tree_add_item(tree, hf_dlt_service_reserved, tvb, offset + 9, 4, ENC_NA);
             ret = 13;
             break;
         case DLT_SERVICE_ID_SET_TRACE_STATUS:
-            proto_tree_add_item(tree, hf_dlt_service_application_id, tvb, offset, 4, ENC_ASCII | ENC_NA);
-            proto_tree_add_item(tree, hf_dlt_service_context_id, tvb, offset + 4, 4, ENC_ASCII | ENC_NA);
+            proto_tree_add_item(tree, hf_dlt_service_application_id, tvb, offset, 4, ENC_ASCII);
+            proto_tree_add_item(tree, hf_dlt_service_context_id, tvb, offset + 4, 4, ENC_ASCII);
             proto_tree_add_item(tree, hf_dlt_service_new_trace_status, tvb, offset + 8, 1, ENC_NA);
             proto_tree_add_item(tree, hf_dlt_service_reserved, tvb, offset + 9, 4, ENC_NA);
             ret = 13;
             break;
         case DLT_SERVICE_ID_GET_LOG_INFO:
             proto_tree_add_item(tree, hf_dlt_service_options, tvb, offset, 1, ENC_NA);
-            proto_tree_add_item(tree, hf_dlt_service_application_id, tvb, offset + 1, 4, ENC_ASCII | ENC_NA);
-            proto_tree_add_item(tree, hf_dlt_service_context_id, tvb, offset + 5, 4, ENC_ASCII | ENC_NA);
+            proto_tree_add_item(tree, hf_dlt_service_application_id, tvb, offset + 1, 4, ENC_ASCII);
+            proto_tree_add_item(tree, hf_dlt_service_context_id, tvb, offset + 5, 4, ENC_ASCII);
             proto_tree_add_item(tree, hf_dlt_service_reserved, tvb, offset + 9, 4, ENC_NA);
             break;
         case DLT_SERVICE_ID_SET_MESSAGE_FILTERING:
@@ -957,7 +959,7 @@ dissect_dlt_non_verbose_payload_message(tvbuff_t *tvb, packet_info *pinfo _U_, p
             offset += 2;
             /* loop over all app id entries */
             for (i=0; i<appid_count; i++) {
-                ti = proto_tree_add_item(subtree, hf_dlt_service_application_id, tvb, offset, 4, ENC_ASCII | ENC_NA);
+                ti = proto_tree_add_item(subtree, hf_dlt_service_application_id, tvb, offset, 4, ENC_ASCII);
                 offset += 4;
                 subtree2 = proto_item_add_subtree(ti, ett_dlt_service_app_id);
 
@@ -965,7 +967,7 @@ dissect_dlt_non_verbose_payload_message(tvbuff_t *tvb, packet_info *pinfo _U_, p
                 offset += 2;
                 /* loop over all ctx id entries */
                 for (j = 0; j < ctxid_count; j++) {
-                    ti = proto_tree_add_item(subtree2, hf_dlt_service_context_id, tvb, offset, 4, ENC_ASCII | ENC_NA);
+                    ti = proto_tree_add_item(subtree2, hf_dlt_service_context_id, tvb, offset, 4, ENC_ASCII);
                     subtree3 = proto_item_add_subtree(ti, ett_dlt_service_ctx_id);
                     offset += 4;
 
@@ -977,14 +979,14 @@ dissect_dlt_non_verbose_payload_message(tvbuff_t *tvb, packet_info *pinfo _U_, p
                     if (status == DLT_SERVICE_STATUS_LOG_LEVEL_DLT_LOG_TRACE_TEXT) {
                         proto_tree_add_item_ret_uint(subtree2, hf_dlt_service_count, tvb, offset, 2, encoding, &tmp_length);
                         offset += 2;
-                        proto_tree_add_item(subtree2, hf_dlt_service_ctx_desc, tvb, offset, tmp_length, ENC_ASCII | ENC_NA);
+                        proto_tree_add_item(subtree2, hf_dlt_service_ctx_desc, tvb, offset, tmp_length, ENC_ASCII);
                         offset += tmp_length;
                     }
                 }
                 if (status == DLT_SERVICE_STATUS_LOG_LEVEL_DLT_LOG_TRACE_TEXT) {
                     proto_tree_add_item_ret_uint(subtree, hf_dlt_service_count, tvb, offset, 2, encoding, &tmp_length);
                     offset += 2;
-                    proto_tree_add_item(subtree, hf_dlt_service_app_desc, tvb, offset, tmp_length, ENC_ASCII | ENC_NA);
+                    proto_tree_add_item(subtree, hf_dlt_service_app_desc, tvb, offset, tmp_length, ENC_ASCII);
                     offset += tmp_length;
                 }
             }
@@ -1001,7 +1003,7 @@ dissect_dlt_non_verbose_payload_message(tvbuff_t *tvb, packet_info *pinfo _U_, p
             proto_tree_add_item(tree, hf_dlt_service_status, tvb, offset, 1, ENC_NA);
             proto_tree_add_item_ret_uint(tree, hf_dlt_service_length, tvb, offset + 1, 4, encoding, &tmp_length);
             if ((unsigned)len >= 5 + tmp_length) {
-                proto_tree_add_item(tree, hf_dlt_service_swVersion, tvb, offset + 5, tmp_length, ENC_ASCII | ENC_NA);
+                proto_tree_add_item(tree, hf_dlt_service_swVersion, tvb, offset + 5, tmp_length, ENC_ASCII);
             } else {
                 expert_dlt_buffer_too_short(tree, pinfo, tvb, offset, len);
             }
@@ -1128,7 +1130,7 @@ dissect_dlt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_,
     offset += 1;
 
     length = tvb_get_ntohs(tvb, offset);
-    proto_tree_add_item(dlt_tree, hf_dlt_length, tvb, offset, 2, ENC_NA);
+    proto_tree_add_item(dlt_tree, hf_dlt_length, tvb, offset, 2, ENC_BIG_ENDIAN);
     offset += 2;
 
     if ((header_type & DLT_HDR_TYPE_WITH_ECU_ID) == DLT_HDR_TYPE_WITH_ECU_ID) {
@@ -1137,7 +1139,7 @@ dissect_dlt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_,
     }
 
     if ((header_type & DLT_HDR_TYPE_WITH_SESSION_ID) == DLT_HDR_TYPE_WITH_SESSION_ID) {
-        proto_tree_add_item(dlt_tree, hf_dlt_session_id, tvb, offset, 4, ENC_NA);
+        proto_tree_add_item(dlt_tree, hf_dlt_session_id, tvb, offset, 4, ENC_BIG_ENDIAN);
         offset += 4;
     }
 
@@ -1171,10 +1173,10 @@ dissect_dlt(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_,
         proto_tree_add_item(ext_hdr_tree, hf_dlt_num_of_args, tvb, offset, 1, ENC_NA);
         offset += 1;
 
-        proto_tree_add_item(ext_hdr_tree, hf_dlt_app_id, tvb, offset, 4, ENC_ASCII | ENC_NA);
+        proto_tree_add_item(ext_hdr_tree, hf_dlt_app_id, tvb, offset, 4, ENC_ASCII);
         offset += 4;
 
-        proto_tree_add_item(ext_hdr_tree, hf_dlt_ctx_id, tvb, offset, 4, ENC_ASCII | ENC_NA);
+        proto_tree_add_item(ext_hdr_tree, hf_dlt_ctx_id, tvb, offset, 4, ENC_ASCII);
         offset += 4;
     }
 
@@ -1446,7 +1448,6 @@ void proto_register_dlt(void) {
     proto_dlt = proto_register_protocol(PSNAME, PNAME, PFNAME);
     dlt_handle_tcp = register_dissector("dlt_tcp", dissect_dlt_tcp, proto_dlt);
     dlt_handle_udp = register_dissector("dlt_udp", dissect_dlt_udp, proto_dlt);
-    dlt_handle_storage = register_dissector("dlt_storage", dissect_dlt_storage_header, proto_dlt_storage_header);
     proto_register_subtree_array(ett, array_length(ett));
     proto_register_field_array(proto_dlt, hf_dlt, array_length(hf_dlt));
 
@@ -1487,6 +1488,7 @@ void proto_register_dlt_storage_header(void) {
     proto_dlt_storage_header = proto_register_protocol(DLT_STORAGE_HEADER_NAME_LONG, DLT_STORAGE_HEADER_NAME, DLT_STORAGE_HEADER_NAME_FILTER);
     proto_register_subtree_array(ett, array_length(ett));
     proto_register_field_array(proto_dlt, hfs, array_length(hfs));
+    dlt_handle_storage = register_dissector("dlt_storage", dissect_dlt_storage_header, proto_dlt_storage_header);
 }
 
 void proto_reg_handoff_dlt_storage_header(void) {

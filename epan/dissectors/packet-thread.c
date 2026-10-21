@@ -1303,7 +1303,7 @@ dissect_thread_address(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
         offset++;
 
         /* Add value name to value root label */
-        proto_item_append_text(ti, " (%s)", val_to_str(tlv_type, thread_address_tlv_vals, "Unknown (%d)"));
+        proto_item_append_text(ti, " (%s)", val_to_str(pinfo->pool, tlv_type, thread_address_tlv_vals, "Unknown (%d)"));
 
         /* Length */
         proto_tree_add_item(tlv_tree, hf_thread_address_tlv_length, tvb, offset, 1, ENC_BIG_ENDIAN);
@@ -1450,7 +1450,7 @@ dissect_thread_address(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
                 }
                 else {
                     /* Time out*/
-                    proto_tree_add_item(tlv_tree, hf_thread_address_tlv_timeout, tvb, offset, tlv_len, ENC_NA);
+                    proto_tree_add_item(tlv_tree, hf_thread_address_tlv_timeout, tvb, offset, tlv_len, ENC_BIG_ENDIAN);
                 }
                 offset += tlv_len;
                 break;
@@ -1521,7 +1521,7 @@ dissect_thread_nm(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         offset++;
 
         /* Add value name to value root label */
-        proto_item_append_text(ti, " (%s)", val_to_str(tlv_type, thread_nm_tlv_vals, "Unknown (%d)"));
+        proto_item_append_text(ti, " (%s)", val_to_str(pinfo->pool, tlv_type, thread_nm_tlv_vals, "Unknown (%d)"));
 
         /* Length */
                 proto_tree_add_item(tlv_tree, hf_thread_nm_tlv_length, tvb, offset, 1, ENC_BIG_ENDIAN);
@@ -1669,7 +1669,7 @@ dissect_thread_nm(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                 }
                 else {
                     /* Time out*/
-                    proto_tree_add_item(tlv_tree, hf_thread_nm_tlv_timeout, tvb, offset, tlv_len, ENC_NA);
+                    proto_tree_add_item(tlv_tree, hf_thread_nm_tlv_timeout, tvb, offset, tlv_len, ENC_BIG_ENDIAN);
                 }
                 offset += tlv_len;
 
@@ -1757,7 +1757,7 @@ dissect_thread_bl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         offset++;
 
         /* Add value name to value root label */
-        proto_item_append_text(ti, " (%s)", val_to_str(tlv_type, thread_bl_tlv_vals, "Unknown (%d)"));
+        proto_item_append_text(ti, " (%s)", val_to_str(pinfo->pool, tlv_type, thread_bl_tlv_vals, "Unknown (%d)"));
 
         /* Length */
         proto_tree_add_item(tlv_tree, hf_thread_bl_tlv_length, tvb, offset, 1, ENC_BIG_ENDIAN);
@@ -1903,7 +1903,7 @@ dissect_thread_bl(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                 }
                 else {
                     /* Time out*/
-                    proto_tree_add_item(tlv_tree, hf_thread_bl_tlv_timeout, tvb, offset, tlv_len, ENC_NA);
+                    proto_tree_add_item(tlv_tree, hf_thread_bl_tlv_timeout, tvb, offset, tlv_len, ENC_BIG_ENDIAN);
                 }
                 offset += tlv_len;
 
@@ -1990,7 +1990,7 @@ dissect_thread_dg(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void 
         offset++;
 
         /* Add value name to value root label */
-        proto_item_append_text(ti, " (%s)", val_to_str(tlv_type, thread_dg_tlv_vals, "Unknown (%d)"));
+        proto_item_append_text(ti, " (%s)", val_to_str(pinfo->pool, tlv_type, thread_dg_tlv_vals, "Unknown (%d)"));
 
         /* Length */
         switch (tlv_len_len) {
@@ -2107,7 +2107,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         offset++;
 
         /* Add value name to value root label */
-        proto_item_append_text(ti, " (%s)", val_to_str(tlv_type, thread_mc_tlv_vals, "Unknown (%d)"));
+        proto_item_append_text(ti, " (%s)", val_to_str(pinfo->pool, tlv_type, thread_mc_tlv_vals, "Unknown (%d)"));
 
         /* Length */
         switch (tlv_len_len) {
@@ -2272,7 +2272,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_too_long);
                         proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
                     } else {
-                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_commissioner_id, tvb, offset, tlv_len, ENC_NA|ENC_UTF_8);
+                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_commissioner_id, tvb, offset, tlv_len, ENC_UTF_8);
                     }
                     offset += tlv_len;
                 }
@@ -2352,7 +2352,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                     if (tlv_len != 8) {
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_size_mismatch);
                         //proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
-                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_pending_tstamp, tvb, offset, tlv_len, ENC_NA);
+                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_pending_tstamp, tvb, offset, tlv_len, ENC_TIME_SECS_NSECS);
                     } else {
                         /* Fill in the nstime_t structure */
                         timestamp.secs = (time_t)tvb_get_ntoh48(tvb, offset);
@@ -2399,7 +2399,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                     if (tlv_len != 2) {
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_size_mismatch);
                         //proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
-                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_udp_port, tvb, offset, tlv_len, ENC_NA);
+                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_udp_port, tvb, offset, tlv_len, ENC_BIG_ENDIAN);
                     } else {
                         /* UDP Port */
                         proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_udp_port, tvb, offset, tlv_len, ENC_BIG_ENDIAN);
@@ -2452,7 +2452,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_too_long);
                         proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
                     } else {
-                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_provisioning_url, tvb, offset, tlv_len, ENC_NA|ENC_UTF_8);
+                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_provisioning_url, tvb, offset, tlv_len, ENC_UTF_8);
                     }
                     offset += tlv_len;
                 }
@@ -2465,7 +2465,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_too_long);
                         proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
                     } else {
-                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_vendor_name, tvb, offset, tlv_len, ENC_NA|ENC_UTF_8);
+                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_vendor_name, tvb, offset, tlv_len, ENC_UTF_8);
                     }
                     offset += tlv_len;
                 }
@@ -2478,7 +2478,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_too_long);
                         proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
                     } else {
-                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_vendor_model, tvb, offset, tlv_len, ENC_NA|ENC_UTF_8);
+                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_vendor_model, tvb, offset, tlv_len, ENC_UTF_8);
                     }
                     offset += tlv_len;
                 }
@@ -2491,7 +2491,7 @@ dissect_thread_mc(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                         expert_add_info(pinfo, proto_root, &ei_thread_mc_len_too_long);
                         proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_unknown, tvb, offset, tlv_len, ENC_NA);
                     } else {
-                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_vendor_sw_ver, tvb, offset, tlv_len, ENC_NA|ENC_UTF_8);
+                        proto_tree_add_item(tlv_tree, hf_thread_mc_tlv_vendor_sw_ver, tvb, offset, tlv_len, ENC_UTF_8);
                     }
                     offset += tlv_len;
                 }
@@ -2879,7 +2879,7 @@ dissect_thread_nwd_with_server_decode(tvbuff_t *tvb, packet_info *pinfo, proto_t
         offset++;
 
         /* Add value name to value root label */
-        proto_item_append_text(ti, " (%s)", val_to_str(tlv_type, thread_nwd_tlv_vals, "Unknown (%d)"));
+        proto_item_append_text(ti, " (%s)", val_to_str(pinfo->pool, tlv_type, thread_nwd_tlv_vals, "Unknown (%d)"));
 
         /* Length */
         proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_length, tvb, offset, 1, ENC_BIG_ENDIAN);
@@ -3074,7 +3074,7 @@ dissect_thread_nwd_with_server_decode(tvbuff_t *tvb, packet_info *pinfo, proto_t
                         {
                             server_decode = 2;
                             proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_unicast_ipv6_address, tvb, offset, 16, ENC_NA);
-                            proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_unicast_port_number, tvb, offset  + 16, 2, ENC_NA);
+                            proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_unicast_port_number, tvb, offset  + 16, 2, ENC_BIG_ENDIAN);
                             offset += 18;
                             tlv_offset += 18;
                         }
@@ -3134,10 +3134,10 @@ dissect_thread_nwd_with_server_decode(tvbuff_t *tvb, packet_info *pinfo, proto_t
                         proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_s_data_seqno, tvb, offset, 1, ENC_NA);
                         offset += 1;
                         /* tlv_offset += 1; */
-                        proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_s_data_rrdelay, tvb, offset, 2, ENC_NA);
+                        proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_s_data_rrdelay, tvb, offset, 2, ENC_BIG_ENDIAN);
                         offset += 2;
                         /* tlv_offset += 2; */
-                        proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_s_data_mlrtimeout, tvb, offset, 4, ENC_NA);
+                        proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_s_data_mlrtimeout, tvb, offset, 4, ENC_BIG_ENDIAN);
                         offset += 4;
                     }
                     else if(server_decode == 0) {
@@ -3175,7 +3175,7 @@ dissect_thread_nwd_with_server_decode(tvbuff_t *tvb, packet_info *pinfo, proto_t
                         offset += 2;
                         tlv_offset = 2;
                         proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_unicast_ipv6_address, tvb, offset, 16, ENC_NA);
-                        proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_unicast_port_number, tvb, offset  + 16, 2, ENC_NA);
+                        proto_tree_add_item(tlv_tree, hf_thread_nwd_tlv_service_unicast_port_number, tvb, offset  + 16, 2, ENC_BIG_ENDIAN);
                         offset += 18;
                         tlv_offset += 18;
 
@@ -3298,7 +3298,7 @@ static int dissect_thread_bcn(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
     offset++;
 
     /* Add value name to value root label */
-    proto_item_append_text(ti, " (%s)", val_to_str(tlv_type, thread_bcn_tlv_vals, "Unknown (%d)"));
+    proto_item_append_text(ti, " (%s)", val_to_str(pinfo->pool, tlv_type, thread_bcn_tlv_vals, "Unknown (%d)"));
 
     /* Length */
     proto_tree_add_item(tlv_tree, hf_thread_bcn_tlv_length, tvb, offset, 1, ENC_BIG_ENDIAN);
@@ -4222,7 +4222,7 @@ proto_register_thread_mc(void)
         { &hf_thread_mc_tlv_udp_port,
             { "UDP Port",
             "thread_meshcop.tlv.udp_port",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_PT_UDP, NULL, 0x0,
             NULL,
             HFILL }
         },
@@ -4334,7 +4334,7 @@ proto_register_thread_mc(void)
         { &hf_thread_mc_tlv_udp_encap_src_port,
             { "Source UDP Port",
             "thread_meshcop.tlv.udp_encap_src_port",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_PT_UDP, NULL, 0x0,
             NULL,
             HFILL }
         },
@@ -4342,7 +4342,7 @@ proto_register_thread_mc(void)
         { &hf_thread_mc_tlv_udp_encap_dst_port,
             { "Destination UDP Port",
             "thread_meshcop.tlv.udp_encap_dst_port",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_PT_UDP, NULL, 0x0,
             NULL,
             HFILL }
         },
@@ -4471,7 +4471,7 @@ proto_register_thread_mc(void)
         { &hf_thread_mc_tlv_ae_udp_port,
             { "AE UDP Port",
             "thread_meshcop.tlv.ae_udp_port",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_PT_UDP, NULL, 0x0,
             NULL,
             HFILL }
         },
@@ -4479,7 +4479,7 @@ proto_register_thread_mc(void)
         { &hf_thread_mc_tlv_nmkp_udp_port,
             { "NMKP UDP Port",
             "thread_meshcop.tlv.nmkp_udp_port",
-            FT_UINT16, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_PT_UDP, NULL, 0x0,
             NULL,
             HFILL }
         },

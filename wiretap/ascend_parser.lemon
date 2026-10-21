@@ -118,7 +118,7 @@ XMIT-Max7:20: (task "_brouterControlTask" at 0xb094ac20, time: 1481.51) 20 octet
 #include <stdlib.h>
 #include <string.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "ascendtext.h"
 #include "ascend-int.h"
 #include "ascend_parser.h"
@@ -432,9 +432,8 @@ datagroup ::= dataln .
     */
     (void)yypParser;
     (void)yyminor;
-    static char *err = "non-packet data";
 
-    parser_state->ascend_parse_error = err;
+    parser_state->ascend_parse_error = "non-packet data";
 }
 
 %code {

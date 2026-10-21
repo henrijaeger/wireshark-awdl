@@ -21,6 +21,7 @@
 #include <epan/tfs.h>
 
 #include <wsutil/array.h>
+#include <wsutil/ws_roundup.h>
 
 #include "packet-dcerpc.h"
 #include "packet-dcerpc-nt.h"
@@ -280,8 +281,7 @@ static void cb_byte_array_postprocess(packet_info *pinfo, proto_tree *tree _U_,
 
 	/* Align start_offset on 4-byte boundary. */
 
-	if (start_offset % 4)
-		start_offset += 4 - (start_offset % 4);
+	start_offset = WS_ROUNDUP_4(start_offset);
 
 	/* Get byte array value */
 
@@ -888,7 +888,7 @@ dissect_ntstatus(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &NT_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &NT_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -910,7 +910,7 @@ dissect_doserror(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &DOS_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &DOS_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -930,7 +930,7 @@ dissect_werror(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &WERR_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &WERR_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -952,7 +952,7 @@ dissect_hresult(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &HRES_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &HRES_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -1005,8 +1005,8 @@ dissect_nt_hnd(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	switch(type){
 	case HND_TYPE_CTX_HANDLE:
-		if (!di->no_align && (offset % 4)) {
-			offset += 4 - (offset % 4);
+		if (!di->no_align) {
+			offset = WS_ROUNDUP_4(offset);
 		}
 		subtree = proto_tree_add_subtree(tree, tvb, offset, sizeof(e_ctx_hnd),
 					   ett_nt_policy_hnd, &item, "Policy Handle");
@@ -1293,8 +1293,7 @@ void cb_wstr_postprocess(packet_info *pinfo, proto_tree *tree _U_,
 
 	/* Align start_offset on 4-byte boundary. */
 
-	if (start_offset % 4)
-		start_offset += 4 - (start_offset % 4);
+	start_offset = WS_ROUNDUP_4(start_offset);
 
 	/* Get string value */
 
@@ -1326,8 +1325,7 @@ void cb_str_postprocess(packet_info *pinfo, proto_tree *tree _U_,
 
 	/* Align start_offset on 4-byte boundary. */
 
-	if (start_offset % 4)
-		start_offset += 4 - (start_offset % 4);
+	start_offset = WS_ROUNDUP_4(start_offset);
 
 	/* Get string value */
 
@@ -1388,7 +1386,7 @@ dissect_ndr_nt_SID28(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		return offset;
 	}
 
-	newoffset = dissect_nt_sid(tvb, offset, tree, name, &sid_str,
+	newoffset = dissect_nt_sid(tvb, pinfo, offset, tree, name, &sid_str,
 				hf_nt_domain_sid);
 	/* The dissected stuff can't be more than 28 bytes */
 	if ((newoffset - offset) > 28) {
@@ -1445,7 +1443,7 @@ dissect_ndr_nt_SID(tvbuff_t *tvb, int offset, packet_info *pinfo,
 	offset = dissect_ndr_uint3264 (tvb, offset, pinfo, tree, di, drep,
 			hf_nt_count, NULL);
 
-	offset = dissect_nt_sid(tvb, offset, tree, name, &sid_str,
+	offset = dissect_nt_sid(tvb, pinfo, offset, tree, name, &sid_str,
 				hf_nt_domain_sid);
 
 	/* dcv can be null, for example when this ndr structure is embedded

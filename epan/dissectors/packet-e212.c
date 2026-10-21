@@ -46,7 +46,7 @@ void proto_register_e212(void);
  * [2] https://htmlweb.ru/geo/oper.php?country=KZ
  */
 static const value_string E212_codes[] = {
-    /* 001 is used by some telecoms for internal TEST networks. */
+    {  1,   "Test network" }, /* 001 */
     {  202, "Greece" },
     {  203, "Unassigned" },
     {  204, "Netherlands" },
@@ -861,6 +861,7 @@ static const value_string E212_codes[] = {
 value_string_ext E212_codes_ext = VALUE_STRING_EXT_INIT(E212_codes);
 
 static const value_string mcc_mnc_2digits_codes[] = {
+    { 101,   "Test network" }, /* 00101 */
     { 20201, "Cosmote AE" },
     { 20202, "Cosmote AE" },
     { 20203, "OTE AE" },
@@ -1091,6 +1092,7 @@ static const value_string mcc_mnc_2digits_codes[] = {
     { 22869, "MTEL Schweiz GmbH" },
     { 22870, "Tismi BV" },
     { 22871, "Spusu AG" },
+    { 22873, "iWay AG" },
     { 23001, "T-Mobile Czech Republic a.s." },
     { 23002, "O2 Czech Republic a.s." },
     { 23003, "Vodafone Czech Republic a.s." },
@@ -2529,6 +2531,10 @@ static const value_string mcc_mnc_2digits_codes[] = {
     { 90104, "BBIX Singapore Pte. Ltd." },
     { 90105, "Thuraya RMSS Network" },
     { 90106, "Thuraya Satellite Telecommunications Company" },
+    { 90107, "NTT Ltd." },
+    { 90108, "SpaceX" },
+    { 90109, "China Telecommunications Corporation" },
+    { 90110, "Omnispace LLC" },
     { 90111, "Inmarsat Ltd." },
     { 90112, "Maritime Communications Partner AS (MCP network)" },
     { 90113, "BebbiCell AG (Formerly Global Networks Switzerland AG)" },
@@ -2541,11 +2547,14 @@ static const value_string mcc_mnc_2digits_codes[] = {
     { 90120, "Intermatica" },
     { 90121, "Wins Limited (Formerly Seanet Maritime Communications AB)" },
     { 90122, "MediaLincc Ltd" },
+    { 90123, "Bloxtel Inc." },
     { 90124, "Voxbone SA" },
+    { 90125, "Datora Mobile Telecomunicações SA" },
     { 90126, "Telecom Italia" },
     { 90127, "Monaco Telecom" },
     { 90128, "Vodafone Group" },
     { 90129, "Telenor Connexion AB" },
+    { 90130, "OQ Technology" },
     { 90131, "Orange" },
     { 90132, "MegaFon" },
     { 90133, "Smart Communications, Inc" },
@@ -2624,6 +2633,7 @@ static const value_string mcc_mnc_2digits_codes[] = {
 value_string_ext mcc_mnc_2digits_codes_ext = VALUE_STRING_EXT_INIT(mcc_mnc_2digits_codes);
 
 static const value_string mcc_mnc_3digits_codes[] = {
+    {  1001,   "Test network" }, /* 001001 */
     {  208500, "EDF" },
     {  208700, "Weaccess group" },
     {  208701, "GIP Vendée numérique" },
@@ -3827,6 +3837,14 @@ is_imsi_string_valid(const char *imsi_str)
     }
     return true;
 }
+
+void
+add_assoc_imsi_item(tvbuff_t *tvb _U_, proto_tree *tree, const char* imsi_str) {
+    proto_item *item;
+    item = proto_tree_add_string(tree, hf_e212_assoc_imsi, tvb, 0, 0, imsi_str);
+    proto_item_set_generated(item);
+}
+
 
 const char *
 dissect_e212_imsi(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset, int length, bool skip_first)

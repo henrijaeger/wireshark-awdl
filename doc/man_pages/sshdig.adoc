@@ -35,6 +35,8 @@ sshdig - Provide interfaces to capture system calls from a remote host through S
 [ *--remote-priv-user*=<privileged user name> ]
 [ *--remote-filter*=<remote capture filter> ]
 [ *--remote-count*=<number> ]
+[ *--remote-modern-bpf* ]
+[ *--remote-io-snaplen*=<snapshot length> ]
 
 [manarg]
 *sshdig*
@@ -163,6 +165,12 @@ This is passed to the remote capture program, and must comply with its syntax ru
 --remote-count=<number>::
 The number of events to capture.
 
+--remote-modern-bpf::
+Capture using an eBPF probe instead of the kernel module.
+
+--remote-io-snaplen=<snapshot length>::
+The number of bytes to capture in each I/O event.
+
 == EXAMPLES
 
 To see program arguments:
@@ -246,7 +254,7 @@ name. Those executables not being "sshdig" will show up as "custom version" in t
 
 == SEE ALSO
 
-xref:stratoshark.html[stratoshark](1), xref:tshark.html[tshark](1), xref:dumpcap.html[dumpcap](1), xref:extcap.html[extcap](4), xref:https://www.tcpdump.org/manpages/tcpdump.1.html[tcpdump](1)
+xref:stratoshark.html[stratoshark](1), xref:strato.html[strato](1), xref:dumpcap.html[dumpcap](1), xref:extcap.html[extcap](4)
 
 == NOTES
 

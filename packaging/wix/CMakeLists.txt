@@ -69,21 +69,10 @@ file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}/doc" DOC_DIR)
 set (VERSION "${PROJECT_VERSION}")
 set(PRODUCT_VERSION ${PROJECT_MAJOR_VERSION}.${PROJECT_MINOR_VERSION}.${PROJECT_PATCH_VERSION}.${PROJECT_BUILD_VERSION})
 
-# Use the merge module that comes with our version of Visual Studio
-if(MSVC_VERSION GREATER_EQUAL 1930)
-	set (MSVC_CRT_VERSION "VC143")
-elseif(MSVC_VERSION GREATER_EQUAL 1920)
-	set (MSVC_CRT_VERSION "VC142")
-elseif(MSVC_VERSION GREATER_EQUAL 1910)
-	set (MSVC_CRT_VERSION "VC141")
-elseif(MSVC_VERSION GREATER_EQUAL 1900)
-	set (MSVC_CRT_VERSION "VC140")
-endif()
-
 # Starting with Visual Studio 2019 merge modules are deprecated but
 # are available as an individual component.
 # https://docs.microsoft.com/en-us/visualstudio/releases/2019/release-notes#-deprecations
-set(MERGE_MODULE "Microsoft_${MSVC_CRT_VERSION}_CRT_${WIRESHARK_TARGET_PLATFORM}.msm")
+set(MERGE_MODULE "Microsoft_VC${MSVC_TOOLSET_VERSION}_CRT_${WIRESHARK_TARGET_PLATFORM}.msm")
 set (PF86_ENV "ProgramFiles(x86)")
 
 set(VC_TOOLS_MERGE_MODULES_DIR)
@@ -99,7 +88,7 @@ find_path(MERGE_MODULE_DIR ${MERGE_MODULE}
 		"$ENV{PROGRAMFILES}/Common Files/Merge Modules"
 	NO_DEFAULT_PATH
 )
-file(TO_NATIVE_PATH "${MERGE_MODULE_DIR}/Microsoft_${MSVC_CRT_VERSION}_CRT_${WIRESHARK_TARGET_PLATFORM}.msm" MSM_NATIVE_PATH)
+file(TO_NATIVE_PATH "${MERGE_MODULE_DIR}/${MERGE_MODULE}" MSM_NATIVE_PATH)
 message(STATUS "Using ${MSM_NATIVE_PATH} for the WiX installer")
 
 # DependentComponents.wxi. Can be created at configure time.
@@ -130,7 +119,7 @@ set (_dll_list ${AMRNB_DLL} ${CARES_DLL} ${PCRE2_RELEASE_DLL} ${GCRYPT_DLLS}
 	${GNUTLS_DLLS} ${KERBEROS_DLLS} ${LIBSSH_DLLS} ${LUA_DLL}
 	${LZ4_DLL} ${MINIZIP_DLL} ${MINIZIPNG_DLLS} ${NGHTTP2_DLL} ${NGHTTP3_DLL} ${SBC_DLL} ${SMI_DLL}
 	${SNAPPY_DLL} ${SPANDSP_DLL} ${BCG729_DLL} ${LIBXML2_DLLS} ${WINSPARKLE_DLL}
-	${ZLIB_DLL} ${ZLIBNG_DLL} ${BROTLI_DLLS} ${ZSTD_DLL} ${ILBC_DLL} ${OPUS_DLL}
+	${XXHASH_DLL} ${ZLIB_DLL} ${ZLIBNG_DLL} ${BROTLI_DLLS} ${ZSTD_DLL} ${ILBC_DLL} ${OPUS_DLL}
 	${SPEEXDSP_DLL}
 	# Required for mmdbresolve
 	${MAXMINDDB_DLL}
@@ -197,7 +186,7 @@ set(WIX_CANDLE_DEFINES
 	-dRadiusDictDir=${ARCHIVE_OUTPUT_PATH}/${CMAKE_CFG_INTDIR}/radius
 	-dSnmpMibDir=${ARCHIVE_OUTPUT_PATH}/${CMAKE_CFG_INTDIR}/snmp/mibs
 	-dUsersGuideDir=${ARCHIVE_OUTPUT_PATH}/${CMAKE_CFG_INTDIR}/doc/wsug_html_chunked
-	-dVCRedistVersion=${MSVC_CRT_VERSION}
+	-dVCRedistVersion=VC${MSVC_TOOLSET_VERSION}
 	-dVCRedistDir=${MERGE_MODULE_DIR}
 	${d_smi_dir}
 	${d_mmdbresolve_exe}

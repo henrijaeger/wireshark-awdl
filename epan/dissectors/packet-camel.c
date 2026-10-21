@@ -1287,7 +1287,7 @@ camelstat_init(struct register_srt* srt _U_, GArray* srt_array)
   camel_srt_table = init_srt_table("CAMEL Commands", NULL, srt_array, NB_CAMELSRT_CATEGORY, NULL, NULL, NULL);
   for (i = 0; i < NB_CAMELSRT_CATEGORY; i++)
   {
-    tmp_str = val_to_str_wmem(NULL,i,camelSRTtype_naming,"Unknown (%d)");
+    tmp_str = val_to_str(NULL,i,camelSRTtype_naming,"Unknown (%d)");
     init_srt_table_row(camel_srt_table, i, tmp_str);
     wmem_free(NULL, tmp_str);
   }
@@ -1353,6 +1353,21 @@ dissect_RP_cause_ie(tvbuff_t *tvb, uint32_t offset, _U_ unsigned len,
 }
 
 static int dissect_camel_InitialDPArgExtensionV2(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_);
+
+/*--- Cyclic dependencies ---*/
+
+/* ExtensionField/value -> ExtensionField/value */
+static int dissect_camel_T_value(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_);
+
+/* Invoke/argument -> Invoke/argument */
+static int dissect_camel_T_argument(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_);
+
+/* ReturnResult/result/result -> ReturnResult/result/result */
+static int dissect_camel_ResultArgument(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_);
+
+/* ReturnError/parameter -> ReturnError/parameter */
+static int dissect_camel_T_parameter(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_);
+
 
 
 
@@ -2096,7 +2111,7 @@ proto_tree *subtree;
 	return offset;
  subtree = proto_item_add_subtree(actx->created_item, ett_camel_cause);
 
- dissect_q931_cause_ie(parameter_tvb, 0, tvb_reported_length_remaining(parameter_tvb,0), subtree, hf_camel_cause_indicator, &Cause_value, isup_parameter_type_value);
+ dissect_q931_cause_ie(parameter_tvb, actx->pinfo, 0, tvb_reported_length_remaining(parameter_tvb,0), subtree, hf_camel_cause_indicator, &Cause_value, isup_parameter_type_value);
 
   return offset;
 }
@@ -2329,12 +2344,12 @@ dissect_camel_T_local(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, 
 	if (camel_opcode_type == CAMEL_OPCODE_RETURN_ERROR){
 	  errorCode = opcode;
 	  col_append_str(actx->pinfo->cinfo, COL_INFO,
-	      val_to_str(errorCode, camel_err_code_string_vals, "Unknown CAMEL error (%u)"));
+	      val_to_str(actx->pinfo->pool, errorCode, camel_err_code_string_vals, "Unknown CAMEL error (%u)"));
 	  col_append_str(actx->pinfo->cinfo, COL_INFO, " ");
 	  col_set_fence(actx->pinfo->cinfo, COL_INFO);
 	}else{
 	  col_append_str(actx->pinfo->cinfo, COL_INFO,
-	     val_to_str(opcode, camel_opr_code_strings, "Unknown CAMEL (%u)"));
+	     val_to_str(actx->pinfo->pool, opcode, camel_opr_code_strings, "Unknown CAMEL (%u)"));
 	  col_append_str(actx->pinfo->cinfo, COL_INFO, " ");
 	  col_set_fence(actx->pinfo->cinfo, COL_INFO);
 	}
@@ -2379,6 +2394,8 @@ dissect_camel_Code(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn
 
 static int
 dissect_camel_T_value(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  // ExtensionField/value -> ExtensionField/value
+  increment_dissection_depth_by_n(actx->pinfo, 1);
   /*XXX handle local form here */
   if(camel_obj_id){
     offset=call_ber_oid_callback(camel_obj_id, tvb, offset, actx->pinfo, tree, NULL);
@@ -2386,6 +2403,7 @@ dissect_camel_T_value(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, 
   is_ExtensionField = false;
 
 
+  decrement_dissection_depth_by_n(actx->pinfo, 1);
   return offset;
 }
 
@@ -6619,9 +6637,12 @@ dissect_camel_T_linkedId(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U
 
 static int
 dissect_camel_T_argument(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  // Invoke/argument -> Invoke/argument
+  increment_dissection_depth_by_n(actx->pinfo, 1);
 	offset = dissect_invokeData(tree, tvb, offset, actx);
 
 
+  decrement_dissection_depth_by_n(actx->pinfo, 1);
   return offset;
 }
 
@@ -6648,9 +6669,12 @@ dissect_camel_Invoke(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, a
 
 static int
 dissect_camel_ResultArgument(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  // ReturnResult/result/result -> ReturnResult/result/result
+  increment_dissection_depth_by_n(actx->pinfo, 1);
 	offset = dissect_returnResultData(tree, tvb, offset, actx);
 
 
+  decrement_dissection_depth_by_n(actx->pinfo, 1);
   return offset;
 }
 
@@ -6690,10 +6714,13 @@ dissect_camel_ReturnResult(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset 
 
 static int
 dissect_camel_T_parameter(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
+  // ReturnError/parameter -> ReturnError/parameter
+  increment_dissection_depth_by_n(actx->pinfo, 1);
 	offset = dissect_returnErrorData(tree, tvb, offset, actx);
 
 
 
+  decrement_dissection_depth_by_n(actx->pinfo, 1);
   return offset;
 }
 
@@ -8119,7 +8146,7 @@ dissect_camel_camelPDU(bool implicit_tag _U_, tvbuff_t *tvb, int offset, asn1_ct
     camel_pdu_size = tvb_get_uint8(tvb, offset+1)+2;
 
     /* Populate the info column with PDU type*/
-    col_add_str(actx->pinfo->cinfo, COL_INFO, val_to_str(camel_pdu_type, camel_Component_vals, "Unknown Camel (%u)"));
+    col_add_str(actx->pinfo->cinfo, COL_INFO, val_to_str(actx->pinfo->pool, camel_pdu_type, camel_Component_vals, "Unknown Camel (%u)"));
     col_append_str(actx->pinfo->cinfo, COL_INFO, " ");
 
     is_ExtensionField =false;
@@ -10773,6 +10800,8 @@ void proto_register_camel(void) {
 
   register_srt_table(proto_camel, PSNAME, 1, camelstat_packet, camelstat_init, NULL);
   register_stat_tap_table_ui(&camel_stat_table);
+
+  register_external_value_string("camelSRTtype_naming", camelSRTtype_naming);
 }
 
 /*

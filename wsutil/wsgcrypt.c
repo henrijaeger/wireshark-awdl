@@ -87,8 +87,8 @@ size_t rsa_decrypt_inplace(const unsigned len, unsigned char* data, gcry_sexp_t 
 
 	/* create mpi representation of encrypted data */
 	rc = gcry_mpi_scan(&encr_mpi, GCRYMPI_FMT_USG, data, len, NULL);
-	if (rc != 0 ) {
-		*err = ws_strdup_printf("can't convert data to mpi (size %d):%s", len, gcry_strerror(rc));
+	if (rc != 0) {
+		*err = ws_strdup_printf("can't convert data to mpi (size %u):%s", len, gcry_strerror(rc));
 		return 0;
 	}
 
@@ -132,7 +132,7 @@ size_t rsa_decrypt_inplace(const unsigned len, unsigned char* data, gcry_sexp_t 
 		goto out;
 	}
 
-	/* write plain text to newly allocated buffer */
+	/* write plaintext to buffer provided to us */
 	rc = gcry_mpi_print(GCRYMPI_FMT_USG, data, len, &decr_len, text);
 	if (rc != 0) {
 		*err = ws_strdup_printf("can't print decr data to mpi (size %zu):%s", decr_len, gcry_strerror(rc));
@@ -159,6 +159,61 @@ out:
 	gcry_sexp_release(s_plain);
 	gcry_mpi_release(encr_mpi);
 	gcry_mpi_release(text);
+	return decr_len;
+}
+
+size_t rsa_decrypt(const unsigned len, const unsigned char* data, uint8_t** plain, gcry_sexp_t pk, const char* flags, char **err)
+{
+	gcry_error_t rc = 0;
+	size_t       decr_len = 0;
+	gcry_sexp_t  s_data = NULL, s_plain = NULL;
+	gcry_mpi_t   encr_mpi = NULL;
+        const char  *text;
+
+	*err = NULL;
+
+	/* create mpi representation of encrypted data */
+	rc = gcry_mpi_scan(&encr_mpi, GCRYMPI_FMT_USG, data, len, NULL);
+	if (rc != 0 ) {
+		*err = ws_strdup_printf("can't convert data to mpi (size %d):%s", len, gcry_strerror(rc));
+		return 0;
+	}
+
+	/* put the data into a simple list */
+	rc = gcry_sexp_build(&s_data, NULL, "(enc-val(flags %s)(rsa(a%m)))", flags ? flags : "raw", encr_mpi);
+	if (rc != 0) {
+		*err = ws_strdup_printf("can't build encr_sexp:%s", gcry_strerror(rc));
+		decr_len = 0;
+		goto out;
+	}
+
+	/* pass it to libgcrypt */
+	rc = gcry_pk_decrypt(&s_plain, s_data, pk);
+	if (rc != 0)
+	{
+		*err = ws_strdup_printf("can't decrypt key:%s", gcry_strerror(rc));
+		decr_len = 0;
+		goto out;
+	}
+
+	/* get pointer to plaintext buffer and its length */
+	/* (We don't use gcry_sexp_nth_buffer to avoid making
+	 * plain have to be freed with gcry_free; we don't care
+	 * about not zeroing the decrypted data.) */
+	text = gcry_sexp_nth_data(s_plain, 1, &decr_len);
+	if (!text) {
+		*err = g_strdup("can't retrieve plaintext from sexp");
+		decr_len = 0;
+		goto out;
+	}
+
+	/* write plaintext to newly allocated buffer */
+	*plain = g_memdup2(text, decr_len);
+
+out:
+	gcry_sexp_release(s_data);
+	gcry_sexp_release(s_plain);
+	gcry_mpi_release(encr_mpi);
 	return decr_len;
 }
 
@@ -380,6 +435,7 @@ hpke_set_nonce(gcry_cipher_hd_t cipher, uint64_t seq, uint8_t *base_nonce, size_
 {
     size_t i;
     uint8_t *nonce = (uint8_t *)wmem_alloc0(NULL, nonce_len);
+    gcry_error_t err;
 
     for (i = 1; i < 9; i++) {
         nonce[nonce_len - i] = seq & 255;
@@ -388,7 +444,9 @@ hpke_set_nonce(gcry_cipher_hd_t cipher, uint64_t seq, uint8_t *base_nonce, size_
     for (i = 0; i < nonce_len; i++) {
         nonce[i] ^= base_nonce[i];
     }
-    return gcry_cipher_setiv(cipher, nonce, nonce_len);
+    err = gcry_cipher_setiv(cipher, nonce, nonce_len);
+    wmem_free(NULL, nonce);
+    return err;
 }
 
 /*

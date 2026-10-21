@@ -291,7 +291,7 @@ static int hf_snmp_request_id;                    /* T_request_id */
 static int hf_snmp_error_status;                  /* T_error_status */
 static int hf_snmp_error_index;                   /* INTEGER */
 static int hf_snmp_variable_bindings;             /* VarBindList */
-static int hf_snmp_bulkPDU_request_id;            /* Integer32 */
+static int hf_snmp_request_id_01;                 /* Integer32 */
 static int hf_snmp_non_repeaters;                 /* INTEGER_0_2147483647 */
 static int hf_snmp_max_repetitions;               /* INTEGER_0_2147483647 */
 static int hf_snmp_enterprise;                    /* EnterpriseOID */
@@ -2394,7 +2394,7 @@ dissect_snmp_INTEGER_0_2147483647(bool implicit_tag _U_, tvbuff_t *tvb _U_, int 
 
 
 static const ber_sequence_t BulkPDU_sequence[] = {
-  { &hf_snmp_bulkPDU_request_id, BER_CLASS_UNI, BER_UNI_TAG_INTEGER, BER_FLAGS_NOOWNTAG, dissect_snmp_Integer32 },
+  { &hf_snmp_request_id_01  , BER_CLASS_UNI, BER_UNI_TAG_INTEGER, BER_FLAGS_NOOWNTAG, dissect_snmp_Integer32 },
   { &hf_snmp_non_repeaters  , BER_CLASS_UNI, BER_UNI_TAG_INTEGER, BER_FLAGS_NOOWNTAG, dissect_snmp_INTEGER_0_2147483647 },
   { &hf_snmp_max_repetitions, BER_CLASS_UNI, BER_UNI_TAG_INTEGER, BER_FLAGS_NOOWNTAG, dissect_snmp_INTEGER_0_2147483647 },
   { &hf_snmp_variable_bindings, BER_CLASS_UNI, BER_UNI_TAG_SEQUENCE, BER_FLAGS_NOOWNTAG, dissect_snmp_VarBindList },
@@ -3194,18 +3194,15 @@ snmp_find_conversation_and_get_conv_data(packet_info *pinfo) {
 	 * from "the transport layer conversation that carries SNMP."
 	 */
         if (pinfo->destport == UDP_PORT_SNMP) {
-                conversation = find_conversation(pinfo->fd->num, &pinfo->src, &pinfo->dst, CONVERSATION_SNMP,
-                        pinfo->srcport, 0, NO_PORT_B);
+                conversation = find_conversation_strat(pinfo, conversation_pt_to_conversation_type(pinfo->ptype), NO_PORT_B, 0);
         } else {
-                conversation = find_conversation(pinfo->fd->num, &pinfo->dst, &pinfo->src, CONVERSATION_SNMP,
-                        pinfo->destport, 0, NO_PORT_B);
+                conversation = find_conversation_strat(pinfo, conversation_pt_to_conversation_type(pinfo->ptype), NO_PORT_B, 1);
         }
-        if (conversation == NULL) {
+        if ( (conversation == NULL) || (conversation_get_dissector(conversation, pinfo->num)!=snmp_handle) ) {
                 conversation = conversation_new_strat(pinfo, conversation_pt_to_conversation_type(pinfo->ptype), NO_PORT2);
                 conversation_set_dissector(conversation, snmp_handle);
 
-                conversation = conversation_new(pinfo->num, &pinfo->src, &pinfo->dst, CONVERSATION_SNMP,
-                        pinfo->srcport, 0, NO_PORT2);
+                conversation = conversation_new_strat(pinfo, CONVERSATION_SNMP, NO_PORT2);
         }
 
 	snmp_info = (snmp_conv_info_t *)conversation_get_proto_data(conversation, proto_snmp);
@@ -3470,13 +3467,9 @@ dissect_snmp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_
                         conversation = conversation_new_strat(pinfo, conversation_pt_to_conversation_type(pinfo->ptype), NO_PORT2);
 
                         conversation_set_dissector(conversation, snmp_handle);
-                        conversation = conversation_new(pinfo->num, &pinfo->src, &pinfo->dst, CONVERSATION_SNMP,
-                                pinfo->srcport, 0, NO_PORT2);
                 }
                 else if (conversation_get_dissector(conversation,pinfo->num)!=snmp_handle) {
                         conversation_set_dissector(conversation, snmp_handle);
-                        conversation = conversation_new(pinfo->num, &pinfo->src, &pinfo->dst, CONVERSATION_SNMP,
-                                pinfo->srcport, 0, NO_PORT2);
                 }
         }
 
@@ -3905,8 +3898,8 @@ void proto_register_snmp(void) {
       { "variable-bindings", "snmp.variable_bindings",
         FT_UINT32, BASE_DEC, NULL, 0,
         "VarBindList", HFILL }},
-    { &hf_snmp_bulkPDU_request_id,
-      { "request-id", "snmp.bulkPDU_request_id",
+    { &hf_snmp_request_id_01,
+      { "request-id", "snmp.request_id",
         FT_INT32, BASE_DEC, NULL, 0,
         "Integer32", HFILL }},
     { &hf_snmp_non_repeaters,

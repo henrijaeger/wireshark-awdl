@@ -38,7 +38,10 @@
 #include "mplog.h"
 
 #include <string.h>
-#include <wtap-int.h>
+
+#include <wsutil/pint.h>
+
+#include <wtap_module.h>
 #include <file_wrappers.h>
 
 /* the block types */
@@ -90,7 +93,7 @@ void register_mplog(void);
    - if two blocks of our packet's block type are more than 200us apart,
      we treat this as a packet boundary as described above
    */
-static bool mplog_read_packet(FILE_T fh, wtap_rec *rec,
+static bool mplog_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
         int *err, char **err_info)
 {
     uint8_t *p, *start_p;
@@ -115,6 +118,7 @@ static bool mplog_read_packet(FILE_T fh, wtap_rec *rec,
     /* leave space for the iso14443 pseudo header
        we can't create it until we've seen the entire packet */
     p += ISO14443_PSEUDO_HDR_LEN;
+    ws_buffer_increase_length(&rec->data, ISO14443_PSEUDO_HDR_LEN);
 
     do {
         if (!wtap_read_bytes_or_eof(fh, block, sizeof(block), err, err_info)) {
@@ -128,7 +132,7 @@ static bool mplog_read_packet(FILE_T fh, wtap_rec *rec,
         }
         data = block[0];
         type = block[1];
-        ctr = pletoh48(&block[2]);
+        ctr = pletohu48(&block[2]);
 
         if (pkt_type == TYPE_UNKNOWN) {
             if (KNOWN_TYPE(type)) {
@@ -163,6 +167,7 @@ static bool mplog_read_packet(FILE_T fh, wtap_rec *rec,
     if (pkt_type == TYPE_UNKNOWN)
         return false;
 
+    ws_buffer_increase_length(&rec->data, pkt_bytes);
     start_p[0] = ISO14443_PSEUDO_HDR_VER;
 
     if (pkt_type==TYPE_PCD_PICC_A || pkt_type==TYPE_PCD_PICC_B)
@@ -170,12 +175,10 @@ static bool mplog_read_packet(FILE_T fh, wtap_rec *rec,
     else
         start_p[1] = ISO14443_PSEUDO_HDR_PICC_TO_PCD;
 
-    start_p[2] = pkt_bytes >> 8;
-    start_p[3] = pkt_bytes & 0xFF;
+    phtonu16(&start_p[2], pkt_bytes);
 
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, wth->file_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
-    rec->rec_header.packet_header.pkt_encap = WTAP_ENCAP_ISO14443;
     rec->presence_flags = WTAP_HAS_TS | WTAP_HAS_CAP_LEN;
     rec->ts.secs = (time_t)((pkt_ctr*10)/(1000*1000*1000));
     rec->ts.nsecs = (int)((pkt_ctr*10)%(1000*1000*1000));
@@ -192,7 +195,7 @@ mplog_read(wtap *wth, wtap_rec *rec, int *err, char **err_info,
 {
     *data_offset = file_tell(wth->fh);
 
-    return mplog_read_packet(wth->fh, rec, err, err_info);
+    return mplog_read_packet(wth, wth->fh, rec, err, err_info);
 }
 
 
@@ -203,7 +206,7 @@ mplog_seek_read(wtap *wth, int64_t seek_off, wtap_rec *rec,
     if (-1 == file_seek(wth->random_fh, seek_off, SEEK_SET, err))
         return false;
 
-    if (!mplog_read_packet(wth->random_fh, rec, err, err_info)) {
+    if (!mplog_read_packet(wth, wth->random_fh, rec, err, err_info)) {
         /* Even if we got an immediate EOF, that's an error. */
         if (*err == 0)
             *err = WTAP_ERR_SHORT_READ;

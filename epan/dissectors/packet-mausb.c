@@ -1420,7 +1420,7 @@ dissect_mausb_pkt_common(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
     /* Packet Type */
     header->type = tvb_get_uint8(tvb, offset);
-    col_append_str(pinfo->cinfo, COL_INFO, val_to_str(header->type, mausb_type_string, "%d"));
+    col_append_str(pinfo->cinfo, COL_INFO, val_to_str(pinfo->pool, header->type, mausb_type_string, "%d"));
     proto_tree_add_item(mausb_tree, hf_mausb_type, tvb,
             offset, 1, ENC_LITTLE_ENDIAN);
     offset += 1;
@@ -2222,7 +2222,7 @@ proto_register_mausb(void)
               "Undefined management packet type", EXPFILL }
         },
         { &ei_mgmt_type_spec_len_long,
-            { "mausb.ei.type_spec.len", PI_PROTOCOL, PI_WARN,
+            { "mausb.ei.type_spec.len_long", PI_PROTOCOL, PI_WARN,
               "Data exists after type-specific management packet field", EXPFILL }
         },
         { &ei_mgmt_type_spec_len_short,

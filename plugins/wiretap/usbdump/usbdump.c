@@ -47,7 +47,7 @@
  */
 
 #include "config.h"
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 #include "string.h"
 
@@ -259,7 +259,7 @@ usbdump_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
     }
 
     /* Setup the per packet structure and fill it with info from this frame */
-    rec->rec_type = REC_TYPE_PACKET;
+    wtap_setup_packet_rec(rec, wth->file_encap);
     rec->block = wtap_block_create(WTAP_BLOCK_PACKET);
     rec->presence_flags = WTAP_HAS_TS | WTAP_HAS_CAP_LEN;
     rec->ts.secs = (uint32_t)bpf_hdr[3] << 24 | (uint32_t)bpf_hdr[2] << 16 |

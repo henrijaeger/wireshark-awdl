@@ -212,7 +212,7 @@ dissect_pcomtcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     if ( pcom_mode != PCOM_ASCII && pcom_mode != PCOM_BINARY )
         return 0;
 
-    pcom_mode_str = val_to_str(pcom_mode, pcomp_protocol_vals, "Unknown mode (%d)");
+    pcom_mode_str = val_to_str(pinfo->pool, pcom_mode, pcomp_protocol_vals, "Unknown mode (%d)");
 
     if (value_is_in_range(global_pcomtcp_tcp_ports, pinfo->srcport))
         pkt_type = "Reply";
@@ -291,7 +291,7 @@ dissect_pcomascii(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     }
 
     proto_tree_add_item(pcomascii_tree, hf_pcomascii_unitid, tvb,
-            offset, 2, ENC_ASCII|ENC_NA);
+            offset, 2, ENC_LITTLE_ENDIAN);
     offset += 2;
 
     // CCs can be 2 or 3 hex chars
@@ -497,7 +497,7 @@ dissect_pcombinary(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             offset, 2, ENC_LITTLE_ENDIAN);
     offset += 2;
     proto_tree_add_item(pcombinary_tree, hf_pcombinary_header_checksum, tvb,
-            offset, 2, ENC_NA);
+            offset, 2, ENC_LITTLE_ENDIAN);
     offset += 2;
     if ((tvb_reported_length(tvb) - 27) > 0) // ( -3 footer - 24 header)
         proto_tree_add_item(pcombinary_tree, hf_pcombinary_data, tvb,

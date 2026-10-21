@@ -26,6 +26,7 @@
 #include <wsutil/filesystem.h>
 #include <wsutil/privileges.h>
 #include <wsutil/wslog.h>
+#include <wsutil/ws_padding_to.h>
 #include <writecap/pcapio.h>
 #include <wiretap/wtap.h>
 
@@ -162,7 +163,7 @@ static int sdj_dump_entries(sd_journal *jnl, pcapio_writer* fp)
 		}
 
 		if (data_end % 4) {
-			size_t pad_len = 4 - (data_end % 4);
+			size_t pad_len = WS_PADDING_TO_4(data_end);
 			memset(entry_buff+data_end, '\0', pad_len);
 			data_end += pad_len;
 		}
@@ -195,7 +196,6 @@ static int sdj_start_export(const int start_from_entries, const bool start_from_
 	sd_id128_t boot_id;
 	char boot_id_str[FLD_BOOT_ID_LEN] = FLD_BOOT_ID;
 	int ret = EXIT_FAILURE;
-	char* err_info = NULL;
 	char *appname;
 	bool success;
 	int jr = 0;
@@ -213,8 +213,7 @@ static int sdj_start_export(const int start_from_entries, const bool start_from_
 			ws_warning("Error opening standard out: %s", g_strerror(errno));
 			return EXIT_FAILURE;
 		}
-        }
-
+	}
 
 	appname = ws_strdup_printf(SDJOURNAL_EXTCAP_INTERFACE " (Wireshark) %s.%s.%s",
 		SDJOURNAL_VERSION_MAJOR, SDJOURNAL_VERSION_MINOR, SDJOURNAL_VERSION_RELEASE);
@@ -298,14 +297,8 @@ cleanup:
 		sd_journal_close(jnl);
 	}
 
-	if (err_info) {
-		ws_warning("%s", err_info);
-	}
-
-	g_free(err_info);
-
 	/* clean up and exit */
-        writecap_close(fp, NULL);
+	writecap_close(fp, NULL);
 	return ret;
 }
 
