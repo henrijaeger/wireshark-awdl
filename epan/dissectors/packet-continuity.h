@@ -49,6 +49,13 @@ extern int proto_continuity;
 typedef void (*continuity_service_dissect)(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                            int offset, int length);
 
+/* How a service reads a companion-link message's content, given what the
+ * object decode found in it: the envelope says where `_c` is within `tvb`,
+ * whether the body was walked whole, and what shape `_c` has. */
+struct continuity_envelope;
+typedef void (*continuity_content_dissect)(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                           const struct continuity_envelope *envelope);
+
 typedef struct {
     const char *id;    /* what `continuity.service` holds, e.g. "camera" */
     const char *name;  /* what a reader sees, e.g. "Continuity Camera" */
@@ -58,6 +65,10 @@ typedef struct {
      * honest state for a service whose payload has not been worked out, and
      * is most of them. */
     continuity_service_dissect dissect;
+
+    /* Optional. A companion-link service's reading of a message's content,
+     * used in place of `dissect` there. */
+    continuity_content_dissect dissect_content;
 } continuity_service;
 
 /* Put the umbrella on this record, and say which service it belongs to.
@@ -74,7 +85,10 @@ typedef struct {
 proto_tree *continuity_mark(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb,
                             const continuity_service *service);
 
-/* Bind a session to this conversation, and report it on every record of it.
+/* Bind a session to this conversation, and report it on every record of it
+ * from this frame on. The first call for a conversation wins; callers bind
+ * only a handshake message they have validated, so a malformed one neither
+ * names nor replaces a session.
  *
  * The session is identified by the handshake's cleartext ephemeral public key:
  * visible in the capture, unique per session, and present before any protected
@@ -89,9 +103,10 @@ void continuity_session_set(packet_info *pinfo, const uint8_t *ephemeral_key, un
 void continuity_session_report(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb);
 
 /* This conversation's session, as the lowercase hex of the ephemeral public
- * key, or NULL if its handshake was not in the capture. A capture cut after
- * the handshake is the ordinary reason for NULL, and it is why a frame says
- * which of "no keys at all" and "no key for this session" applies. */
+ * key, or NULL if its handshake was not in the capture or comes after this
+ * frame. A capture cut after the handshake is the ordinary reason for NULL,
+ * and it is why a frame says which of "no keys at all" and "no key for this
+ * session" applies. */
 const char *continuity_session_get(packet_info *pinfo);
 
 /* Services, in a table so that supporting another one is a registration.
@@ -128,12 +143,23 @@ void proto_reg_handoff_continuity_rdlink(void);
 void proto_register_continuity_media(void);
 void proto_reg_handoff_continuity_media(void);
 
+/* One end of a media stream's negotiation: the UDP port it named, the address
+ * it announced in `_streamAddr` (text, may be NULL), and the address of its
+ * end of the control connection. */
+typedef struct {
+    uint32_t port;
+    const char *announced;
+    const address *control;
+} continuity_media_end;
+
 /* A media stream's negotiation completed on this frame: a `_streamStart` of
- * type 3 (UDP media) whose request named `port_a` and whose response named
- * `port_b`. The UDP flow between those two ports is then that stream. First
- * pass only; later calls are ignored. */
-void continuity_media_negotiated(packet_info *pinfo, const char *stream_id, uint32_t port_a,
-                                 uint32_t port_b);
+ * type 3 (UDP media), requested by one end and answered by the other. A UDP
+ * packet after this frame between those two ends' ports, at addresses each end
+ * announced or controls from, is then that stream. First pass only; later
+ * calls are ignored. */
+void continuity_media_negotiated(packet_info *pinfo, const char *stream_id,
+                                 const continuity_media_end *request,
+                                 const continuity_media_end *answer);
 
 void proto_register_continuity_opack(void);
 void proto_reg_handoff_continuity_opack(void);
@@ -206,7 +232,7 @@ void proto_reg_handoff_continuity_sidecar(void);
  * line can show; the bound exists because the count comes from the packet. */
 #define CONTINUITY_ENVELOPE_MEMBERS 48
 
-typedef struct {
+typedef struct continuity_envelope {
     bool has_xid;
     bool has_type;
     uint64_t xid;
@@ -232,6 +258,25 @@ typedef struct {
     bool has_pd;
     int pd_offset;
     int pd_length;
+    /* How many top-level `_pd` entries the body carried, of any type. */
+    unsigned pd_count;
+
+    /* `_c` as {0: <bytes>}: where the byte string is, for a service whose
+     * payload is a second object nested in it. */
+    bool has_content_bytes;
+    int content_bytes_offset;
+    int content_bytes_length;
+    /* `_c` as {0: <bytes>, 1: <bytes>}: the second nested object. */
+    bool has_content_body;
+    int content_body_offset;
+    int content_body_length;
+
+    /* Whether the body was walked to its end without a stop, a container
+     * shorter than it declared, or bytes after it; `problem` says why not.
+     * Nothing taken from an incomplete body should be acted on as if the body
+     * were whole. */
+    bool complete;
+    const char *problem;
 
     /* The scalar members the object decode found -- the envelope's own and
      * those inside `_c`, at any depth -- in wire order, as text. They are what a
@@ -246,6 +291,9 @@ typedef struct {
     struct {
         const char *key;
         const char *value;
+        /* The value was an integer, not a string or a boolean: a member a
+         * number is taken from must have been sent as one. */
+        bool is_int;
         bool in_content;
         /* Inside a container within `_c`, not directly in it. An identifying
          * key can sit there -- `_camCapUpdate` carries InUseState in

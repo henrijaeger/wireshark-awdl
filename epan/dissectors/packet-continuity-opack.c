@@ -153,6 +153,23 @@ static expert_field ei_opack_envelope_type;
  * stops, says why, and leaves the rest of the body visible as bytes. */
 #define OPACK_EXPANSION_MAX (1024 * 1024)
 
+/* How many values one message may hold -- every scalar, container and
+ * dictionary key, each back-reference counted as one. Decoded Continuity
+ * Camera messages hold at most 439 (the largest of 131 messages in a keyed
+ * view-switch session); this leaves room for messages many times larger while
+ * bounding what a body of empty values, which costs no expansion, can make the
+ * walk do. */
+#define OPACK_VALUES_MAX 16384
+
+/* How many bytes of member text one message may generate, counting each
+ * member's path, separator and value before it is formatted. The values are
+ * bounded above, but a long path is repeated on every member beneath it, so a
+ * short body of references under a long key generates text out of all
+ * proportion to it. Observed messages generate at most 10,778 bytes.
+ * OPACK_TEXT_RESERVE of it is kept back for the diagnostic that ends a walk. */
+#define OPACK_TEXT_MAX (1024 * 1024)
+#define OPACK_TEXT_RESERVE (OPACK_PATH_MAX + 64)
+
 /* How many bytes of a byte string a member's text spells out. The bytes
  * themselves stay in the byte field; the member is for selecting by value, and
  * a hex rendering three times the size of a long value selects nothing better
@@ -203,8 +220,14 @@ typedef struct {
     int last_bytes_length;
 
     /* String and byte-string bytes put into the tree so far; see
-     * OPACK_EXPANSION_MAX. */
+     * OPACK_EXPANSION_MAX. Values walked and member text generated so far; see
+     * OPACK_VALUES_MAX and OPACK_TEXT_MAX. */
     size_t expanded;
+    unsigned values;
+    size_t text;
+
+    /* Why the walk stopped or found the body malformed, when it did. */
+    const char *problem;
 
     /* Filled for the outermost dictionary's entries, when it looks like the
      * companion link's request/response envelope. */
@@ -287,6 +310,7 @@ static void envelope_member(opack_walk *walk, const char *key, bool in_content, 
     }
     envelope->members[envelope->member_count].key = key;
     envelope->members[envelope->member_count].value = value;
+    envelope->members[envelope->member_count].is_int = walk->kind == OPACK_KIND_INT;
     envelope->members[envelope->member_count].in_content = in_content;
     envelope->members[envelope->member_count].nested = nested;
     envelope->member_count++;
@@ -367,16 +391,30 @@ static const char *path_text(const opack_walk *walk)
 }
 
 /* One member for the scalar just decoded at [start, start + length). Not for a
- * key, which names a member rather than being one. */
+ * key, which names a member rather than being one. Its text is charged to the
+ * message's budget before it is made; when the budget is spent the walk stops
+ * here instead. */
+static void opack_stop(opack_walk *walk, proto_tree *tree, int offset, const char *why);
+
 static void opack_member(opack_walk *walk, proto_tree *tree, int start, int length,
                          const char *value)
 {
-    if (walk->in_key) {
+    if (walk->in_key || walk->stopped) {
         return;
     }
+    const char *path = path_text(walk);
+    size_t needed = strlen(path) + 3 + strlen(value);
+    if (needed > OPACK_TEXT_MAX - OPACK_TEXT_RESERVE - walk->text) {
+        opack_stop(walk, tree, start,
+                   wmem_strdup_printf(walk->pinfo->pool,
+                                      "the message's generated text exceeds %u bytes",
+                                      (unsigned)OPACK_TEXT_MAX));
+        return;
+    }
+    walk->text += needed;
     proto_item *item = proto_tree_add_string(
         tree, hf_opack_member, walk->tvb, start, length,
-        wmem_strdup_printf(walk->pinfo->pool, "%s = %s", path_text(walk), value));
+        wmem_strdup_printf(walk->pinfo->pool, "%s = %s", path, value));
     proto_item_set_generated(item);
 }
 
@@ -393,8 +431,6 @@ static const char *opack_hex(opack_walk *walk, int offset, int length)
 
 /* Admit an object to the table. False when the table is full, in which case
  * the walk has been stopped with the reason. */
-static void opack_stop(opack_walk *walk, proto_tree *tree, int offset, const char *why);
-
 static bool opack_admit(opack_walk *walk, proto_tree *tree, int next, opack_object object)
 {
     if (wmem_array_get_count(walk->table) >= OPACK_TABLE_MAX) {
@@ -580,6 +616,9 @@ static bool opack_report_object(opack_walk *walk, proto_tree *tree, int start, i
 static void opack_stop(opack_walk *walk, proto_tree *tree, int offset, const char *why)
 {
     walk->stopped = true;
+    if (walk->problem == NULL) {
+        walk->problem = why;
+    }
     int remaining = walk->end - offset;
     if (remaining <= 0) {
         return;
@@ -608,6 +647,9 @@ static void opack_stop(opack_walk *walk, proto_tree *tree, int offset, const cha
 static void opack_short(opack_walk *walk, proto_item *item, const char *why)
 {
     walk->stopped = true;
+    if (walk->problem == NULL) {
+        walk->problem = why;
+    }
     walk->kind = OPACK_KIND_NONE;
     expert_add_info_format(walk->pinfo, item, &ei_opack_malformed, "%s", why);
 }
@@ -636,6 +678,13 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
         opack_stop(walk, tree, offset, "the container nests deeper than this decode walks");
         return walk->end;
     }
+    if (walk->values >= OPACK_VALUES_MAX) {
+        opack_stop(walk, tree, offset,
+                   wmem_strdup_printf(walk->pinfo->pool, "the message holds more than %u values",
+                                      (unsigned)OPACK_VALUES_MAX));
+        return walk->end;
+    }
+    walk->values++;
 
     uint8_t marker = tvb_get_uint8(walk->tvb, offset);
     int start = offset;
@@ -880,6 +929,8 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
             if (walk->kind == OPACK_KIND_STRING && walk->last_string != NULL) {
                 entry_key = wmem_strdup(walk->pinfo->pool, walk->last_string);
             }
+            opack_kind key_kind = walk->kind;
+            int64_t key_int = walk->last_int;
 
             /* The member's name in the path: the key as sent. A key that is
              * not a string is named by its integer, or by '?' when it is
@@ -923,11 +974,34 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
 
             /* The summary's members: the envelope's own entries, and those
              * inside `_c` at any depth -- an identifying key need not be at
-             * its top. */
-            if (walk->envelope != NULL && entry_key != NULL &&
+             * its top. At the top of the walked object an integer key names a
+             * member too, which is how a nested object's entries are keyed. */
+            const char *member_key = entry_key;
+            if (member_key == NULL && depth == 0 && key_kind == OPACK_KIND_INT) {
+                member_key = name;
+            }
+            if (walk->envelope != NULL && member_key != NULL &&
                 (depth == 0 || (walk->content_depth != 0 && depth >= walk->content_depth))) {
-                envelope_member(walk, entry_key, depth != 0,
+                envelope_member(walk, member_key, depth != 0,
                                 depth > walk->content_depth && walk->content_depth != 0);
+            }
+
+            /* `_c` as observed for a service that nests objects in byte
+             * strings: {0: <bytes>}, and in Sidecar Display's messages
+             * {0: <bytes>, 1: <bytes>}, each byte string a nested object. */
+            if (walk->envelope != NULL && walk->content_depth != 0 &&
+                depth == walk->content_depth && i == 1 && key_kind == OPACK_KIND_INT &&
+                key_int == 0 && walk->kind == OPACK_KIND_BYTES) {
+                walk->envelope->has_content_bytes = true;
+                walk->envelope->content_bytes_offset = walk->last_bytes_offset;
+                walk->envelope->content_bytes_length = walk->last_bytes_length;
+            }
+            if (walk->envelope != NULL && walk->envelope->has_content_bytes &&
+                walk->content_depth != 0 && depth == walk->content_depth && i == 2 &&
+                key_kind == OPACK_KIND_INT && key_int == 1 && walk->kind == OPACK_KIND_BYTES) {
+                walk->envelope->has_content_body = true;
+                walk->envelope->content_body_offset = walk->last_bytes_offset;
+                walk->envelope->content_body_length = walk->last_bytes_length;
             }
 
             /* The envelope's own entries, which only the outermost dictionary
@@ -959,10 +1033,13 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
                         opack_envelope_mismatch(walk, subtree, value_start, offset, "_i",
                                                 "a string");
                     }
-                } else if (strcmp(entry_key, "_pd") == 0 && walk->kind == OPACK_KIND_BYTES) {
-                    walk->envelope->has_pd = true;
-                    walk->envelope->pd_offset = walk->last_bytes_offset;
-                    walk->envelope->pd_length = walk->last_bytes_length;
+                } else if (strcmp(entry_key, "_pd") == 0) {
+                    walk->envelope->pd_count++;
+                    if (walk->kind == OPACK_KIND_BYTES && !walk->envelope->has_pd) {
+                        walk->envelope->has_pd = true;
+                        walk->envelope->pd_offset = walk->last_bytes_offset;
+                        walk->envelope->pd_length = walk->last_bytes_length;
+                    }
                 } else if (strcmp(entry_key, "_c") == 0) {
                     /* The bounds of the content, not its contents: what is in
                      * there is the service's to say, and the transport should
@@ -1028,6 +1105,18 @@ int continuity_opack_dissect_envelope(tvbuff_t *tvb, packet_info *pinfo, proto_t
         expert_add_info_format(pinfo, trailing, &ei_opack_truncated,
                                "%d byte(s) follow the container and were not decoded",
                                walk.end - consumed);
+        if (walk.problem == NULL) {
+            walk.problem = "bytes follow the object";
+        }
+    }
+
+    /* Whether everything the caller takes from the envelope came from a body
+     * that was walked to its end without a stop, a short container or a
+     * trailing byte. A caller that acts on a value -- naming a session, say --
+     * needs that, not just the value. */
+    if (envelope != NULL) {
+        envelope->complete = walk.problem == NULL;
+        envelope->problem = walk.problem;
     }
     return consumed;
 }

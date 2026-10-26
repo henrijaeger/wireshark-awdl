@@ -125,6 +125,8 @@ typedef struct {
     const char *stream_id;
     uint32_t port;
     uint32_t direction;
+    const char *announced;
+    address control;
 } rdlink_pending_stream;
 
 /* What was worked out about one protected frame, kept so that every later
@@ -210,7 +212,8 @@ static const value_string pv_tlv_tags[] = {
 /* What the handshake's TLV8 run carries, as far as the walk below found. */
 typedef struct {
     bool complete;      /* every element's length fitted inside `_pd` */
-    int state;          /* the State element's value, or -1 when there is none */
+    int state;          /* the first State element's value, or -1 when there is none */
+    unsigned states;    /* State elements of any length */
     unsigned keys;      /* Public key elements of the expected length */
     unsigned odd_keys;  /* Public key elements of any other length */
     int key_offset;     /* where the first expected-length public key is */
@@ -260,8 +263,11 @@ static pairverify_contents pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, pr
             proto_tree_add_item(tlv_tree, hf_rdlink_tlv_value, tvb, offset + 2, len, ENC_NA);
         }
 
-        if (tag == PV_TLV_STATE && len == 1 && found.state < 0) {
-            found.state = tvb_get_uint8(tvb, offset + 2);
+        if (tag == PV_TLV_STATE) {
+            found.states++;
+            if (len == 1 && found.state < 0) {
+                found.state = tvb_get_uint8(tvb, offset + 2);
+            }
         } else if (tag == PV_TLV_PUBLIC_KEY) {
             if (len == PV_PUBLIC_KEY_LEN) {
                 if (found.keys == 0) {
@@ -279,17 +285,33 @@ static pairverify_contents pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, pr
 
 /* Why a PubKey message does not name a session, or NULL when it does. The
  * session names every later record, so a message that is not unmistakably the
- * handshake's first -- State 1, one public key of the curve's size, and a run
- * that agrees with its own lengths -- names none rather than a wrong one. In
- * every observed handshake the PubKey type carried exactly that. */
+ * handshake's first names none rather than a wrong one: the body must be one
+ * object walked to its end, with exactly one top-level `_pd` byte string,
+ * whose TLV8 run agrees with its own lengths and carries exactly one State
+ * element, of value 1, and exactly one public key of the curve's size. In
+ * every observed handshake the PubKey type carried exactly that.
+ *
+ * A repeated element is refused rather than merged. TLV8 as HomeKit defines it
+ * splits a value longer than 255 bytes into consecutive same-tag elements,
+ * but no element of this message is that long and no handshake has been seen
+ * to repeat one, so a repeat is taken to be a different message. */
 static const char *pairverify_m1_problem(const continuity_envelope *body,
                                          const pairverify_contents *contents)
 {
+    if (!body->complete) {
+        return "the object encoding around _pd is incomplete or malformed";
+    }
+    if (body->pd_count > 1) {
+        return "the body carries more than one _pd";
+    }
     if (!body->has_pd) {
         return "the body has no _pd byte string at its top level";
     }
     if (!contents->complete) {
         return "the TLV8 run in _pd disagrees with its own lengths";
+    }
+    if (contents->states > 1) {
+        return "the TLV8 run carries more than one State element";
     }
     if (contents->state != 1) {
         return contents->state < 0 ? "the TLV8 run carries no State element"
@@ -657,16 +679,23 @@ static bool rdlink_first_pdu(packet_info *pinfo)
     return true;
 }
 
-/* The value of a direct member of `_c`, or NULL. */
-static const char *content_member(const continuity_envelope *envelope, const char *key)
+/* The value of a direct member of `_c`, or NULL; with `integer`, only one
+ * sent as an integer. */
+static const char *content_member_typed(const continuity_envelope *envelope, const char *key,
+                                        bool integer)
 {
     for (unsigned m = 0; m < envelope->member_count; m++) {
         if (envelope->members[m].in_content && !envelope->members[m].nested &&
             strcmp(envelope->members[m].key, key) == 0) {
-            return envelope->members[m].value;
+            return !integer || envelope->members[m].is_int ? envelope->members[m].value : NULL;
         }
     }
     return NULL;
+}
+
+static const char *content_member(const continuity_envelope *envelope, const char *key)
+{
+    return content_member_typed(envelope, key, false);
 }
 
 /* Media negotiation, on the first pass: a `_streamStart` request for a UDP
@@ -690,22 +719,26 @@ static void rdlink_track_stream(packet_info *pinfo, const continuity_envelope *e
     if (state->pending_streams == NULL) {
         state->pending_streams = wmem_map_new(wmem_file_scope(), g_int64_hash, g_int64_equal);
     }
-    const char *port_text = content_member(envelope, "_streamPort");
+    const char *port_text = content_member_typed(envelope, "_streamPort", true);
     uint32_t port = 0;
     if (port_text == NULL || !ws_strtou32(port_text, NULL, &port)) {
         return;
     }
 
     if (envelope->has_event && strcmp(name, "_streamStart") == 0) {
-        const char *type = content_member(envelope, "_streamType");
+        const char *type = content_member_typed(envelope, "_streamType", true);
         if (type == NULL || strcmp(type, "3") != 0) {
             return;
         }
         rdlink_pending_stream *pending = wmem_new0(wmem_file_scope(), rdlink_pending_stream);
         const char *id = content_member(envelope, "_streamID");
+        const char *announced = content_member(envelope, "_streamAddr");
         pending->stream_id = id != NULL ? wmem_strdup(wmem_file_scope(), id) : NULL;
         pending->port = port;
         pending->direction = direction;
+        pending->announced =
+            announced != NULL ? wmem_strdup(wmem_file_scope(), announced) : NULL;
+        copy_address_wmem(wmem_file_scope(), &pending->control, &pinfo->src);
         uint64_t *key = wmem_new(wmem_file_scope(), uint64_t);
         *key = envelope->xid;
         wmem_map_insert(state->pending_streams, key, pending);
@@ -714,7 +747,11 @@ static void rdlink_track_stream(packet_info *pinfo, const continuity_envelope *e
         rdlink_pending_stream *pending =
             (rdlink_pending_stream *)wmem_map_lookup(state->pending_streams, &key);
         if (pending != NULL && pending->direction != direction) {
-            continuity_media_negotiated(pinfo, pending->stream_id, pending->port, port);
+            continuity_media_end request = { pending->port, pending->announced,
+                                             &pending->control };
+            continuity_media_end answer = { port, content_member(envelope, "_streamAddr"),
+                                            &pinfo->src };
+            continuity_media_negotiated(pinfo, pending->stream_id, &request, &answer);
             wmem_map_remove(state->pending_streams, &key);
         }
     }
@@ -756,6 +793,7 @@ static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
     /* The umbrella first, before this decode contributes anything of its own.
      * The service is not known from the framing alone -- the companion link
      * carries several -- so it is left unsaid rather than guessed. */
+    bool session_reported = continuity_session_get(pinfo) != NULL;
     continuity_mark(pinfo, rdlink_tree, tvb, NULL);
 
     proto_tree_add_item(rdlink_tree, hf_rdlink_type, tvb, 0, 1, ENC_BIG_ENDIAN);
@@ -807,6 +845,12 @@ static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
                 continuity_session_set(pinfo,
                                        tvb_get_ptr(tvb, contents.key_offset, PV_PUBLIC_KEY_LEN),
                                        PV_PUBLIC_KEY_LEN);
+                /* The mark above was made before the session was known, on
+                 * the first pass; report it here so the message that names
+                 * the session carries it on every pass. */
+                if (!session_reported) {
+                    continuity_session_report(pinfo, rdlink_tree, tvb);
+                }
             } else {
                 proto_tree_add_expert_format(rdlink_tree, pinfo, &ei_rdlink_handshake_unusable,
                                              tvb, 0, RDLINK_HEADER_LEN,

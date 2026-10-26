@@ -60,20 +60,37 @@ A key log that cannot be read, or lines that name a key but cannot be used,
 are reported on the frames that then stay unread.
 
 Media flows are identified from their `_streamStart` negotiation, which needs
-the control link decrypted. Without keys no flow is identified; the
-`continuity.media_guess_pt100` preference instead takes any RTP flow of payload
-type 100 for Continuity media, which other applications' RTP also matches.
-The media itself is SRTP and is not decrypted; only RTP and RTCP headers are
-decoded.
+the control link decrypted: a UDP packet captured after the negotiation,
+between the two negotiated ports, each end at an address it announced or at
+its end of the control connection. When two negotiations fit one packet it is
+reported as ambiguous (`continuity.media.ambiguous`) rather than given to
+either. Without keys no flow is identified; the `continuity.media_guess_pt100`
+preference instead takes any RTP flow of payload type 100 for Continuity media,
+which other applications' RTP also matches. The media itself is SRTP and is not
+decrypted; only RTP and RTCP headers are decoded. Continuity Camera's video
+streams and Sidecar Display's video are read as payload type 100 at 24 kHz, as
+measured on real sessions; every other stream, the microphone included, is read
+with its payload type marked opaque and its clock rate unknown
+(`continuity.media.payload_binding` says which).
 
 What has been checked against real sessions, and what has not:
 
-- **Continuity Camera** (iPhone, iOS 16.1.2, to Macs on macOS 15.7.9): the
-  handshake, decryption of the control link, the companion envelope, Sidecar's
-  `com.apple.sidecar.capture` messages, and the video streams' negotiation.
-  Other Camera configurations are untested.
-- **Sidecar Display** (iPad as a display): not validated. Its sub-service
-  identifiers are shown, and its objects are walked without interpretation.
+- **Continuity Camera** (iPhone on iOS 16.1.2, Macs on macOS 15.7.9; captures
+  recorded in September and October 2026): the handshake, decryption of the
+  control link, the companion envelope, Sidecar's `com.apple.sidecar.capture`
+  messages, the video streams' negotiation and their 24 kHz clock. The
+  microphone stream and other Camera configurations are untested.
+- **Sidecar Display** (iPad on iPadOS 18.3.1 to a Mac on macOS 15.7.9, over
+  AWDL; sessions recorded on 2026-10-26): the session's control link and its
+  streams decrypted, the `com.apple.sidecar.display` sub-service, the message
+  names in its nested objects (shown, not interpreted) following each change
+  between extended and mirrored display, each change of resolution and display
+  sleep, and the video's negotiation and 24 kHz clock. Touch, Apple Pencil and
+  sidebar input, rotating the iPad and the iPad's own sleep are untested. What
+  the objects' entries mean is not interpreted.
+
+How to run the tests, how their encrypted fixtures are built, and how to
+validate against real devices: [doc/README.continuity](doc/README.continuity).
 
 These dissectors used to ship separately as a `continuity.so` plugin. They are
 now built in, and Wireshark refuses to start ("Duplicate protocol name") while

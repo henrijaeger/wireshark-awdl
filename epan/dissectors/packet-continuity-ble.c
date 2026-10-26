@@ -127,20 +127,20 @@ static void dissect_nearby_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
                                 int length);
 
 static const continuity_service ble_services[] = {
-    { "ibeacon",            "iBeacon",            NULL },
-    { "airdrop",            "AirDrop",            NULL },
-    { "homekit",            "HomeKit",            NULL },
-    { "proximity-pairing",  "Proximity Pairing",  NULL },
-    { "hey-siri",           "Hey Siri",           NULL },
-    { "airplay-target",     "AirPlay Target",     NULL },
-    { "airplay-source",     "AirPlay Source",     NULL },
-    { "magic-switch",       "Magic Switch",       NULL },
-    { "handoff",            "Handoff",            NULL },
-    { "tethering-target",   "Tethering Target",   NULL },
-    { "tethering-source",   "Tethering Source",   NULL },
-    { "nearby-action",      "Nearby Action",      NULL },
-    { "nearby-info",        "Nearby Info",        dissect_nearby_info },
-    { "find-my",            "Find My",            NULL },
+    { "ibeacon",            "iBeacon",            NULL, NULL },
+    { "airdrop",            "AirDrop",            NULL, NULL },
+    { "homekit",            "HomeKit",            NULL, NULL },
+    { "proximity-pairing",  "Proximity Pairing",  NULL, NULL },
+    { "hey-siri",           "Hey Siri",           NULL, NULL },
+    { "airplay-target",     "AirPlay Target",     NULL, NULL },
+    { "airplay-source",     "AirPlay Source",     NULL, NULL },
+    { "magic-switch",       "Magic Switch",       NULL, NULL },
+    { "handoff",            "Handoff",            NULL, NULL },
+    { "tethering-target",   "Tethering Target",   NULL, NULL },
+    { "tethering-source",   "Tethering Source",   NULL, NULL },
+    { "nearby-action",      "Nearby Action",      NULL, NULL },
+    { "nearby-info",        "Nearby Info",        dissect_nearby_info, NULL },
+    { "find-my",            "Find My",            NULL, NULL },
 };
 
 /* Message type -> index into the table above, in the same order as the type

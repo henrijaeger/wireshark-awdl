@@ -22,6 +22,7 @@ against an encoder that is not this dissector.
 
 import hashlib
 import hmac
+import json
 import math
 import struct
 import subprocess
@@ -227,8 +228,12 @@ def fields(cmd_tshark, capture, env, names, prefs=(), two_pass=True):
         command += ['-o', pref]
     for name in names:
         command += ['-e', name]
-    stdout = subprocess.check_output(command, encoding='utf-8', env=env)
-    return [line.split('\t') for line in stdout.splitlines()]
+    completed = subprocess.run(command, capture_output=True, encoding='utf-8', env=env,
+                               timeout=120)
+    assert completed.returncode == 0, (
+        'tshark exited %d\nstdout:\n%s\nstderr:\n%s'
+        % (completed.returncode, completed.stdout[-4000:], completed.stderr[-4000:]))
+    return [line.split('\t') for line in completed.stdout.splitlines()]
 
 
 def keyed(result_file):
@@ -281,6 +286,11 @@ def cc_awdl_text(text):
     header = b'\x00' * 140 + b'\x02' + b'\x00' + b'\x00' * 42  # payload type 2: string
     assert len(header) == 184
     return header + text
+
+
+@pytest.fixture(scope='session')
+def cmd_sharkd(program):
+    return program('sharkd')
 
 
 @pytest.fixture
@@ -784,6 +794,9 @@ class TestContinuityMedia:
         # Unrelated RTP of the type the camera's video uses.
         frames.append(over_ethernet(RESPONDER[0], INITIATOR[0], udp_over_ipv6(
             RESPONDER[1], INITIATOR[1], 50000, 50002, rtp(100))))
+        # Unrelated RTP of the type the microphone stream was once bound to.
+        frames.append(over_ethernet(RESPONDER[0], INITIATOR[0], udp_over_ipv6(
+            RESPONDER[1], INITIATOR[1], 50004, 50006, rtp(101))))
         return capture_of(result_file, 'media.pcap', frames)
 
     def test_a_negotiated_flow(self, cmd_tshark, result_file, test_env):
@@ -800,6 +813,7 @@ class TestContinuityMedia:
         rows = fields(cmd_tshark, self.capture(result_file), test_env, self.names,
                       keyed(result_file))
         assert 'continuity' not in rows[5][0]
+        assert 'continuity' not in rows[6][0]
 
     def test_without_keys_no_flow_is_identified(self, cmd_tshark, result_file, test_env):
         rows = fields(cmd_tshark, self.capture(result_file), test_env, self.names)
@@ -810,3 +824,981 @@ class TestContinuityMedia:
                       ('continuity.media_guess_pt100:TRUE',))
         assert 'continuity.media' in rows[5][0] and rows[5][5] != ''
         assert 'continuity.media' not in rows[3][0]
+        # The guess is for type 100 only.
+        assert 'continuity' not in rows[6][0]
+
+    def test_a_guessed_flow_is_set_up_once(self, cmd_tshark, result_file, test_env):
+        # RTP is told about a guessed flow on the packet the heuristic claims,
+        # not again on each later packet: every packet names the same setup.
+        frames = [udp_frame(addr6(PHONE_STREAM_ADDR), 50000, addr6(MAC_STREAM_ADDR), 50002,
+                            rtp_packet(100, seq, seq * 800)) for seq in range(4)]
+        rows = fields(cmd_tshark, capture_of(result_file, 'guessed.pcap', frames), test_env,
+                      ('continuity.media.guessed', 'rtp.setup-frame', 'rtp.p_type'),
+                      ('continuity.media_guess_pt100:TRUE',))
+        assert all(row[0] != '' for row in rows)
+        assert [row[1] for row in rows] == ['1'] * 4
+
+
+# --- Sealing protected frames ----------------------------------------------
+#
+# A from-scratch ChaCha20-Poly1305 (RFC 8439), so that further protected
+# frames can be built from readable plaintext at run time rather than embedded
+# as opaque bytes. It is not Wireshark's implementation (libgcrypt), and it is
+# pinned two ways: to the RFC's own AEAD test vector, and to the frames above,
+# which were sealed by Python's `cryptography`.
+#
+# The construction a frame uses:
+#   key        = HKDF-SHA-512(salt = 64 zero bytes, ikm = shared secret,
+#                info = "ClientEncrypt-main" for frames from the connection's
+#                initiator, "ServerEncrypt-main" for frames from the responder),
+#                first 32 bytes
+#   nonce      = the per-direction count of protected frames before this one,
+#                little-endian in 8 bytes, then 4 zero bytes
+#   aad        = the frame's 4-byte header: 0x08, then the body length
+#                (ciphertext + 16-byte tag) as 24-bit big-endian
+#   body       = ChaCha20 ciphertext of the OPACK plaintext, then the tag
+
+def _rotl32(value, shift):
+    return ((value << shift) | (value >> (32 - shift))) & 0xffffffff
+
+
+def _chacha20_block(key, counter, nonce):
+    constants = (0x61707865, 0x3320646e, 0x79622d32, 0x6b206574)
+    state = (list(constants) + list(struct.unpack('<8I', key)) + [counter]
+             + list(struct.unpack('<3I', nonce)))
+    working = state[:]
+
+    def quarter(a, b, c, d):
+        working[a] = (working[a] + working[b]) & 0xffffffff
+        working[d] = _rotl32(working[d] ^ working[a], 16)
+        working[c] = (working[c] + working[d]) & 0xffffffff
+        working[b] = _rotl32(working[b] ^ working[c], 12)
+        working[a] = (working[a] + working[b]) & 0xffffffff
+        working[d] = _rotl32(working[d] ^ working[a], 8)
+        working[c] = (working[c] + working[d]) & 0xffffffff
+        working[b] = _rotl32(working[b] ^ working[c], 7)
+
+    for _ in range(10):
+        quarter(0, 4, 8, 12)
+        quarter(1, 5, 9, 13)
+        quarter(2, 6, 10, 14)
+        quarter(3, 7, 11, 15)
+        quarter(0, 5, 10, 15)
+        quarter(1, 6, 11, 12)
+        quarter(2, 7, 8, 13)
+        quarter(3, 4, 9, 14)
+    return struct.pack('<16I', *((w + s) & 0xffffffff for w, s in zip(working, state)))
+
+
+def _chacha20_xor(key, counter, nonce, data):
+    out = bytearray()
+    for block in range(0, len(data), 64):
+        stream = _chacha20_block(key, counter + block // 64, nonce)
+        out += bytes(x ^ y for x, y in zip(data[block:block + 64], stream))
+    return bytes(out)
+
+
+def _poly1305(key, message):
+    r = int.from_bytes(key[:16], 'little') & 0x0ffffffc0ffffffc0ffffffc0fffffff
+    s = int.from_bytes(key[16:], 'little')
+    p = (1 << 130) - 5
+    acc = 0
+    for i in range(0, len(message), 16):
+        chunk = message[i:i + 16] + b'\x01'
+        acc = (acc + int.from_bytes(chunk, 'little')) * r % p
+    return ((acc + s) & ((1 << 128) - 1)).to_bytes(16, 'little')
+
+
+def aead_seal(key, nonce, plaintext, aad):
+    otk = _chacha20_block(key, 0, nonce)[:32]
+    ciphertext = _chacha20_xor(key, 1, nonce, plaintext)
+
+    def pad16(data):
+        return b'\x00' * ((-len(data)) % 16)
+    mac_data = (aad + pad16(aad) + ciphertext + pad16(ciphertext)
+                + struct.pack('<QQ', len(aad), len(ciphertext)))
+    return ciphertext + _poly1305(otk, mac_data)
+
+
+CLIENT_KEY = hkdf_sha512(SHARED_SECRET, b'ClientEncrypt-main')
+SERVER_KEY = hkdf_sha512(SHARED_SECRET, b'ServerEncrypt-main')
+
+
+def seal(from_initiator, counter, plaintext):
+    '''An RDLink EncryptedData frame carrying `plaintext`.'''
+    header = b'\x08' + (len(plaintext) + 16).to_bytes(3, 'big')
+    nonce = counter.to_bytes(8, 'little') + b'\x00' * 4
+    return header + aead_seal(CLIENT_KEY if from_initiator else SERVER_KEY, nonce, plaintext, header)
+
+
+def o_bytes(data):
+    if len(data) <= 32:
+        return bytes([0x70 + len(data)]) + data
+    if len(data) <= 0xff:
+        return b'\x91' + bytes([len(data)]) + data
+    return b'\x92' + len(data).to_bytes(2, 'little') + data
+
+
+def o_uint(value):
+    '''An integer in the smallest form the platform reads as this value.'''
+    if 0 <= value <= 39:
+        return o_int(value)
+    if value <= 0xff:
+        return b'\x30' + bytes([value])
+    if value <= 0xffff:
+        return b'\x31' + value.to_bytes(2, 'little')
+    if value <= 0x7fffffff:
+        return b'\x32' + value.to_bytes(4, 'little')
+    return b'\x33' + value.to_bytes(8, 'little')
+
+
+def envelope(event, kind, xid, content=b'\xe0'):
+    pairs = []
+    if event is not None:
+        pairs.append((o_str('_i'), o_str(event)))
+    pairs += [(o_str('_t'), o_int(kind)), (o_str('_x'), o_uint(xid)), (o_str('_c'), content)]
+    return o_dict(*pairs)
+
+
+class TestSealing:
+    def test_rfc8439_aead_vector(self):
+        # RFC 8439, section 2.8.2.
+        key = bytes(range(0x80, 0xa0))
+        nonce = bytes.fromhex('070000004041424344454647')
+        aad = bytes.fromhex('50515253c0c1c2c3c4c5c6c7')
+        plaintext = (b"Ladies and Gentlemen of the class of '99: If I could offer you only "
+                     b"one tip for the future, sunscreen would be it.")
+        sealed = aead_seal(key, nonce, plaintext, aad)
+        assert sealed[-16:].hex() == '1ae10b594f09e26a7e902ecbd0600691'
+        assert sealed[:16].hex() == 'd31a8d34648e60db7b86afbc53ef7ec2'
+
+    def test_matches_the_independently_sealed_frames(self):
+        for i in range(4):
+            assert seal(True, i, envelope('_systemInfo', 2, i + 1)) == REQUESTS[i]
+            assert seal(False, i, envelope(None, 3, i + 1)) == RESPONSES[i]
+
+
+def run_tshark(cmd_tshark, capture, env, args, timeout=120):
+    '''Run tshark with a bounded time and keep its output for the failure report.'''
+    completed = subprocess.run([cmd_tshark] + args + ['-r', capture], capture_output=True,
+                               encoding='utf-8', env=env, timeout=timeout)
+    assert completed.returncode == 0, (
+        'tshark exited %d\nstdout:\n%s\nstderr:\n%s'
+        % (completed.returncode, completed.stdout[-4000:], completed.stderr[-4000:]))
+    return completed.stdout
+
+
+# --- Media flow identity -----------------------------------------------------
+
+def stream_start(xid, stream_id, port, addr=None, port_encoding=None):
+    content = [(o_str('_streamID'), o_str(stream_id)), (o_str('_streamType'), o_int(3))]
+    if addr is not None:
+        content.append((o_str('_streamAddr'), o_str(addr)))
+    content.append((o_str('_streamPort'), port_encoding if port_encoding is not None else o_uint(port)))
+    return envelope('_streamStart', 2, xid, o_dict(*content))
+
+
+def stream_answer(xid, port, addr=None):
+    content = []
+    if addr is not None:
+        content.append((o_str('_streamAddr'), o_str(addr)))
+    content.append((o_str('_streamPort'), o_uint(port)))
+    return envelope(None, 3, xid, o_dict(*content))
+
+
+VIDEO = 'ABCD1234:ContinuityCaptureMediaIdentifierDefaultVideo'
+DESKCAM = 'ABCD1234:ContinuityCaptureMediaIdentifierDeskcamVideo'
+MICROPHONE = 'ABCD1234:ContinuityCaptureMediaMicrophone'
+OTHER_STREAM = 'ABCD1234:SomethingNotObserved'
+DISPLAY = 'ABCD1234:AVCVideoStream'
+
+PHONE_STREAM_ADDR = 'fd00::a'
+MAC_STREAM_ADDR = 'fd00::b'
+
+
+def addr6(text):
+    import ipaddress
+    return ipaddress.IPv6Address(text).packed
+
+
+class Endpoints:
+    '''A control connection's two ends, and media sent between chosen addresses.'''
+
+    def __init__(self, initiator=INITIATOR, responder=RESPONDER, ports=(51000, 52000)):
+        self.initiator, self.responder = initiator, responder
+        self.conn = Connection(*ports)
+        self.conn_ends = (initiator, responder)
+
+    def tcp(self, from_initiator, payload):
+        src, dst = (self.initiator, self.responder) if from_initiator else (self.responder, self.initiator)
+        sport, dport = self.conn.ports if from_initiator else self.conn.ports[::-1]
+        at = self.conn.seq[from_initiator]
+        self.conn.seq[from_initiator] += len(payload)
+        return over_ethernet(src[0], dst[0], tcp_over_ipv6(
+            src[1], dst[1], sport, dport, at, self.conn.seq[not from_initiator], payload))
+
+
+def udp_frame(src_ip, sport, dst_ip, dport, payload, src_mac=RESPONDER[0], dst_mac=INITIATOR[0]):
+    return over_ethernet(src_mac, dst_mac, udp_over_ipv6(src_ip, dst_ip, sport, dport, payload))
+
+
+def rtp_packet(payload_type, seq, timestamp, ssrc=0x11223344, size=20):
+    return struct.pack('!BBHII', 0x80, payload_type, seq, timestamp, ssrc) + b'\x5a' * size
+
+
+def negotiate(ends, server_counter, client_counter, request, answer):
+    '''The phone (the control connection's responder) asks; the Mac answers.'''
+    return [ends.tcp(False, seal(False, server_counter, request)),
+            ends.tcp(True, seal(True, client_counter, answer))]
+
+
+class TestMediaFlows:
+    names = ('frame.number', 'frame.protocols', 'continuity.media.stream_id',
+             'continuity.media.negotiated_in', 'continuity.media.ambiguous',
+             'continuity.session', 'rtp.p_type', 'continuity.media.payload_binding')
+
+    def dissect(self, cmd_tshark, result_file, test_env, frames, prefs=(), two_pass=True):
+        path = capture_of(result_file, 'media-flows.pcap', frames)
+        rows = fields(cmd_tshark, path, test_env, self.names, keyed(result_file) + tuple(prefs),
+                      two_pass)
+        return {int(row[0]): row for row in rows}
+
+    def video_session(self, ends=None, phone_addr=PHONE_STREAM_ADDR, mac_addr=MAC_STREAM_ADDR,
+                      xid=5, counters=(0, 0), handshake=True):
+        ends = ends or Endpoints()
+        frames = [ends.tcp(True, pairverify_m1())] if handshake else []
+        frames += negotiate(ends, counters[0], counters[1],
+                            stream_start(xid, VIDEO, 40000, phone_addr),
+                            stream_answer(xid, 40002, mac_addr))
+        return ends, frames
+
+    def video_packet(self, phone_addr=PHONE_STREAM_ADDR, mac_addr=MAC_STREAM_ADDR, seq=1,
+                     ports=(40000, 40002)):
+        return udp_frame(addr6(phone_addr), ports[0], addr6(mac_addr), ports[1],
+                         rtp_packet(100, seq, seq * 800))
+
+    def test_a_negotiated_flow_at_its_announced_addresses(self, cmd_tshark, result_file, test_env):
+        _, frames = self.video_session()
+        frames.append(self.video_packet())
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert rows[4][2] == VIDEO and rows[4][3] == '3' and rows[4][5] == SESSION
+
+    def test_a_negotiated_flow_at_the_control_addresses(self, cmd_tshark, result_file, test_env):
+        # The message spec observed media sent to the address the control
+        # connection uses rather than the one announced.
+        _, frames = self.video_session()
+        frames.append(udp_frame(RESPONDER[1], 40000, INITIATOR[1], 40002, rtp_packet(100, 1, 800)))
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert rows[4][2] == VIDEO
+
+    def test_the_same_ports_between_other_endpoints(self, cmd_tshark, result_file, test_env):
+        _, frames = self.video_session()
+        frames.append(self.video_packet(phone_addr='fd00::99', mac_addr='fd00::98'))
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert 'continuity' not in rows[4][1]
+
+    def test_media_in_the_other_direction(self, cmd_tshark, result_file, test_env):
+        _, frames = self.video_session()
+        frames.append(udp_frame(addr6(MAC_STREAM_ADDR), 40002, addr6(PHONE_STREAM_ADDR), 40000,
+                                RTCP_RR, src_mac=INITIATOR[0], dst_mac=RESPONDER[0]))
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert rows[4][2] == VIDEO
+
+    def test_ports_swapped_between_the_ends(self, cmd_tshark, result_file, test_env):
+        # The phone's port at the Mac's address: not the negotiated flow.
+        _, frames = self.video_session()
+        frames.append(self.video_packet(ports=(40002, 40000)))
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert 'continuity' not in rows[4][1]
+
+    def test_a_packet_before_its_negotiation(self, cmd_tshark, result_file, test_env):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1()), self.video_packet(seq=1)]
+        frames += negotiate(ends, 0, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR),
+                            stream_answer(5, 40002, MAC_STREAM_ADDR))
+        frames.append(self.video_packet(seq=2))
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert 'continuity' not in rows[2][1]
+        assert rows[5][2] == VIDEO and rows[5][3] == '4'
+
+    def test_a_later_session_reusing_the_ports(self, cmd_tshark, result_file, test_env):
+        ends, frames = self.video_session()
+        frames.append(self.video_packet(seq=1))                                  # 4: first session
+        frames += negotiate(ends, 1, 1, stream_start(6, VIDEO, 40000, 'fd00::c'),
+                            stream_answer(6, 40002, 'fd00::d'))                 # 5, 6
+        frames.append(self.video_packet(phone_addr='fd00::c', mac_addr='fd00::d', seq=2))  # 7
+        frames.append(self.video_packet(seq=3))                                  # 8: first session
+        for two_pass in (False, True):
+            rows = self.dissect(cmd_tshark, result_file, test_env, frames, two_pass=two_pass)
+            assert rows[4][3] == '3' and rows[7][3] == '6' and rows[8][3] == '3'
+
+    def test_identical_negotiations_are_ambiguous(self, cmd_tshark, result_file, test_env):
+        ends, frames = self.video_session()
+        frames.append(self.video_packet(seq=1))                                  # 4
+        frames += negotiate(ends, 1, 1, stream_start(6, VIDEO, 40000, PHONE_STREAM_ADDR),
+                            stream_answer(6, 40002, MAC_STREAM_ADDR))           # 5, 6
+        frames.append(self.video_packet(seq=2))                                  # 7
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert rows[4][3] == '3' and rows[4][4] == ''
+        assert rows[7][2] == '' and rows[7][3] == ''
+        assert 'frames 3 and 6' in rows[7][4]
+
+    def test_concurrent_sessions_with_the_same_ports(self, cmd_tshark, result_file, test_env):
+        other = (bytes.fromhex('020000000003'), bytes.fromhex('fe800000000000000000000000000003'))
+        other_peer = (bytes.fromhex('020000000004'), bytes.fromhex('fe800000000000000000000000000004'))
+        a, b = Endpoints(), Endpoints(other, other_peer, (51001, 52001))
+        frames = [a.tcp(True, pairverify_m1()), b.tcp(True, pairverify_m1())]
+        frames += negotiate(a, 0, 0, stream_start(5, VIDEO, 40000), stream_answer(5, 40002))  # 3, 4
+        frames += negotiate(b, 0, 0, stream_start(5, MICROPHONE, 40000), stream_answer(5, 40002))  # 5, 6
+        frames.append(udp_frame(RESPONDER[1], 40000, INITIATOR[1], 40002, rtp_packet(100, 1, 800)))  # 7
+        frames.append(udp_frame(other_peer[1], 40000, other[1], 40002, rtp_packet(101, 1, 480)))  # 8
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert rows[7][2] == VIDEO and rows[7][3] == '4'
+        assert rows[8][2] == MICROPHONE and rows[8][3] == '6'
+
+    @pytest.mark.parametrize('port_encoding', [
+        b'\x32' + (70000).to_bytes(4, 'little'),   # out of range
+        o_int(0),                                  # zero
+        o_str('40000'),                            # a string, not an integer
+    ])
+    def test_an_invalid_port_negotiates_nothing(self, cmd_tshark, result_file, test_env,
+                                                port_encoding):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1())]
+        frames += negotiate(ends, 0, 0, stream_start(5, VIDEO, None, PHONE_STREAM_ADDR,
+                                                     port_encoding=port_encoding),
+                            stream_answer(5, 40002, MAC_STREAM_ADDR))
+        frames.append(self.video_packet())
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert 'continuity' not in rows[4][1]
+
+    def test_a_negotiation_without_its_answer(self, cmd_tshark, result_file, test_env):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1()),
+                  ends.tcp(False, seal(False, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR))),
+                  self.video_packet()]
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert 'continuity' not in rows[3][1]
+
+    def test_random_revisits_keep_their_association(self, cmd_sharkd, result_file, base_env):
+        ends, frames = self.video_session()
+        frames.append(self.video_packet(seq=1))                                  # 4
+        frames += negotiate(ends, 1, 1, stream_start(6, VIDEO, 40000, 'fd00::c'),
+                            stream_answer(6, 40002, 'fd00::d'))                 # 5, 6
+        frames.append(self.video_packet(phone_addr='fd00::c', mac_addr='fd00::d', seq=2))  # 7
+        frames.append(self.video_packet(seq=3))                                  # 8
+        path = capture_of(result_file, 'revisits.pcap', frames)
+        requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'setconf',
+                     'params': {'name': 'continuity.keylog_file',
+                                'value': shared_keylog(result_file)}},
+                    {'jsonrpc': '2.0', 'id': 2, 'method': 'load', 'params': {'file': path}}]
+        order = [8, 4, 7, 4, 8, 7, 4]
+        for i, frame in enumerate(order):
+            requests.append({'jsonrpc': '2.0', 'id': 10 + i, 'method': 'frame',
+                             'params': {'frame': frame, 'proto': True}})
+        completed = subprocess.run((cmd_sharkd, '-'), input='\n'.join(json.dumps(r) for r in requests),
+                                   capture_output=True, encoding='utf-8', env=base_env, timeout=120)
+        replies = {r['id']: json.dumps(r) for r in map(json.loads, completed.stdout.splitlines()) if 'id' in r}
+        expected = {4: 'Negotiated in: 3', 7: 'Negotiated in: 6', 8: 'Negotiated in: 3'}
+        for i, frame in enumerate(order):
+            assert expected[frame] in replies[10 + i], (frame, replies[10 + i][:2000])
+
+
+# --- RTP/RTCP and the clock rates ------------------------------------------
+
+def rtp_streams(cmd_tshark, capture, env, prefs):
+    args = ['-q', '-z', 'rtp,streams']
+    for pref in prefs:
+        args += ['-o', pref]
+    return run_tshark(cmd_tshark, capture, env, args)
+
+
+class TestMediaTiming:
+    def flow(self, stream_id, payload_type, ticks_per_packet, interval, count=20):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1())]
+        frames += negotiate(ends, 0, 0, stream_start(5, stream_id, 40000, PHONE_STREAM_ADDR),
+                            stream_answer(5, 40002, MAC_STREAM_ADDR))
+        times = [0.0, 0.0, 0.0]
+        for i in range(count):
+            frames.append(udp_frame(addr6(PHONE_STREAM_ADDR), 40000, addr6(MAC_STREAM_ADDR), 40002,
+                                    rtp_packet(payload_type, i + 1, 1000 + i * ticks_per_packet)))
+            times.append(1.0 + i * interval)
+        return frames, times
+
+    def write(self, result_file, frames, times):
+        path = result_file('timing.pcap')
+        with open(path, 'wb') as f:
+            f.write(struct.pack('<IHHiIII', 0xa1b2c3d4, 2, 4, 0, 0, 65535, LINKTYPE_ETHERNET))
+            for frame, at in zip(frames, times):
+                f.write(struct.pack('<IIII', 1700000000 + int(at), round((at % 1) * 1e6),
+                                    len(frame), len(frame)))
+                f.write(frame)
+        return path
+
+    def max_jitter(self, output):
+        # The rtp,streams table: one row per stream; Max Jitter is the third
+        # number from the end, before Mean Jitter and the problem flag.
+        rows = [line for line in output.splitlines() if 'fd00::a' in line]
+        assert len(rows) == 1, output
+        numbers = [float(x) for x in rows[0].replace('X', ' ').split()
+                   if x.replace('.', '', 1).isdigit()]
+        return numbers[-3]
+
+    # Video timestamps advance at 24 kHz: measured on six real Camera streams
+    # at 24,004 to 24,225 ticks a second, and on Sidecar Display's video at
+    # 24,005 to 24,136.
+    @pytest.mark.parametrize('stream_id,payload_type,ticks,interval', [
+        (VIDEO, 100, 800, 1 / 30),          # 30 frames a second
+        (DESKCAM, 100, 400, 1 / 60),        # 60 frames a second
+        (DISPLAY, 100, 400, 1 / 60),
+    ])
+    def test_the_bound_clock_rate(self, cmd_tshark, result_file, test_env, stream_id,
+                                  payload_type, ticks, interval):
+        # Timestamps that advance exactly in step with arrival at the bound
+        # rate have no jitter; at any other rate they have.
+        frames, times = self.flow(stream_id, payload_type, ticks, interval)
+        output = rtp_streams(cmd_tshark, self.write(result_file, frames, times), test_env,
+                             keyed(result_file))
+        assert self.max_jitter(output) < 0.01, output
+        assert 'Continuity media (opaque payload)' in output or str(payload_type) in output
+
+    def test_a_wrong_clock_would_show(self, cmd_tshark, result_file, test_env):
+        # The control: the same video stream with 90 kHz timestamps.
+        frames, times = self.flow(VIDEO, 100, 3000, 1 / 30)
+        output = rtp_streams(cmd_tshark, self.write(result_file, frames, times), test_env,
+                             keyed(result_file))
+        assert self.max_jitter(output) > 1.0, output
+
+    def test_an_unobserved_stream_is_not_bound(self, cmd_tshark, result_file, test_env):
+        frames, times = self.flow(OTHER_STREAM, 100, 800, 1 / 30, count=2)
+        path = self.write(result_file, frames, times)
+        rows = fields(cmd_tshark, path, test_env,
+                      ('continuity.media.stream_id', 'continuity.media.payload_binding',
+                       'frame.protocols'), keyed(result_file))
+        assert rows[3][0] == OTHER_STREAM
+        assert rows[3][1].startswith('none:')
+        assert 'rtpevent' not in rows[3][2]
+
+    def test_a_bound_stream_says_so(self, cmd_tshark, result_file, test_env):
+        frames, times = self.flow(VIDEO, 100, 800, 1 / 30, count=2)
+        rows = fields(cmd_tshark, self.write(result_file, frames, times), test_env,
+                      ('continuity.media.payload_binding', 'frame.protocols'), keyed(result_file))
+        assert rows[3][0] == 'payload type 100 at 24000 Hz'
+        assert 'rtpevent' not in rows[3][1]
+
+    def test_a_display_stream_is_bound(self, cmd_tshark, result_file, test_env):
+        frames, times = self.flow(DISPLAY, 100, 400, 1 / 60, count=2)
+        rows = fields(cmd_tshark, self.write(result_file, frames, times), test_env,
+                      ('continuity.media.payload_binding', 'frame.protocols'), keyed(result_file))
+        assert rows[3][0] == 'payload type 100 at 24000 Hz'
+        assert 'rtpevent' not in rows[3][1]
+
+    def test_the_microphone_is_not_bound(self, cmd_tshark, result_file, test_env):
+        # Its payload type is chosen by the Mac's answer and no real-Mac
+        # capture has shown it, so neither its type nor its clock is assumed;
+        # it is still not read as telephone events.
+        frames, times = self.flow(MICROPHONE, 101, 480, 0.010)
+        path = self.write(result_file, frames, times)
+        rows = fields(cmd_tshark, path, test_env,
+                      ('continuity.media.stream_id', 'continuity.media.payload_binding',
+                       'frame.protocols'), keyed(result_file))
+        assert rows[3][0] == MICROPHONE
+        assert rows[3][1].startswith('none:')
+        assert 'rtpevent' not in rows[3][2]
+        output = rtp_streams(cmd_tshark, path, test_env, keyed(result_file))
+        assert 'clock rate unknown' in output, output
+
+    def test_rtcp_before_any_rtp(self, cmd_tshark, result_file, test_env):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1())]
+        frames += negotiate(ends, 0, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR),
+                            stream_answer(5, 40002, MAC_STREAM_ADDR))
+        frames.append(udp_frame(addr6(MAC_STREAM_ADDR), 40002, addr6(PHONE_STREAM_ADDR), 40000,
+                                RTCP_RR, src_mac=INITIATOR[0], dst_mac=RESPONDER[0]))
+        frames.append(udp_frame(addr6(PHONE_STREAM_ADDR), 40000, addr6(MAC_STREAM_ADDR), 40002,
+                                rtp_packet(100, 1, 800)))
+        rows = fields(cmd_tshark, capture_of(result_file, 'rtcp-first.pcap', frames), test_env,
+                      ('continuity.media.stream_id', 'rtcp.pt', 'rtp.p_type'), keyed(result_file))
+        assert rows[3] == [VIDEO, '201', '']
+        assert rows[4] == [VIDEO, '', '100']
+
+    @pytest.mark.parametrize('payload', [b'\x80', b'\x80\x64\x00', b'\x40' + b'\x00' * 15])
+    def test_short_or_other_version_packets(self, cmd_tshark, result_file, test_env, payload):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1())]
+        frames += negotiate(ends, 0, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR),
+                            stream_answer(5, 40002, MAC_STREAM_ADDR))
+        frames.append(udp_frame(addr6(PHONE_STREAM_ADDR), 40000, addr6(MAC_STREAM_ADDR), 40002,
+                                payload))
+        rows = fields(cmd_tshark, capture_of(result_file, 'short.pcap', frames), test_env,
+                      ('frame.protocols', '_ws.expert.message'), keyed(result_file))
+        assert 'continuity.media' not in rows[3][0]
+
+
+# --- Handshake validity --------------------------------------------------------
+
+def m1_body(*pairs, dict_marker=None, after=b''):
+    """A PubKey frame whose body is a dictionary of `pairs`: counted, or with
+    `dict_marker` as given (0xef, the endless form, gains its terminator), and
+    `after` appended inside the frame's declared body."""
+    marker = dict_marker if dict_marker is not None else 0xe0 + len(pairs)
+    body = bytes([marker]) + b''.join(k + v for k, v in pairs)
+    if marker == 0xef:
+        body += b'\x03'
+    body += after
+    return b'\x05' + len(body).to_bytes(3, 'big') + body
+
+
+def tlv8(*elements):
+    return b''.join(bytes([tag, len(value)]) + value for tag, value in elements)
+
+
+STATE_1 = (0x06, b'\x01')
+STATE_2 = (0x06, b'\x02')
+PUBLIC_KEY = (0x03, EPHEMERAL_KEY)
+OTHER_KEY = (0x03, bytes(range(0x10, 0x30)))
+FLAGS = (0x19, b'\x01')
+
+
+class TestHandshakeValidity:
+    def session_of(self, cmd_tshark, result_file, test_env, *m1s):
+        conn = Connection()
+        frames = [conn.frame(True, m1) for m1 in m1s] + [conn.frame(True, REQUESTS[0])]
+        rows = fields(cmd_tshark, capture_of(result_file, 'm1.pcap', frames), test_env,
+                      ('continuity.session', '_ws.expert.message', 'continuity.rdlink.read'),
+                      keyed(result_file))
+        return rows
+
+    @pytest.mark.parametrize('m1', [
+        m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY, FLAGS)))),
+        m1_body((o_str('_pd'), b'\x92' + (40).to_bytes(2, 'little') + tlv8(STATE_1, PUBLIC_KEY, FLAGS))),
+        m1_body((o_str('x'), o_int(1)), (o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY, FLAGS)))),
+        m1_body((o_str('_pd'), o_bytes(tlv8(PUBLIC_KEY, STATE_1)))),
+        m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY, FLAGS))), dict_marker=0xef),
+    ])
+    def test_equivalent_valid_handshakes(self, cmd_tshark, result_file, test_env, m1):
+        rows = self.session_of(cmd_tshark, result_file, test_env, m1)
+        assert rows[0][0] == SESSION
+        assert rows[1][2] == 'True'
+
+    @pytest.mark.parametrize('m1,reason', [
+        # A dictionary declaring two entries and carrying one: the object
+        # decode reports it truncated, so nothing inside it is used.
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY, FLAGS))), dict_marker=0xe2),
+         'the object encoding around _pd is incomplete or malformed'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, STATE_2, PUBLIC_KEY)))),
+         'more than one State element'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, STATE_1, PUBLIC_KEY)))),
+         'more than one State element'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(PUBLIC_KEY, FLAGS)))),
+         'carries no State element'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, FLAGS)))),
+         'exactly one 32-byte public key'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY, OTHER_KEY)))),
+         'exactly one 32-byte public key'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, (0x03, EPHEMERAL_KEY[:31]))))),
+         'exactly one 32-byte public key'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY) + b'\x19'))),
+         'disagrees with its own lengths'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY) + b'\x19\x05\x01'))),
+         'disagrees with its own lengths'),
+        (m1_body((o_str('_pd'), o_str('not bytes'))),
+         'no _pd byte string'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY))),
+                 (o_str('_pd'), o_bytes(tlv8(STATE_1, OTHER_KEY)))),
+         'more than one _pd'),
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY))), after=b'\x01'),
+         'the object encoding around _pd is incomplete or malformed'),
+        # A whole _pd, then an entry the walk stops in at its value limit.
+        (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY))),
+                 (o_str('x'), b'\xdf' + b'\x01' * 16384 + b'\x03')),
+         'the object encoding around _pd is incomplete or malformed'),
+    ])
+    def test_malformed_handshakes_name_no_session(self, cmd_tshark, result_file, test_env, m1,
+                                                  reason):
+        rows = self.session_of(cmd_tshark, result_file, test_env, m1)
+        assert rows[0][0] == ''
+        assert reason in rows[0][1]
+        assert rows[1][2] == 'False'
+
+    def test_an_invalid_handshake_does_not_replace_a_valid_one(self, cmd_tshark, result_file,
+                                                               test_env):
+        bad = m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, STATE_2, OTHER_KEY))))
+        rows = self.session_of(cmd_tshark, result_file, test_env, pairverify_m1(), bad)
+        # The conversation's session is still reported on the invalid message:
+        # it is unchanged, not replaced by the other key.
+        assert [set(row[0].split('|')) - {''} for row in rows] == [{SESSION}] * 3
+        assert 'names no session' in rows[1][1]
+        assert rows[2][2] == 'True'
+
+    def test_a_valid_handshake_after_an_invalid_one(self, cmd_tshark, result_file, test_env):
+        bad = m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, STATE_2, OTHER_KEY))))
+        rows = self.session_of(cmd_tshark, result_file, test_env, bad, pairverify_m1())
+        assert rows[0][0] == '' and rows[1][0] == SESSION and rows[2][2] == 'True'
+
+
+# --- OPACK resource limits -----------------------------------------------------
+
+OPACK_VALUES_MAX = 16384
+OPACK_TEXT_MAX = 1024 * 1024
+
+
+class TestOpackLimits:
+    def walk(self, cmd_tshark, result_file, test_env, *bodies):
+        conn = Connection()
+        frames = [conn.frame(True, pairverify_m1())]
+        for body in bodies:
+            # A body longer than an IPv6 packet holds goes in several segments.
+            frame = continue_frame(body)
+            for at in range(0, len(frame), 60000):
+                frames.append(conn.frame(False, frame[at:at + 60000]))
+        path = capture_of(result_file, 'limits.pcap', frames)
+        output = run_tshark(cmd_tshark, path, test_env,
+                            ['-T', 'fields', '-E', 'occurrence=a', '-E', 'aggregator=|',
+                             '-e', 'continuity.opack.member', '-e', '_ws.expert.message',
+                             '-e', 'continuity.opack.bool', '-e', 'continuity.opack.undecoded'],
+                            timeout=300)
+        rows = [line.split('\t') for line in output.splitlines()][1:]
+        # Only the frames that completed a message.
+        return [row for row in rows if row[0] or row[1] or row[2] or row[3]]
+
+    def booleans(self, count):
+        return b'\xdf' + b'\x01' * count + b'\x03'
+
+    @pytest.mark.parametrize('count,stopped', [
+        (OPACK_VALUES_MAX - 2, False),
+        (OPACK_VALUES_MAX - 1, False),   # the array and its entries: exactly the limit
+        (OPACK_VALUES_MAX, True),
+        (100000, True),
+    ])
+    def test_the_value_count_limit(self, cmd_tshark, result_file, test_env, count, stopped):
+        (row,) = self.walk(cmd_tshark, result_file, test_env, self.booleans(count))
+        decoded = len(row[2].split('|')) if row[2] else 0
+        if stopped:
+            assert 'more than %d values' % OPACK_VALUES_MAX in row[1]
+            assert decoded == OPACK_VALUES_MAX - 1
+            assert row[3] != ''
+        else:
+            assert 'values' not in row[1] and decoded == count
+
+    def long_strings(self, extra):
+        """A root array of 400-byte strings whose member text ("[i] = <s>")
+        totals the text budget exactly, plus `extra` bytes on the last one.
+        Long enough that the reference table (4096 entries) and the value
+        expansion (1 MiB) are not what stops the walk."""
+        budget = OPACK_TEXT_MAX - (256 + 64)
+        texts, total, i = [], 0, 0
+        while True:
+            cost = len('[%d]' % i) + 3 + 400
+            if total + cost > budget:
+                break
+            texts.append(400)
+            total += cost
+            i += 1
+        # Lengthen the last string so the total lands exactly on the budget.
+        texts[-1] += budget - total + extra
+        body = b'\xdf' + b''.join(b'\x62' + n.to_bytes(2, 'little') + b's' * n for n in texts)
+        return body + b'\x03', len(texts)
+
+    @pytest.mark.parametrize('extra,stopped', [(-1, False), (0, False), (1, True)])
+    def test_the_text_limit_boundary(self, cmd_tshark, result_file, test_env, extra, stopped):
+        body, count = self.long_strings(extra)
+        (row,) = self.walk(cmd_tshark, result_file, test_env, body)
+        members = row[0].split('|')
+        if stopped:
+            assert 'generated text exceeds' in row[1]
+            assert len(members) == count  # count - 1 values, and the stop
+        else:
+            assert row[1] == '' and len(members) == count
+
+    @pytest.mark.parametrize('references,stopped', [(254, False), (255, False), (256, True)])
+    def test_the_expansion_limit_boundary(self, cmd_tshark, result_file, test_env, references,
+                                          stopped):
+        # 4096 bytes sent once and referred to: (1 + references) x 4096 bytes
+        # of value, which is exactly 1 MiB at 255 references.
+        body = b'\xdf' + o_bytes(bytes(4096)) + b'\xa0' * references + b'\x03'
+        (row,) = self.walk(cmd_tshark, result_file, test_env, body)
+        assert ('exceed 1048576 bytes' in row[1]) == stopped
+        if not stopped:
+            assert row[1] == '' and len(row[0].split('|')) == 1 + references
+
+    def test_member_text_is_charged_before_it_is_made(self, cmd_tshark, result_file, test_env):
+        # A 250-byte key and an array of 5,000 references to one short string:
+        # each member's text repeats the key, so the text is ~260 bytes per
+        # 1-byte reference.
+        key = 'k' * 250
+        body = o_dict((o_str(key[:32]), o_str('x')),
+                      (b'\x61' + bytes([len(key)]) + key.encode(), b'\xdf' + b'\xa1' * 5000 + b'\x03'))
+        (row,) = self.walk(cmd_tshark, result_file, test_env, body)
+        members = row[0].split('|')
+        assert 'generated text exceeds %d bytes' % OPACK_TEXT_MAX in row[1]
+        assert sum(len(m) for m in members) <= OPACK_TEXT_MAX
+        assert row[3] != ''
+
+    def test_a_message_after_a_stopped_one_is_whole(self, cmd_tshark, result_file, test_env):
+        normal = o_dict((o_str('a'), o_int(1)), (o_str('b'), o_str('ok')))
+        rows = self.walk(cmd_tshark, result_file, test_env, self.booleans(OPACK_VALUES_MAX + 5),
+                         normal)
+        assert 'more than' in rows[0][1]
+        assert rows[1][0] == 'a = 1|b = ok' and rows[1][1] == ''
+
+    def test_depth_limit_still_applies(self, cmd_tshark, result_file, test_env):
+        nested = b'\xd1' * 17 + o_int(0)
+        (row,) = self.walk(cmd_tshark, result_file, test_env, nested)
+        assert 'nests deeper than this decode walks' in row[1]
+
+    def test_reference_table_limit_still_applies(self, cmd_tshark, result_file, test_env):
+        strings = b'\xdf' + b''.join(o_str('s%d' % i) for i in range(4097)) + b'\x03'
+        (row,) = self.walk(cmd_tshark, result_file, test_env, strings)
+        assert "reference table's bound of 4096" in row[1]
+
+
+# --- Framing, pairing and counters, continued ------------------------------------
+
+class TestTransport:
+    names = ('continuity.companion.event', 'continuity.companion.xid',
+             'continuity.companion.answers', 'continuity.rdlink.counter',
+             'continuity.rdlink.read', 'continuity.session', 'continuity.rdlink.unavailable')
+
+    def run(self, cmd_tshark, result_file, test_env, frames, prefs=(), two_pass=True):
+        path = capture_of(result_file, 'transport.pcap', frames)
+        return fields(cmd_tshark, path, test_env, self.names, keyed(result_file) + tuple(prefs),
+                      two_pass)
+
+    def test_different_events_in_one_segment(self, cmd_tshark, result_file, test_env):
+        conn = Connection()
+        ping = seal(True, 1, envelope('_ping', 2, 2))
+        # The answers in the other order of exchange ids, each at the counter
+        # its position in the stream gives it.
+        answers = seal(False, 0, envelope(None, 3, 2)) + seal(False, 1, envelope(None, 3, 1))
+        rows = self.run(cmd_tshark, result_file, test_env, [
+            conn.frame(True, pairverify_m1()), conn.frame(True, REQUESTS[0] + ping),
+            conn.frame(False, answers)])
+        assert rows[1][0] == '_systemInfo|_ping'
+        assert rows[1][1] == '0x0000000000000001|0x0000000000000002'
+        assert rows[2][1] == '0x0000000000000002|0x0000000000000001'
+        assert rows[2][2] == '2|2'
+
+    def test_a_reassembled_message_and_a_whole_one_in_one_frame(self, cmd_tshark, result_file,
+                                                                test_env):
+        conn = Connection()
+        rows = self.run(cmd_tshark, result_file, test_env, [
+            conn.frame(True, pairverify_m1()), conn.frame(True, REQUESTS[0][:10]),
+            conn.frame(True, REQUESTS[0][10:] + REQUESTS[1])])
+        assert rows[2][1] == '0x0000000000000001|0x0000000000000002'
+        assert rows[2][3] == '0|1'
+
+    def test_several_split_messages(self, cmd_tshark, result_file, test_env):
+        conn = Connection()
+        stream = REQUESTS[0] + REQUESTS[1] + REQUESTS[2]
+        cuts = [0, 7, 30, 52, 70, 100, len(stream)]
+        frames = [conn.frame(True, pairverify_m1())]
+        frames += [conn.frame(True, stream[a:b]) for a, b in zip(cuts, cuts[1:])]
+        rows = self.run(cmd_tshark, result_file, test_env, frames)
+        counters = [c for row in rows for c in row[3].split('|') if c]
+        assert counters == ['0', '1', '2']
+
+    def test_reordered_segments(self, cmd_tshark, result_file, test_env):
+        conn = Connection()
+        m1 = conn.frame(True, pairverify_m1())
+        first = conn.frame(True, REQUESTS[0][:20])
+        second = conn.frame(True, REQUESTS[0][20:])
+        third = conn.frame(True, REQUESTS[1])
+        rows = self.run(cmd_tshark, result_file, test_env, [m1, second, first, third],
+                        prefs=('tcp.reassemble_out_of_order:TRUE',))
+        counters = [c for row in rows for c in row[3].split('|') if c]
+        assert counters == ['0', '1']
+
+    def test_a_segment_missing_from_the_capture(self, cmd_tshark, result_file, test_env):
+        conn = Connection()
+        frames = [conn.frame(True, pairverify_m1()), conn.frame(True, REQUESTS[0])]
+        conn.frame(True, REQUESTS[1])                     # sent, not captured
+        frames.append(conn.frame(True, REQUESTS[2]))
+        rows = self.run(cmd_tshark, result_file, test_env, frames)
+        assert rows[2][3] == '2' and rows[2][4] == 'True'
+
+    @pytest.mark.parametrize('missing,read', [(16, True), (17, False)])
+    def test_the_counter_search_bound(self, cmd_tshark, result_file, test_env, missing, read):
+        conn = Connection()
+        late = seal(True, missing, envelope('_systemInfo', 2, 30))
+        rows = self.run(cmd_tshark, result_file, test_env, [
+            conn.frame(True, pairverify_m1()), conn.frame(True, late),
+            conn.frame(True, seal(True, missing + 1, envelope('_systemInfo', 2, 31)))])
+        assert rows[1][4] == str(read)
+        if read:
+            assert rows[1][3] == str(missing) and rows[2][3] == str(missing + 1)
+
+    def test_a_frame_that_fails_authentication(self, cmd_tshark, result_file, test_env):
+        conn = Connection()
+        broken = REQUESTS[0][:-1] + bytes([REQUESTS[0][-1] ^ 1])
+        rows = self.run(cmd_tshark, result_file, test_env, [
+            conn.frame(True, pairverify_m1()), conn.frame(True, broken),
+            conn.frame(True, REQUESTS[1])])
+        assert rows[1][4] == 'False'
+        assert rows[1][6] == 'no key for this session authenticated this frame'
+        assert rows[2][4] == 'True' and rows[2][3] == '1'
+
+    def test_one_and_two_passes_agree(self, cmd_tshark, result_file, test_env):
+        conn = Connection()
+        frames = [conn.frame(True, pairverify_m1()), conn.frame(True, REQUESTS[0][:10]),
+                  conn.frame(True, REQUESTS[0][10:] + REQUESTS[1]),
+                  conn.frame(False, RESPONSES[1] + RESPONSES[0])]
+        one = self.run(cmd_tshark, result_file, test_env, frames, two_pass=False)
+        two = self.run(cmd_tshark, result_file, test_env, frames)
+        # The answer links point back, so they are known on the first pass too.
+        assert one == two
+
+    @pytest.mark.parametrize('pd_marker', [0x91, 0x92])
+    @pytest.mark.parametrize('first_cut,named', [
+        (9, True),     # header and the "_pd" key: recognised from the first segment
+        (6, False),    # less than that: the stream is not recognised (documented)
+    ])
+    def test_a_fragmented_first_handshake_message(self, cmd_tshark, result_file, test_env,
+                                                  first_cut, named, pd_marker):
+        conn = Connection()
+        m1 = pairverify_m1(pd_marker=pd_marker)
+        rows = self.run(cmd_tshark, result_file, test_env, [
+            conn.frame(True, m1[:first_cut]), conn.frame(True, m1[first_cut:]),
+            conn.frame(True, REQUESTS[0])])
+        assert (rows[2][4] == 'True') == named
+
+    def test_a_reordered_first_message_in_one_segment(self, cmd_tshark, result_file, test_env):
+        conn = Connection()
+        m1 = m1_body((o_str('x'), o_int(1)), (o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY))))
+        rows = self.run(cmd_tshark, result_file, test_env,
+                        [conn.frame(True, m1), conn.frame(True, REQUESTS[0])])
+        assert rows[0][5] == SESSION and rows[1][4] == 'True'
+
+    def test_a_reordered_and_fragmented_first_message(self, cmd_tshark, result_file, test_env):
+        # Neither the "_pd" prefix nor exact tiling is visible in the first
+        # segment, so the handshake is not recognised (documented limitation).
+        # The next whole frame is still recognised by exact tiling, and says
+        # why it cannot be read.
+        conn = Connection()
+        m1 = m1_body((o_str('x'), o_int(1)), (o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY))))
+        rows = self.run(cmd_tshark, result_file, test_env, [
+            conn.frame(True, m1[:12]), conn.frame(True, m1[12:]), conn.frame(True, REQUESTS[0])])
+        assert rows[0][5] == '' and rows[1][5] == ''
+        assert rows[2][4] == 'False'
+        assert rows[2][6].startswith("the session's handshake is not in this capture")
+
+
+# --- Sidecar ---------------------------------------------------------------------
+
+def sidecar_message(inner, outer=None):
+    '''{"_i": "com.apple.sidecar", "_t": 2, "_x": 7, "_c": {0: <inner>}}, as observed.'''
+    content = outer if outer is not None else o_dict((o_int(0), o_bytes(inner)))
+    return envelope('com.apple.sidecar', 2, 7, content)
+
+
+class TestSidecar:
+    names = ('continuity.sidecar.service', 'continuity.sidecar.uninterpreted',
+             'continuity.service', 'continuity.sidecar.version', 'continuity.sidecar.nested',
+             '_ws.expert.message')
+
+    def dissect(self, cmd_tshark, result_file, test_env, plaintext):
+        conn = Connection()
+        frames = [conn.frame(True, pairverify_m1()), conn.frame(True, seal(True, 0, plaintext))]
+        rows = fields(cmd_tshark, capture_of(result_file, 'sidecar.pcap', frames), test_env,
+                      self.names, keyed(result_file))
+        return rows[1]
+
+    def test_the_observed_capture_message(self, cmd_tshark, result_file, test_env):
+        inner = o_dict((o_int(5), o_str('com.apple.sidecar.capture')), (o_int(2), o_int(3)),
+                       (o_int(3), o_int(1)))
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == 'com.apple.sidecar.capture'
+        assert row[1] == ''
+        assert row[2].split('|') == ['com.apple.sidecar', 'com.apple.sidecar.capture']
+
+    def test_an_unknown_sidecar_sub_service(self, cmd_tshark, result_file, test_env):
+        inner = o_dict((o_int(5), o_str('com.apple.sidecar.display')), (o_int(2), o_int(3)))
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == 'com.apple.sidecar.display'
+        assert row[1].startswith("this sub-service's objects are not interpreted")
+        assert row[2] == 'com.apple.sidecar'
+
+    def body(self, cmd_tshark, result_file, test_env, content):
+        conn = Connection()
+        frames = [conn.frame(True, pairverify_m1()),
+                  conn.frame(True, seal(True, 0, envelope('com.apple.sidecar', 2, 7, content)))]
+        return fields(cmd_tshark, capture_of(result_file, 'sidecar-body.pcap', frames), test_env,
+                      ('continuity.sidecar.body', 'continuity.sidecar.body_uninterpreted',
+                       'continuity.opack.member', 'continuity.sidecar.service'),
+                      keyed(result_file))[1]
+
+    # Sidecar Display's messages, as observed: a first nested object under key
+    # 0 and a second under key 1, the second holding the message's names.
+    HEADER = o_dict((o_int(7), o_uint(0x1234)), (o_int(4), o_uint(0x123c0ecf)))
+    BODY = o_dict((o_int(0), o_int(3)),
+                  (o_int(1), b'\xd1' + o_dict((o_int(3), o_str('vdisp')), (o_int(2), o_int(8)))))
+
+    def test_a_second_nested_object_is_walked(self, cmd_tshark, result_file, test_env):
+        row = self.body(cmd_tshark, result_file, test_env,
+                        o_dict((o_int(0), o_bytes(self.HEADER)), (o_int(1), o_bytes(self.BODY))))
+        assert row[0] != ''
+        assert row[1].startswith('the second nested object is shown as encoded')
+        assert 'vdisp' in row[2]
+
+    @pytest.mark.parametrize('content', [
+        # Key 1 without the first object before it, and key 1 holding no bytes.
+        o_dict((o_int(1), o_bytes(BODY)), (o_int(0), o_bytes(HEADER))),
+        o_dict((o_int(0), o_bytes(HEADER)), (o_int(1), o_str('vdisp'))),
+    ])
+    def test_other_shapes_have_no_second_object(self, cmd_tshark, result_file, test_env,
+                                                content):
+        row = self.body(cmd_tshark, result_file, test_env, content)
+        assert row[0] == '' and row[1] == ''
+
+    def test_a_version_is_not_a_service(self, cmd_tshark, result_file, test_env):
+        inner = o_dict((o_int(10), o_str('279')), (o_int(2), o_int(6)))
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == '' and row[3] == '279'
+
+    @pytest.mark.parametrize('value', ['hello', 'com.apple.sidecar.', 'com.apple.sidecar.a b',
+                                       'com.apple.sidecarx'])
+    def test_other_strings_are_not_services(self, cmd_tshark, result_file, test_env, value):
+        inner = o_dict((o_int(5), o_str(value)), (o_int(2), o_int(3)))
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == ''
+
+    def test_a_service_named_first_in_another_entry_is_not_taken(self, cmd_tshark, result_file,
+                                                                  test_env):
+        # Only key 5 carried the sub-service in every observed message.
+        inner = o_dict((o_int(10), o_str('com.apple.sidecar.capture')), (o_int(2), o_int(3)))
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == ''
+
+    def test_a_long_identifier_and_a_long_byte_string(self, cmd_tshark, result_file, test_env):
+        name = 'com.apple.sidecar.' + 'x' * 40
+        inner = o_dict((o_int(5), o_str(name)), (o_int(4), o_uint(0x123c0ecf)),
+                       (o_int(6), o_bytes(bytes(40))))
+        assert len(inner) > 32
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == name
+
+    def test_a_service_sent_as_a_reference(self, cmd_tshark, result_file, test_env):
+        # The string enters the table at index 0 when first sent in full.
+        inner = o_dict((o_int(1), o_str('com.apple.sidecar.capture')), (o_int(5), b'\xa0'))
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == 'com.apple.sidecar.capture'
+
+    @pytest.mark.parametrize('inner', [
+        b'',                                                   # empty
+        b'\xe3' + o_int(5) + o_str('com.apple.sidecar.capture'),  # truncated dictionary
+        b'\xd1' + o_str('com.apple.sidecar.capture'),          # an array, not a dictionary
+        o_dict((o_int(5), o_str('com.apple.sidecar.capture'))) + b'\x01',  # trailing byte
+    ])
+    def test_malformed_or_other_nested_objects_name_nothing(self, cmd_tshark, result_file,
+                                                            test_env, inner):
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
+        assert row[0] == ''
+
+    @pytest.mark.parametrize('outer', [
+        o_bytes(o_dict((o_int(5), o_str('com.apple.sidecar.capture')))),     # _c is the bytes
+        o_dict((o_str('a'), o_bytes(o_dict((o_int(5), o_str('com.apple.sidecar.capture')))))),
+    ])
+    def test_other_content_shapes_name_nothing(self, cmd_tshark, result_file, test_env, outer):
+        row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(None, outer=outer))
+        assert row[0] == '' and row[4] == ''

@@ -40,6 +40,8 @@
 
 #include <epan/packet.h>
 
+#include <string.h>
+
 #include "packet-continuity.h"
 
 static int proto_sidecar = -1;
@@ -47,114 +49,87 @@ static int proto_sidecar = -1;
 static int hf_sidecar_nested = -1;
 static int hf_sidecar_inner = -1;
 static int hf_sidecar_undecoded = -1;
+static int hf_sidecar_version = -1;
+static int hf_sidecar_body = -1;
+static int hf_sidecar_body_uninterpreted = -1;
 
 static int ett_sidecar = -1;
+static int ett_sidecar_body = -1;
 
-/* Only the markers this decode needs, rather than the whole table: it is
- * looking for one shape it has seen, not walking arbitrary content. The walk
- * itself is the object decode's job and is called for that. */
-#define OPACK_SMALL_INT_MIN 0x08
-#define OPACK_SMALL_INT_MAX 0x2f
-#define OPACK_STRING_MIN    0x40
-#define OPACK_STRING_MAX    0x60
-#define OPACK_BYTES_MIN     0x70
-#define OPACK_BYTES_MAX     0x90
-#define OPACK_BYTES_LEN1    0x91 /* one length byte follows, then the bytes */
-#define OPACK_BYTES_LEN4    0x94
-#define OPACK_DICT_MIN      0xe0
-#define OPACK_DICT_MAX      0xef
-
-/* The first string in an object, which for the inner one is the identifier of
- * the sub-service the message belongs to. Returns NULL when there is none --
- * a message whose payload is shaped differently is left alone rather than
- * having a service invented for it. */
-static const char *first_string(tvbuff_t *tvb, packet_info *pinfo, int offset, int end)
+/* A member of the nested object's top level, by its integer key, when it is a
+ * string. */
+static const char *member_string(const continuity_envelope *inner, const char *key)
 {
-    while (offset < end) {
-        uint8_t marker = tvb_get_uint8(tvb, offset);
-        if (marker >= OPACK_STRING_MIN && marker <= OPACK_STRING_MAX) {
-            int length = marker - OPACK_STRING_MIN;
-            if (length == 0 || offset + 1 + length > end) {
-                return NULL;
-            }
-            return (const char *)tvb_get_string_enc(pinfo->pool, tvb, offset + 1, length,
-                                                    ENC_UTF_8);
+    for (unsigned m = 0; m < inner->member_count; m++) {
+        if (!inner->members[m].in_content && strcmp(inner->members[m].key, key) == 0) {
+            return inner->members[m].value;
         }
-        if (marker >= OPACK_SMALL_INT_MIN && marker <= OPACK_SMALL_INT_MAX) {
-            offset += 1;
-            continue;
-        }
-        if (marker >= OPACK_DICT_MIN && marker <= OPACK_DICT_MAX) {
-            offset += 1;
-            continue;
-        }
-        /* Anything else and the shape is not the one this recognises. */
-        return NULL;
     }
     return NULL;
 }
 
-/* Find the byte string inside the content, if the content is the one-entry
- * dictionary holding one. */
-static bool nested_bounds(tvbuff_t *tvb, int offset, int end, int *start, int *length)
+/* Whether this names a Sidecar sub-service: "com.apple.sidecar." followed by a
+ * non-empty run of letters, digits, '.', '-' and '_' that neither starts nor
+ * ends with '.'. */
+static bool sub_service_name(const char *name)
 {
-    if (offset >= end || tvb_get_uint8(tvb, offset) < OPACK_DICT_MIN) {
+    static const char prefix[] = "com.apple.sidecar.";
+    if (name == NULL || !g_str_has_prefix(name, prefix)) {
         return false;
     }
-    offset += 1;
-
-    while (offset < end) {
-        uint8_t marker = tvb_get_uint8(tvb, offset);
-        if (marker >= OPACK_SMALL_INT_MIN && marker <= OPACK_SMALL_INT_MAX) {
-            offset += 1; /* the key */
-            continue;
-        }
-        if (marker >= OPACK_BYTES_MIN && marker <= OPACK_BYTES_MAX) {
-            int size = marker - OPACK_BYTES_MIN;
-            if (size == 0 || offset + 1 + size > end) {
-                return false;
-            }
-            *start = offset + 1;
-            *length = size;
-            return true;
-        }
-        if (marker >= OPACK_BYTES_LEN1 && marker <= OPACK_BYTES_LEN4) {
-            /* A byte string too long to say its length in the marker says it
-             * in the bytes that follow. Handling only the inline form read
-             * the short payloads and silently skipped the long ones -- which
-             * were the interesting ones, since the first message of a session
-             * is the largest. */
-            int width = marker - OPACK_BYTES_LEN1 + 1;
-            if (offset + 1 + width > end) {
-                return false;
-            }
-            uint64_t size = 0;
-            for (int i = 0; i < width; i++) {
-                size |= (uint64_t)tvb_get_uint8(tvb, offset + 1 + i) << (8 * i);
-            }
-            if (size == 0 || (uint64_t)(end - offset - 1 - width) < size) {
-                return false;
-            }
-            *start = offset + 1 + width;
-            *length = (int)size;
-            return true;
-        }
+    const char *rest = name + sizeof prefix - 1;
+    size_t length = strlen(rest);
+    if (length == 0 || rest[0] == '.' || rest[length - 1] == '.') {
         return false;
     }
-    return false;
+    for (const char *c = rest; *c != '\0'; c++) {
+        if (!g_ascii_isalnum(*c) && *c != '.' && *c != '-' && *c != '_') {
+            return false;
+        }
+    }
+    return true;
 }
 
-static void dissect_sidecar(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset,
-                            int length)
+/* The nested object's keys, as every observed Sidecar message used them: the
+ * sub-service under 5 (`com.apple.sidecar.capture`, once per session, in the
+ * message opening it) and a Sidecar version under 10 ("279", "342.4.4", in the
+ * time-sync inquiry and its answer). Other keys are reported as the object
+ * decode reads them, without a meaning. */
+#define SIDECAR_KEY_SERVICE "5"
+#define SIDECAR_KEY_VERSION "10"
+
+/* The second nested object, under key 1 of the content, which Sidecar
+ * Display's messages carry after the first: in the sessions examined (iPad on
+ * iPadOS 18.3.1 to a Mac on macOS 15.7.9) it holds the message's own names --
+ * "ddisp", "init", "config", "start", and "vdisp" once per change of the
+ * display's mode, mirrored or extended. Walked like the first, and not
+ * interpreted. */
+static void dissect_sidecar_body(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                 const continuity_envelope *envelope)
 {
-    int start = 0;
-    int size = 0;
-    if (!nested_bounds(tvb, offset, offset + length, &start, &size)) {
-        /* Reported by not reporting: a payload this decode does not recognise
-         * keeps the bytes the object decode already gave it, and gains
-         * nothing made up here. */
+    int start = envelope->content_body_offset;
+    int size = envelope->content_body_length;
+    proto_item *body = proto_tree_add_item(tree, hf_sidecar_body, tvb, start, size, ENC_NA);
+    proto_tree *body_tree = proto_item_add_subtree(body, ett_sidecar_body);
+    continuity_envelope second = { 0 };
+    continuity_opack_dissect_envelope(tvb, pinfo, body_tree, start, size, &second);
+    proto_item *note = proto_tree_add_string(
+        body_tree, hf_sidecar_body_uninterpreted, tvb, start, size,
+        "the second nested object is shown as encoded; what its entries mean is not "
+        "interpreted");
+    proto_item_set_generated(note);
+}
+
+static void dissect_sidecar(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                            const continuity_envelope *envelope)
+{
+    if (!envelope->has_content_bytes) {
+        /* Reported by not reporting: content of another shape keeps the bytes
+         * the object decode already gave it, and gains nothing made up here. */
         return;
     }
+    int start = envelope->content_bytes_offset;
+    int size = envelope->content_bytes_length;
 
     proto_item *item = proto_tree_add_item(tree, proto_sidecar, tvb, start, size, ENC_NA);
     proto_tree *sidecar_tree = proto_item_add_subtree(item, ett_sidecar);
@@ -166,41 +141,46 @@ static void dissect_sidecar(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                              ENC_NA);
     proto_item_set_generated(nested);
 
-    /* The same object decode, one level down. The encoding does not change
-     * because it is nested, so neither does the code that reads it. */
-    continuity_opack_dissect(tvb, pinfo, sidecar_tree, start, size);
+    /* The same object decode, one level down: the encoding does not change
+     * because it is nested, so neither does the code that reads it -- and
+     * only an object it walked whole is read for names. */
+    continuity_envelope inner = { 0 };
+    continuity_opack_dissect_envelope(tvb, pinfo, sidecar_tree, start, size, &inner);
+    if (envelope->has_content_body) {
+        dissect_sidecar_body(tvb, pinfo, sidecar_tree, envelope);
+    }
+    if (!inner.complete) {
+        return;
+    }
 
-    /* The inner object names a more specific service than the envelope did.
-     * Resolved through the same table: a service that learns to read its own
-     * payload, or a further one underneath it, is a registration and not a
-     * change to this function.
-     */
-    /* Only a string of the sub-service form names one. Other nested messages
-     * begin with a different first string -- the time-sync inquiry and its
-     * answer carry a Sidecar version such as "279" there. */
-    const char *inner = first_string(tvb, pinfo, start, start + size);
-    if (inner != NULL && !g_str_has_prefix(inner, "com.apple.sidecar.")) {
-        inner = NULL;
+    const char *version = member_string(&inner, SIDECAR_KEY_VERSION);
+    if (version != NULL) {
+        proto_item *v = proto_tree_add_string(sidecar_tree, hf_sidecar_version, tvb, start, size,
+                                              version);
+        proto_item_set_generated(v);
     }
-    if (inner != NULL) {
-        proto_item *named = proto_tree_add_string(sidecar_tree, hf_sidecar_inner, tvb, start,
-                                                  size, inner);
-        proto_item_set_generated(named);
+
+    const char *name = member_string(&inner, SIDECAR_KEY_SERVICE);
+    if (!sub_service_name(name)) {
+        return;
     }
-    const continuity_service *service = continuity_service_lookup(inner);
+    proto_item *named = proto_tree_add_string(sidecar_tree, hf_sidecar_inner, tvb, start, size,
+                                              name);
+    proto_item_set_generated(named);
+
+    const continuity_service *service = continuity_service_lookup(name);
     if (service != NULL) {
         continuity_service_report(pinfo, sidecar_tree, tvb, service);
-        if (service->dissect != NULL) {
-            service->dissect(tvb, pinfo, sidecar_tree, start, size);
+        if (service->dissect_content != NULL) {
+            service->dissect_content(tvb, pinfo, sidecar_tree, &inner);
         }
-    } else if (inner != NULL) {
-        /* A Sidecar sub-service this decode has not seen, such as the display
-         * or annotation ones. Named, and its object walked like any other,
-         * but nothing about what it means is claimed. */
+    } else {
+        /* A Sidecar sub-service this decode does not interpret, such as the
+         * display or annotation ones. Named, and its object walked like any
+         * other, but nothing about what it means is claimed. */
         proto_item *undecoded = proto_tree_add_string(
             sidecar_tree, hf_sidecar_undecoded, tvb, start, size,
-            "no observed session of this sub-service has been examined; its object is shown "
-            "as encoded, without interpretation");
+            "this sub-service's objects are not interpreted; its object is shown as encoded");
         proto_item_set_generated(undecoded);
     }
 }
@@ -213,8 +193,8 @@ static void dissect_sidecar(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
  * any transport field.
  */
 static const continuity_service sidecar_services[] = {
-    { "com.apple.sidecar",         "Sidecar",                 dissect_sidecar },
-    { "com.apple.sidecar.capture", "Sidecar (camera capture)", NULL },
+    { "com.apple.sidecar",         "Sidecar",                 NULL, dissect_sidecar },
+    { "com.apple.sidecar.capture", "Sidecar (camera capture)", NULL, NULL },
 };
 
 void proto_register_continuity_sidecar(void)
@@ -226,14 +206,23 @@ void proto_register_continuity_sidecar(void)
             HFILL } },
         { &hf_sidecar_inner,
           { "Sub-service", "continuity.sidecar.service", FT_STRING, BASE_NONE, NULL, 0x0,
-            "The identifier the nested object names first, e.g. com.apple.sidecar.capture",
+            "The sub-service the nested object names under key 5, e.g. com.apple.sidecar.capture",
             HFILL } },
+        { &hf_sidecar_version,
+          { "Sidecar version", "continuity.sidecar.version", FT_STRING, BASE_NONE, NULL, 0x0,
+            "The version string the nested object carries under key 10", HFILL } },
+        { &hf_sidecar_body,
+          { "Second nested object", "continuity.sidecar.body", FT_BYTES, BASE_NONE, NULL, 0x0,
+            "The object encoding carried under key 1 of this service's content", HFILL } },
+        { &hf_sidecar_body_uninterpreted,
+          { "Not interpreted", "continuity.sidecar.body_uninterpreted", FT_STRING, BASE_NONE,
+            NULL, 0x0, "Why the second nested object is shown without interpretation", HFILL } },
         { &hf_sidecar_undecoded,
           { "Not interpreted", "continuity.sidecar.uninterpreted", FT_STRING, BASE_NONE, NULL,
             0x0, "Why this sub-service's object is shown without interpretation", HFILL } },
     };
 
-    static int *ett[] = { &ett_sidecar };
+    static int *ett[] = { &ett_sidecar, &ett_sidecar_body };
 
     proto_sidecar = proto_register_protocol("Apple Sidecar", "Sidecar", "continuity.sidecar");
     proto_register_field_array(proto_sidecar, hf, array_length(hf));

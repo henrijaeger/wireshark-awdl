@@ -59,6 +59,10 @@ const continuity_service *continuity_service_lookup(const char *id)
  * and what an operator pastes into a filter; the bytes are in the capture. */
 typedef struct {
     char *session;
+    /* The frame whose handshake named the session. Frames before it -- an
+     * earlier message on the same connection -- are not reported under it,
+     * on any pass. */
+    uint32_t named_in;
 } continuity_conversation;
 
 static continuity_conversation *conversation_state(packet_info *pinfo, bool create)
@@ -79,7 +83,9 @@ static continuity_conversation *conversation_state(packet_info *pinfo, bool crea
 const char *continuity_session_get(packet_info *pinfo)
 {
     const continuity_conversation *state = conversation_state(pinfo, false);
-    return state != NULL ? state->session : NULL;
+    return state != NULL && state->session != NULL && pinfo->num >= state->named_in
+               ? state->session
+               : NULL;
 }
 
 void continuity_session_set(packet_info *pinfo, const uint8_t *ephemeral_key, unsigned len)
@@ -94,6 +100,7 @@ void continuity_session_set(packet_info *pinfo, const uint8_t *ephemeral_key, un
          * exchange, not a second session, so the first is kept. */
         return;
     }
+    state->named_in = pinfo->num;
     state->session = (char *)wmem_alloc(wmem_file_scope(), len * 2 + 1);
     for (unsigned i = 0; i < len; i++) {
         snprintf(state->session + i * 2, 3, "%02x", ephemeral_key[i]);
@@ -103,7 +110,8 @@ void continuity_session_set(packet_info *pinfo, const uint8_t *ephemeral_key, un
 void continuity_session_report(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb)
 {
     continuity_conversation *state = conversation_state(pinfo, false);
-    if (state == NULL || state->session == NULL || tree == NULL) {
+    if (state == NULL || state->session == NULL || tree == NULL ||
+        pinfo->num < state->named_in) {
         return;
     }
     proto_item *item =

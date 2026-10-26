@@ -1,0 +1,166 @@
+Apple Continuity dissectors: maintainer notes
+=============================================
+
+The files are epan/dissectors/packet-continuity*.c and packet-continuity.h.
+The README's "Apple Continuity" section describes what they decode; this file
+is for whoever changes them: what each part relies on, how the tests build
+their inputs, and how to check the dissectors against real devices.
+
+1. What is supported, and on what evidence
+------------------------------------------
+
+  Part                       Status                       Evidence
+  -------------------------  ---------------------------  --------------------------------
+  BLE advertisements         decoded, received and sent   real PacketLogger traces
+  RDLink handshake (M1-M4)   decoded                      real sessions, iPhone and Mac
+  RDLink protected frames    decrypted with key material  real sessions; frames the phone
+                                                          encrypted included
+  Companion envelope         decoded, exchanges paired    real sessions
+  OPACK                      decoded, back-references     real sessions; CoreUtils' own
+                                                          encoder and decoder
+  Media, Camera video        identified by negotiation,   six real streams, 24,004-24,225
+                             PT 100 at 24 kHz             ticks per second
+  Media, Display video       identified by negotiation,   three real sessions, four tiles
+  (AVCVideoStream)           PT 100 at 24 kHz             each, 24,005-24,136 ticks/s
+  Media, other streams       identified by negotiation,   none: payload type marked
+                             no binding                   opaque, clock rate unknown
+  Sidecar capture messages   sub-service and version      real sessions (key 5, key 10)
+  Sidecar Display            sessions, control link,      real sessions, iPad on iPadOS
+                             streams and media read;      18.3.1, Mac on macOS 15.7.9;
+                             objects walked, NOT          touch, Pencil, sidebar, rotation
+                             interpreted                  and iPad sleep not exercised
+
+Continuity Camera (and Desk View, which runs inside it), Sidecar's capture
+messages and Sidecar Display are separate capabilities. Universal Control,
+which macOS sets up with the iPad as soon as a display session ends, is a
+fourth: its streams (com.apple.universalcontrol, SYNC/EVNT/CLIP/DRAG) are made
+by another process than the display's, so their keys have to be recorded from
+that process as well. A Sidecar sub-service
+name such as com.apple.sidecar.display is reported when seen, marked as not
+interpreted; that is not support for it.
+
+2. Rules the code relies on
+---------------------------
+
+Sessions. A connection's session is the handshake's cleartext ephemeral public
+key, taken from a PubKey (M1) message only when the message is whole: one OPACK
+object walked to its end, exactly one top-level _pd byte string, a TLV8 run that
+agrees with its own lengths, exactly one State element of value 1 and exactly one
+32-byte public key. Anything else names no session and says why
+(continuity.rdlink.handshake_unusable); it never replaces a session already
+named. Frames before the naming message are not reported under the session.
+Repeated TLV8 elements are refused rather than merged: HomeKit's TLV8 splits
+values over 255 bytes into repeated elements, but no element here is that long
+and no handshake has been seen to repeat one.
+
+Recognising a connection. The TCP heuristic accepts a first segment that starts
+a PubKey frame with an OPACK dictionary whose first key is _pd, or a segment
+exactly tiled by frames of known types. Not recognised, by design: a first
+handshake segment shorter than 9 bytes, and a handshake whose dictionary puts
+another key before _pd and is split over several segments. Such a connection is
+picked up at its next exactly-tiled segment, reported without a session. Also
+not recognised: a stream sub-connection, which has no handshake, whose first
+frame is longer than its first segment. Observed for Universal Control's
+streams, whose frames run to several kilobytes and rarely end on a segment
+boundary, so such a connection may not be recognised at all.
+
+Media flows. A UDP packet belongs to a negotiated stream when it was captured
+after the _streamStart answer, between the two negotiated ports, and each end is
+at an address that end announced (_streamAddr) or at its end of the control
+connection. Both kinds of address have been seen carrying media. Interfaces are
+not compared: on a Mac the control connection and the media use different ones.
+No message ending a flow has been seen, so none is assumed: when two
+negotiations fit a packet equally the packet is reported as ambiguous. Each
+packet's association is fixed on the first pass.
+
+OPACK limits, per message: 16 levels of nesting, 4,096 reference-table entries,
+16,384 values, 1 MiB of string and byte-string value (each back-reference
+counted at the size of what it names) and 1 MiB of generated member text, each
+charged before the work or text it pays for. Observed messages reach at most 439
+values, 10,778 bytes of member text and 4,642 bytes of body. On reaching a limit
+the walk stops, says which limit, and leaves the rest of the body as undecoded
+bytes; the next message is decoded from scratch.
+
+CoreCapture. macOS writes a record's original length as the length of the
+payload after the 8-byte stream header, and pads the captured bytes to a multiple
+of 4. The frame dissector raises a reported length smaller than the captured one
+to the captured one, so the payload length is taken from the frame data.
+
+3. Tests
+--------
+
+The tests are test/suite_dissectors/group_continuity.py, run with the rest of
+the suite:
+
+    cd build && ninja && ninja test-programs
+    python3 -m pytest -c ../pytest.ini --rootdir .. --program-path run \
+        ../test/suite_dissectors/group_continuity.py
+
+Every input is built at run time; no capture file is committed and none of the
+keys or addresses belong to a real device.
+
+Encrypted fixtures. Protected RDLink frames are sealed at run time by a
+ChaCha20-Poly1305 (RFC 8439) written in Python in the test file, independent of
+the libgcrypt the dissector uses. The test file checks it against RFC 8439
+section 2.8.2 and against frames sealed earlier by Python's `cryptography`. The
+construction:
+
+    shared secret   bytes 0x40..0x5f (synthetic)
+    ephemeral key   bytes 0xa0..0xbf (synthetic; names the session)
+    direction key   HKDF-SHA-512, salt 64 zero bytes, info "ClientEncrypt-main"
+                    for frames from the connection's initiator and
+                    "ServerEncrypt-main" for the responder; first 32 bytes
+    nonce           count of protected frames before this one in this
+                    direction, little-endian in 8 bytes, then 4 zero bytes
+    associated data the 4-byte frame header: 0x08, then the body length
+                    (ciphertext and tag) as 24-bit big-endian
+    body            ciphertext of the OPACK plaintext, then the 16-byte tag
+
+The plaintext of each frame is written out in the test with the same OPACK
+helpers the cleartext cases use, so what a test asserts is visible beside it.
+
+Sanitizers: configure a separate tree with -DENABLE_ASAN=ON -DENABLE_UBSAN=ON
+and CFLAGS "-fsanitize=float-cast-overflow -fno-sanitize-recover=all", build
+tshark, editcap and sharkd, and run the same pytest command against it with
+UBSAN_OPTIONS=halt_on_error=1.
+
+4. Validating against real devices
+----------------------------------
+
+What a device session has to establish, and how to record it. Use your own
+devices and keys, and keep captures and key logs out of the repository and out
+of public reports: they identify the devices.
+
+Record for every session: device models and exact OS builds (sw_vers; for the
+iPhone or iPad, ideviceinfo -k ProductType -k ProductVersion -k BuildVersion),
+the connection mode (Wi-Fi, AWDL, cable), the capture points and interfaces, the
+duration, the scenario, the capture's SHA-256, the dissector's source revision
+(and the SHA-256 of any uncommitted diff), and tshark -v.
+
+Capture on the Mac: tcpdump on awdl0, llw0 and the Wi-Fi interface, from before
+the session starts until after it ends; the session's keys from the Rapport
+daemon by whatever means you are authorised to use. Then:
+
+    tshark -2 -o continuity.keylog_file:<keys> -r <capture> \
+        -Y 'continuity' -T fields -e frame.number -e continuity.session \
+        -e continuity.rdlink.read -e continuity.companion.event \
+        -e continuity.media.stream_id -e continuity.media.ambiguous \
+        -e continuity.media.payload_binding -e continuity.sidecar.service
+
+Continuity Camera (iPhone to Mac): start and stop the camera, use video and the
+microphone, switch to Desk View, disconnect and reconnect, and start a later
+session that reuses resources. Expect: every control frame read; each _streamStart
+answered and its media identified with no ambiguity unless two negotiations
+really overlap; video clock 24 kHz (timestamp span over arrival span); the
+microphone's payload type and clock as the session shows them -- which, once
+observed on a real Mac, can become a binding in packet-continuity-media.c.
+
+Sidecar Display (iPad on iPadOS 18.x to Mac): extended display and mirroring,
+disconnect and reconnect, repeated independent sessions, orientation and
+resolution changes, sleep and wake, touch, sidebar and Apple Pencil input, and
+Camera and Sidecar at once where the devices allow it. Expect: the session's
+handshake and control frames read; its sub-service identifiers and transports
+named as observed; whatever is decoded to match what the display did. A working
+display, a named service or a non-empty tree is not on its own evidence that the
+dissection is right. Until such a session has been examined, Display support is
+not claimed.

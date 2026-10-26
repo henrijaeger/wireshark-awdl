@@ -247,9 +247,13 @@ const char *continuity_companion_report(tvbuff_t *tvb, packet_info *pinfo, proto
     /* The service reads its own payload. The transport hands over the bounds
      * of `_c` and knows nothing about what is in it, which is what keeps a
      * second service from needing a change to this file. */
-    if (service != NULL && service->dissect != NULL && envelope->content_length > 0) {
-        service->dissect(tvb, pinfo, companion_tree, envelope->content_offset,
-                         envelope->content_length);
+    if (service != NULL && envelope->content_length > 0) {
+        if (service->dissect_content != NULL) {
+            service->dissect_content(tvb, pinfo, companion_tree, envelope);
+        } else if (service->dissect != NULL) {
+            service->dissect(tvb, pinfo, companion_tree, envelope->content_offset,
+                             envelope->content_length);
+        }
     }
 
     if (envelope->has_type) {
