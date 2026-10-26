@@ -71,6 +71,12 @@ static const char server_enc_label[] = "ServerEncrypt-main";
 
 static const char *pref_keylog_file = "";
 
+/* What went wrong reading key material, for the frames that then cannot be
+ * read: an unreadable file, and lines that name a key of this format but
+ * could not be used. Reset with the table. */
+static char *load_problem;
+static unsigned unusable_lines;
+
 /* ephemeral public key, as lowercase hex -> continuity_session_keys */
 static GHashTable *key_table;
 
@@ -92,6 +98,9 @@ static GPtrArray *unbound_keys;
 
 static void keys_init(void)
 {
+    g_free(load_problem);
+    load_problem = NULL;
+    unusable_lines = 0;
     if (key_table != NULL) {
         g_hash_table_destroy(key_table);
     }
@@ -104,6 +113,9 @@ static void keys_init(void)
 
 static void keys_cleanup(void)
 {
+    g_free(load_problem);
+    load_problem = NULL;
+    unusable_lines = 0;
     if (key_table != NULL) {
         g_hash_table_destroy(key_table);
         key_table = NULL;
@@ -163,7 +175,7 @@ static continuity_session_keys *entry_for(const char *session_hex)
 /* Derive one direction's key from the shared secret.
  *
  * HKDF-SHA-512 with an empty salt, done against the crypto library directly
- * rather than through the toolkit's hkdf_expand(). That helper cannot do
+ * rather than through Wireshark's hkdf_expand(). That helper cannot do
  * SHA-512: it buffers one hash block in a 48-byte array -- "maximum hash
  * output size: 48 bytes for SHA-384", as its own comment says -- and rejects
  * anything longer as an invalid argument. SHA-512 produces 64.
@@ -244,7 +256,13 @@ static void parse_line(const char *line)
         }
     }
 
+    bool ours = label != NULL && (g_ascii_strcasecmp(label, "RDLINK_SHARED") == 0 ||
+                                  g_ascii_strcasecmp(label, "RDLINK_CLIENT_ENC") == 0 ||
+                                  g_ascii_strcasecmp(label, "RDLINK_SERVER_ENC") == 0);
     if (label == NULL || session == NULL || value == NULL) {
+        if (ours) {
+            unusable_lines++;
+        }
         g_strfreev(field);
         return;
     }
@@ -256,6 +274,9 @@ static void parse_line(const char *line)
                   session_bytes->len == CONTINUITY_SESSION_LEN &&
                   value_bytes->len == CONTINUITY_KEY_LEN;
 
+    if (!usable && ours) {
+        unusable_lines++;
+    }
     if (usable) {
         bool unbound = all_zero(session_bytes->data, session_bytes->len);
         continuity_session_keys *keys;
@@ -337,7 +358,12 @@ static void load_keylog_file(void)
     }
     char *contents = NULL;
     size_t length = 0;
-    if (!g_file_get_contents(pref_keylog_file, &contents, &length, NULL)) {
+    GError *error = NULL;
+    if (!g_file_get_contents(pref_keylog_file, &contents, &length, &error)) {
+        g_free(load_problem);
+        load_problem = g_strdup_printf("the key log file could not be read: %s",
+                                       error != NULL ? error->message : pref_keylog_file);
+        g_clear_error(&error);
         return;
     }
     parse_keylog_text(contents, length);
@@ -362,17 +388,32 @@ bool continuity_keys_any_loaded(void)
            continuity_keys_unbound_count() > 0;
 }
 
+const char *continuity_keys_problem(void)
+{
+    if (load_problem != NULL) {
+        return load_problem;
+    }
+    if (unusable_lines > 0) {
+        static char text[96];
+        snprintf(text, sizeof text,
+                 "%u key log line(s) named a key of this format and could not be used",
+                 unusable_lines);
+        return text;
+    }
+    return NULL;
+}
+
 unsigned continuity_keys_unbound_count(void)
 {
     return unbound_keys == NULL ? 0 : unbound_keys->len;
 }
 
-const continuity_session_keys *continuity_keys_unbound_at(unsigned index)
+const continuity_session_keys *continuity_keys_unbound_at(unsigned position)
 {
-    if (unbound_keys == NULL || index >= unbound_keys->len) {
+    if (unbound_keys == NULL || position >= unbound_keys->len) {
         return NULL;
     }
-    return (const continuity_session_keys *)g_ptr_array_index(unbound_keys, index);
+    return (const continuity_session_keys *)g_ptr_array_index(unbound_keys, position);
 }
 
 static void keys_load_all(void)
@@ -383,9 +424,8 @@ static void keys_load_all(void)
      * callback above, so nothing is pulled in for them here. */
 }
 
-void continuity_keys_register(int proto)
+void continuity_keys_register(module_t *module)
 {
-    module_t *module = prefs_register_protocol(proto, NULL);
 
     prefs_register_filename_preference(
         module, "keylog_file", "Session key log file",

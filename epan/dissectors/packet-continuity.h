@@ -24,13 +24,14 @@
  * sub-decode that forgets still produces correct records of its own, and the
  * single filter goes on appearing to work because the other layers still
  * match. What is missing is one layer, and it is missing quietly, for as long
- * as nobody counts. `tests/test_umbrella.py` counts.
+ * as nobody counts.
  */
 
 #ifndef __PACKET_CONTINUITY_H__
 #define __PACKET_CONTINUITY_H__
 
 #include <epan/packet.h>
+#include <epan/prefs.h>
 
 /* The umbrella protocol. Registered once, referenced by every sub-decode. */
 extern int proto_continuity;
@@ -127,13 +128,26 @@ void proto_reg_handoff_continuity_rdlink(void);
 void proto_register_continuity_media(void);
 void proto_reg_handoff_continuity_media(void);
 
+/* A media stream's negotiation completed on this frame: a `_streamStart` of
+ * type 3 (UDP media) whose request named `port_a` and whose response named
+ * `port_b`. The UDP flow between those two ports is then that stream. First
+ * pass only; later calls are ignored. */
+void continuity_media_negotiated(packet_info *pinfo, const char *stream_id, uint32_t port_a,
+                                 uint32_t port_b);
+
 void proto_register_continuity_opack(void);
 void proto_reg_handoff_continuity_opack(void);
 
 /* The key store, registered by the umbrella rather than as a dissector of
  * its own: its preference belongs to the umbrella's protocol, and a
  * preference registered before that protocol exists aborts at startup. */
-void continuity_keys_register(int proto);
+void continuity_keys_register(module_t *module);
+
+/* The media decode's preference, which also has to hang off the umbrella's
+ * module: a preference on a module named "continuity.media" cannot be set by
+ * name, because "continuity" is found first and the rest is then looked up in
+ * it. */
+void continuity_media_register_prefs(module_t *module);
 void continuity_keys_handoff(void);
 
 /* The handshake's cleartext ephemeral public key, which names a session, and
@@ -165,6 +179,12 @@ const continuity_session_keys *continuity_keys_lookup(const char *session_hex);
  * keys were given" from "keys were given and none of them is this session's".
  * An operator needs to be told which of those happened. */
 bool continuity_keys_any_loaded(void);
+
+/* What went wrong reading key material, or NULL: an unreadable key log file,
+ * or lines that named a key of this format but could not be used (a session
+ * or key of the wrong length, hex that is not hex). Said on the frames that
+ * cannot be read, because otherwise they report no key at all. */
+const char *continuity_keys_problem(void);
 
 /* Secrets recorded without the session they belong to (keyed on the all-zero
  * session in a keylog). A connection with no key of its own is tried against
@@ -206,6 +226,13 @@ typedef struct {
     int content_offset;
     int content_length;
 
+    /* A top-level `_pd` byte string, as the handshake carries its TLV8 run:
+     * where its bytes are, taken from the walk rather than from a fixed
+     * offset, so every length encoding of it lands on the same bytes. */
+    bool has_pd;
+    int pd_offset;
+    int pd_length;
+
     /* The scalar members the object decode found -- the envelope's own and
      * those inside `_c`, at any depth -- in wire order, as text. They are what a
      * record's one-line summary is made from, so the summary says what the
@@ -227,14 +254,18 @@ typedef struct {
     } members[CONTINUITY_ENVELOPE_MEMBERS];
 } continuity_envelope;
 
-/* Report the envelope, and pair this frame with the other half of its
+/* Report the envelope, and pair this message with the other half of its
  * exchange. Called by the transport decode, on a cleartext or a decrypted
- * body -- the envelope is the same either way. */
-/* Reports the companion envelope, and returns what a one-line summary should
- * call the message: its own event, or for a response the event of the request
- * it answers followed by " response". NULL when neither is known. */
+ * body -- the envelope is the same either way.
+ *
+ * `message_key` names this message among the others its frame carries, and
+ * must be the same on every pass over the frame: per-message state is kept
+ * under it. A frame may carry several messages, and a decrypted body is a data
+ * source of its own whose offsets all start at zero, so neither the frame nor
+ * the body's offset can name one. */
 const char *continuity_companion_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
-                                        const continuity_envelope *envelope);
+                                        const continuity_envelope *envelope,
+                                        uint32_t message_key);
 
 /* Walk the object encoding at `offset` for `length` bytes, reporting its
  * contents as fields. Returns the offset just past what it consumed.

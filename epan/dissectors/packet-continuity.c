@@ -184,7 +184,9 @@ void proto_register_continuity(void)
      * rather than an assumption about whatever generates the registration
      * list.
      */
-    continuity_keys_register(proto_continuity);
+    module_t *module = prefs_register_protocol(proto_continuity, NULL);
+    continuity_keys_register(module);
+    continuity_media_register_prefs(module);
 }
 
 void proto_reg_handoff_continuity(void)

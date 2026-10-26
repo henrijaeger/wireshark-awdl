@@ -45,10 +45,12 @@
 static int proto_sidecar = -1;
 
 static int hf_sidecar_nested = -1;
+static int hf_sidecar_inner = -1;
+static int hf_sidecar_undecoded = -1;
 
 static int ett_sidecar = -1;
 
-/* Only the two markers this decode needs, rather than the whole table: it is
+/* Only the markers this decode needs, rather than the whole table: it is
  * looking for one shape it has seen, not walking arbitrary content. The walk
  * itself is the object decode's job and is called for that. */
 #define OPACK_SMALL_INT_MIN 0x08
@@ -173,13 +175,33 @@ static void dissect_sidecar(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
      * payload, or a further one underneath it, is a registration and not a
      * change to this function.
      */
+    /* Only a string of the sub-service form names one. Other nested messages
+     * begin with a different first string -- the time-sync inquiry and its
+     * answer carry a Sidecar version such as "279" there. */
     const char *inner = first_string(tvb, pinfo, start, start + size);
+    if (inner != NULL && !g_str_has_prefix(inner, "com.apple.sidecar.")) {
+        inner = NULL;
+    }
+    if (inner != NULL) {
+        proto_item *named = proto_tree_add_string(sidecar_tree, hf_sidecar_inner, tvb, start,
+                                                  size, inner);
+        proto_item_set_generated(named);
+    }
     const continuity_service *service = continuity_service_lookup(inner);
     if (service != NULL) {
         continuity_service_report(pinfo, sidecar_tree, tvb, service);
         if (service->dissect != NULL) {
             service->dissect(tvb, pinfo, sidecar_tree, start, size);
         }
+    } else if (inner != NULL) {
+        /* A Sidecar sub-service this decode has not seen, such as the display
+         * or annotation ones. Named, and its object walked like any other,
+         * but nothing about what it means is claimed. */
+        proto_item *undecoded = proto_tree_add_string(
+            sidecar_tree, hf_sidecar_undecoded, tvb, start, size,
+            "no observed session of this sub-service has been examined; its object is shown "
+            "as encoded, without interpretation");
+        proto_item_set_generated(undecoded);
     }
 }
 
@@ -202,6 +224,13 @@ void proto_register_continuity_sidecar(void)
           { "Nested object", "continuity.sidecar.nested", FT_BYTES, BASE_NONE, NULL, 0x0,
             "The object encoding carried inside a byte string of this service's content",
             HFILL } },
+        { &hf_sidecar_inner,
+          { "Sub-service", "continuity.sidecar.service", FT_STRING, BASE_NONE, NULL, 0x0,
+            "The identifier the nested object names first, e.g. com.apple.sidecar.capture",
+            HFILL } },
+        { &hf_sidecar_undecoded,
+          { "Not interpreted", "continuity.sidecar.uninterpreted", FT_STRING, BASE_NONE, NULL,
+            0x0, "Why this sub-service's object is shown without interpretation", HFILL } },
     };
 
     static int *ett[] = { &ett_sidecar };

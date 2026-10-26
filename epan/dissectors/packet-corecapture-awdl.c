@@ -93,6 +93,8 @@ static gint ett_tlv = -1;
 
 static expert_field ei_cc_awdl_tag_length = EI_INIT;
 static expert_field ei_cc_awdl_tag_data = EI_INIT;
+static expert_field ei_cc_awdl_text_unterminated = EI_INIT;
+static expert_field ei_cc_awdl_text_truncated = EI_INIT;
 
 
 static dissector_handle_t cc_awdl_handle;
@@ -380,14 +382,29 @@ static int dissect_corecapture_awdl(tvbuff_t *tvb, packet_info *pinfo,
   }
   
   if (pl_type== CC_AWDL_PL_STRING) {
-    longtext = tvb_get_stringz_enc(pinfo->pool, tvb, offset, NULL, ENC_ASCII | ENC_NA);
-    // remove newline after text
-    size_t last_char = strlen(longtext)-1;
-    if (longtext[last_char]=='\n') {
-      longtext[last_char]='\0';
+    // The text normally ends in a NUL; one that does not is shown up to the
+    // end of the captured bytes and flagged, rather than read past.
+    int remaining = tvb_captured_length_remaining(tvb, offset);
+    int text_len = remaining > 0 ? tvb_strnlen(tvb, offset, remaining) : 0;
+    gboolean terminated = text_len >= 0 && remaining > 0;
+    if (text_len < 0) {
+      text_len = remaining;
     }
-    
-    proto_tree_add_item (corecapture_tree, hf_text, tvb, offset, -1, ENC_ASCII | ENC_NA);
+    longtext = (char *)tvb_get_string_enc(pinfo->pool, tvb, offset, text_len, ENC_ASCII | ENC_NA);
+    // remove newline after text
+    if (text_len > 0 && longtext[text_len - 1] == '\n') {
+      longtext[text_len - 1] = '\0';
+    }
+
+    ti = proto_tree_add_item (corecapture_tree, hf_text, tvb, offset,
+                              terminated ? text_len + 1 : text_len, ENC_ASCII);
+    if (!terminated) {
+      if (tvb_reported_length_remaining(tvb, offset) > remaining) {
+        expert_add_info(pinfo, ti, &ei_cc_awdl_text_truncated);
+      } else {
+        expert_add_info(pinfo, ti, &ei_cc_awdl_text_unterminated);
+      }
+    }
     col_add_fstr (pinfo->cinfo, COL_INFO, "%s", longtext);
     col_add_fstr (pinfo->cinfo, COL_RES_DL_SRC, "%s", infotext);
     
@@ -517,6 +534,16 @@ void proto_register_corecapture_awdl (void)
     { &ei_cc_awdl_tag_data,
       { "cc.awdl.tag.data.undecoded", PI_UNDECODED, PI_NOTE,
         "Dissector for AWDL tag code not implemented", EXPFILL
+      }
+    },
+    { &ei_cc_awdl_text_unterminated,
+      { "cc.awdl.text.unterminated", PI_MALFORMED, PI_WARN,
+        "Text has no terminating NUL", EXPFILL
+      }
+    },
+    { &ei_cc_awdl_text_truncated,
+      { "cc.awdl.text.truncated", PI_SEQUENCE, PI_NOTE,
+        "Text continues past the captured bytes", EXPFILL
       }
     },
   };

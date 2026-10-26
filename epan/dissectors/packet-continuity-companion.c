@@ -34,6 +34,12 @@
  * derived from the exchange id: the first frame of an exchange and the one
  * that answers it are identified by *pairing*, which is structural, rather
  * than by trusting a number whose meaning was inferred once.
+ *
+ * The kind is used in one way only, and negatively: two messages of the same
+ * kind are not paired with each other. No observed exchange answered a
+ * message with one of its own kind, and without that rule a capture that
+ * begins mid-session pairs the reply to an unseen request with whatever the
+ * other end sends next under the same id.
  */
 
 #include "config.h"
@@ -41,6 +47,8 @@
 #include <epan/packet.h>
 #include <epan/conversation.h>
 #include <epan/proto_data.h>
+
+#include <inttypes.h>
 
 #include "packet-continuity.h"
 
@@ -52,27 +60,41 @@ static int hf_companion_kind = -1;
 static int hf_companion_answered_in = -1;
 static int hf_companion_answers = -1;
 static int hf_companion_elapsed = -1;
+static int hf_companion_unpaired = -1;
 
 static int ett_companion = -1;
 
-/* One exchange, while the capture is being read. */
-typedef struct {
-    uint32_t request_frame;
-    uint32_t response_frame;
-    nstime_t request_time;
-    /* The request's event, so the response -- which carries none -- can be
-     * summarised by what it answers. */
-    const char *request_event;
-} companion_exchange;
-
-/* Per-frame, so that a second visit reports what the first worked out. */
+/* Per message, so that a later visit reports what the first worked out. */
 typedef struct {
     uint32_t answered_in;
     uint32_t answers;
     nstime_t elapsed;
     bool has_elapsed;
     const char *answers_event; /* the answered request's event, if it had one */
-} companion_frame;
+    /* Why this message was not paired although its exchange id was seen
+     * before, when that is the case. */
+    const char *unpaired;
+} companion_message;
+
+/* One exchange, while the capture is being read. */
+typedef struct {
+    uint32_t request_frame;
+    nstime_t request_time;
+    address request_src;
+    uint32_t request_port;
+    bool request_has_type;
+    int64_t request_type;
+    /* The request's event, so the response -- which carries none -- can be
+     * summarised by what it answers. */
+    const char *request_event;
+    /* Where the request's own record is, so that the response can fill in
+     * the forward reference on it once the response has been seen. */
+    companion_message *request_message;
+    bool answered;
+    /* A second message from the requesting side reused the id before any
+     * answer came, so an answer could be to either. */
+    bool ambiguous;
+} companion_exchange;
 
 /* Exchanges are per-conversation: the id is unique within a link, and two
  * links may both be running one. */
@@ -96,45 +118,97 @@ static companion_conversation *conversation_state(packet_info *pinfo)
     return state;
 }
 
-/* Pair this frame with the other half of its exchange, once, on the first
- * pass. Everything after that reads what this recorded. */
-static companion_frame *pair_exchange(packet_info *pinfo, uint64_t xid, const char *event)
+static companion_exchange *open_exchange(packet_info *pinfo, companion_conversation *state,
+                                         const continuity_envelope *envelope,
+                                         companion_message *message)
 {
-    companion_frame *frame = wmem_new0(wmem_file_scope(), companion_frame);
+    uint64_t *key = wmem_new(wmem_file_scope(), uint64_t);
+    *key = envelope->xid;
+    companion_exchange *exchange = wmem_new0(wmem_file_scope(), companion_exchange);
+    exchange->request_frame = pinfo->num;
+    exchange->request_time = pinfo->abs_ts;
+    copy_address_wmem(wmem_file_scope(), &exchange->request_src, &pinfo->src);
+    exchange->request_port = pinfo->srcport;
+    exchange->request_has_type = envelope->has_type;
+    exchange->request_type = envelope->type;
+    exchange->request_event = envelope->has_event && envelope->event != NULL
+                                  ? wmem_strdup(wmem_file_scope(), envelope->event)
+                                  : NULL;
+    exchange->request_message = message;
+    wmem_map_insert(state->exchanges, key, exchange);
+    return exchange;
+}
+
+/* Pair this message with the other half of its exchange, once, on the first
+ * pass. Everything after that reads what this recorded.
+ *
+ * What makes a message the answer to an earlier one: the same exchange id, on
+ * the same connection, sent by the other end, while that exchange is still
+ * open -- and not of the same kind as the request, where both say a kind,
+ * since no observed exchange answered a message with one of its own kind and
+ * a capture that begins mid-session would otherwise pair one reply with
+ * another. That is an association made on the fields both halves carry; the
+ * protocol does not say more, and neither does this. */
+static companion_message *pair_exchange(packet_info *pinfo, const continuity_envelope *envelope)
+{
+    companion_message *message = wmem_new0(wmem_file_scope(), companion_message);
     companion_conversation *state = conversation_state(pinfo);
     if (state == NULL) {
-        return frame;
+        return message;
     }
 
-    uint64_t *key = wmem_new(wmem_file_scope(), uint64_t);
-    *key = xid;
-    companion_exchange *exchange = (companion_exchange *)wmem_map_lookup(state->exchanges, key);
+    uint64_t key = envelope->xid;
+    companion_exchange *exchange = (companion_exchange *)wmem_map_lookup(state->exchanges, &key);
 
-    if (exchange == NULL) {
-        exchange = wmem_new0(wmem_file_scope(), companion_exchange);
-        exchange->request_frame = pinfo->num;
-        exchange->request_time = pinfo->abs_ts;
-        exchange->request_event = event == NULL ? NULL : wmem_strdup(wmem_file_scope(), event);
-        wmem_map_insert(state->exchanges, key, exchange);
-        return frame;
+    if (exchange == NULL || exchange->answered) {
+        /* New, or an id used again after its exchange completed: a new
+         * exchange, leaving the completed one's pairing as it was. */
+        open_exchange(pinfo, state, envelope, message);
+        return message;
     }
 
-    /* The second frame of an exchange answers the first. A third would be
-     * neither, and is left unpaired rather than overwriting the pairing --
-     * an id reused later in a long session is the likely cause, and a wrong
-     * pairing reads as a real one. */
-    if (exchange->response_frame == 0 && exchange->request_frame != pinfo->num) {
-        exchange->response_frame = pinfo->num;
-        frame->answers = exchange->request_frame;
-        frame->answers_event = exchange->request_event;
-        nstime_delta(&frame->elapsed, &pinfo->abs_ts, &exchange->request_time);
-        frame->has_elapsed = true;
+    bool same_side = addresses_equal(&exchange->request_src, &pinfo->src) &&
+                     exchange->request_port == pinfo->srcport;
+    if (same_side) {
+        /* The requesting side again, before any answer: an answer now could
+         * be to either message, so neither is paired. */
+        exchange->ambiguous = true;
+        message->unpaired = wmem_strdup_printf(
+            wmem_file_scope(),
+            "frame %u already sent this exchange id from this side and has not been answered",
+            exchange->request_frame);
+        return message;
     }
-    return frame;
+    if (exchange->ambiguous) {
+        message->unpaired = wmem_strdup_printf(
+            wmem_file_scope(),
+            "more than one unanswered message from the other side carried this exchange id, "
+            "the first in frame %u", exchange->request_frame);
+        exchange->answered = true;
+        return message;
+    }
+    if (envelope->has_type && exchange->request_has_type && envelope->type == exchange->request_type) {
+        message->unpaired = wmem_strdup_printf(
+            wmem_file_scope(),
+            "frame %u carried this exchange id with the same kind (%" PRId64 "), so this is "
+            "not taken as its answer", exchange->request_frame, envelope->type);
+        return message;
+    }
+
+    exchange->answered = true;
+    message->answers = exchange->request_frame;
+    message->answers_event = exchange->request_event;
+    nstime_delta(&message->elapsed, &pinfo->abs_ts, &exchange->request_time);
+    message->has_elapsed = true;
+    if (exchange->request_message != NULL) {
+        exchange->request_message->answered_in = pinfo->num;
+    }
+    return message;
 }
 
 const char *continuity_companion_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
-                                        const continuity_envelope *envelope)
+                                        const continuity_envelope *envelope,
+                                        uint32_t message_key)
 {
     if (envelope == NULL || !envelope->has_xid) {
         return envelope != NULL && envelope->has_event ? envelope->event : NULL;
@@ -184,38 +258,32 @@ const char *continuity_companion_report(tvbuff_t *tvb, packet_info *pinfo, proto
         proto_item_set_generated(kind);
     }
 
-    companion_frame *frame =
-        (companion_frame *)p_get_proto_data(wmem_file_scope(), pinfo, proto_companion, 0);
-    if (frame == NULL) {
-        frame = pair_exchange(pinfo, envelope->xid, envelope->has_event ? envelope->event : NULL);
-        p_add_proto_data(wmem_file_scope(), pinfo, proto_companion, 0, frame);
+    companion_message *message = (companion_message *)p_get_proto_data(
+        wmem_file_scope(), pinfo, proto_companion, message_key);
+    if (message == NULL) {
+        message = pair_exchange(pinfo, envelope);
+        p_add_proto_data(wmem_file_scope(), pinfo, proto_companion, message_key, message);
     }
 
-    if (frame->answers != 0) {
+    if (message->answers != 0) {
         proto_item *answers = proto_tree_add_uint(companion_tree, hf_companion_answers, tvb, 0, 0,
-                                                  frame->answers);
+                                                  message->answers);
         proto_item_set_generated(answers);
-        if (frame->has_elapsed) {
+        if (message->has_elapsed) {
             proto_item *elapsed = proto_tree_add_time(companion_tree, hf_companion_elapsed, tvb, 0,
-                                                      0, &frame->elapsed);
+                                                      0, &message->elapsed);
             proto_item_set_generated(elapsed);
         }
     }
-
-    /* The forward reference is filled in on the frame that was answered, which
-     * is only knowable once the answer has been seen -- so it is looked up
-     * here rather than recorded there. */
-    companion_conversation *state = conversation_state(pinfo);
-    if (state != NULL) {
-        uint64_t key_value = envelope->xid;
-        companion_exchange *exchange =
-            (companion_exchange *)wmem_map_lookup(state->exchanges, &key_value);
-        if (exchange != NULL && exchange->request_frame == pinfo->num &&
-            exchange->response_frame != 0) {
-            proto_item *answered = proto_tree_add_uint(companion_tree, hf_companion_answered_in,
-                                                       tvb, 0, 0, exchange->response_frame);
-            proto_item_set_generated(answered);
-        }
+    if (message->answered_in != 0) {
+        proto_item *answered = proto_tree_add_uint(companion_tree, hf_companion_answered_in, tvb,
+                                                   0, 0, message->answered_in);
+        proto_item_set_generated(answered);
+    }
+    if (message->unpaired != NULL) {
+        proto_item *unpaired = proto_tree_add_string(companion_tree, hf_companion_unpaired, tvb,
+                                                     0, 0, message->unpaired);
+        proto_item_set_generated(unpaired);
     }
 
     /* What a one-line summary should call this message. A response carries
@@ -224,8 +292,8 @@ const char *continuity_companion_report(tvbuff_t *tvb, packet_info *pinfo, proto
     if (envelope->has_event && envelope->event != NULL) {
         return envelope->event;
     }
-    if (frame->answers_event != NULL) {
-        return wmem_strdup_printf(pinfo->pool, "%s response", frame->answers_event);
+    if (message->answers_event != NULL) {
+        return wmem_strdup_printf(pinfo->pool, "%s response", message->answers_event);
     }
     return NULL;
 }
@@ -252,10 +320,18 @@ void proto_register_continuity_companion(void)
             "exchange id, which is structural", HFILL } },
         { &hf_companion_answered_in,
           { "Answered in", "continuity.companion.answered_in", FT_FRAMENUM, BASE_NONE, NULL, 0x0,
-            "The frame carrying the other half of this exchange", HFILL } },
+            "The frame carrying the other half of this exchange: the same exchange id on "
+            "the same connection, sent by the other end while the exchange was open. An "
+            "association on the fields both halves carry, not a statement by the protocol",
+            HFILL } },
         { &hf_companion_answers,
           { "Answers", "continuity.companion.answers", FT_FRAMENUM, BASE_NONE, NULL, 0x0,
-            "The frame this one answers, paired on the exchange id", HFILL } },
+            "The frame this one answers, paired on the exchange id, the connection and the "
+            "direction", HFILL } },
+        { &hf_companion_unpaired,
+          { "Not paired", "continuity.companion.unpaired", FT_STRING, BASE_NONE, NULL, 0x0,
+            "Why this message was not paired although its exchange id was seen before",
+            HFILL } },
         { &hf_companion_elapsed,
           { "Time since request", "continuity.companion.elapsed", FT_RELATIVE_TIME, BASE_NONE,
             NULL, 0x0, "How long the other end took to answer", HFILL } },

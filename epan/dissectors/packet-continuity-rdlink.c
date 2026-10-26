@@ -31,6 +31,7 @@
 #include <epan/conversation.h>
 #include <epan/expert.h>
 #include <epan/proto_data.h>
+#include <wsutil/strtoi.h>
 #include <wsutil/wsgcrypt.h>
 #include "packet-tcp.h"
 
@@ -61,6 +62,7 @@ static int ett_rdlink_tlv = -1;
 
 static expert_field ei_rdlink_tlv_truncated;
 static expert_field ei_rdlink_frames_missing;
+static expert_field ei_rdlink_handshake_unusable;
 
 /* The frame header is four bytes, always. */
 #define RDLINK_HEADER_LEN 4
@@ -114,7 +116,16 @@ typedef struct {
      * every frame: once one secret has authenticated a frame of it, that is
      * its key. */
     const continuity_session_keys *bound_keys;
+    /* `_streamStart` requests for UDP media seen on the first pass and not
+     * yet answered, by exchange id. */
+    wmem_map_t *pending_streams;
 } rdlink_conversation;
+
+typedef struct {
+    const char *stream_id;
+    uint32_t port;
+    uint32_t direction;
+} rdlink_pending_stream;
 
 /* What was worked out about one protected frame, kept so that every later
  * visit to it reports what the first visit found. */
@@ -162,11 +173,15 @@ static uint32_t rdlink_direction(packet_info *pinfo)
  *   header       OPACK dict, one key   State=1   PublicKey (32)    Flags=1
  *                "_pd", 0x28 bytes
  *
- * The OPACK prefix is what makes the heuristic safe: `e1 43 5f 70 64` is a
- * one-entry dictionary keyed "_pd", which is specific enough not to fire on
- * unrelated traffic.
+ * The OPACK prefix is what makes the heuristic safe: a dictionary whose first
+ * key is the string "_pd" (`43 5f 70 64`) is specific enough not to fire on
+ * unrelated traffic. Every observed handshake sends the one-entry form `e1`;
+ * a dictionary of more entries, or the endless form, with "_pd" first is the
+ * same message to the object decode and is accepted as well.
  */
-static const uint8_t rdlink_pairverify_prefix[] = { 0xe1, 0x43, 0x5f, 0x70, 0x64 };
+static const uint8_t rdlink_pairverify_key[] = { 0x43, 0x5f, 0x70, 0x64 };
+#define RDLINK_OPACK_DICT_FIRST   0xe1 /* a dictionary of one entry ... */
+#define RDLINK_OPACK_DICT_ENDLESS 0xef /* ... through the endless form */
 
 /* TLV8 tags inside the PairVerify body, as observed on the wire:
  *
@@ -176,7 +191,7 @@ static const uint8_t rdlink_pairverify_prefix[] = { 0xe1, 0x43, 0x5f, 0x70, 0x64
  *     05 <len> <bytes>       EncryptedData, in M2 and M3
  *
  * The values are what the handshake sends; their meanings are the thesis'
- * and were confirmed against a completed handshake in this repository.
+ * and were confirmed against a captured, completed handshake.
  */
 #define PV_TLV_STATE          0x06
 #define PV_TLV_PUBLIC_KEY     0x03
@@ -192,20 +207,35 @@ static const value_string pv_tlv_tags[] = {
     { 0, NULL },
 };
 
-/* Walk the TLV8 run, reporting each element and returning where the ephemeral
- * public key is, if it carries one.
+/* What the handshake's TLV8 run carries, as far as the walk below found. */
+typedef struct {
+    bool complete;      /* every element's length fitted inside `_pd` */
+    int state;          /* the State element's value, or -1 when there is none */
+    unsigned keys;      /* Public key elements of the expected length */
+    unsigned odd_keys;  /* Public key elements of any other length */
+    int key_offset;     /* where the first expected-length public key is */
+} pairverify_contents;
+
+/* Walk the TLV8 run inside `_pd`, reporting each element.
  *
- * A walk rather than a fixed offset. The offset works for M1, whose shape is
- * constant, and is wrong for anything that puts its elements in another order
- * -- and being wrong would mean reporting 32 bytes of something else as the
- * value that names the session, which every later record would then carry.
+ * Bounded by `_pd` itself, whose extent the object decode read from its own
+ * length field -- not by a fixed offset into the body, which is right for one
+ * length encoding of `_pd` and lands one byte off for the other, nor by the
+ * end of the frame, which would read bytes after `_pd` as elements of it.
  */
-static bool pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset,
-                            int length, int *key_offset)
+static pairverify_contents pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                           int offset, int length)
 {
+    pairverify_contents found = { .complete = true, .state = -1 };
     int end = offset + length;
-    bool found = false;
-    while (offset + 2 <= end) {
+    while (offset < end) {
+        if (offset + 2 > end) {
+            proto_tree_add_expert_format(tree, pinfo, &ei_rdlink_tlv_truncated, tvb, offset,
+                                         end - offset,
+                                         "a TLV8 element's header is cut off by the end of _pd");
+            found.complete = false;
+            return found;
+        }
         uint8_t tag = tvb_get_uint8(tvb, offset);
         uint8_t len = tvb_get_uint8(tvb, offset + 1);
         if (offset + 2 + len > end) {
@@ -215,6 +245,7 @@ static bool pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                          end - offset,
                                          "a TLV8 element declares %u byte(s) with %d "
                                          "remaining", len, end - offset - 2);
+            found.complete = false;
             return found;
         }
         proto_item *item = proto_tree_add_item(tree, hf_rdlink_tlv, tvb, offset, 2 + len,
@@ -229,13 +260,45 @@ static bool pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             proto_tree_add_item(tlv_tree, hf_rdlink_tlv_value, tvb, offset + 2, len, ENC_NA);
         }
 
-        if (tag == PV_TLV_PUBLIC_KEY && len == PV_PUBLIC_KEY_LEN && !found) {
-            *key_offset = offset + 2;
-            found = true;
+        if (tag == PV_TLV_STATE && len == 1 && found.state < 0) {
+            found.state = tvb_get_uint8(tvb, offset + 2);
+        } else if (tag == PV_TLV_PUBLIC_KEY) {
+            if (len == PV_PUBLIC_KEY_LEN) {
+                if (found.keys == 0) {
+                    found.key_offset = offset + 2;
+                }
+                found.keys++;
+            } else {
+                found.odd_keys++;
+            }
         }
         offset += 2 + len;
     }
     return found;
+}
+
+/* Why a PubKey message does not name a session, or NULL when it does. The
+ * session names every later record, so a message that is not unmistakably the
+ * handshake's first -- State 1, one public key of the curve's size, and a run
+ * that agrees with its own lengths -- names none rather than a wrong one. In
+ * every observed handshake the PubKey type carried exactly that. */
+static const char *pairverify_m1_problem(const continuity_envelope *body,
+                                         const pairverify_contents *contents)
+{
+    if (!body->has_pd) {
+        return "the body has no _pd byte string at its top level";
+    }
+    if (!contents->complete) {
+        return "the TLV8 run in _pd disagrees with its own lengths";
+    }
+    if (contents->state != 1) {
+        return contents->state < 0 ? "the TLV8 run carries no State element"
+                                   : "the State element is not 1, the first message's";
+    }
+    if (contents->keys != 1 || contents->odd_keys != 0) {
+        return "the TLV8 run does not carry exactly one 32-byte public key";
+    }
+    return NULL;
 }
 
 /* ---------------------------------------------------------------------------
@@ -245,7 +308,8 @@ static bool pairverify_tlvs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
  * direction and the associated data the frame's own four-byte header. All of
  * it established by decrypting frames off the air, including one the *phone*
  * encrypted -- which matters, because a construction verified only against
- * frames this toolkit encrypted itself would be verified against nothing.
+ * frames encrypted by the same code that decrypts them would be verified
+ * against nothing.
  */
 
 #define RDLINK_TAG_LEN   16
@@ -431,6 +495,10 @@ static rdlink_frame *rdlink_read_body(tvbuff_t *tvb, packet_info *pinfo, uint32_
                                       "secret authenticated this frame"
                                     : "no key material for this session";
     }
+    const char *problem = continuity_keys_problem();
+    if (problem != NULL) {
+        frame->reason = wmem_strdup_printf(wmem_file_scope(), "%s (%s)", frame->reason, problem);
+    }
     state->next_counter[direction]++;
     return frame;
 }
@@ -444,8 +512,9 @@ static unsigned rdlink_pdu_length(packet_info *pinfo _U_, tvbuff_t *tvb,
 /* ---------------------------------------------------------------------------
  * The record's one-line summary.
  *
- * What the Info column says is what a record's line says in every timeline
- * output -- the toolkit takes the column as the record's message. So it is
+ * What the Info column says is what a record's line says wherever the column
+ * is taken as the record's message, as timeline tools built on tshark do. So
+ * it is
  * built here, once the body has been read or declined and walked, from what
  * the companion and object decodes found, rather than appended to by each
  * sub-decode: appended pieces would read in call order, and a refactor would
@@ -547,43 +616,6 @@ static void rdlink_append_members(wmem_strbuf_t *line, const continuity_envelope
     }
 }
 
-/* The handshake step, from the PairVerify state in the clear body:
- * `{_pd: <TLV8>}` with State as tag 0x06. 0 when it cannot be found. Read
- * without touching the tree, so the step costs no field the decode did not
- * already report. */
-static unsigned rdlink_pairverify_step(tvbuff_t *tvb, uint32_t length)
-{
-    int offset = RDLINK_HEADER_LEN;
-    int end = RDLINK_HEADER_LEN + (int)length;
-    if (tvb_captured_length(tvb) < (unsigned)end || length < sizeof rdlink_pairverify_prefix + 1 ||
-        tvb_memeql(tvb, offset, rdlink_pairverify_prefix, sizeof rdlink_pairverify_prefix) != 0) {
-        return 0;
-    }
-    offset += (int)sizeof rdlink_pairverify_prefix;
-
-    /* The value of `_pd`: a byte string, its length inline or in one byte. */
-    uint8_t marker = tvb_get_uint8(tvb, offset++);
-    int data_len;
-    if (marker >= 0x70 && marker <= 0x90) {
-        data_len = marker - 0x70;
-    } else if (marker == 0x91 && offset < end) {
-        data_len = tvb_get_uint8(tvb, offset++);
-    } else {
-        return 0;
-    }
-    int data_end = offset + data_len < end ? offset + data_len : end;
-
-    while (offset + 2 <= data_end) {
-        uint8_t tag = tvb_get_uint8(tvb, offset);
-        uint8_t len = tvb_get_uint8(tvb, offset + 1);
-        if (tag == PV_TLV_STATE && len == 1 && offset + 3 <= data_end) {
-            return tvb_get_uint8(tvb, offset + 2);
-        }
-        offset += 2 + len;
-    }
-    return 0;
-}
-
 static const char *rdlink_direction_tag(uint32_t direction)
 {
     return direction == RDLINK_DIR_INITIATOR ? "[init→resp]" : "[resp→init]";
@@ -623,6 +655,81 @@ static bool rdlink_first_pdu(packet_info *pinfo)
     }
     p_add_proto_data(pinfo->pool, pinfo, proto_rdlink, 0, GUINT_TO_POINTER(1));
     return true;
+}
+
+/* The value of a direct member of `_c`, or NULL. */
+static const char *content_member(const continuity_envelope *envelope, const char *key)
+{
+    for (unsigned m = 0; m < envelope->member_count; m++) {
+        if (envelope->members[m].in_content && !envelope->members[m].nested &&
+            strcmp(envelope->members[m].key, key) == 0) {
+            return envelope->members[m].value;
+        }
+    }
+    return NULL;
+}
+
+/* Media negotiation, on the first pass: a `_streamStart` request for a UDP
+ * media stream (`_streamType` 3) is remembered with the port it names, and
+ * the response from the other end under the same exchange id supplies the
+ * second port. Values are as the object decode rendered them. */
+static void rdlink_track_stream(packet_info *pinfo, const continuity_envelope *envelope,
+                                const char *name, uint32_t direction)
+{
+    if (PINFO_FD_VISITED(pinfo) || !envelope->has_xid || name == NULL) {
+        return;
+    }
+    conversation_t *conversation = find_or_create_conversation(pinfo);
+    rdlink_conversation *state =
+        conversation == NULL
+            ? NULL
+            : (rdlink_conversation *)conversation_get_proto_data(conversation, proto_rdlink);
+    if (state == NULL) {
+        return;
+    }
+    if (state->pending_streams == NULL) {
+        state->pending_streams = wmem_map_new(wmem_file_scope(), g_int64_hash, g_int64_equal);
+    }
+    const char *port_text = content_member(envelope, "_streamPort");
+    uint32_t port = 0;
+    if (port_text == NULL || !ws_strtou32(port_text, NULL, &port)) {
+        return;
+    }
+
+    if (envelope->has_event && strcmp(name, "_streamStart") == 0) {
+        const char *type = content_member(envelope, "_streamType");
+        if (type == NULL || strcmp(type, "3") != 0) {
+            return;
+        }
+        rdlink_pending_stream *pending = wmem_new0(wmem_file_scope(), rdlink_pending_stream);
+        const char *id = content_member(envelope, "_streamID");
+        pending->stream_id = id != NULL ? wmem_strdup(wmem_file_scope(), id) : NULL;
+        pending->port = port;
+        pending->direction = direction;
+        uint64_t *key = wmem_new(wmem_file_scope(), uint64_t);
+        *key = envelope->xid;
+        wmem_map_insert(state->pending_streams, key, pending);
+    } else if (strcmp(name, "_streamStart response") == 0) {
+        uint64_t key = envelope->xid;
+        rdlink_pending_stream *pending =
+            (rdlink_pending_stream *)wmem_map_lookup(state->pending_streams, &key);
+        if (pending != NULL && pending->direction != direction) {
+            continuity_media_negotiated(pinfo, pending->stream_id, pending->port, port);
+            wmem_map_remove(state->pending_streams, &key);
+        }
+    }
+}
+
+/* What names one PDU among those its frame carries, the same on every pass.
+ *
+ * Its offset in the data source it lies in: a PDU wholly inside the frame
+ * starts past the frame's link, network and transport headers, so above zero,
+ * and the one PDU a frame can complete by reassembly is the start of the
+ * reassembled data source, so zero. The per-frame key 0 that the first-PDU
+ * marker uses lives in the packet scope, a different table. */
+static uint32_t rdlink_message_key(tvbuff_t *tvb)
+{
+    return (uint32_t)tvb_raw_offset(tvb);
 }
 
 static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
@@ -665,50 +772,51 @@ static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
     }
 
     if (type == RDLINK_PUB_KEY || type == RDLINK_CONTINUE) {
-        unsigned step = rdlink_pairverify_step(tvb, length);
-        if (step != 0) {
+        /* The handshake frames are in the clear. Their bodies are the same
+         * object encoding the protected bodies carry, so they are walked by
+         * the same decode -- which is what makes the encoding's correctness
+         * testable against captures nobody holds a key for -- and the TLV8
+         * run is found where that walk says `_pd` is. */
+        continuity_envelope body = { 0 };
+        continuity_opack_dissect_envelope(tvb, pinfo, rdlink_tree, RDLINK_HEADER_LEN, (int)length,
+                                          &body);
+        pairverify_contents contents = { .complete = false, .state = -1 };
+        if (body.has_pd) {
+            contents = pairverify_tlvs(tvb, pinfo, rdlink_tree, body.pd_offset, body.pd_length);
+        }
+
+        if (contents.state > 0) {
             /* The PubKey type's own name already says PairVerify. */
-            wmem_strbuf_append_printf(summary, type == RDLINK_PUB_KEY ? " M%u" : " PairVerify M%u",
-                                      step);
+            wmem_strbuf_append_printf(summary, type == RDLINK_PUB_KEY ? " M%d" : " PairVerify M%d",
+                                      contents.state);
         } else {
             wmem_strbuf_append(summary, " (step not recognised)");
         }
         wmem_strbuf_append_printf(summary, " %s", rdlink_direction_tag(dir));
-    }
 
-    if (type == RDLINK_PUB_KEY || type == RDLINK_CONTINUE) {
-        /* The handshake frames are in the clear. Their bodies are the same
-         * object encoding the protected bodies carry, so they are walked by
-         * the same decode -- which is what makes the encoding's correctness
-         * testable against captures nobody holds a key for. */
-        continuity_opack_dissect(tvb, pinfo, rdlink_tree, RDLINK_HEADER_LEN, (int)length);
-    }
-
-    if (type == RDLINK_PUB_KEY) {
-        /* The handshake is in the clear, and carries the value that names
-         * this session for everything that follows it.
-         *
-         * The TLV8 run sits inside the object encoding's one value, which
-         * the walk above has already reported: this finds where that value
-         * is by walking from the body, which is what makes it independent of
-         * the handshake message's exact shape.
-         */
-        int key_offset = 0;
-        int body_start = RDLINK_HEADER_LEN + (int)sizeof rdlink_pairverify_prefix + 2;
-        int available = tvb_captured_length_remaining(tvb, body_start);
-        if (available > 0 &&
-            pairverify_tlvs(tvb, pinfo, rdlink_tree, body_start, available, &key_offset)) {
-            proto_item *key = proto_tree_add_item(rdlink_tree, hf_rdlink_ephemeral_key, tvb,
-                                                  key_offset, PV_PUBLIC_KEY_LEN, ENC_NA);
-            proto_item_set_generated(key);
-            continuity_session_set(pinfo,
-                                   tvb_get_ptr(tvb, key_offset, PV_PUBLIC_KEY_LEN),
-                                   PV_PUBLIC_KEY_LEN);
+        if (type == RDLINK_PUB_KEY) {
+            /* The handshake carries the value that names this session for
+             * everything that follows it -- but only a message that is
+             * unmistakably its first is allowed to. */
+            const char *problem = pairverify_m1_problem(&body, &contents);
+            if (problem == NULL) {
+                proto_item *key = proto_tree_add_item(rdlink_tree, hf_rdlink_ephemeral_key, tvb,
+                                                      contents.key_offset, PV_PUBLIC_KEY_LEN,
+                                                      ENC_NA);
+                proto_item_set_generated(key);
+                continuity_session_set(pinfo,
+                                       tvb_get_ptr(tvb, contents.key_offset, PV_PUBLIC_KEY_LEN),
+                                       PV_PUBLIC_KEY_LEN);
+            } else {
+                proto_tree_add_expert_format(rdlink_tree, pinfo, &ei_rdlink_handshake_unusable,
+                                             tvb, 0, RDLINK_HEADER_LEN,
+                                             "This PubKey message names no session: %s", problem);
+            }
+            proto_tree_add_item(rdlink_tree, hf_rdlink_body, tvb, RDLINK_HEADER_LEN,
+                                (int)length, ENC_NA);
+            rdlink_set_summary(pinfo, first, summary);
+            return tvb_captured_length(tvb);
         }
-        proto_tree_add_item(rdlink_tree, hf_rdlink_body, tvb, RDLINK_HEADER_LEN,
-                            (int)length, ENC_NA);
-        rdlink_set_summary(pinfo, first, summary);
-        return tvb_captured_length(tvb);
     }
 
     if (type == RDLINK_ENCRYPTED_DATA) {
@@ -725,13 +833,12 @@ static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
          * of the frames before this one, so it cannot be recomputed by a
          * visit that arrives out of order. Keyed on where this PDU starts in
          * the frame, because one frame can carry several. */
+        uint32_t message_key = rdlink_message_key(tvb);
         rdlink_frame *frame =
-            (rdlink_frame *)p_get_proto_data(wmem_file_scope(), pinfo, proto_rdlink,
-                                             (uint32_t)tvb_raw_offset(tvb));
+            (rdlink_frame *)p_get_proto_data(wmem_file_scope(), pinfo, proto_rdlink, message_key);
         if (frame == NULL) {
             frame = rdlink_read_body(tvb, pinfo, length, rdlink_direction(pinfo));
-            p_add_proto_data(wmem_file_scope(), pinfo, proto_rdlink,
-                             (uint32_t)tvb_raw_offset(tvb), frame);
+            p_add_proto_data(wmem_file_scope(), pinfo, proto_rdlink, message_key, frame);
         }
 
         proto_item *read_item =
@@ -775,7 +882,9 @@ static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
             continuity_envelope envelope = { 0 };
             continuity_opack_dissect_envelope(plain, pinfo, rdlink_tree, 0,
                                               (int)frame->plaintext_len, &envelope);
-            const char *name = continuity_companion_report(plain, pinfo, rdlink_tree, &envelope);
+            const char *name = continuity_companion_report(plain, pinfo, rdlink_tree, &envelope,
+                                                           message_key);
+            rdlink_track_stream(pinfo, &envelope, name, dir);
 
             /* What was said. A response is named by the request it answers,
              * and looked up in the key table under that request's event. */
@@ -824,7 +933,7 @@ static int dissect_rdlink(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
  */
 static bool opens_with_pairverify(tvbuff_t *tvb)
 {
-    if (tvb_captured_length(tvb) < RDLINK_HEADER_LEN + (int)sizeof rdlink_pairverify_prefix) {
+    if (tvb_captured_length(tvb) < RDLINK_HEADER_LEN + 1 + (int)sizeof rdlink_pairverify_key) {
         return false;
     }
     if (tvb_get_uint8(tvb, 0) != RDLINK_PUB_KEY) {
@@ -834,8 +943,12 @@ static bool opens_with_pairverify(tvbuff_t *tvb)
     if (length == 0 || length > RDLINK_HEUR_MAX_BODY) {
         return false;
     }
-    return tvb_memeql(tvb, RDLINK_HEADER_LEN, rdlink_pairverify_prefix,
-                      sizeof rdlink_pairverify_prefix) == 0;
+    uint8_t dict = tvb_get_uint8(tvb, RDLINK_HEADER_LEN);
+    if (dict < RDLINK_OPACK_DICT_FIRST || dict > RDLINK_OPACK_DICT_ENDLESS) {
+        return false;
+    }
+    return tvb_memeql(tvb, RDLINK_HEADER_LEN + 1, rdlink_pairverify_key,
+                      sizeof rdlink_pairverify_key) == 0;
 }
 
 /* The other way in: a segment that is exactly tiled by well-formed frames.
@@ -971,6 +1084,10 @@ void proto_register_continuity_rdlink(void)
         { &ei_rdlink_frames_missing,
           { "continuity.rdlink.frames_missing", PI_SEQUENCE, PI_NOTE,
             "Protected frames of this direction are missing from the capture", EXPFILL } },
+        { &ei_rdlink_handshake_unusable,
+          { "continuity.rdlink.handshake_unusable", PI_MALFORMED, PI_WARN,
+            "This PubKey message is not a well-formed first handshake message, so it names "
+            "no session", EXPFILL } },
     };
 
     proto_rdlink = proto_register_protocol("Rapport Remote-Display Link", "RDLink",

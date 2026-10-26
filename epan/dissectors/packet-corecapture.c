@@ -50,6 +50,8 @@ void proto_register_corecapture(void);
 #define PFNAME "corecapture"
 
 #define CC_STREAM_HDR_LENGTH 8
+/* Captured bytes past the payload, as the 4-byte record alignment explains. */
+#define CC_RECORD_MAX_PADDING 3
 
 
 
@@ -57,6 +59,10 @@ static int proto_corecapture = -1;
 
 static int hf_cc_frame_type = -1;
 static int hf_cc_frame_additional = -1;
+static int hf_cc_padding = -1;
+
+static expert_field ei_cc_unknown_type = EI_INIT;
+static expert_field ei_cc_excess_padding = EI_INIT;
 
 
 // CoreCapture Frame / Trace Types
@@ -74,12 +80,12 @@ enum {
 };
 
 static const value_string cc_frame_type[] = {
-  { CC_CONTROLPATH_EVENT, "Control Path Event" },
   { CC_CONTROLPATH_EVENT2, "Control Path Event" },
-  { CC_CONTROLPATH_IOCTL, "Control Path IOCTL" },
   { CC_IOCTL, "IOCTL" },
-  { CC_AWDLPEERMANAGER_TYPE, "AWDLPeerManager" },
   { CC_ETH_TYPE, "Ethernet Frame" },
+  { CC_AWDLPEERMANAGER_TYPE, "AWDLPeerManager" },
+  { CC_CONTROLPATH_IOCTL, "Control Path IOCTL" },
+  { CC_CONTROLPATH_EVENT, "Control Path Event" },
   { CC_LAST_TYPE, "Empty" },
   { 0, NULL }
 };
@@ -111,24 +117,50 @@ static int dissect_corecapture(tvbuff_t *tvb, packet_info *pinfo,
   ti = proto_tree_add_item (tree, proto_corecapture, tvb, 0, -1, ENC_NA);
   corecapture_tree = proto_item_add_subtree (ti, ett_corecapture);
   
-  ti = proto_tree_add_item (corecapture_tree, hf_cc_frame_type, tvb, offset, 4, ENC_LITTLE_ENDIAN);
-  guint32 frame_type = tvb_get_uint32(tvb, 0, ENC_LITTLE_ENDIAN);
-  
-  proto_item_append_text(ti, ": %s", val_to_str_ext(pinfo->pool, frame_type, &cc_frame_type_ext, "Unknown (%d)"));
+  guint32 frame_type;
+  proto_item *type_item = proto_tree_add_item_ret_uint (corecapture_tree, hf_cc_frame_type, tvb, offset, 4, ENC_LITTLE_ENDIAN, &frame_type);
+
+  proto_item_append_text(type_item, ": %s", val_to_str_ext(pinfo->pool, frame_type, &cc_frame_type_ext, "Unknown (%d)"));
   offset+=4;
   proto_tree_add_item (corecapture_tree, hf_cc_frame_additional, tvb, offset, 4, ENC_LITTLE_ENDIAN);
   offset+=4;
-  
-  int remaining_length = tvb_reported_length_remaining (tvb, offset) + CC_STREAM_HDR_LENGTH;
-  payload_tvb = tvb_new_subset_length(tvb, offset, remaining_length);
-  tvb_new_subset_remaining(tvb, offset);
-  parsed = dissector_try_uint_with_data(streamheader_field_table, frame_type, payload_tvb, pinfo, tree, FALSE, NULL);
-  
-  if (!parsed) {
-    //TODO: expert info
+
+  /*
+   * The payload's length is the record's original length. CoreCapture writes
+   * that as the length of the payload alone, without this 8-byte header, and
+   * pads the captured bytes to a multiple of 4 -- measured on dumps written by
+   * macOS: every record carrying IPv6, complete or cut short, ends exactly
+   * 8 + length bytes in. So the original length is not the record's own
+   * length, and is usually less than the captured one, which the frame
+   * dissector then "fixes" by raising this tvb's reported length to the
+   * captured length. The value as written is in the frame data, and is used
+   * when this record is the frame; reached any other way, the rest of the
+   * tvb is all there is to go on.
+   */
+  int available = tvb_reported_length_remaining (tvb, offset);
+  int payload_length = available;
+  if (tvb_raw_offset (tvb) == 0 && pinfo->fd->pkt_len <= (uint32_t)INT_MAX) {
+    payload_length = (int)pinfo->fd->pkt_len;
   }
-  return parsed;
-  
+  payload_tvb = tvb_new_subset_length (tvb, offset, payload_length);
+
+  int padding = tvb_captured_length_remaining (tvb, offset) - payload_length;
+  if (padding > 0) {
+    proto_item *pad_item = proto_tree_add_item (corecapture_tree, hf_cc_padding, tvb, offset + payload_length, padding, ENC_NA);
+    if (padding > CC_RECORD_MAX_PADDING) {
+      expert_add_info (pinfo, pad_item, &ei_cc_excess_padding);
+    }
+  }
+  proto_item_set_len (ti, CC_STREAM_HDR_LENGTH);
+
+  parsed = dissector_try_uint_with_data(streamheader_field_table, frame_type, payload_tvb, pinfo, tree, FALSE, NULL);
+
+  if (!parsed) {
+    expert_add_info (pinfo, type_item, &ei_cc_unknown_type);
+    call_data_dissector (payload_tvb, pinfo, tree);
+  }
+  return tvb_captured_length (tvb);
+
 }
 
 
@@ -144,6 +176,18 @@ void proto_register_corecapture (void)
       { "Streamheader", "corecapture.streamheader", FT_UINT32, BASE_DEC, VALS(cc_frame_type), 0x0, NULL, HFILL } },
     { &hf_cc_frame_additional,
       { "Streamheader Additional", "corecapture.streamheader.additioanal", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL } },
+    { &hf_cc_padding,
+      { "Padding", "corecapture.padding", FT_BYTES, BASE_NONE, NULL, 0x0,
+        "Captured bytes past the payload length the record states", HFILL } },
+  };
+
+  static ei_register_info ei[] = {
+    { &ei_cc_unknown_type,
+      { "corecapture.streamheader.unknown", PI_UNDECODED, PI_NOTE,
+        "No dissector for this CoreCapture stream type", EXPFILL } },
+    { &ei_cc_excess_padding,
+      { "corecapture.padding.excess", PI_MALFORMED, PI_WARN,
+        "More bytes follow the payload than the record's 4-byte alignment explains", EXPFILL } },
   };
   
   static gint *ett[] = {
@@ -156,6 +200,9 @@ void proto_register_corecapture (void)
   
   proto_register_field_array (proto_corecapture, hf, array_length (hf));
   proto_register_subtree_array (ett, array_length (ett));
+
+  expert_module_t *expert_cc = expert_register_protocol (proto_corecapture);
+  expert_register_field_array (expert_cc, ei, array_length (ei));
   
   streamheader_field_table = register_dissector_table("corecapture.streamheader", "Stream Header", proto_corecapture, FT_UINT32, BASE_DEC);
   

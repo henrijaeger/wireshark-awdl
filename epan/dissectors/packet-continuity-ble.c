@@ -121,7 +121,7 @@ static const value_string continuity_message_types[] = {
  *
  * Only the types this decode actually recognises are registered. A service
  * that is registered and never attributed would appear in the table as
- * something the toolkit supports, which is a claim, and an empty one.
+ * something this decode supports, which is a claim, and an empty one.
  */
 static void dissect_nearby_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset,
                                 int length);
@@ -264,9 +264,8 @@ typedef struct {
 
 /* The command decode's own subtree, to put the advertising data inside --
  * where that decode puts a standard advertising-data command's. At the top of
- * the tree it reads as a separate protocol layer, and the toolkit's record
- * parser, which expects advertising data only inside an HCI packet, failed on
- * the first frame carrying it. */
+ * the tree it reads as a separate protocol layer, which a reader expecting
+ * advertising data only inside an HCI packet does not find. */
 typedef struct {
     int proto;
     proto_tree *found;
@@ -291,8 +290,8 @@ static field_info *first_field(proto_tree *tree, int hf)
     return found != NULL && found->len > 0 ? (field_info *)g_ptr_array_index(found, 0) : NULL;
 }
 
-/* A post-dissector, acting only on 0xfd4b -- Decision 2's fallback, because
- * the preferred route does not hold in tshark 4.5. The command decode does
+/* A post-dissector, acting only on 0xfd4b, because registering in the
+ * command decode's own table does not work. The command decode does
  * offer every vendor command to its "Decode As" table first, but that table
  * can only be given a current entry, never an initial one, and loading the
  * Decode As settings at start-up resets every current entry -- so a dissector
@@ -304,33 +303,69 @@ static field_info *first_field(proto_tree *tree, int hf)
  * Accepted only when the header is self-consistent: data_length <= 31 and
  * 2 + data_length <= the parameters present. A decode that read a malformed
  * header would report structure that was never sent. */
-static int dissect_continuity_sent_advertising(tvbuff_t *tvb _U_, packet_info *pinfo,
+/* Where the first pass found a sent advertisement's command parameters, in
+ * the frame. The command decode's fields are only guaranteed to this
+ * post-dissector on the first pass (they are primed then and not on later
+ * ones, which a two-pass read or a filtered redissection does), so later
+ * passes read the parameters from where the first one found them. */
+typedef struct {
+    int start;
+    int length;
+} sent_parameters;
+
+#define SENT_PARAMETERS_KEY 1
+
+static int dissect_continuity_sent_advertising(tvbuff_t *tvb, packet_info *pinfo,
                                                proto_tree *tree, void *data _U_)
 {
     if (tree == NULL || ad_handle == NULL || !proto_is_frame_protocol(pinfo->layers, "bthci_cmd")) {
         return 0;
     }
-    field_info *opcode = first_field(tree, hf_hci_opcode);
-    if (opcode == NULL ||
-        fvalue_get_uinteger(opcode->value) != VENDOR_ADVERTISING_DATA_OPCODE) {
-        return 0;
+
+    tvbuff_t *params = NULL;
+    int length = 0;
+    if (PINFO_FD_VISITED(pinfo)) {
+        const sent_parameters *found = (const sent_parameters *)p_get_proto_data(
+            wmem_file_scope(), pinfo, proto_continuity_ble, SENT_PARAMETERS_KEY);
+        if (found == NULL) {
+            return 0;
+        }
+        params = tvb_new_subset_length(tvb, found->start, found->length);
+        length = found->length;
+    } else {
+        field_info *opcode = first_field(tree, hf_hci_opcode);
+        if (opcode == NULL ||
+            fvalue_get_uinteger(opcode->value) != VENDOR_ADVERTISING_DATA_OPCODE) {
+            return 0;
+        }
+        field_info *parameters = first_field(tree, hf_hci_parameter);
+        if (parameters == NULL || parameters->ds_tvb != tvb || parameters->length < 2) {
+            return 0;
+        }
+        params = tvb_new_subset_length(tvb, parameters->start, parameters->length);
+        length = parameters->length;
     }
-    field_info *parameters = first_field(tree, hf_hci_parameter);
-    if (parameters == NULL || parameters->ds_tvb == NULL || parameters->length < 2) {
-        return 0;
-    }
-    tvbuff_t *params = tvb_new_subset_length(parameters->ds_tvb, parameters->start,
-                                             parameters->length);
+
     uint8_t data_length = tvb_get_uint8(params, 1);
-    if (data_length == 0 || data_length > ADVERTISING_DATA_MAX ||
-        2 + data_length > parameters->length) {
+    if (data_length == 0 || data_length > ADVERTISING_DATA_MAX || 2 + data_length > length) {
         return 0;
     }
 
+    /* Under the command's own node where the tree has it, else at the top:
+     * a pass that builds only the fields asked for may not have the node. */
     protocol_subtree command = { proto_hci_command, NULL };
     proto_tree_children_foreach(tree, find_protocol_subtree, &command);
-    if (command.found == NULL) {
-        return 0;
+    proto_tree *parent = command.found != NULL ? command.found : tree;
+
+    if (!PINFO_FD_VISITED(pinfo)) {
+        if (command.found == NULL) {
+            return 0;
+        }
+        sent_parameters *found = wmem_new(wmem_file_scope(), sent_parameters);
+        found->start = tvb_raw_offset(params) - tvb_raw_offset(tvb);
+        found->length = length;
+        p_add_proto_data(wmem_file_scope(), pinfo, proto_continuity_ble, SENT_PARAMETERS_KEY,
+                         found);
     }
 
     sent_advertising_header *header = wmem_new(pinfo->pool, sent_advertising_header);
@@ -338,11 +373,10 @@ static int dissect_continuity_sent_advertising(tvbuff_t *tvb _U_, packet_info *p
     header->data_length = data_length;
     p_add_proto_data(pinfo->pool, pinfo, proto_continuity_ble, 0, header);
 
-    /* No address: a command asks the controller to transmit, and carries none. */
     bluetooth_eir_ad_data_t *ad_data = wmem_new0(pinfo->pool, bluetooth_eir_ad_data_t);
     call_dissector_with_data(ad_handle, tvb_new_subset_length(params, 2, data_length), pinfo,
-                             command.found, ad_data);
-    return parameters->length;
+                             parent, ad_data);
+    return length;
 }
 
 static int dissect_continuity_ble(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,

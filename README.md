@@ -24,6 +24,62 @@ cmake .. \
   -DENABLE_WERROR=OFF
 ```
 
+Apple Continuity
+----------------
+
+Besides AWDL and CoreCapture, this build decodes Apple Continuity traffic:
+
+| filter                 | what                                                              |
+|------------------------|-------------------------------------------------------------------|
+| `continuity`           | every record below, with `continuity.service` and `continuity.session` |
+| `continuity.ble`       | Apple manufacturer data in BLE advertisements, received and sent (HCI vendor command `0xfd4b`) |
+| `continuity.rdlink`    | the Rapport remote-display link over TCP: the PairVerify handshake, then protected frames |
+| `continuity.companion` | the `_i`/`_t`/`_x`/`_c` envelope, with requests paired to responses |
+| `continuity.opack`     | the OPACK object encoding those bodies are written in             |
+| `continuity.media`     | media flows negotiated on the control link, handed to RTP/RTCP    |
+| `continuity.sidecar`   | Sidecar messages carried on the control link                      |
+
+Protected RDLink frames are decrypted when key material is available, as
+lines keyed on the handshake's cleartext ephemeral public key:
+
+```
+RDLINK_SHARED     <ephemeral public key hex>  <shared secret hex>
+RDLINK_CLIENT_ENC <ephemeral public key hex>  <key hex>
+RDLINK_SERVER_ENC <ephemeral public key hex>  <key hex>
+```
+
+A key whose session is not known is given the all-zero session and found by
+trial. Point the `continuity.keylog_file` preference at such a file, or embed
+it in the capture so that it needs no configuration:
+
+```
+editcap --inject-secrets continuity,session.keylog in.pcap out.pcapng
+```
+
+A key log that cannot be read, or lines that name a key but cannot be used,
+are reported on the frames that then stay unread.
+
+Media flows are identified from their `_streamStart` negotiation, which needs
+the control link decrypted. Without keys no flow is identified; the
+`continuity.media_guess_pt100` preference instead takes any RTP flow of payload
+type 100 for Continuity media, which other applications' RTP also matches.
+The media itself is SRTP and is not decrypted; only RTP and RTCP headers are
+decoded.
+
+What has been checked against real sessions, and what has not:
+
+- **Continuity Camera** (iPhone, iOS 16.1.2, to Macs on macOS 15.7.9): the
+  handshake, decryption of the control link, the companion envelope, Sidecar's
+  `com.apple.sidecar.capture` messages, and the video streams' negotiation.
+  Other Camera configurations are untested.
+- **Sidecar Display** (iPad as a display): not validated. Its sub-service
+  identifiers are shown, and its objects are walked without interpretation.
+
+These dissectors used to ship separately as a `continuity.so` plugin. They are
+now built in, and Wireshark refuses to start ("Duplicate protocol name") while
+that plugin is still installed, so remove any old copy, e.g. from
+`~/.local/lib/wireshark/plugins/<version>/epan/continuity.so`.
+
 ---
 
 General Information
