@@ -278,6 +278,12 @@ typedef struct continuity_envelope {
     bool complete;
     const char *problem;
 
+    /* Set when the envelope's own entries conflict: one of _x, _t, _i or _c
+     * sent more than once, or of the wrong type. The message is shown, but
+     * pairing it or negotiating from it would rest on a value chosen
+     * arbitrarily. */
+    const char *conflict;
+
     /* The scalar members the object decode found -- the envelope's own and
      * those inside `_c`, at any depth -- in wire order, as text. They are what a
      * record's one-line summary is made from, so the summary says what the
@@ -301,6 +307,22 @@ typedef struct continuity_envelope {
         bool nested;
     } members[CONTINUITY_ENVELOPE_MEMBERS];
 } continuity_envelope;
+
+/* Whether a message may have effects that outlive its own frame -- pairing
+ * an exchange, recording a negotiation, naming a session: its object was
+ * walked whole and its envelope entries do not conflict. A message that is
+ * not usable is still shown, with why. */
+static inline bool continuity_envelope_usable(const continuity_envelope *envelope)
+{
+    return envelope->complete && envelope->conflict == NULL;
+}
+
+static inline const char *continuity_envelope_unusable_reason(const continuity_envelope *envelope)
+{
+    return !envelope->complete
+               ? (envelope->problem != NULL ? envelope->problem : "the object is incomplete")
+               : envelope->conflict;
+}
 
 /* Report the envelope, and pair this message with the other half of its
  * exchange. Called by the transport decode, on a cleartext or a decrypted

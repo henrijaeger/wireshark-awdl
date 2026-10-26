@@ -265,7 +265,19 @@ const char *continuity_companion_report(tvbuff_t *tvb, packet_info *pinfo, proto
     companion_message *message = (companion_message *)p_get_proto_data(
         wmem_file_scope(), pinfo, proto_companion, message_key);
     if (message == NULL) {
-        message = pair_exchange(pinfo, envelope);
+        /* Checked before any exchange is opened, answered or consumed: a
+         * message whose object was not walked whole, or whose envelope entries
+         * conflict, could otherwise open an exchange in a legitimate message's
+         * place, or close one before the real answer arrives. */
+        if (continuity_envelope_usable(envelope)) {
+            message = pair_exchange(pinfo, envelope);
+        } else {
+            message = wmem_new0(wmem_file_scope(), companion_message);
+            message->unpaired = wmem_strdup_printf(
+                wmem_file_scope(),
+                "not paired and not recorded as an open exchange: %s",
+                continuity_envelope_unusable_reason(envelope));
+        }
         p_add_proto_data(wmem_file_scope(), pinfo, proto_companion, message_key, message);
     }
 

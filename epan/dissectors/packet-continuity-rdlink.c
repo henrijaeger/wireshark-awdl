@@ -63,6 +63,7 @@ static int ett_rdlink_tlv = -1;
 static expert_field ei_rdlink_tlv_truncated;
 static expert_field ei_rdlink_frames_missing;
 static expert_field ei_rdlink_handshake_unusable;
+static expert_field ei_rdlink_stream_refused;
 
 /* The frame header is four bytes, always. */
 #define RDLINK_HEADER_LEN 4
@@ -123,11 +124,14 @@ typedef struct {
 
 typedef struct {
     const char *stream_id;
+    uint32_t type;      /* 2, a TCP stream sub-connection; 3, UDP media */
     uint32_t port;
     uint32_t direction;
     const char *announced;
     address control;
 } rdlink_pending_stream;
+
+static dissector_handle_t rdlink_handle;
 
 /* What was worked out about one protected frame, kept so that every later
  * visit to it reports what the first visit found. */
@@ -698,14 +702,114 @@ static const char *content_member(const continuity_envelope *envelope, const cha
     return content_member_typed(envelope, key, false);
 }
 
-/* Media negotiation, on the first pass: a `_streamStart` request for a UDP
- * media stream (`_streamType` 3) is remembered with the port it names, and
- * the response from the other end under the same exchange id supplies the
- * second port. Values are as the object decode rendered them. */
-static void rdlink_track_stream(packet_info *pinfo, const continuity_envelope *envelope,
-                                const char *name, uint32_t direction)
+/* How many direct members of `_c` carry this key. */
+static unsigned content_member_count(const continuity_envelope *envelope, const char *key)
 {
-    if (PINFO_FD_VISITED(pinfo) || !envelope->has_xid || name == NULL) {
+    unsigned count = 0;
+    for (unsigned m = 0; m < envelope->member_count; m++) {
+        if (envelope->members[m].in_content && !envelope->members[m].nested &&
+            strcmp(envelope->members[m].key, key) == 0) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/* Why a `_streamStart` request or response for a UDP media stream is not taken
+ * as (half of) a negotiation, or NULL when it is. A negotiation outlives its
+ * frame -- it decides which later packets are whose -- so it is made only from
+ * a message walked whole, whose envelope does not conflict, and whose stream
+ * entries each appear once with the type they must have; where two values
+ * disagree, which the sender meant is not knowable. */
+static const char *stream_refusal(const continuity_envelope *envelope, bool request)
+{
+    if (!continuity_envelope_usable(envelope)) {
+        return continuity_envelope_unusable_reason(envelope);
+    }
+    if (envelope->member_count >= CONTINUITY_ENVELOPE_MEMBERS) {
+        return "the message has more members than are kept, so a repeated stream entry "
+               "could go unseen";
+    }
+    static const struct {
+        const char *key;
+        const char *repeated;
+    } once[] = {
+        { "_streamType", "_c carries _streamType more than once" },
+        { "_streamPort", "_c carries _streamPort more than once" },
+        { "_streamID", "_c carries _streamID more than once" },
+        { "_streamAddr", "_c carries _streamAddr more than once" },
+    };
+    for (unsigned i = 0; i < array_length(once); i++) {
+        if (content_member_count(envelope, once[i].key) > 1) {
+            return once[i].repeated;
+        }
+    }
+    if (content_member_count(envelope, "_streamPort") == 1 &&
+        content_member_typed(envelope, "_streamPort", true) == NULL) {
+        return "_streamPort is not an integer";
+    }
+    if (request && content_member_count(envelope, "_streamType") == 1 &&
+        content_member_typed(envelope, "_streamType", true) == NULL) {
+        return "_streamType is not an integer";
+    }
+    return NULL;
+}
+
+/* A TCP stream sub-connection's negotiation completed on this frame: the
+ * requester will connect to the answerer's `_streamPort`. Such a connection has
+ * no handshake of its own, and its first frame can run to several kilobytes --
+ * Universal Control's do -- so neither of the first-segment tests recognises
+ * it. It is expected here instead: one connection from the requester's address
+ * to that port, from this frame on, read as RDLink. Without the frame no
+ * connection is claimed this way, so unrelated traffic on the port is not. */
+static void rdlink_stream_expected(packet_info *pinfo, const address *requester, uint32_t port)
+{
+    if (rdlink_handle == NULL || port == 0 || port > 65535) {
+        return;
+    }
+    conversation_t *conversation = conversation_new(pinfo->num, &pinfo->src, requester,
+                                                    CONVERSATION_TCP, port, 0, NO_PORT2);
+    conversation_set_dissector_from_frame_number(conversation, pinfo->num, rdlink_handle);
+}
+
+/* Stream negotiation, on the first pass: a `_streamStart` request is
+ * remembered by its exchange id with what it names -- for a UDP media stream
+ * (`_streamType` 3) its port, for a TCP stream (`_streamType` 2) nothing more
+ * -- and the response from the other end under the same exchange id supplies
+ * the answerer's port: the media flow's second end, or the port a TCP stream
+ * connects to. Values are as the object decode rendered them. A message that
+ * stream_refusal() turns down changes nothing, and says why on every pass. */
+static void rdlink_track_stream(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+                                const continuity_envelope *envelope, const char *name,
+                                uint32_t direction)
+{
+    if (!envelope->has_xid || name == NULL) {
+        return;
+    }
+    bool is_request = envelope->has_event && strcmp(name, "_streamStart") == 0;
+    bool response = strcmp(name, "_streamStart response") == 0;
+    if (!is_request && !response) {
+        return;
+    }
+    uint32_t type = 0;
+    if (is_request) {
+        const char *type_text = content_member_typed(envelope, "_streamType", true);
+        if (content_member_count(envelope, "_streamType") == 1 && type_text != NULL) {
+            if (strcmp(type_text, "2") != 0 && strcmp(type_text, "3") != 0) {
+                return; /* a stream of another kind; nothing here negotiates it */
+            }
+            type = type_text[0] == '2' ? 2 : 3;
+        }
+    }
+    const char *refused = stream_refusal(envelope, is_request);
+    if (refused != NULL) {
+        proto_tree_add_expert_format(tree, pinfo, &ei_rdlink_stream_refused, tvb, 0, 0,
+                                     "This %s is not taken as part of a stream negotiation: %s",
+                                     is_request ? "_streamStart" : "_streamStart response",
+                                     refused);
+        return;
+    }
+    if (PINFO_FD_VISITED(pinfo)) {
         return;
     }
     conversation_t *conversation = find_or_create_conversation(pinfo);
@@ -721,19 +825,17 @@ static void rdlink_track_stream(packet_info *pinfo, const continuity_envelope *e
     }
     const char *port_text = content_member_typed(envelope, "_streamPort", true);
     uint32_t port = 0;
-    if (port_text == NULL || !ws_strtou32(port_text, NULL, &port)) {
-        return;
-    }
+    bool has_port = port_text != NULL && ws_strtou32(port_text, NULL, &port);
 
-    if (envelope->has_event && strcmp(name, "_streamStart") == 0) {
-        const char *type = content_member_typed(envelope, "_streamType", true);
-        if (type == NULL || strcmp(type, "3") != 0) {
+    if (is_request) {
+        if (type == 0 || (type == 3 && !has_port)) {
             return;
         }
         rdlink_pending_stream *pending = wmem_new0(wmem_file_scope(), rdlink_pending_stream);
         const char *id = content_member(envelope, "_streamID");
         const char *announced = content_member(envelope, "_streamAddr");
         pending->stream_id = id != NULL ? wmem_strdup(wmem_file_scope(), id) : NULL;
+        pending->type = type;
         pending->port = port;
         pending->direction = direction;
         pending->announced =
@@ -742,18 +844,23 @@ static void rdlink_track_stream(packet_info *pinfo, const continuity_envelope *e
         uint64_t *key = wmem_new(wmem_file_scope(), uint64_t);
         *key = envelope->xid;
         wmem_map_insert(state->pending_streams, key, pending);
-    } else if (strcmp(name, "_streamStart response") == 0) {
+    } else {
         uint64_t key = envelope->xid;
         rdlink_pending_stream *pending =
             (rdlink_pending_stream *)wmem_map_lookup(state->pending_streams, &key);
-        if (pending != NULL && pending->direction != direction) {
+        if (pending == NULL || pending->direction == direction || !has_port) {
+            return;
+        }
+        if (pending->type == 3) {
             continuity_media_end request = { pending->port, pending->announced,
                                              &pending->control };
             continuity_media_end answer = { port, content_member(envelope, "_streamAddr"),
                                             &pinfo->src };
             continuity_media_negotiated(pinfo, pending->stream_id, &request, &answer);
-            wmem_map_remove(state->pending_streams, &key);
+        } else {
+            rdlink_stream_expected(pinfo, &pending->control, port);
         }
+        wmem_map_remove(state->pending_streams, &key);
     }
 }
 
@@ -928,7 +1035,7 @@ static int dissect_rdlink_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
                                               (int)frame->plaintext_len, &envelope);
             const char *name = continuity_companion_report(plain, pinfo, rdlink_tree, &envelope,
                                                            message_key);
-            rdlink_track_stream(pinfo, &envelope, name, dir);
+            rdlink_track_stream(plain, pinfo, rdlink_tree, &envelope, name, dir);
 
             /* What was said. A response is named by the request it answers,
              * and looked up in the key table under that request's event. */
@@ -1128,6 +1235,9 @@ void proto_register_continuity_rdlink(void)
         { &ei_rdlink_frames_missing,
           { "continuity.rdlink.frames_missing", PI_SEQUENCE, PI_NOTE,
             "Protected frames of this direction are missing from the capture", EXPFILL } },
+        { &ei_rdlink_stream_refused,
+          { "continuity.rdlink.stream_refused", PI_MALFORMED, PI_WARN,
+            "This stream negotiation message is not acted on", EXPFILL } },
         { &ei_rdlink_handshake_unusable,
           { "continuity.rdlink.handshake_unusable", PI_MALFORMED, PI_WARN,
             "This PubKey message is not a well-formed first handshake message, so it names "
@@ -1142,7 +1252,7 @@ void proto_register_continuity_rdlink(void)
     expert_module_t *expert = expert_register_protocol(proto_rdlink);
     expert_register_field_array(expert, ei, array_length(ei));
 
-    register_dissector("continuity.rdlink", dissect_rdlink, proto_rdlink);
+    rdlink_handle = register_dissector("continuity.rdlink", dissect_rdlink, proto_rdlink);
 }
 
 void proto_reg_handoff_continuity_rdlink(void)

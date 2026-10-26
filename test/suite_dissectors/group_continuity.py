@@ -219,6 +219,32 @@ def shared_keylog(result_file):
     return keylog(result_file, ['RDLINK_SHARED %s %s' % (SESSION, SHARED_SECRET.hex())])
 
 
+def checked_run(command, env, artifact, timeout=120, **kwargs):
+    '''Run a command with a bounded time. On a non-zero exit or a timeout its
+    complete stdout and stderr are written beside `artifact` (the test's
+    capture, in its result directory) and named in the failure, which shows
+    only their ends.'''
+    def keep(stdout, stderr, why):
+        out_path, err_path = artifact + '.stdout.txt', artifact + '.stderr.txt'
+        for path, data in ((out_path, stdout), (err_path, stderr)):
+            if isinstance(data, bytes):
+                data = data.decode('utf-8', 'replace')
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(data or '')
+        return ('%s: %s\nfull stdout: %s\nfull stderr: %s\nstdout ends:\n%s\nstderr ends:\n%s'
+                % (' '.join(str(c) for c in command), why, out_path, err_path,
+                   (stdout or '')[-1500:], (stderr or '')[-1500:]))
+    try:
+        completed = subprocess.run(command, capture_output=True, encoding='utf-8', env=env,
+                                   timeout=timeout, **kwargs)
+    except subprocess.TimeoutExpired as expired:
+        raise AssertionError(keep(expired.stdout, expired.stderr,
+                                  'timed out after %d s' % timeout)) from None
+    assert completed.returncode == 0, keep(completed.stdout, completed.stderr,
+                                           'exited %d' % completed.returncode)
+    return completed
+
+
 def fields(cmd_tshark, capture, env, names, prefs=(), two_pass=True):
     command = [cmd_tshark, '-r', capture, '-T', 'fields', '-E', 'occurrence=a',
                '-E', 'aggregator=|']
@@ -228,11 +254,7 @@ def fields(cmd_tshark, capture, env, names, prefs=(), two_pass=True):
         command += ['-o', pref]
     for name in names:
         command += ['-e', name]
-    completed = subprocess.run(command, capture_output=True, encoding='utf-8', env=env,
-                               timeout=120)
-    assert completed.returncode == 0, (
-        'tshark exited %d\nstdout:\n%s\nstderr:\n%s'
-        % (completed.returncode, completed.stdout[-4000:], completed.stderr[-4000:]))
+    completed = checked_run(command, env, capture)
     return [line.split('\t') for line in completed.stdout.splitlines()]
 
 
@@ -316,7 +338,7 @@ class TestCoreCapture:
         return fields(cmd_tshark, path, cc_env, self.names)
 
     @pytest.mark.parametrize('text,shown', [
-        (b'\n\x00', ''), (b'hello\n\x00', 'hello'), (b'hello\x00', 'hello')])
+        (b'\n\x00', ''), (b'hello\n\x00', 'hello'), (b'hello\x00', 'hello')], ids=['empty-text', 'text-newline-nul', 'text-nul'])
     def test_terminated_text(self, cmd_tshark, result_file, cc_env, text, shown):
         (row,) = self.dissect(cmd_tshark, result_file, cc_env, [cc_record(5, cc_awdl_text(text))])
         assert not self.raised(row)
@@ -474,7 +496,7 @@ class TestOpack:
         (o_dict((o_str('a'), b'\xdf' + o_int(0))), 'the array has no terminator before the body ends'),
         (o_dict((o_str('a'), b'\xfe')), 'an unrecognised marker'),
         (o_dict((o_str('a'), b'\xa5')), 'unresolvable reference (index 5, table size 1)'),
-    ])
+    ], ids=['dict-short', 'array-short', 'key-without-value', 'endless-dict-unterminated', 'endless-array-unterminated', 'unknown-marker', 'unresolvable-reference'])
     def test_malformed_structure_is_diagnosed(self, cmd_tshark, result_file, test_env, body,
                                               message):
         _, experts, _ = self.walk(cmd_tshark, result_file, test_env, body)
@@ -538,7 +560,7 @@ class TestContinuityRDLink:
         assert [set(row[1].split('|')) for row in rows] == [{SESSION}] * 3
 
     @pytest.mark.parametrize('m1', [pairverify_m1(pd_marker=0x92),
-                                    pairverify_m1(extra_entry=True)])
+                                    pairverify_m1(extra_entry=True)], ids=['pd-length-0x92', 'extra-entry'])
     def test_equivalent_handshake_encodings(self, cmd_tshark, result_file, test_env, m1):
         path = capture_of(result_file, 'm1.pcap', [Connection().frame(True, m1)])
         (row,) = fields(cmd_tshark, path, test_env, self.names)
@@ -548,7 +570,7 @@ class TestContinuityRDLink:
         (pairverify_m1(state=2), 'the State element is not 1'),
         (pairverify_m1(keys=2), 'exactly one 32-byte public key'),
         (pairverify_m1(overrun=True), 'disagrees with its own lengths'),
-    ])
+    ], ids=['state-2', 'two-keys', 'tlv-overrun'])
     def test_malformed_handshake_names_no_session(self, cmd_tshark, result_file, test_env, m1,
                                                   message):
         path = capture_of(result_file, 'm1.pcap', [Connection().frame(True, m1)])
@@ -567,7 +589,7 @@ class TestContinuityRDLink:
         b'GET / HTTP/1.1\r\nHost: x\r\n\r\n',
         b'\x05\x00\x00\x30' + b'\x00' * 8,   # a known type whose length does not fit
         b'\x05\x00\x00\x06\xe1\x43_pd',    # the handshake prefix, its body cut short
-    ])
+    ], ids=['http', 'known-type-bad-length', 'handshake-prefix-cut-short'])
     def test_unrelated_tcp_is_not_claimed(self, cmd_tshark, result_file, test_env, payload):
         path = capture_of(result_file, 'tcp.pcap', [Connection().frame(True, payload)])
         (row,) = fields(cmd_tshark, path, test_env, ('frame.protocols',))
@@ -759,7 +781,7 @@ class TestContinuityExchanges:
         (EVENT_IN_ARRAY, "the envelope's _i is an array, not a string"),
         (WRONG_TYPES, "the envelope's _t is a string, not an integer"),
         (WRONG_TYPES, "the envelope's _x is a string, not an integer"),
-    ])
+    ], ids=['event-in-array', 'type-is-string', 'xid-is-string'])
     def test_envelope_entries_of_the_wrong_type(self, cmd_tshark, result_file, test_env, body,
                                                 message):
         conn = Connection()
@@ -980,12 +1002,7 @@ class TestSealing:
 
 def run_tshark(cmd_tshark, capture, env, args, timeout=120):
     '''Run tshark with a bounded time and keep its output for the failure report.'''
-    completed = subprocess.run([cmd_tshark] + args + ['-r', capture], capture_output=True,
-                               encoding='utf-8', env=env, timeout=timeout)
-    assert completed.returncode == 0, (
-        'tshark exited %d\nstdout:\n%s\nstderr:\n%s'
-        % (completed.returncode, completed.stdout[-4000:], completed.stderr[-4000:]))
-    return completed.stdout
+    return checked_run([cmd_tshark] + args + ['-r', capture], env, capture, timeout).stdout
 
 
 # --- Media flow identity -----------------------------------------------------
@@ -1160,7 +1177,7 @@ class TestMediaFlows:
         b'\x32' + (70000).to_bytes(4, 'little'),   # out of range
         o_int(0),                                  # zero
         o_str('40000'),                            # a string, not an integer
-    ])
+    ], ids=['port-out-of-range', 'port-zero', 'port-as-string'])
     def test_an_invalid_port_negotiates_nothing(self, cmd_tshark, result_file, test_env,
                                                 port_encoding):
         ends = Endpoints()
@@ -1188,20 +1205,32 @@ class TestMediaFlows:
         frames.append(self.video_packet(phone_addr='fd00::c', mac_addr='fd00::d', seq=2))  # 7
         frames.append(self.video_packet(seq=3))                                  # 8
         path = capture_of(result_file, 'revisits.pcap', frames)
-        requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'setconf',
-                     'params': {'name': 'continuity.keylog_file',
-                                'value': shared_keylog(result_file)}},
-                    {'jsonrpc': '2.0', 'id': 2, 'method': 'load', 'params': {'file': path}}]
         order = [8, 4, 7, 4, 8, 7, 4]
-        for i, frame in enumerate(order):
-            requests.append({'jsonrpc': '2.0', 'id': 10 + i, 'method': 'frame',
-                             'params': {'frame': frame, 'proto': True}})
-        completed = subprocess.run((cmd_sharkd, '-'), input='\n'.join(json.dumps(r) for r in requests),
-                                   capture_output=True, encoding='utf-8', env=base_env, timeout=120)
-        replies = {r['id']: json.dumps(r) for r in map(json.loads, completed.stdout.splitlines()) if 'id' in r}
+        replies = sharkd_frames(cmd_sharkd, base_env, path, shared_keylog(result_file), order)
         expected = {4: 'Negotiated in: 3', 7: 'Negotiated in: 6', 8: 'Negotiated in: 3'}
-        for i, frame in enumerate(order):
-            assert expected[frame] in replies[10 + i], (frame, replies[10 + i][:2000])
+        for frame, reply in zip(order, replies):
+            assert expected[frame] in reply, (frame, reply[:2000])
+
+
+def sharkd_frames(cmd_sharkd, env, path, keylog_path, order, prefs=()):
+    '''Dissect the frames in `order`, one request each, in a single sharkd
+    session -- revisits in an arbitrary order after one load. Returns each
+    frame's reply as JSON text, in the order asked.'''
+    requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'setconf',
+                 'params': {'name': 'continuity.keylog_file', 'value': keylog_path}}]
+    for i, pref in enumerate(prefs):
+        name, value = pref.split(':', 1)
+        requests.append({'jsonrpc': '2.0', 'id': 2 + i, 'method': 'setconf',
+                         'params': {'name': name, 'value': value}})
+    requests.append({'jsonrpc': '2.0', 'id': 9, 'method': 'load', 'params': {'file': path}})
+    for i, frame in enumerate(order):
+        requests.append({'jsonrpc': '2.0', 'id': 10 + i, 'method': 'frame',
+                         'params': {'frame': frame, 'proto': True}})
+    completed = checked_run((cmd_sharkd, '-'), env, path,
+                            input='\n'.join(json.dumps(r) for r in requests))
+    replies = {r['id']: json.dumps(r) for r in map(json.loads, completed.stdout.splitlines())
+               if 'id' in r}
+    return [replies[10 + i] for i in range(len(order))]
 
 
 # --- RTP/RTCP and the clock rates ------------------------------------------
@@ -1252,7 +1281,7 @@ class TestMediaTiming:
         (VIDEO, 100, 800, 1 / 30),          # 30 frames a second
         (DESKCAM, 100, 400, 1 / 60),        # 60 frames a second
         (DISPLAY, 100, 400, 1 / 60),
-    ])
+    ], ids=['camera-video-30fps', 'deskcam-60fps', 'display-60fps'])
     def test_the_bound_clock_rate(self, cmd_tshark, result_file, test_env, stream_id,
                                   payload_type, ticks, interval):
         # Timestamps that advance exactly in step with arrival at the bound
@@ -1323,7 +1352,7 @@ class TestMediaTiming:
         assert rows[3] == [VIDEO, '201', '']
         assert rows[4] == [VIDEO, '', '100']
 
-    @pytest.mark.parametrize('payload', [b'\x80', b'\x80\x64\x00', b'\x40' + b'\x00' * 15])
+    @pytest.mark.parametrize('payload', [b'\x80', b'\x80\x64\x00', b'\x40' + b'\x00' * 15], ids=['one-byte', 'three-bytes', 'rtp-version-1'])
     def test_short_or_other_version_packets(self, cmd_tshark, result_file, test_env, payload):
         ends = Endpoints()
         frames = [ends.tcp(True, pairverify_m1())]
@@ -1376,7 +1405,7 @@ class TestHandshakeValidity:
         m1_body((o_str('x'), o_int(1)), (o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY, FLAGS)))),
         m1_body((o_str('_pd'), o_bytes(tlv8(PUBLIC_KEY, STATE_1)))),
         m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY, FLAGS))), dict_marker=0xef),
-    ])
+    ], ids=['pd-0x91', 'pd-0x92', 'pd-after-other-key', 'key-before-state', 'endless-dict'])
     def test_equivalent_valid_handshakes(self, cmd_tshark, result_file, test_env, m1):
         rows = self.session_of(cmd_tshark, result_file, test_env, m1)
         assert rows[0][0] == SESSION
@@ -1414,7 +1443,7 @@ class TestHandshakeValidity:
         (m1_body((o_str('_pd'), o_bytes(tlv8(STATE_1, PUBLIC_KEY))),
                  (o_str('x'), b'\xdf' + b'\x01' * 16384 + b'\x03')),
          'the object encoding around _pd is incomplete or malformed'),
-    ])
+    ], ids=['dict-declares-two-holds-one', 'conflicting-state', 'duplicate-state', 'no-state', 'no-public-key', 'two-public-keys', 'short-public-key', 'tlv-header-truncated', 'tlv-value-truncated', 'pd-not-bytes', 'duplicate-pd', 'trailing-byte', 'value-limit-stop-after-pd'])
     def test_malformed_handshakes_name_no_session(self, cmd_tshark, result_file, test_env, m1,
                                                   reason):
         rows = self.session_of(cmd_tshark, result_file, test_env, m1)
@@ -1651,8 +1680,12 @@ class TestTransport:
 
     @pytest.mark.parametrize('pd_marker', [0x91, 0x92])
     @pytest.mark.parametrize('first_cut,named', [
-        (9, True),     # header and the "_pd" key: recognised from the first segment
-        (6, False),    # less than that: the stream is not recognised (documented)
+        # Header and the "_pd" key: recognised from the first segment.
+        pytest.param(9, True, id='cut-at-9-recognised'),
+        # LIMITATION, asserted as such: a first segment shorter than that is
+        # not recognised, and the connection stays plain TCP until a later
+        # segment is exactly tiled (see doc/README.continuity).
+        pytest.param(6, False, id='LIMITATION-cut-at-6-not-recognised'),
     ])
     def test_a_fragmented_first_handshake_message(self, cmd_tshark, result_file, test_env,
                                                   first_cut, named, pd_marker):
@@ -1670,7 +1703,8 @@ class TestTransport:
                         [conn.frame(True, m1), conn.frame(True, REQUESTS[0])])
         assert rows[0][5] == SESSION and rows[1][4] == 'True'
 
-    def test_a_reordered_and_fragmented_first_message(self, cmd_tshark, result_file, test_env):
+    def test_limitation_a_reordered_and_fragmented_first_message(self, cmd_tshark, result_file,
+                                                                 test_env):
         # Neither the "_pd" prefix nor exact tiling is visible in the first
         # segment, so the handshake is not recognised (documented limitation).
         # The next whole frame is still recognised by exact tiling, and says
@@ -1745,7 +1779,7 @@ class TestSidecar:
         # Key 1 without the first object before it, and key 1 holding no bytes.
         o_dict((o_int(1), o_bytes(BODY)), (o_int(0), o_bytes(HEADER))),
         o_dict((o_int(0), o_bytes(HEADER)), (o_int(1), o_str('vdisp'))),
-    ])
+    ], ids=['body-before-header', 'body-not-bytes'])
     def test_other_shapes_have_no_second_object(self, cmd_tshark, result_file, test_env,
                                                 content):
         row = self.body(cmd_tshark, result_file, test_env, content)
@@ -1789,7 +1823,7 @@ class TestSidecar:
         b'\xe3' + o_int(5) + o_str('com.apple.sidecar.capture'),  # truncated dictionary
         b'\xd1' + o_str('com.apple.sidecar.capture'),          # an array, not a dictionary
         o_dict((o_int(5), o_str('com.apple.sidecar.capture'))) + b'\x01',  # trailing byte
-    ])
+    ], ids=['empty', 'dict-short', 'array-not-dict', 'trailing-byte'])
     def test_malformed_or_other_nested_objects_name_nothing(self, cmd_tshark, result_file,
                                                             test_env, inner):
         row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(inner))
@@ -1798,7 +1832,500 @@ class TestSidecar:
     @pytest.mark.parametrize('outer', [
         o_bytes(o_dict((o_int(5), o_str('com.apple.sidecar.capture')))),     # _c is the bytes
         o_dict((o_str('a'), o_bytes(o_dict((o_int(5), o_str('com.apple.sidecar.capture')))))),
-    ])
+    ], ids=['content-is-bytes', 'nested-under-string-key'])
     def test_other_content_shapes_name_nothing(self, cmd_tshark, result_file, test_env, outer):
         row = self.dissect(cmd_tshark, result_file, test_env, sidecar_message(None, outer=outer))
         assert row[0] == '' and row[4] == ''
+
+
+# --- Test identifiers ------------------------------------------------------------
+
+class TestSuiteHygiene:
+    def test_collected_ids_are_bounded(self, request):
+        # pytest puts a test's id into PYTEST_CURRENT_TEST, and Windows refuses
+        # an environment value over 32,767 characters; a binary fixture spelled
+        # out in its id once exceeded that. Every case here has a short id.
+        ids = [item.nodeid for item in request.session.items
+               if item.nodeid.startswith(request.node.nodeid.split('::')[0])]
+        assert ids
+        too_long = [i[:120] for i in ids if len(i) > 200]
+        unreadable = [i[:120] for i in ids if not i.isascii() or '\\x' in i]
+        assert not too_long and not unreadable, (too_long, unreadable)
+        assert len(ids) == len(set(ids))
+
+
+# --- Control messages that must not change state -------------------------------
+
+def declares_one_more(plaintext):
+    '''The same object with its outer dictionary declaring one more entry than
+    it holds (a counted dictionary marker, 0xe1..0xee).'''
+    assert 0xe0 < plaintext[0] < 0xef
+    return bytes([plaintext[0] + 1]) + plaintext[1:]
+
+
+def stream_start_with(xid, content_pairs, envelope_pairs=None):
+    pairs = envelope_pairs if envelope_pairs is not None else [
+        (o_str('_i'), o_str('_streamStart')), (o_str('_t'), o_int(2)), (o_str('_x'), o_uint(xid))]
+    return o_dict(*(pairs + [(o_str('_c'), o_dict(*content_pairs))]))
+
+
+def video_request_pairs(port=40000, addr=PHONE_STREAM_ADDR):
+    return [(o_str('_streamID'), o_str(VIDEO)), (o_str('_streamType'), o_int(3)),
+            (o_str('_streamAddr'), o_str(addr)), (o_str('_streamPort'), o_uint(port))]
+
+
+LIMIT_TAIL = (o_str('pad'), b'\xdf' + b'\x01' * 16384 + b'\x03')
+
+
+# Requests the decoder must show but not act on. Each keeps the stream entries
+# a negotiation needs, so only the defect named in its id makes it unusable.
+UNUSABLE_REQUESTS = [
+    pytest.param(declares_one_more(stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR)),
+                 'the dictionary declares 5 entries', False, id='declares-five-holds-four'),
+    pytest.param(stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR) + b'\x01',
+                 'bytes follow the object', False, id='trailing-byte'),
+    pytest.param(o_dict((o_str('_i'), o_str('_streamStart')), (o_str('_t'), o_int(2)),
+                        (o_str('_x'), o_uint(5)),
+                        (o_str('_c'), b'\xe5' + b''.join(k + v for k, v in video_request_pairs()))),
+                 'the dictionary declares 5 entries and the body ends after 4', False,
+                 id='nested-dict-short'),
+    pytest.param(stream_start_with(5, video_request_pairs() + [LIMIT_TAIL]),
+                 'more than 16384 values', False, id='value-limit-after-stream-fields'),
+    pytest.param(stream_start_with(5, video_request_pairs(), [
+        (o_str('_i'), o_str('_streamStart')), (o_str('_t'), o_str('2')), (o_str('_x'), o_uint(5))]),
+                 "the envelope's _t is a string", False, id='kind-is-string'),
+    pytest.param(stream_start_with(5, video_request_pairs(), [
+        (o_str('_i'), o_str('_streamStart')), (o_str('_t'), o_int(2)), (o_str('_x'), o_uint(5)),
+        (o_str('_x'), o_uint(9))]), 'carries _x more than once', False, id='duplicate-xid'),
+    pytest.param(stream_start_with(5, video_request_pairs() + [(o_str('_streamPort'), o_uint(40004))]),
+                 '_c carries _streamPort more than once', True, id='duplicate-stream-port'),
+    pytest.param(stream_start_with(5, [(o_str('_streamID'), o_str(VIDEO)),
+                                       (o_str('_streamType'), o_str('3')),
+                                       (o_str('_streamAddr'), o_str(PHONE_STREAM_ADDR)),
+                                       (o_str('_streamPort'), o_uint(40000))]),
+                 '_streamType is not an integer', True, id='stream-type-string'),
+]
+
+
+def answer_with(xid, content_pairs, envelope_pairs=None):
+    pairs = envelope_pairs if envelope_pairs is not None else [
+        (o_str('_t'), o_int(3)), (o_str('_x'), o_uint(xid))]
+    return o_dict(*(pairs + [(o_str('_c'), o_dict(*content_pairs))]))
+
+
+ANSWER_PAIRS = [(o_str('_streamAddr'), o_str(MAC_STREAM_ADDR)), (o_str('_streamPort'), o_uint(40002))]
+
+UNUSABLE_ANSWERS = [
+    pytest.param(declares_one_more(stream_answer(5, 40002, MAC_STREAM_ADDR)),
+                 'the dictionary declares 4 entries', id='declares-four-holds-three'),
+    pytest.param(stream_answer(5, 40002, MAC_STREAM_ADDR) + b'\x01', 'bytes follow the object',
+                 id='trailing-byte'),
+    pytest.param(answer_with(5, ANSWER_PAIRS + [LIMIT_TAIL]), 'more than 16384 values',
+                 id='value-limit-after-stream-fields'),
+    pytest.param(answer_with(5, ANSWER_PAIRS, [(o_str('_t'), o_int(3)), (o_str('_x'), o_uint(5)),
+                                               (o_str('_t'), o_int(2))]),
+                 'carries _t more than once', id='duplicate-kind'),
+]
+
+
+class TestControlState:
+    names = ('frame.number', 'frame.protocols', 'continuity.media.negotiated_in',
+             'continuity.companion.answers', 'continuity.companion.answered_in',
+             'continuity.companion.unpaired', '_ws.expert.message', 'continuity.rdlink.read')
+
+    def rows(self, cmd_tshark, result_file, test_env, frames, two_pass=True):
+        path = capture_of(result_file, 'control-state.pcap', frames)
+        return {int(r[0]): r for r in fields(cmd_tshark, path, test_env, self.names,
+                                             keyed(result_file), two_pass)}
+
+    def media(self, ports=(40000, 40002), seq=1):
+        return udp_frame(addr6(PHONE_STREAM_ADDR), ports[0], addr6(MAC_STREAM_ADDR), ports[1],
+                         rtp_packet(100, seq, seq * 800))
+
+    def later_valid_negotiation(self, ends, counters):
+        # A different exchange and different ports, right after the rejected
+        # input: it must negotiate as if nothing had happened before it.
+        return negotiate(ends, counters[0], counters[1],
+                         stream_start(7, VIDEO, 41000, PHONE_STREAM_ADDR),
+                         stream_answer(7, 41002, MAC_STREAM_ADDR)) + [self.media((41000, 41002))]
+
+    @pytest.mark.parametrize('request_body,reason,content_level', UNUSABLE_REQUESTS)
+    def test_an_unusable_request_negotiates_nothing(self, cmd_tshark, result_file, test_env,
+                                                    request_body, reason, content_level):
+        # Envelope-level defects (an incomplete object, a conflicting or
+        # mistyped _x/_t/_i/_c) leave the message out of exchange pairing
+        # altogether. Content-level defects (a stream entry repeated or of the
+        # wrong type inside an otherwise sound envelope) still pair -- the
+        # correlation is sound -- but negotiate nothing.
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1()),                                    # 1
+                  *negotiate(ends, 0, 0, request_body, stream_answer(5, 40002, MAC_STREAM_ADDR)),  # 2, 3
+                  self.media(),                                                       # 4
+                  *self.later_valid_negotiation(ends, (1, 1))]                        # 5, 6, 7
+        for two_pass in (False, True):
+            rows = self.rows(cmd_tshark, result_file, test_env, frames, two_pass)
+            # The effects first: no flow, and the exchange handled as defined.
+            assert 'continuity.media' not in rows[4][1], ('negotiated anyway', rows[4])
+            if content_level:
+                assert rows[3][3] == '2'
+            else:
+                assert rows[3][3] == '', 'the answer must not pair with the rejected request'
+            assert rows[7][2] == '6', 'a later valid negotiation is unaffected'
+            # Then that it is still shown, and says why.
+            assert rows[2][7] == 'True', 'the request decrypted and is shown'
+            assert reason in rows[2][6], rows[2][6]
+            assert 'This _streamStart is not taken as part of a stream negotiation' in rows[2][6]
+            if not content_level:
+                assert 'not paired and not recorded' in rows[2][5]
+
+    @pytest.mark.parametrize('answer_body,reason', UNUSABLE_ANSWERS)
+    def test_an_unusable_answer_neither_completes_nor_consumes(self, cmd_tshark, result_file,
+                                                               test_env, answer_body, reason):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1()),                                    # 1
+                  *negotiate(ends, 0, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR),
+                             answer_body),                                            # 2, 3
+                  self.media(seq=1),                                                  # 4
+                  ends.tcp(True, seal(True, 1, stream_answer(5, 40002, MAC_STREAM_ADDR))),  # 5
+                  self.media(seq=2),                                                  # 6
+                  *self.later_valid_negotiation(ends, (1, 2))]                        # 7, 8, 9
+        for two_pass in (False, True):
+            rows = self.rows(cmd_tshark, result_file, test_env, frames, two_pass)
+            assert 'continuity.media' not in rows[4][1], ('completed by frame 3', rows[4])
+            assert rows[3][3] == '', ('frame 3 consumed the exchange', rows[3])
+            assert rows[5][3] == '2', 'the open exchange is still answered by the valid answer'
+            assert rows[6][2] == '5'
+            assert rows[9][2] == '8'
+            assert reason in rows[3][5] + rows[3][6], rows[3]
+            assert 'not paired and not recorded' in rows[3][5]
+
+    def test_an_answer_with_conflicting_stream_entries(self, cmd_tshark, result_file, test_env):
+        # A sound envelope whose content repeats _streamPort: it is the
+        # exchange's answer, so it pairs and closes the exchange, but which port
+        # was meant is not knowable, so nothing is negotiated -- and a later
+        # second answer to the same exchange is not taken either.
+        ends = Endpoints()
+        conflicting = answer_with(5, ANSWER_PAIRS + [(o_str('_streamPort'), o_uint(40006))])
+        frames = [ends.tcp(True, pairverify_m1()),                                    # 1
+                  *negotiate(ends, 0, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR),
+                             conflicting),                                            # 2, 3
+                  self.media(seq=1),                                                  # 4
+                  udp_frame(addr6(PHONE_STREAM_ADDR), 40000, addr6(MAC_STREAM_ADDR), 40006,
+                            rtp_packet(100, 2, 1600)),                                # 5
+                  ends.tcp(True, seal(True, 1, stream_answer(5, 40002, MAC_STREAM_ADDR))),  # 6
+                  self.media(seq=3),                                                  # 7
+                  *self.later_valid_negotiation(ends, (1, 2))]                        # 8, 9, 10
+        rows = self.rows(cmd_tshark, result_file, test_env, frames)
+        assert all('continuity.media' not in rows[n][1] for n in (4, 5, 7)), \
+            [rows[n][1] for n in (4, 5, 7)]
+        assert rows[3][3] == '2' and rows[6][3] == ''
+        assert rows[10][2] == '9'
+        assert '_c carries _streamPort more than once' in rows[3][6]
+
+    def test_a_rejected_repeat_of_an_open_exchange_id_changes_nothing(self, cmd_tshark,
+                                                                      result_file, test_env):
+        # A malformed message reusing the open exchange's id from the same side
+        # would otherwise mark the exchange ambiguous and leave it unanswered.
+        ends = Endpoints()
+        bad = declares_one_more(stream_start(5, VIDEO, 40008, PHONE_STREAM_ADDR))
+        frames = [ends.tcp(True, pairverify_m1()),                                    # 1
+                  ends.tcp(False, seal(False, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR))),  # 2
+                  ends.tcp(False, seal(False, 1, bad)),                               # 3
+                  ends.tcp(True, seal(True, 0, stream_answer(5, 40002, MAC_STREAM_ADDR))),  # 4
+                  self.media()]                                                       # 5
+        rows = self.rows(cmd_tshark, result_file, test_env, frames)
+        assert rows[4][3] == '2' and rows[2][4] == '4'
+        assert rows[5][2] == '4'
+
+    def test_rejected_and_valid_messages_in_one_segment(self, cmd_tshark, result_file, test_env):
+        ends = Endpoints()
+        bad = declares_one_more(stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR))
+        frames = [ends.tcp(True, pairverify_m1()),                                    # 1
+                  ends.tcp(False, seal(False, 0, bad) +
+                           seal(False, 1, stream_start(6, VIDEO, 40010, PHONE_STREAM_ADDR))),  # 2
+                  ends.tcp(True, seal(True, 0, stream_answer(5, 40002, MAC_STREAM_ADDR)) +
+                           seal(True, 1, stream_answer(6, 40012, MAC_STREAM_ADDR))),  # 3
+                  self.media(),                                                       # 4
+                  self.media((40010, 40012))]                                         # 5
+        rows = self.rows(cmd_tshark, result_file, test_env, frames)
+        assert 'continuity.media' not in rows[4][1]
+        assert rows[5][2] == '3'
+
+    def test_a_rejected_answer_is_stable_across_revisits(self, cmd_sharkd, result_file,
+                                                         base_env):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1()),
+                  *negotiate(ends, 0, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR),
+                             declares_one_more(stream_answer(5, 40002, MAC_STREAM_ADDR))),
+                  self.media(seq=1),
+                  ends.tcp(True, seal(True, 1, stream_answer(5, 40002, MAC_STREAM_ADDR))),
+                  self.media(seq=2)]
+        path = capture_of(result_file, 'control-revisits.pcap', frames)
+        order = [6, 4, 3, 6, 4]
+        replies = sharkd_frames(cmd_sharkd, base_env, path, shared_keylog(result_file), order)
+        for frame, reply in zip(order, replies):
+            if frame == 6:
+                assert 'Negotiated in: 5' in reply
+            elif frame == 4:
+                assert 'Continuity Media' not in reply
+            else:
+                assert 'not paired and not recorded' in reply
+
+
+# --- Ambiguous media and RTP's payload mapping ---------------------------------
+
+def stream_names(output):
+    '''(source, destination, payload names) per line of `-z rtp,streams`.'''
+    streams = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) > 7 and parts[2].count(':') and parts[3].isdigit():
+            streams.append((parts[2], parts[4], line))
+    return streams
+
+
+class TestAmbiguousBindings:
+    names = ('frame.number', 'frame.protocols', 'continuity.media.ambiguous',
+             'continuity.media.payload_binding', 'continuity.media.negotiated_in',
+             'continuity.media.stream_id', 'rtp.p_type', 'rtp.setup-frame')
+
+    def negotiations(self, first, second):
+        ends = Endpoints()
+        return ends, [ends.tcp(True, pairverify_m1()),
+                      *negotiate(ends, 0, 0, stream_start(5, first, 40000, PHONE_STREAM_ADDR),
+                                 stream_answer(5, 40002, MAC_STREAM_ADDR)),
+                      *negotiate(ends, 1, 1, stream_start(6, second, 40000, PHONE_STREAM_ADDR),
+                                 stream_answer(6, 40002, MAC_STREAM_ADDR))]
+
+    def forward(self, payload):
+        return udp_frame(addr6(PHONE_STREAM_ADDR), 40000, addr6(MAC_STREAM_ADDR), 40002, payload)
+
+    def backward(self, payload):
+        return udp_frame(addr6(MAC_STREAM_ADDR), 40002, addr6(PHONE_STREAM_ADDR), 40000, payload,
+                         src_mac=INITIATOR[0], dst_mac=RESPONDER[0])
+
+    def dissect(self, cmd_tshark, result_file, test_env, frames, two_pass=True):
+        path = capture_of(result_file, 'ambiguous.pcap', frames)
+        rows = {int(r[0]): r for r in fields(cmd_tshark, path, test_env, self.names,
+                                             keyed(result_file), two_pass)}
+        return path, rows
+
+    @pytest.mark.parametrize('first,second,binding', [
+        pytest.param(VIDEO, MICROPHONE, 'none: the negotiations that fit bind it differently',
+                     id='video-vs-unknown'),
+        pytest.param(VIDEO, DESKCAM, 'payload type 100 at 24000 Hz, as every negotiation',
+                     id='same-binding-different-names'),
+        pytest.param(MICROPHONE, OTHER_STREAM, 'none: no negotiation that fits has an observed',
+                     id='unknown-vs-unknown'),
+    ])
+    def test_media_after_both_negotiations(self, cmd_tshark, result_file, test_env, first,
+                                           second, binding):
+        _, frames = self.negotiations(first, second)
+        frames += [self.forward(RTCP_RR),                                   # 6: RTCP first
+                   self.forward(rtp_packet(100, 1, 800)),                   # 7
+                   self.forward(rtp_packet(101, 2, 1600)),                  # 8
+                   self.backward(rtp_packet(101, 1, 800, ssrc=0x55667788))]  # 9
+        path, rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        for n in (6, 7, 8, 9):
+            assert 'rtpevent' not in rows[n][1], ('read as telephone events', n, rows[n][1])
+        assert rows[7][7] == rows[8][7] == '6', 'one RTP setup for the forward conversation'
+        for n in (6, 7, 8, 9):
+            assert rows[n][2].startswith('2 negotiations fit'), rows[n]
+            assert rows[n][5] == '' and rows[n][4] == '', 'no stream or negotiation is claimed'
+            assert rows[n][3].startswith(binding), rows[n][3]
+        names = run_tshark(cmd_tshark, path, test_env,
+                           ['-q', '-z', 'rtp,streams', '-o', keyed(result_file)[0]])
+        assert 'rtpevent' not in names
+        if binding.startswith('none'):
+            assert 'clock rate unknown' in names
+        else:
+            assert 'Continuity media (opaque payload)' in names
+
+    def test_a_second_negotiation_after_media_started(self, cmd_tshark, cmd_sharkd, result_file,
+                                                      test_env, base_env):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1()),                                    # 1
+                  *negotiate(ends, 0, 0, stream_start(5, VIDEO, 40000, PHONE_STREAM_ADDR),
+                             stream_answer(5, 40002, MAC_STREAM_ADDR)),               # 2, 3
+                  self.forward(rtp_packet(100, 1, 800)),                              # 4
+                  *negotiate(ends, 1, 1, stream_start(6, MICROPHONE, 40000, PHONE_STREAM_ADDR),
+                             stream_answer(6, 40002, MAC_STREAM_ADDR)),               # 5, 6
+                  self.forward(rtp_packet(100, 2, 1600)),                             # 7
+                  self.forward(rtp_packet(101, 3, 2400))]                             # 8
+        path, rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        _, one_pass = self.dissect(cmd_tshark, result_file, test_env, frames, two_pass=False)
+        assert rows == one_pass
+        assert rows[4][5] == VIDEO and rows[4][4] == '3' and rows[4][2] == ''
+        for n in (7, 8):
+            assert 'rtpevent' not in rows[n][1], ('read as telephone events', n, rows[n][1])
+            assert rows[n][7] == '7', ('not re-read opaque from the ambiguity', n, rows[n][7])
+        assert rows[4][3] == 'payload type 100 at 24000 Hz' and rows[4][7] == '4'
+        for n in (7, 8):
+            assert rows[n][2].startswith('2 negotiations fit')
+            assert rows[n][3].startswith('none: the negotiations that fit bind it differently')
+        replies = sharkd_frames(cmd_sharkd, base_env, path, shared_keylog(result_file),
+                                [8, 4, 7, 4])
+        assert 'Negotiated in: 3' in replies[1] and 'Negotiated in: 3' in replies[3]
+        assert 'Ambiguous' in replies[0] and 'Ambiguous' in replies[2]
+
+
+class TestAlternatePaths:
+    '''One negotiation allows each end its announced address and its control
+    address. RTP is set up per actual transport conversation, so each of them
+    needs its own setup, once.'''
+    names = ('frame.number', 'frame.protocols', 'continuity.media.stream_id',
+             'continuity.media.negotiated_in', 'rtp.setup-frame', 'rtp.p_type')
+
+    def session(self, stream_id):
+        ends = Endpoints()
+        return [ends.tcp(True, pairverify_m1()),
+                *negotiate(ends, 0, 0, stream_start(5, stream_id, 40000, PHONE_STREAM_ADDR),
+                           stream_answer(5, 40002, MAC_STREAM_ADDR))]
+
+    # The phone sends from its announced address; the Mac is reached at its
+    # announced address (path A) or at its control address (path B).
+    def to_a(self, payload):
+        return udp_frame(addr6(PHONE_STREAM_ADDR), 40000, addr6(MAC_STREAM_ADDR), 40002, payload)
+
+    def to_b(self, payload):
+        return udp_frame(addr6(PHONE_STREAM_ADDR), 40000, INITIATOR[1], 40002, payload)
+
+    def from_mac_to_a(self, payload):
+        return udp_frame(addr6(MAC_STREAM_ADDR), 40002, addr6(PHONE_STREAM_ADDR), 40000, payload,
+                         src_mac=INITIATOR[0], dst_mac=RESPONDER[0])
+
+    def from_mac_to_b(self, payload):
+        return udp_frame(addr6(MAC_STREAM_ADDR), 40002, RESPONDER[1], 40000, payload,
+                         src_mac=INITIATOR[0], dst_mac=RESPONDER[0])
+
+    def dissect(self, cmd_tshark, result_file, test_env, frames, two_pass=True):
+        path = capture_of(result_file, 'paths.pcap', frames)
+        rows = {int(r[0]): r for r in fields(cmd_tshark, path, test_env, self.names,
+                                             keyed(result_file), two_pass)}
+        return path, rows
+
+    def test_both_paths_and_back_with_a_bound_stream(self, cmd_tshark, result_file, test_env):
+        frames = self.session(VIDEO)
+        frames += [self.to_a(rtp_packet(100, 1, 400)),       # 4  path A
+                   self.to_b(rtp_packet(100, 1, 400)),       # 5  path B, first time
+                   self.to_a(rtp_packet(100, 2, 800)),       # 6  back to A
+                   self.to_b(rtp_packet(100, 2, 800)),       # 7
+                   self.to_a(rtp_packet(100, 3, 1200, ssrc=0x99)),  # 8  new SSRC on A
+                   self.to_a(rtp_packet(101, 4, 1600))]      # 9  a type not bound on A
+        path, rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        _, one_pass = self.dissect(cmd_tshark, result_file, test_env, frames, two_pass=False)
+        assert rows == one_pass
+        assert all(rows[n][2] == VIDEO and rows[n][3] == '3' for n in range(4, 10))
+        assert [rows[n][4] for n in (4, 6, 8, 9)] == ['4'] * 4, 'path A set up once'
+        assert [rows[n][4] for n in (5, 7)] == ['5'] * 2, 'path B set up once, on its own'
+        assert all('rtpevent' not in rows[n][1] for n in range(4, 10))
+        streams = run_tshark(cmd_tshark, path, test_env,
+                             ['-q', '-z', 'rtp,streams', '-o', keyed(result_file)[0]])
+        to_b = [line for line in streams.splitlines() if 'fe80::1 ' in line]
+        assert to_b and 'Continuity media (opaque payload)' in to_b[0], streams
+        assert 'clock rate unknown' in streams, 'the unbound type on A stays opaque'
+
+    def test_both_paths_with_an_unbound_stream_and_rtcp_first(self, cmd_tshark, result_file,
+                                                              test_env):
+        frames = self.session(MICROPHONE)
+        frames += [self.to_b(RTCP_RR),                       # 4  RTCP first on B
+                   self.to_b(rtp_packet(101, 1, 480)),       # 5
+                   self.to_a(rtp_packet(101, 1, 480)),       # 6
+                   self.from_mac_to_b(RTCP_RR),              # 7  the other direction, B
+                   self.from_mac_to_a(rtp_packet(101, 1, 480, ssrc=0x77)),  # 8
+                   self.to_b(rtp_packet(101, 2, 960))]       # 9
+        path, rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert all(rows[n][2] == MICROPHONE for n in range(4, 10))
+        assert all('rtpevent' not in rows[n][1] for n in range(4, 10)), \
+            [rows[n][1] for n in range(4, 10)]
+        assert rows[5][4] == rows[9][4] == '4', 'B set up once, at its RTCP'
+        assert rows[6][4] == '6' and rows[8][4] == '8'
+        streams = run_tshark(cmd_tshark, path, test_env,
+                             ['-q', '-z', 'rtp,streams', '-o', keyed(result_file)[0]])
+        assert 'rtpevent' not in streams and streams.count('clock rate unknown') >= 3, streams
+
+    def test_unrelated_addresses_on_the_same_ports(self, cmd_tshark, result_file, test_env):
+        frames = self.session(VIDEO)
+        frames += [self.to_a(rtp_packet(100, 1, 400)),
+                   udp_frame(addr6('fd00::77'), 40000, addr6(MAC_STREAM_ADDR), 40002,
+                             rtp_packet(100, 1, 400)),
+                   udp_frame(addr6(PHONE_STREAM_ADDR), 40000, addr6('fd00::78'), 40002,
+                             rtp_packet(100, 1, 400))]
+        _, rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        assert rows[4][2] == VIDEO
+        assert 'continuity' not in rows[5][1] and 'continuity' not in rows[6][1]
+
+
+# --- Stream sub-connections recognised from their negotiation -------------------
+
+def stream_request(xid, stream_id):
+    return envelope('_streamStart', 2, xid, o_dict((o_str('_streamID'), o_str(stream_id)),
+                                                   (o_str('_streamType'), o_int(2))))
+
+
+def big_frame(from_initiator=True):
+    # A first frame of several kilobytes, as Universal Control's streams send,
+    # sealed with the shared secret as a stream's pre-shared key would be.
+    return seal(from_initiator, 0, envelope('SYNC', 2, 1, o_dict((o_str('pad'), o_bytes(b'u' * 3000)))))
+
+
+class TestStreamRecognition:
+    names = ('frame.number', 'frame.protocols', 'continuity.rdlink.type', 'continuity.rdlink.read')
+
+    def control(self, xid=8, port=50300, with_negotiation=True):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1())]                                    # 1
+        if with_negotiation:
+            # The phone (the control connection's responder) asks for a TCP
+            # stream; the Mac answers with the port the phone connects to.
+            frames += negotiate(ends, 0, 0, stream_request(xid, 'SYNC:uc'),
+                                envelope(None, 3, xid, o_dict((o_str('_streamPort'), o_uint(port)))))
+        return frames                                                                  # 2, 3
+
+    def sub_connection(self, src=RESPONDER, port=50300, sport=61000, cut=(1000, 2000)):
+        # The phone connects to the Mac; the first frame arrives in three segments.
+        ends = Endpoints(initiator=src, responder=INITIATOR, ports=(sport, port))
+        payload = big_frame()
+        return [ends.tcp(True, payload[:cut[0]]), ends.tcp(True, payload[cut[0]:cut[1]]),
+                ends.tcp(True, payload[cut[1]:])]
+
+    def dissect(self, cmd_tshark, result_file, test_env, frames, two_pass=True):
+        path = capture_of(result_file, 'streams.pcap', frames)
+        log = keylog(result_file, ['RDLINK_SHARED %s %s' % (SESSION, SHARED_SECRET.hex()),
+                                   'RDLINK_SHARED %s %s' % ('0' * 64, SHARED_SECRET.hex())])
+        return {int(r[0]): r for r in fields(cmd_tshark, path, test_env, self.names,
+                                             ('continuity.keylog_file:' + log,), two_pass)}
+
+    def test_a_negotiated_stream_is_read_from_its_first_frame(self, cmd_tshark, result_file,
+                                                              test_env):
+        frames = self.control() + self.sub_connection()                               # 4, 5, 6
+        for two_pass in (False, True):
+            rows = self.dissect(cmd_tshark, result_file, test_env, frames, two_pass)
+            assert 'continuity.rdlink' in rows[6][1], rows[6]
+            assert rows[6][2] == '0x08' and rows[6][3] == 'True'
+
+    @pytest.mark.parametrize('case', ['no-negotiation', 'other-address', 'before-negotiation',
+                                      'second-connection'])
+    def test_unnegotiated_connections_are_not_claimed(self, cmd_tshark, result_file, test_env,
+                                                      case):
+        if case == 'no-negotiation':
+            frames = self.control(with_negotiation=False) + self.sub_connection()     # 2, 3, 4
+            check = [2, 3, 4]
+        elif case == 'other-address':
+            stranger = (bytes.fromhex('020000000009'),
+                        bytes.fromhex('fe800000000000000000000000000009'))
+            frames = self.control() + self.sub_connection(src=stranger)               # 4, 5, 6
+            check = [4, 5, 6]
+        elif case == 'before-negotiation':
+            # The whole connection precedes the answer that would expect it.
+            frames = self.sub_connection() + self.control()                           # 1-3, 4-6
+            check = [1, 2, 3]
+        else:
+            # One negotiation, one connection: a second connection to the same
+            # port is not taken on the strength of the same answer.
+            frames = (self.control() + self.sub_connection() +
+                      self.sub_connection(sport=61002))                               # 7, 8, 9
+            check = [7, 8, 9]
+        rows = self.dissect(cmd_tshark, result_file, test_env, frames)
+        for n in check:
+            assert 'continuity' not in rows[n][1], (n, rows[n][1])

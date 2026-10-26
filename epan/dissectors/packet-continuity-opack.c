@@ -229,6 +229,10 @@ typedef struct {
     /* Why the walk stopped or found the body malformed, when it did. */
     const char *problem;
 
+    /* The envelope entries seen so far at the top level, one bit each for
+     * _x, _t, _i and _c, so that a repeated one is noticed. */
+    unsigned envelope_seen;
+
     /* Filled for the outermost dictionary's entries, when it looks like the
      * companion link's request/response envelope. */
     continuity_envelope *envelope;
@@ -664,6 +668,33 @@ static void opack_envelope_mismatch(opack_walk *walk, proto_tree *tree, int star
                                  end - start,
                                  "the envelope's %s is %s, not %s, so it is not read as the "
                                  "envelope's", key, opack_kind_names[walk->kind], expected);
+    if (walk->envelope->conflict == NULL) {
+        walk->envelope->conflict =
+            wmem_strdup_printf(walk->pinfo->pool, "the envelope's %s is %s, not %s", key,
+                               opack_kind_names[walk->kind], expected);
+    }
+}
+
+/* Whether this top-level envelope entry is the first of its name. A repeat
+ * is reported, keeps the value already taken, and marks the envelope as
+ * conflicting: which of two values the sender meant is not knowable, so the
+ * message is shown but not acted on. */
+static bool opack_envelope_first(opack_walk *walk, proto_tree *tree, int start, int end,
+                                 const char *key, unsigned bit)
+{
+    if (!(walk->envelope_seen & bit)) {
+        walk->envelope_seen |= bit;
+        return true;
+    }
+    proto_tree_add_expert_format(tree, walk->pinfo, &ei_opack_envelope_type, walk->tvb, start,
+                                 end - start,
+                                 "the envelope carries %s more than once; the first is kept "
+                                 "and the message is not acted on", key);
+    if (walk->envelope->conflict == NULL) {
+        walk->envelope->conflict = wmem_strdup_printf(
+            walk->pinfo->pool, "the envelope carries %s more than once", key);
+    }
+    return false;
 }
 
 /* One value. Returns the offset just past it, or the end on a stop. */
@@ -1010,7 +1041,9 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
              * taken only when its value is of the envelope's type for it. */
             if (walk->envelope != NULL && depth == 0 && entry_key != NULL) {
                 if (strcmp(entry_key, "_x") == 0) {
-                    if (walk->kind == OPACK_KIND_INT) {
+                    if (!opack_envelope_first(walk, subtree, value_start, offset, "_x", 1)) {
+                        /* reported */
+                    } else if (walk->kind == OPACK_KIND_INT) {
                         walk->envelope->xid = (uint64_t)walk->last_int;
                         walk->envelope->has_xid = true;
                     } else {
@@ -1018,7 +1051,9 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
                                                 "an integer");
                     }
                 } else if (strcmp(entry_key, "_t") == 0) {
-                    if (walk->kind == OPACK_KIND_INT) {
+                    if (!opack_envelope_first(walk, subtree, value_start, offset, "_t", 2)) {
+                        /* reported */
+                    } else if (walk->kind == OPACK_KIND_INT) {
                         walk->envelope->type = walk->last_int;
                         walk->envelope->has_type = true;
                     } else {
@@ -1026,7 +1061,9 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
                                                 "an integer");
                     }
                 } else if (strcmp(entry_key, "_i") == 0) {
-                    if (walk->kind == OPACK_KIND_STRING && walk->last_string != NULL) {
+                    if (!opack_envelope_first(walk, subtree, value_start, offset, "_i", 4)) {
+                        /* reported */
+                    } else if (walk->kind == OPACK_KIND_STRING && walk->last_string != NULL) {
                         walk->envelope->event = wmem_strdup(walk->pinfo->pool, walk->last_string);
                         walk->envelope->has_event = true;
                     } else {
@@ -1044,8 +1081,10 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
                     /* The bounds of the content, not its contents: what is in
                      * there is the service's to say, and the transport should
                      * not need to know. */
-                    walk->envelope->content_offset = value_start;
-                    walk->envelope->content_length = offset - value_start;
+                    if (opack_envelope_first(walk, subtree, value_start, offset, "_c", 8)) {
+                        walk->envelope->content_offset = value_start;
+                        walk->envelope->content_length = offset - value_start;
+                    }
                 }
             }
         }

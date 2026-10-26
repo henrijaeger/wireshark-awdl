@@ -67,6 +67,7 @@
 #include <epan/conversation.h>
 #include <epan/prefs.h>
 #include <epan/proto_data.h>
+#include <epan/to_str.h>
 #include <wsutil/inet_addr.h>
 
 #include "packet-rtp.h"
@@ -136,9 +137,6 @@ typedef struct {
     const char *stream_id;
     const char *session;
     uint32_t negotiated_in;
-    /* Whether RTP was set up for this flow in each direction (from side 0,
-     * from side 1). */
-    bool rtp_set_up[2];
 } media_flow;
 
 /* What one packet was found to be, on the first pass, kept for every later
@@ -149,12 +147,28 @@ typedef struct {
     unsigned candidates;     /* flows that fitted; more than one is ambiguous */
     uint32_t first_in;
     uint32_t second_in;
-    /* For an ambiguous packet: the first flow that fitted, and whether every
-     * flow that fitted would read it with the same binding. */
-    media_flow *first_flow;
-    bool bindings_agree;
+    /* The binding the packet is read with: the flow's, or, for an ambiguous
+     * packet, the one every flow that fitted would use -- the same payload type
+     * at the same clock rate. -1 when there is none, including when the flows
+     * that fitted disagree (binding_conflict), so that the payload stays
+     * opaque and its clock rate unknown rather than taking either's. */
+    int binding;
+    bool binding_conflict;
     bool guessed;
 } media_match;
+
+/* RTP is told how to read a flow per transport conversation, as
+ * rtp_add_address() keys it: the destination address and port and the
+ * source port, in one direction. One negotiation allows more than one such
+ * conversation (an announced and a control address on each end), so this is
+ * what records whether one has been set up, and with which binding. */
+typedef struct {
+    rtp_dyn_payload_t *payloads; /* this file's own reference; RTP holds another */
+    int binding;
+    uint32_t set_up_in;
+} media_rtp_setup;
+
+static wmem_map_t *rtp_setups;
 
 /* Negotiated flows, listed per port pair (lowest first) in negotiation order. */
 static wmem_map_t *flows;
@@ -162,6 +176,21 @@ static wmem_map_t *flows;
 static void media_init(void)
 {
     flows = wmem_map_new(wmem_file_scope(), g_direct_hash, g_direct_equal);
+    rtp_setups = wmem_map_new(wmem_file_scope(), g_str_hash, g_str_equal);
+}
+
+static void release_rtp_setup(void *key _U_, void *value, void *user_data _U_)
+{
+    rtp_dyn_payload_free(((media_rtp_setup *)value)->payloads);
+}
+
+static void media_cleanup(void)
+{
+    if (rtp_setups != NULL) {
+        wmem_map_foreach(rtp_setups, release_rtp_setup, NULL);
+        rtp_setups = NULL;
+    }
+    flows = NULL;
 }
 
 static void *port_pair_key(uint32_t a, uint32_t b)
@@ -257,6 +286,7 @@ static bool side_has(const media_side *side, uint32_t port, const address *addr)
 }
 
 static int binding_for(const char *stream_id);
+static bool same_binding(int a, int b);
 
 /* Which negotiated flow this packet belongs to: one negotiated before it,
  * whose two ends' ports and addresses are this packet's source and
@@ -266,6 +296,7 @@ static int binding_for(const char *stream_id);
 static media_match *match_packet(packet_info *pinfo)
 {
     media_match *match = wmem_new0(pinfo->pool, media_match);
+    match->binding = -1;
     if (flows == NULL) {
         return match;
     }
@@ -282,18 +313,18 @@ static media_match *match_packet(packet_info *pinfo)
         for (uint32_t from = 0; from < 2; from++) {
             if (side_has(&flow->side[from], pinfo->srcport, &pinfo->src) &&
                 side_has(&flow->side[1 - from], pinfo->destport, &pinfo->dst)) {
+                int binding = binding_for(flow->stream_id);
                 if (match->candidates == 0) {
                     match->flow = flow;
-                    match->first_flow = flow;
                     match->direction = from;
                     match->first_in = flow->negotiated_in;
-                    match->bindings_agree = true;
+                    match->binding = binding;
                 } else {
                     if (match->candidates == 1) {
                         match->second_in = flow->negotiated_in;
                     }
-                    if (binding_for(flow->stream_id) != binding_for(match->first_flow->stream_id)) {
-                        match->bindings_agree = false;
+                    if (!same_binding(binding, match->binding)) {
+                        match->binding_conflict = true;
                     }
                 }
                 match->candidates++;
@@ -303,6 +334,9 @@ static media_match *match_packet(packet_info *pinfo)
     }
     if (match->candidates > 1) {
         match->flow = NULL;
+    }
+    if (match->binding_conflict) {
+        match->binding = -1;
     }
     return match;
 }
@@ -316,6 +350,17 @@ static int binding_for(const char *stream_id)
         }
     }
     return -1;
+}
+
+/* Whether two bindings read a payload the same way: the same payload type at
+ * the same clock rate (different stream names can share one), or both none. */
+static bool same_binding(int a, int b)
+{
+    if (a < 0 || b < 0) {
+        return a == b;
+    }
+    return media_bindings[a].payload_type == media_bindings[b].payload_type &&
+           media_bindings[a].clock_rate == media_bindings[b].clock_rate;
 }
 
 /* RTP or, multiplexed with it (RFC 5761), RTCP: version 2, and long enough
@@ -344,6 +389,7 @@ static media_match *packet_match(tvbuff_t *tvb, packet_info *pinfo)
         if (match->candidates == 0 && pref_guess_pt100 && looks_like_rtp(tvb) &&
             (tvb_get_uint8(tvb, 1) & 0x7f) == CONTINUITY_MEDIA_PT_GUESS) {
             match->guessed = true;
+            match->binding = binding_for(":ContinuityCaptureMediaIdentifierDefaultVideo");
         }
         if (match->candidates > 0 || match->guessed) {
             match = (media_match *)wmem_memdup(wmem_file_scope(), match, sizeof *match);
@@ -353,69 +399,68 @@ static media_match *packet_match(tvbuff_t *tvb, packet_info *pinfo)
     return match;
 }
 
-/* Give RTP the payload type and clock rate this flow is read with, once per
- * flow and direction, on the first pass; RTP keeps what it needs per frame for
- * later passes, in a conversation of its own that begins at this frame. A
- * guessed flow has no negotiation to remember that by, so it is set up only on
- * the packet the heuristic claims, which starts the flow's conversation. */
-static void set_up_rtp(tvbuff_t *tvb, packet_info *pinfo, media_match *match, bool claimed)
+/* Give RTP the payload types and clock rate this packet's transport
+ * conversation is read with, on the first pass -- once per conversation, not
+ * per packet, so RTP's analysis of the flow runs on uninterrupted.
+ *
+ * A conversation is set up again only when the binding it must be read with
+ * changes: a second negotiation that makes the packet ambiguous with a
+ * different binding turns it opaque from that frame on, and the earlier frames
+ * keep theirs. A payload type that has not been seen on the conversation is
+ * added to the table RTP already holds, marked opaque with its clock rate
+ * unknown -- without that, RTP reads dynamic types 100 and 101 as telephone
+ * events. An RTCP packet names no payload type, so it sets the conversation up
+ * with what is known and adds nothing. */
+static void set_up_rtp(tvbuff_t *tvb, packet_info *pinfo, const media_match *match)
 {
-    int binding = -1;
-    bool *set_up = NULL;
-    if (match->flow != NULL) {
-        binding = binding_for(match->flow->stream_id);
-        set_up = &match->flow->rtp_set_up[match->direction];
-    } else if (match->candidates > 1 && match->bindings_agree) {
-        /* Which flow is not known, but every one that fits is read the same
-         * way, so the payload is not left to RTP's defaults. */
-        binding = binding_for(match->first_flow->stream_id);
-        set_up = &match->first_flow->rtp_set_up[match->direction];
-    } else if (match->guessed) {
-        if (!claimed) {
-            return;
-        }
-        binding = binding_for(":ContinuityCaptureMediaIdentifierDefaultVideo");
-    }
-    if (PINFO_FD_VISITED(pinfo) || (set_up != NULL && *set_up)) {
+    if (PINFO_FD_VISITED(pinfo) || rtp_setups == NULL) {
         return;
     }
-    rtp_dyn_payload_t *payloads = NULL;
+    uint8_t second = tvb_get_uint8(tvb, 1);
+    bool rtcp = second >= RTCP_PT_MIN && second <= RTCP_PT_MAX;
+    unsigned type = second & 0x7f;
+    int binding = match->binding;
+
+    char *key = wmem_strdup_printf(pinfo->pool, "%s/%u/%u",
+                                   address_to_str(pinfo->pool, &pinfo->net_dst), pinfo->destport,
+                                   pinfo->srcport);
+    media_rtp_setup *setup = (media_rtp_setup *)wmem_map_lookup(rtp_setups, key);
+    if (setup != NULL && setup->binding == binding) {
+        if (!rtcp && rtp_dyn_payload_get_name(setup->payloads, type) == NULL) {
+            rtp_dyn_payload_insert(setup->payloads, type, CONTINUITY_MEDIA_UNKNOWN_NAME, 0, 1);
+        }
+        return;
+    }
+
+    rtp_dyn_payload_t *payloads = rtp_dyn_payload_new();
     if (binding >= 0) {
-        payloads = rtp_dyn_payload_new();
         rtp_dyn_payload_insert(payloads, media_bindings[binding].payload_type,
                                CONTINUITY_MEDIA_OPAQUE_NAME, media_bindings[binding].clock_rate,
                                1);
-    } else if (set_up != NULL) {
-        /* An identified stream with no observed binding: its payload is
-         * still SRTP, so its type is marked opaque rather than left to RTP's
-         * defaults, which read dynamic types 100 and 101 as telephone events.
-         * Taken from the first RTP packet; an RTCP packet says nothing about
-         * it. */
-        uint8_t type = tvb_get_uint8(tvb, 1);
-        if (type >= RTCP_PT_MIN && type <= RTCP_PT_MAX) {
-            return;
-        }
-        payloads = rtp_dyn_payload_new();
-        rtp_dyn_payload_insert(payloads, type & 0x7f, CONTINUITY_MEDIA_UNKNOWN_NAME, 0, 1);
     }
-    if (payloads != NULL) {
-        rtp_add_address(pinfo, PT_UDP, &pinfo->net_dst, pinfo->destport, pinfo->srcport,
-                        "Continuity", pinfo->num, 0, payloads);
-        rtp_dyn_payload_free(payloads); /* RTP holds its own reference */
-        if (set_up != NULL) {
-            *set_up = true;
-        }
+    if (!rtcp && rtp_dyn_payload_get_name(payloads, type) == NULL) {
+        rtp_dyn_payload_insert(payloads, type, CONTINUITY_MEDIA_UNKNOWN_NAME, 0, 1);
     }
+    rtp_add_address(pinfo, PT_UDP, &pinfo->net_dst, pinfo->destport, pinfo->srcport,
+                    "Continuity", pinfo->num, 0, payloads);
+    if (setup == NULL) {
+        setup = wmem_new0(wmem_file_scope(), media_rtp_setup);
+        wmem_map_insert(rtp_setups, wmem_strdup(wmem_file_scope(), key), setup);
+    } else {
+        rtp_dyn_payload_free(setup->payloads); /* RTP keeps its own reference */
+    }
+    setup->payloads = payloads;
+    setup->binding = binding;
+    setup->set_up_in = pinfo->num;
 }
 
-static int dissect_media(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data,
-                         bool claimed)
+static int dissect_media(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
     media_match *match = packet_match(tvb, pinfo);
     if (match == NULL || (match->candidates == 0 && !match->guessed) || !looks_like_rtp(tvb)) {
         return 0;
     }
-    set_up_rtp(tvb, pinfo, match, claimed);
+    set_up_rtp(tvb, pinfo, match);
 
     proto_item *item = proto_tree_add_item(tree, proto_continuity_media, tvb, 0, 0, ENC_NA);
     proto_item_set_generated(item);
@@ -460,6 +505,20 @@ static int dissect_media(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
                                match->candidates, match->first_in, match->second_in,
                                match->candidates > 2 ? " and later" : ""));
         proto_item_set_generated(ambiguous);
+        proto_item *bound = proto_tree_add_string(
+            media_tree, hf_media_payload_binding, tvb, 0, 0,
+            match->binding >= 0
+                ? wmem_strdup_printf(pinfo->pool,
+                                     "payload type %d at %d Hz, as every negotiation that fits "
+                                     "binds it",
+                                     media_bindings[match->binding].payload_type,
+                                     media_bindings[match->binding].clock_rate)
+            : match->binding_conflict
+                ? "none: the negotiations that fit bind it differently, so its payload is "
+                  "marked opaque and its clock rate unknown"
+                : "none: no negotiation that fits has an observed binding, so its payload is "
+                  "marked opaque and its clock rate unknown");
+        proto_item_set_generated(bound);
     } else {
         proto_item *guessed = proto_tree_add_string(
             media_tree, hf_media_guessed, tvb, 0, 0,
@@ -490,7 +549,7 @@ static int dissect_media(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
 static int dissect_continuity_media(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
                                     void *data)
 {
-    return dissect_media(tvb, pinfo, tree, data, false);
+    return dissect_media(tvb, pinfo, tree, data);
 }
 
 static bool dissect_continuity_media_heur(tvbuff_t *tvb, packet_info *pinfo,
@@ -508,7 +567,7 @@ static bool dissect_continuity_media_heur(tvbuff_t *tvb, packet_info *pinfo,
      * pair that came before the negotiation is not this flow's. */
     conversation_t *conversation = find_or_create_conversation(pinfo);
     conversation_set_dissector_from_frame_number(conversation, pinfo->num, media_handle);
-    return dissect_media(tvb, pinfo, tree, data, true) > 0;
+    return dissect_media(tvb, pinfo, tree, data) > 0;
 }
 
 void proto_register_continuity_media(void)
@@ -552,6 +611,7 @@ void proto_register_continuity_media(void)
                                       proto_continuity_media);
 
     register_init_routine(media_init);
+    register_cleanup_routine(media_cleanup);
 }
 
 void continuity_media_register_prefs(module_t *module)

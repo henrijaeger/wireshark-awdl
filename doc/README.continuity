@@ -58,11 +58,26 @@ a PubKey frame with an OPACK dictionary whose first key is _pd, or a segment
 exactly tiled by frames of known types. Not recognised, by design: a first
 handshake segment shorter than 9 bytes, and a handshake whose dictionary puts
 another key before _pd and is split over several segments. Such a connection is
-picked up at its next exactly-tiled segment, reported without a session. Also
-not recognised: a stream sub-connection, which has no handshake, whose first
-frame is longer than its first segment. Observed for Universal Control's
-streams, whose frames run to several kilobytes and rarely end on a segment
-boundary, so such a connection may not be recognised at all.
+picked up at its next exactly-tiled segment, reported without a session; the
+tests named LIMITATION assert exactly this. A stream sub-connection has no
+handshake, and its first frame can run to several kilobytes -- Universal
+Control's do -- so neither test recognises it from its first segment. When its
+negotiation was read (a `_streamStart` of `_streamType` 2, answered with a
+`_streamPort`), the one connection from the requester's address to that port,
+after the answer, is read as RDLink from its first frame. Without keys for the
+control channel the negotiation is not readable, and such a connection is
+picked up only at its next exactly-tiled segment, as before.
+
+Messages that change state. Pairing an exchange, recording a negotiation and
+naming a session outlive the frame, so they are made only from a message whose
+object was walked whole and whose envelope does not conflict: _x, _t, _i and _c
+each at most once and of their type. A message that fails this is shown in full,
+with why, but is neither paired nor recorded as an open exchange, so it cannot
+take a legitimate message's place or consume its answer. A sound envelope whose
+stream entries conflict (_streamType, _streamPort, _streamID or _streamAddr
+repeated, or a type or port that is not an integer) is paired -- the
+correlation is sound -- but negotiates nothing
+(continuity.rdlink.stream_refused).
 
 Media flows. A UDP packet belongs to a negotiated stream when it was captured
 after the _streamStart answer, between the two negotiated ports, and each end is
@@ -72,6 +87,17 @@ not compared: on a Mac the control connection and the media use different ones.
 No message ending a flow has been seen, so none is assumed: when two
 negotiations fit a packet equally the packet is reported as ambiguous. Each
 packet's association is fixed on the first pass.
+
+RTP is told how to read a flow once per transport conversation as RTP keys it
+(destination address and port, source port), so each address pair a negotiation
+allows is set up on its first packet and not again: RTP's analysis of the flow
+runs on uninterrupted. A payload type not seen before on a conversation is added
+to the table RTP holds, marked opaque with its clock rate unknown. An ambiguous
+packet is read with a binding only when every negotiation that fits binds the
+same payload type at the same rate; otherwise its payload is opaque and its
+clock rate unknown, and a conversation that becomes ambiguous that way is set up
+anew from that frame, its earlier frames keeping theirs. Without this, RTP reads
+dynamic types 100 and 101 as telephone events.
 
 OPACK limits, per message: 16 levels of nesting, 4,096 reference-table entries,
 16,384 values, 1 MiB of string and byte-string value (each back-reference

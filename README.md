@@ -64,7 +64,7 @@ the control link decrypted: a UDP packet captured after the negotiation,
 between the two negotiated ports, each end at an address it announced or at
 its end of the control connection. When two negotiations fit one packet it is
 reported as ambiguous (`continuity.media.ambiguous`) rather than given to
-either. Without keys no flow is identified; the `continuity.media_guess_pt100`
+either, and its payload is read with a binding only when both bind it alike. Without keys no flow is identified; the `continuity.media_guess_pt100`
 preference instead takes any RTP flow of payload type 100 for Continuity media,
 which other applications' RTP also matches. The media itself is SRTP and is not
 decrypted; only RTP and RTCP headers are decoded. Continuity Camera's video
