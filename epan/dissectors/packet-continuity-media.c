@@ -18,7 +18,7 @@
  * So this decode contributes the umbrella, the session, and which negotiated
  * stream a flow is, and hands the frame to the dissection that already exists.
  * RTCP multiplexed on the same port (RFC 5761) is separated by the RTP
- * dissection itself.
+ * dissection itself, and on a bound stream is read as the SRTCP it is.
  *
  * WHICH FLOWS. A flow is identified from its negotiation, not from its
  * packets. The control channel's `_streamStart` exchange for a stream of type
@@ -72,6 +72,7 @@
 
 #include <string.h>
 
+#include "packet-rtcp.h"
 #include "packet-rtp.h"
 
 #include "packet-continuity.h"
@@ -108,14 +109,34 @@ static bool pref_guess_pt100 = false;
  * of consecutive SSRCs: payload type 100, and 24,005 to 24,136 ticks a second
  * over every tile of the three sessions that ran longer than 3 s (iPad on
  * iPadOS 18.3.1 to a Mac on macOS 15.7.9, 2026-10-26). */
+/* The RTCP these streams multiplex onto their port is SRTCP, and RTCP's own
+ * decode reads it as such once told its layout: the first packet's header and
+ * SSRC in the clear, the rest encrypted, then E and the 31-bit index, then the
+ * authentication tag. Without it, RTCP parses the ciphertext as further RTCP
+ * packets and reports it malformed. The layout was read from the captures
+ * alone, on each stream that has one: on every RTCP packet of a keyed Camera
+ * session (DefaultVideo and DeskcamVideo, 3,940 packets, 10 senders) and of a
+ * Sidecar Display session (AVCVideoStream, 7,058 packets, 20 senders), the
+ * four bytes before a 10-byte tag have E set and an index that starts at 1 and
+ * rises by one per packet of each sender, with no gap other than a packet
+ * missing from the capture; 4- and 16-byte tags give neither. The cipher
+ * itself is not established by that, only that the packets are encrypted. */
+static struct srtp_info media_srtcp = {
+    .encryption_algorithm = SRTP_ENC_ALG_AES_CM,
+    .auth_algorithm = SRTP_AUTH_ALG_HMAC_SHA1,
+    .mki_len = 0,
+    .auth_tag_len = 10,
+};
+
 static const struct {
     const char *name;
     int payload_type;
     int clock_rate;
+    struct srtp_info *srtcp;
 } media_bindings[] = {
-    { "ContinuityCaptureMediaIdentifierDefaultVideo", 100, 24000 },
-    { "ContinuityCaptureMediaIdentifierDeskcamVideo", 100, 24000 },
-    { "AVCVideoStream", 100, 24000 },
+    { "ContinuityCaptureMediaIdentifierDefaultVideo", 100, 24000, &media_srtcp },
+    { "ContinuityCaptureMediaIdentifierDeskcamVideo", 100, 24000, &media_srtcp },
+    { "AVCVideoStream", 100, 24000, &media_srtcp },
 };
 
 /* What an unbound stream's payload type is given: a name no decode is
@@ -422,6 +443,33 @@ static media_match *packet_match(tvbuff_t *tvb, packet_info *pinfo)
  * unknown -- without that, RTP reads dynamic types 100 and 101 as telephone
  * events. An RTCP packet names no payload type, so it sets the conversation up
  * with what is known and adds nothing. */
+/* Tell RTCP the SRTCP layout of the conversation keyed on `addr` and the two
+ * ports, the way rtp_add_address() keys one.
+ *
+ * RTP sets up the RTCP multiplexed onto its port itself, with no SRTCP
+ * layout, since it is not told one for RTP: srtp_add_address() would give it
+ * one, but would also claim an authentication tag on the RTP payload, which
+ * no capture has shown. So RTCP is told afterwards -- and every time RTP has
+ * been set up again, which clears it. Telling it points the conversation at
+ * RTCP, so it is pointed back at RTP, as RTP's own set-up leaves it.
+ *
+ * Called for each end of the packet: RTP keys a conversation on the end the
+ * media is sent to, while RTCP looks for an SRTCP layout on the end a packet
+ * is sent from, so RTCP sent towards an end that has only ever sent would
+ * otherwise go unrecognised. */
+static void tell_rtcp(packet_info *pinfo, address *addr, uint32_t port, uint32_t other_port,
+                      struct srtp_info *srtcp)
+{
+    srtcp_add_address(pinfo, addr, port, other_port, "Continuity", pinfo->num, srtcp);
+    address null_addr;
+    clear_address(&null_addr);
+    conversation_t *conversation = find_conversation_strat_xtd(
+        pinfo, pinfo->num, addr, &null_addr, CONVERSATION_UDP, port, other_port, NO_ADDR_B);
+    if (conversation != NULL && rtp_handle != NULL) {
+        conversation_set_dissector(conversation, rtp_handle);
+    }
+}
+
 static void set_up_rtp(tvbuff_t *tvb, packet_info *pinfo, const media_match *match)
 {
     if (PINFO_FD_VISITED(pinfo) || rtp_setups == NULL) {
@@ -454,6 +502,12 @@ static void set_up_rtp(tvbuff_t *tvb, packet_info *pinfo, const media_match *mat
     }
     rtp_add_address(pinfo, PT_UDP, &pinfo->net_dst, pinfo->destport, pinfo->srcport,
                     "Continuity", pinfo->num, 0, payloads);
+    if (binding >= 0 && media_bindings[binding].srtcp != NULL) {
+        tell_rtcp(pinfo, &pinfo->net_dst, pinfo->destport, pinfo->srcport,
+                  media_bindings[binding].srtcp);
+        tell_rtcp(pinfo, &pinfo->net_src, pinfo->srcport, pinfo->destport,
+                  media_bindings[binding].srtcp);
+    }
     if (setup == NULL) {
         setup = wmem_new0(wmem_file_scope(), media_rtp_setup);
         wmem_map_insert(rtp_setups, wmem_strdup(wmem_file_scope(), key), setup);

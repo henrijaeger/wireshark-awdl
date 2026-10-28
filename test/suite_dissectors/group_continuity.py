@@ -1398,6 +1398,67 @@ class TestMediaTiming:
         assert 'continuity.media' not in rows[3][0]
 
 
+# --- SRTCP on negotiated media --------------------------------------------------
+
+def srtcp(packet_type, index, ciphertext=None, ssrc=0x55667788, tag=b'\x7e' * 10):
+    """A compound SRTCP packet as both Continuity Camera and Sidecar Display
+    send it: the first RTCP header and SSRC in the clear, then ciphertext, then
+    E set with the 31-bit index, then a 10-byte authentication tag. The
+    ciphertext defaults to bytes that, read as RTCP, declare a length running
+    past the packet, which is how a plain RTCP decode used to report the real
+    sessions' packets as malformed."""
+    if ciphertext is None:
+        ciphertext = bytes([0x81, 0xca, 0xff, 0xf0]) + bytes(range(1, 21))
+    first = struct.pack('!BBHI', 0x80, packet_type, (8 + len(ciphertext)) // 4 - 1, ssrc)
+    return first + ciphertext + struct.pack('!I', 0x80000000 | index) + tag
+
+
+class TestMediaSrtcp:
+    names = ('frame.protocols', 'continuity.media.stream_id', 'rtcp.pt', 'srtcp.e',
+             'srtcp.index', 'srtcp.auth_tag', '_ws.malformed', '_ws.expert.message')
+
+    def capture(self, result_file, stream_id, payloads):
+        ends = Endpoints()
+        frames = [ends.tcp(True, pairverify_m1())]
+        frames += negotiate(ends, 0, 0, stream_start(5, stream_id, 40000, PHONE_STREAM_ADDR),
+                            stream_answer(5, 40002, MAC_STREAM_ADDR))
+        for payload in payloads:
+            frames.append(udp_frame(addr6(MAC_STREAM_ADDR), 40002, addr6(PHONE_STREAM_ADDR),
+                                    40000, payload, src_mac=INITIATOR[0],
+                                    dst_mac=RESPONDER[0]))
+        return capture_of(result_file, 'srtcp.pcap', frames)
+
+    @pytest.mark.parametrize('stream_id', [VIDEO, DESKCAM, DISPLAY],
+                             ids=['camera-video', 'camera-deskcam', 'display'])
+    def test_a_bound_stream_reads_its_rtcp_as_srtcp(self, cmd_tshark, result_file, test_env,
+                                                    stream_id):
+        path = self.capture(result_file, stream_id, [srtcp(201, 1), srtcp(200, 2)])
+        rows = fields(cmd_tshark, path, test_env, self.names, keyed(result_file))
+        for row, index in ((rows[3], '1'), (rows[4], '2')):
+            assert row[1] == stream_id
+            assert 'rtcp' in row[0]
+            assert row[3] in ('1', 'True') and row[4] == index
+            assert row[5].replace(':', '') == '7e' * 10
+            assert row[6] == '', row
+            assert 'Encrypted RTCP Payload' in row[7], row
+
+    def test_an_encrypted_application_packet_is_not_parsed(self, cmd_tshark, result_file,
+                                                          test_env):
+        path = self.capture(result_file, DISPLAY, [srtcp(204, 3, ciphertext=b'\xd3' * 24)])
+        rows = fields(cmd_tshark, path, test_env, self.names, keyed(result_file))
+        assert rows[3][2] == '204'
+        assert rows[3][6] == '', rows[3]
+        assert 'Application name is not a string' not in rows[3][7], rows[3]
+
+    def test_an_unbound_stream_is_not_given_srtcp(self, cmd_tshark, result_file, test_env):
+        # No capture has shown a microphone stream's RTCP, so its layout is
+        # not assumed from the video streams'.
+        path = self.capture(result_file, MICROPHONE, [srtcp(201, 1)])
+        rows = fields(cmd_tshark, path, test_env, self.names, keyed(result_file))
+        assert rows[3][1] == MICROPHONE
+        assert rows[3][4] == '' and 'Encrypted RTCP Payload' not in rows[3][7]
+
+
 # --- Handshake validity --------------------------------------------------------
 
 def m1_body(*pairs, dict_marker=None, after=b''):
