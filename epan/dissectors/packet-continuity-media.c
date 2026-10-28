@@ -70,6 +70,8 @@
 #include <epan/to_str.h>
 #include <wsutil/inet_addr.h>
 
+#include <string.h>
+
 #include "packet-rtp.h"
 
 #include "packet-continuity.h"
@@ -97,20 +99,23 @@ static bool pref_guess_pt100 = false;
 
 #define RTP_VERSION_2 2
 
-/* What the observed sessions bound, by the stream identifier's suffix (the
- * identifier is "<session tag>:<name>"). AVCVideoStream is Sidecar Display's
- * video, Mac to iPad, sent as four tiles of consecutive SSRCs: payload type
- * 100, and 24,005 to 24,136 ticks a second over every tile of the three
- * sessions that ran longer than 3 s (iPad on iPadOS 18.3.1 to a Mac on macOS
- * 15.7.9, 2026-10-26). */
+/* What the observed sessions bound, by the stream's name. A Sidecar session
+ * names a stream "<session tag>:<name>"; the Rapport Continuity Camera
+ * transport an iPhone on iOS 27 is driven through names it by <name> alone
+ * (ContinuityCaptureMediaIdentifierDefaultVideo), at the same payload type and
+ * clock rate (iPhone18,3 to a Mac on macOS 15.7.9, 2026-10-27).
+ * AVCVideoStream is Sidecar Display's video, Mac to iPad, sent as four tiles
+ * of consecutive SSRCs: payload type 100, and 24,005 to 24,136 ticks a second
+ * over every tile of the three sessions that ran longer than 3 s (iPad on
+ * iPadOS 18.3.1 to a Mac on macOS 15.7.9, 2026-10-26). */
 static const struct {
-    const char *suffix;
+    const char *name;
     int payload_type;
     int clock_rate;
 } media_bindings[] = {
-    { ":ContinuityCaptureMediaIdentifierDefaultVideo", 100, 24000 },
-    { ":ContinuityCaptureMediaIdentifierDeskcamVideo", 100, 24000 },
-    { ":AVCVideoStream", 100, 24000 },
+    { "ContinuityCaptureMediaIdentifierDefaultVideo", 100, 24000 },
+    { "ContinuityCaptureMediaIdentifierDeskcamVideo", 100, 24000 },
+    { "AVCVideoStream", 100, 24000 },
 };
 
 /* What an unbound stream's payload type is given: a name no decode is
@@ -345,7 +350,13 @@ static media_match *match_packet(packet_info *pinfo)
 static int binding_for(const char *stream_id)
 {
     for (unsigned i = 0; stream_id != NULL && i < array_length(media_bindings); i++) {
-        if (g_str_has_suffix(stream_id, media_bindings[i].suffix)) {
+        const char *name = media_bindings[i].name;
+        size_t id_length = strlen(stream_id);
+        size_t name_length = strlen(name);
+        /* <name> itself, or <session tag>:<name> -- never a longer name that
+         * merely ends in this one. */
+        if (id_length >= name_length && strcmp(stream_id + id_length - name_length, name) == 0 &&
+            (id_length == name_length || stream_id[id_length - name_length - 1] == ':')) {
             return (int)i;
         }
     }

@@ -43,6 +43,14 @@
  *     index in the next 1..4 bytes, little-endian (the encoder uses 0xc1 from
  *     index 33, 0xc2 once one byte is not enough).
  *
+ * LENGTHS. A string or byte string longer than 32 bytes carries its length
+ * after the marker: 0x61..0x64 and 0x91..0x94 are followed by 1, 2, 4 and 8
+ * length bytes, little-endian -- not 1..4. Read from the same encoder: a
+ * 65,536-byte value is sent as 93 00 00 01 00, and an iPhone on iOS 27 was
+ * sent a 297,351-byte configuration as 93 87 89 04 00. A rule of 1..4 agrees
+ * with this below 65,536 bytes and misframes everything after a longer value
+ * by one byte.
+ *
  * It looks de-duplicated from captures, because the encoder never sends a
  * duplicate in full; the platform's decoder shows it is not. With this rule
  * every decrypted body of continuity-camera.pcapng (24),
@@ -117,11 +125,11 @@ static expert_field ei_opack_envelope_type;
 #define OPACK_REF_LEN4      0xc4
 #define OPACK_STRING_MIN    0x40 /* 0x40 + n, n bytes of string */
 #define OPACK_STRING_MAX    0x60
-#define OPACK_STRING_LEN1   0x61 /* one length byte follows, then the string */
+#define OPACK_STRING_LEN1   0x61 /* 1, 2, 4 or 8 length bytes follow, then the string */
 #define OPACK_STRING_LEN4   0x64
 #define OPACK_BYTES_MIN     0x70 /* 0x70 + n, n bytes */
 #define OPACK_BYTES_MAX     0x90
-#define OPACK_BYTES_LEN1    0x91
+#define OPACK_BYTES_LEN1    0x91 /* 1, 2, 4 or 8 length bytes follow, then the bytes */
 #define OPACK_BYTES_LEN4    0x94
 #define OPACK_ARRAY_MIN     0xd0 /* 0xd0 + n entries */
 #define OPACK_ARRAY_ENDLESS 0xdf
@@ -845,8 +853,9 @@ static int opack_value(opack_walk *walk, proto_tree *tree, int offset, int depth
             length = is_string ? (uint64_t)(marker - OPACK_STRING_MIN)
                                : (uint64_t)(marker - OPACK_BYTES_MIN);
         } else {
-            int width = string_with_length ? (marker - OPACK_STRING_LEN1 + 1)
-                                           : (marker - OPACK_BYTES_LEN1 + 1);
+            /* 1, 2, 4, 8 bytes, as the sized integers -- see LENGTHS above. */
+            int width = 1 << (string_with_length ? (marker - OPACK_STRING_LEN1)
+                                                 : (marker - OPACK_BYTES_LEN1));
             if (offset + width > walk->end) {
                 opack_stop(walk, tree, start, "a length runs past the end of the body");
                 return walk->end;

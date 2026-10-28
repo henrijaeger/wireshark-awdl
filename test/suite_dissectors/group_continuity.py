@@ -518,6 +518,22 @@ class TestOpack:
         assert members[0].endswith(':…') and members[0].count(':') == 64
         assert len(byte_fields.replace(':', '')) == 200
 
+    @pytest.mark.parametrize('marker,width', [
+        (0x61, 1), (0x62, 2), (0x63, 4), (0x64, 8), (0x91, 1), (0x92, 2), (0x93, 4), (0x94, 8),
+    ], ids=lambda v: '%#x' % v if v > 8 else str(v))
+    def test_long_value_length_widths(self, cmd_tshark, result_file, test_env, marker, width):
+        # 0x61..0x64 and 0x91..0x94 carry 1, 2, 4 and 8 length bytes, as
+        # CoreUtils' encoder writes them (65,536 bytes is 93 00 00 01 00).
+        # A short value is enough to tell a 4-byte length from a 3-byte one:
+        # read with the wrong width, everything after it shifts by a byte.
+        value = b'xyzzy'
+        body = o_dict((o_str('a'), bytes([marker]) + len(value).to_bytes(width, 'little') + value),
+                      (o_str('b'), o_int(1)))
+        members, experts, _ = self.walk(cmd_tshark, result_file, test_env, body)
+        shown = 'xyzzy' if marker < 0x91 else value.hex(':')
+        assert members == ['a = ' + shown, 'b = 1']
+        assert experts == ''
+
     def test_reference_expansion_is_bounded(self, cmd_tshark, result_file, test_env):
         # Table: "a" (0), the 2000 bytes (1), "b" (2); 1000 references to
         # index 1 would put 2 MB of value into the tree from 3 KB of body.
@@ -1028,6 +1044,7 @@ DESKCAM = 'ABCD1234:ContinuityCaptureMediaIdentifierDeskcamVideo'
 MICROPHONE = 'ABCD1234:ContinuityCaptureMediaMicrophone'
 OTHER_STREAM = 'ABCD1234:SomethingNotObserved'
 DISPLAY = 'ABCD1234:AVCVideoStream'
+RAPPORT_VIDEO = 'ContinuityCaptureMediaIdentifierDefaultVideo'
 
 PHONE_STREAM_ADDR = 'fd00::a'
 MAC_STREAM_ADDR = 'fd00::b'
@@ -1322,6 +1339,22 @@ class TestMediaTiming:
                       ('continuity.media.payload_binding', 'frame.protocols'), keyed(result_file))
         assert rows[3][0] == 'payload type 100 at 24000 Hz'
         assert 'rtpevent' not in rows[3][1]
+
+    def test_a_rapport_stream_is_bound(self, cmd_tshark, result_file, test_env):
+        # The Rapport Continuity Camera transport (iOS 27) names its streams
+        # without the "<session tag>:" prefix a Sidecar session uses.
+        frames, times = self.flow(RAPPORT_VIDEO, 100, 800, 1 / 30, count=2)
+        rows = fields(cmd_tshark, self.write(result_file, frames, times), test_env,
+                      ('continuity.media.stream_id', 'continuity.media.payload_binding'),
+                      keyed(result_file))
+        assert rows[3] == [RAPPORT_VIDEO, 'payload type 100 at 24000 Hz']
+
+    def test_a_name_that_only_ends_in_a_bound_one_is_not_bound(self, cmd_tshark, result_file,
+                                                               test_env):
+        frames, times = self.flow('X' + RAPPORT_VIDEO, 100, 800, 1 / 30, count=2)
+        rows = fields(cmd_tshark, self.write(result_file, frames, times), test_env,
+                      ('continuity.media.payload_binding',), keyed(result_file))
+        assert rows[3][0].startswith('none:')
 
     def test_the_microphone_is_not_bound(self, cmd_tshark, result_file, test_env):
         # Its payload type is chosen by the Mac's answer and no real-Mac
